@@ -27,7 +27,6 @@ $(BUILD)/mbed/%.o: $(MBED_DIR)/library/%.c platform/net/tls_config.h
 	@mkdir -p $(BUILD)/mbed
 	$(CC) -std=c11 -O2 -g $(MBED_FLAGS) -c $< -o $@
 $(MBED_LIB): $(MBED_OBJ)
-$(MBED_OBJ): platform/net/tls_config.h
 	ar rcs $@ $^
 
 .PHONY: all test sim target rtos netsim clean
