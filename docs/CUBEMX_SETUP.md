@@ -152,7 +152,7 @@ Add `port/stm32h5/fw_flash_stm32h5.c` to the build. To produce update files:
    "Convert to binary file (-O binary)".
 2. After a build: `python3 tools/mkfwimage.py Debug/<project>.bin cems-0.4.0.cfw --version 0.4.0`
    (keep `--version` the same as the version string in `plat_app_t.ident.revision`).
-3. On the web page (admin): Firmware → choose the .cfw → Upload → "Restart on 0.4.0".
+3. On the web page (factory/tech login): Administration → Firmware → choose the .cfw → Upload → "Restart on 0.4.0".
 
 The first update on the DK should be done with the debugger attached (see
 `docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to

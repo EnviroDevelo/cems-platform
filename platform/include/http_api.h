@@ -20,8 +20,8 @@
  *   GET  /api/log/events.csv[?from=&to=] the whole event log (s since 1970, inclusive)
  *   GET  /api/log/data.csv[?from=&to=]   the whole data log
  *   GET  /api/fw           firmware status: running and staged versions, trial, upload progress
- *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (admin)
- *   POST /api/fw/activate  restart on the staged image (admin); it confirms itself after a
+ *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (tech/factory level)
+ *   POST /api/fw/activate  restart on the staged image (tech/factory level); it confirms itself after a
  *                          healthy trial, or the unit rolls back
  *
  * Every POST must carry the header "X-CEMS: 1" (a page from another site cannot

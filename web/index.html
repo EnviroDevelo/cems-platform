@@ -102,7 +102,8 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
     </div>
     <h2 style="margin-top:14px">Firmware</h2>
     <p id="fwinfo" class="note">-</p>
-    <div class="row">
+    <p class="note" id="fwlvl">Firmware updates need the factory (tech) login.</p>
+    <div class="row" id="fwctl">
       <input type="file" id="fwfile" accept=".cfw">
       <button id="fwup">Upload</button>
       <progress id="fwprog" max="1" value="0" style="display:none;width:160px"></progress>
@@ -240,6 +241,8 @@ async function refreshInfo() {
     $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
     $("admin").style.display = level >= 2 ? "block" : "none";
     if (level >= 2) refreshFw();
+    $("fwctl").style.display = level >= 3 ? "flex" : "none";
+    $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
       `Store status 0x${i.store_status.toString(16)}. Boots ${i.last_fault.boots}` +
       (i.last_fault.code ? `, last fault ${i.last_fault.code} (${i.last_fault.name})` : "") + ".";
@@ -317,7 +320,7 @@ async function refreshFw() {
     if (f.rolled_back) t += ". The last update failed its trial and was rolled back";
     if (f.staged) t += `. Ready in the spare bank: ${f.staged}`;
     $("fwinfo").textContent = t + ".";
-    $("fwact").style.display = f.staged && f.state !== "trial" ? "" : "none";
+    $("fwact").style.display = f.staged && f.state !== "trial" && level >= 3 ? "" : "none";
     $("fwact").textContent = `Restart on ${f.staged || "new firmware"}`;
   } catch (e) { }
 }

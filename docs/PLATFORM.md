@@ -229,11 +229,11 @@ RAM stand-in keeps the event log until power-off and the page says so.
 ## 5b. Firmware update
 
 The STM32H573 has two 1 MB flash banks; the running image is always mapped at
-0x08000000 and the other bank is free. An admin uploads an image file (`.cfw`, made by
+0x08000000 and the other bank is free. A technician (factory-level login) uploads an image file (`.cfw`, made by
 `tools/mkfwimage.py` from the build's `.bin`) on the web page. It is streamed straight
 into the free bank while the instrument keeps measuring: the header is checked first
 (product, size), the payload is hashed as it arrives, and at the end the flash is read
-back and hashed again. Nothing changes until the admin presses "Restart on x.y.z".
+back and hashed again. Nothing changes until the technician presses "Restart on x.y.z".
 
 Then the boot record in FRAM is set, the banks are swapped (option bit SWAP_BANK) and the
 unit restarts on the new image, which runs **on trial**. After `fw_trial_ms` (60 s) of
@@ -278,7 +278,7 @@ Screens (`docs/ui/all_screens.png`, rendered from the actual command lists):
   lock it for 30 s; a login lapses after 10 minutes without a touch.
 - **Events**: the event log, newest first, paged.
 - **System**: running and spare firmware, trial countdown, upload progress, "Restart
-  on x.y.z" (admin, confirmed: the spec's local confirmation), network address/link/MAC,
+  on x.y.z" (factory/tech level, confirmed: the spec's local confirmation), network address/link/MAC,
   serial, restarts and last fault, calibration, log and store status, brightness.
 
 A header shows LOCAL/REMOTE and the alarms (CAL INVALID, LINK LOST, LOG FAULT) on
@@ -339,7 +339,7 @@ work before integration.
 | D10 | MAC address | Locally administered, from the chip unique ID | Fine for site networks. For production, buy an IEEE OUI block or fit an EUI-48 chip (e.g. 24AA02E48) |
 | D12 | Log full | Overwrite the oldest sector (4 KB); events and data in separate rings | A CEMS log that stops recording is worse than one that loses the oldest days; separate rings keep the audit trail from being pushed out by data |
 | D13 | Log flash | 16 MB SPI NOR (W25Q128JV or equivalent JEDEC part) on its own chip select; the DK's OCTOSPI flash is not used | Cheap, and the logger needs nothing faster than plain SPI. Decide at schematic; any size from 64 KB works |
-| D14 | Firmware authenticity | **Decided (Gary, 20 Oct): the signing key is a tech-level credential, never a user-level one.** The private key stays with the technicians/build machine and signs each .cfw; the instrument holds only the public key and rejects unsigned or wrongly signed images (`PLAT_FW_REQUIRE_SIGNED 1`). Until signing is built: unsigned images, SHA-256 integrity, admin login, product ID check | A site admin can install firmware but can never make firmware the unit will accept |
+| D14 | Firmware authenticity | **Decided (Gary, 20 Oct): the signing key is a tech-level credential, never a user-level one.** The private key stays with the technicians/build machine and signs each .cfw; the instrument holds only the public key and rejects unsigned or wrongly signed images (`PLAT_FW_REQUIRE_SIGNED 1`). Uploading and activating firmware also need the factory (tech) login, on the web and the touchscreen (Gary, 20 Oct). Until signing is built: unsigned images, SHA-256 integrity, tech login, product ID check | Site users (operator, admin) can't change firmware; and even a tech login can't make firmware the unit will accept without the signing key |
 | D15 | Trial length and rollback rule | 60 s healthy running; a watchdog/fault reset or a second power cut during the trial rolls back | Long enough to cover start-up and the first scans and connections, short enough that a field engineer sees the result |
 | D16 | UI library | Own plain-C layer on the EVE co-processor commands (built-in widgets and ROM fonts), not LVGL | The spec asked for a prototype of each. The co-processor's buttons, keypads and text cover menus and setpoint entry, need no frame buffer or image assets, and keep the UI at about 20 KB of code and 10 KB of RAM. LVGL's EVE renderer is still possible behind the same task if richer graphics are wanted |
 | D11 | Web transport | HTTP on port 80 now; HTTPS (mbedTLS) later | The spec allows HTTP on an isolated control network; HTTPS adds about 100 KB flash and 40 KB RAM and can come with the firmware-update work |

@@ -269,6 +269,8 @@ static void t_http(void) {
     CHECK_EQ(req("POST", "/api/login", (const uint8_t *)"level=operator&password=1111", 28, 0), 200);
     CHECK_EQ(req("POST", "/api/fw/upload", file, len, 100), 403);           /* operator may not */
     CHECK_EQ(req("POST", "/api/login", (const uint8_t *)"level=admin&password=2222", 25, 0), 200);
+    CHECK_EQ(req("POST", "/api/fw/upload", file, len, 100), 403);           /* admin may not: tech level (D14) */
+    CHECK_EQ(req("POST", "/api/login", (const uint8_t *)"level=factory&password=9999", 27, 0), 200);
     CHECK_EQ(req("POST", "/api/fw/upload", file, len, 100), 200);
     CHECK(strstr(out, "\"staged\":\"0.7.0\"") != NULL);
     CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);

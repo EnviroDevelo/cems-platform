@@ -438,7 +438,7 @@ static void tap(uint8_t t, uint32_t now) {
     case UI_SYSTEM:
         if (t == T_FW_ACT) {
             fw_status_t st; fw_status(&st);
-            if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to change firmware"); break; }
+            if (U.level < PLAT_LVL_FACTORY) { toast(true, now, "Log in at factory (tech) level to change firmware"); break; }
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
             ask(ACT_FW, m);
         } else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
@@ -722,7 +722,7 @@ static void draw_system(uint32_t now) {
     }
     if (st.staged && st.state != FW_ST_TRIAL) {
         snprintf(b, sizeof b, "Restart on %s", st.staged_version);
-        button(T_FW_ACT, 32, BODY_Y + 184, 460, 64, b, C_WARN, U.level >= PLAT_LVL_ADMIN);
+        button(T_FW_ACT, 32, BODY_Y + 184, 460, 64, b, C_WARN, U.level >= PLAT_LVL_FACTORY);
     }
     /* brightness */
     color(C_INK); text(32, BODY_Y + 266, F_TEXT, 0, "Screen brightness");

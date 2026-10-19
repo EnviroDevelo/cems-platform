@@ -265,12 +265,16 @@ static void t_ui(void) {
     CHECK(tap("Older")); for (int k = 0; k < 5; ++k) frame();
     CHECK(shows("Login failed") || shows("Mode"));
 
-    /* system: firmware staged, admin activates after confirming */
+    /* system: firmware staged; admin can't activate it, tech (factory) level can, after confirming */
     stage_firmware();
     CHECK(tap("System"));
     CHECK(shows("Running")); CHECK(shows("0.5.0")); CHECK(shows("Restart on 0.6.0")); CHECK(shows("192.168.1.50") || shows("10.0.0.5"));
     dump("system");
     uint32_t swaps = fs.swaps;
+    CHECK_EQ(eve_sim_tag_of(&sim, "Restart on 0.6.0"), 0);          /* disabled for admin */
+    CHECK(tap("Log out admin"));
+    CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));
+    CHECK_EQ(ui_level(), PLAT_LVL_FACTORY);
     CHECK(tap("Restart on 0.6.0")); CHECK(shows("Restart on firmware 0.6.0 now?")); CHECK(tap("Yes"));
     fw_service(now, true);
     CHECK_EQ(fs.swaps, swaps + 1);
@@ -278,7 +282,7 @@ static void t_ui(void) {
     CHECK(tap("-")); CHECK_EQ(ui_brightness(now), 60);
 
     /* lockout after five wrong passwords */
-    CHECK(tap("Log out admin"));
+    CHECK(tap("Log out factory"));
     CHECK(tap("Log in"));
     for (int k = 0; k < 5; ++k) { type("0000"); CHECK(tap("Enter")); }
     CHECK(strstr(ui_toast(), "Locked") != NULL);

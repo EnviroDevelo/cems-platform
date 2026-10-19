@@ -631,7 +631,7 @@ static void get_fw(http_out_t *o) {
 }
 
 static void post_fw_activate(http_out_t *o, uint8_t lvl) {
-    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    if (lvl < PLAT_LVL_FACTORY) { json_error(o, 403, "access", -1); return; }
     fw_err_t e = fw_request_activate();
     if (e != FW_OK) { json_error(o, e == FW_E_NO_IMAGE ? 404 : 409, fw_err_name(e), -1); return; }
     plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, 0, NAN, NAN, "activate");
@@ -647,7 +647,7 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
     uint8_t lvl = auth_session(r->sid, now, NULL);
     if (!r->csrf) { json_error(o, 403, "missing X-CEMS header", -1); out_flush(o); return; }
     if (lvl == 0) { json_error(o, 401, "login", -1); out_flush(o); return; }
-    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); out_flush(o); return; }
+    if (lvl < PLAT_LVL_FACTORY) { json_error(o, 403, "access", -1); out_flush(o); return; }   /* tech level (D14) */
     fw_err_t e = fw_upload_begin(r->content_length);
     if (e == FW_OK) e = fw_upload_data(r->body, r->body_len);
     uint32_t got = r->body_len;

@@ -61,7 +61,7 @@ class Web:
             return e.code, json.loads(e.read() or b"{}")
 
     def login(self):
-        return self.req("/api/login", b"level=admin&password=2222")[0]
+        return self.req("/api/login", b"level=factory&password=9999")[0]
 
 
 def image(version, size, product=None):
@@ -74,6 +74,12 @@ def image(version, size, product=None):
         cmd += ["--product", hex(product)]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     return open(out, "rb").read()
+
+
+def self_admin_refused(w):
+    w.req("/api/login", b"level=admin&password=2222")
+    st, j = w.req("/api/fw/upload", b"x" * 300, "application/octet-stream")
+    return st == 403
 
 
 def events(web):
@@ -91,7 +97,8 @@ def main():
     img = image("0.4.0", 300_000)
     st, j = w.req("/api/fw/upload", img, "application/octet-stream")
     check(st == 401, "upload needs a login")
-    check(w.login() == 200, "admin login")
+    check(self_admin_refused(w), "admin may not upload firmware")
+    check(w.login() == 200, "factory (tech) login")
     t = time.time()
     st, j = w.req("/api/fw/upload", img, "application/octet-stream")
     check(st == 200 and j.get("staged") == "0.4.0", f"upload accepted ({st} {j}, {time.time() - t:.1f} s)")
@@ -118,7 +125,7 @@ def main():
     check(j["state"] == "idle", f"confirmed after a healthy trial ({j})")
     ev = events(w)
     check(any(e["event"] == "fw_update" and e["detail"] == "0.3.0>0.4.0" for e in ev), "fw_update event 0.3.0>0.4.0")
-    check(any(e["event"] == "fw_update" and e["detail"] == "activate" and e["level"] == "admin" for e in ev),
+    check(any(e["event"] == "fw_update" and e["detail"] == "activate" and e["level"] == "factory" for e in ev),
           "activation logged with the login level")
 
     print("update 0.4.0 -> 0.5.0, crashes in the trial, rolls back")
