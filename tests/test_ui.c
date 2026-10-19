@@ -20,6 +20,7 @@
 #include "bsp_host.h"
 #include "ul_system.h"
 #include "log_csv.h"
+#include "plat_alarm.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -48,7 +49,7 @@ static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = "0.5.0", 
 static uint32_t now = 100000;
 static void scan(void) {
     plat_cmd_t c; while (plat_cmdq_pop(&q, &c)) (void)param_apply(&c);
-    param_blob_drain(); param_publish();
+    param_blob_drain(); alarm_scan(now); param_publish();
 }
 static void frame(void) { now += 20; plat_log_poll(now); ui_draw(&eve, now); }
 static void press(uint8_t tag) { ui_input(tag, now); now += 60; ui_input(0, now); scan(); plat_log_poll(now); frame(); }
@@ -129,6 +130,7 @@ static void setup(void) {
     nvm_ram_init(&d, &r, fram, sizeof fram, true);
     CHECK_EQ(param_init(defs, sizeof defs / sizeof defs[0]), PERR_OK);
     CHECK(param_store_init(&d, NULL, NULL, 0, 1, NULL));
+    CHECK_EQ(alarm_init(NULL, 0, BSP_RESET_POWER_ON), 0);
     param_store_boot();
     plat_cmdq_init(&q); lk.seq = 0;
     param_bind(&q, &lk);
@@ -165,9 +167,10 @@ static void stage_firmware(void) {          /* an image in the spare bank, as th
 
 static void t_ui(void) {
     setup();
+    scan(); frame();
     /* home */
     CHECK_EQ(ui_screen(), UI_HOME);
-    CHECK(shows("CEMS Supervisor")); CHECK(shows("LOCAL")); CHECK(shows("CAL INVALID")); CHECK(shows("09:41:07"));
+    CHECK(shows("CEMS Supervisor")); CHECK(shows("LOCAL")); CHECK(shows("1 ALARM  1 NEW")); CHECK(shows("09:41:07"));
     CHECK(shows("start_delay")); CHECK(shows("2000 ms")); CHECK(shows("Valve 1"));
     CHECK(shows("Control: LOCAL (this touchscreen)"));
     dump("home");
@@ -311,16 +314,33 @@ static void t_ui(void) {
 
     /* duplicate address: alarm in the header, explained on the System screen and in the log text */
     plat_net_status_word = NETST_CONFLICT | NETST_LINK;
-    frame();
-    CHECK(shows("IP CONFLICT"));
+    now += 300; scan(); frame();
+    CHECK(shows("2 ALARMS  2 NEW"));
     CHECK(tap("System")); CHECK(shows("IN USE by another device"));
     dump("ip_conflict");
+    /* the alarm list, from the header pill: acknowledge one, then all (no login needed) */
+    CHECK(tap("2 ALARMS  2 NEW"));
+    CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(shows("No valid calibration data: measurement blocked"));
+    CHECK(shows("IP address in use by another device: network off"));
+    CHECK(shows("Ack all"));
+    dump("alarms");
+    CHECK(tap("Acknowledge"));
+    CHECK(!strcmp(ui_toast(), "Acknowledged"));
+    CHECK(shows("2 ALARMS  1 NEW"));
+    CHECK(tap("Ack all"));
+    CHECK(shows("2 ALARMS"));
+    CHECK(!shows("Acknowledge"));
     { log_event_t ev = { .code = LOG_EV_IP_CONFLICT, .arg = 0xC0A80132u, .new_v = 1.0, .old_v = NAN };
       char w[32], dt[64]; log_event_text(&ev, w, sizeof w, dt, sizeof dt);
       CHECK(!strcmp(w, "Address conflict")); CHECK(!strcmp(dt, "192.168.1.50 is used by another device")); }
     plat_net_status_word = 0;
-    frame();
-    CHECK(!shows("IP CONFLICT"));
+    now += 300; scan(); frame();
+    CHECK(shows("1 ALARM"));
+    CHECK(!shows("IP address in use by another device: network off"));      /* acknowledged and gone */
+    for (int k = 0; k < 5; ++k) frame();
+    CHECK(tap("Events")); for (int k = 0; k < 5; ++k) frame();
+    CHECK(shows("Alarm cleared") || shows("Alarm acknowledged"));
     CHECK_EQ(eve.overflow, false);
     CHECK_EQ(eve.faults, 0);
     plat_log_reset_for_test();

@@ -16,6 +16,7 @@ void test_log_all(void);
 void test_fw_all(void);
 void test_ui_all(void);
 void test_tls_all(void);
+void test_alarm_all(void);
 
 int main(void) {
     test_scan_all();
@@ -29,6 +30,7 @@ int main(void) {
     test_modbus_all();
     test_http_all();
     test_log_all();
+    test_alarm_all();
     test_fw_all();
     test_ui_all();
     test_tls_all();

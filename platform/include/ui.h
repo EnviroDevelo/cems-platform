@@ -5,8 +5,10 @@
  * table, paged; tap a row to change it), Edit (numeric keypad, IP entry, on/off,
  * text keyboard), Log in (operator/admin/factory, same passwords as the web),
  * Events (the event log, paged), System (firmware and update, network, unit,
- * storage, brightness). A header shows the mode and any alarm; a bar of five
- * buttons along the bottom changes screen.
+ * storage, brightness), Alarms (reached from the alarm pill in the header: the
+ * list, most urgent first, acknowledge one or all; acknowledging needs no login).
+ * A header shows the mode and the alarm count; a bar of five buttons along the
+ * bottom changes screen.
  *
  * Rules carried over from the spec: touch targets at least 60 px; a confirm dialog
  * before the mode changes, the network settings change, defaults are restored,
@@ -30,7 +32,7 @@ typedef struct {
     unsigned        n_home;
 } ui_cfg_t;
 
-enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM };
+enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS };
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

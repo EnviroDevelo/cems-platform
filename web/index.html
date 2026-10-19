@@ -30,6 +30,9 @@ td.val{font-variant-numeric:tabular-nums;word-break:break-all;max-width:360px}
 td.lim,td.acc{color:var(--mute);font-size:12px}
 .err{color:var(--bad);font-size:12px}
 .note{color:var(--mute);font-size:12px}
+.sev{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:6px;vertical-align:middle}
+.sev-fault,.sev-alarm{background:var(--bad)}.sev-warning{background:var(--warn)}.sev-status{background:#8a94a6}
+tr.unacked td{font-weight:600}
 .warnbox{background:#fdecd2;color:var(--warn);border-radius:6px;padding:8px;margin-bottom:8px;display:none}
 #filter{min-width:220px}
 @media (max-width:640px){td.lim,th.lim{display:none}}
@@ -40,9 +43,7 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
   <h1 id="product">CEMS Supervisor</h1>
   <span class="meta" id="ident"></span>
   <span class="badge" id="mode">-</span>
-  <span class="badge" id="link" style="display:none">REMOTE LINK LOST</span>
-  <span class="badge b-bad" id="cal" style="display:none">CALIBRATION INVALID</span>
-  <span class="badge b-bad" id="ipc" style="display:none">IP ADDRESS CONFLICT</span>
+  <a href="#alarms" class="badge" id="alarmbadge" style="display:none;text-decoration:none"></a>
   <span class="badge" id="conn">connecting</span>
 </header>
 <div id="lost">Connection lost. Last update <span id="lasttime">-</span>. Retrying.</div>
@@ -60,6 +61,17 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
       <span>Logged in as <b id="who"></b>. Changes allowed for <span id="left"></span> more without activity.</span>
       <button class="ghost" id="logoutbtn">Log out</button>
     </div>
+  </section>
+
+  <section id="alarms">
+    <div class="row" style="justify-content:space-between">
+      <h2>Alarms</h2>
+      <span class="row"><span class="err" id="alarmerr"></span><button id="ackall" style="display:none">Acknowledge all</button></span>
+    </div>
+    <table>
+      <thead><tr><th>Since</th><th>Alarm</th><th>State</th><th></th></tr></thead>
+      <tbody id="alarmrows"></tbody>
+    </table>
   </section>
 
   <section>
@@ -233,9 +245,7 @@ async function refreshInfo() {
     $("product").textContent = i.product;
     $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
-    $("link").style.display = i.link_lost ? "" : "none"; $("link").className = "badge b-warn";
-    $("cal").style.display = i.cal_valid ? "none" : "";
-    $("ipc").style.display = i.ip_conflict ? "" : "none";
+    showAlarmBadge(i.alarms);
     if (i.tls_fingerprint) $("tlsfp").textContent = i.tls_fingerprint;
     $("defpw").style.display = i.default_passwords ? "block" : "none";
     const newLevel = LV.indexOf(i.session.level);
@@ -256,6 +266,53 @@ async function refreshInfo() {
     if (changed && editing === null) build();
   } catch (e) { /* the value poll shows the connection state */ }
 }
+function showAlarmBadge(a) {
+  const b = $("alarmbadge");
+  const n = a.active + (a.unacked > a.active ? a.unacked - a.active : 0);
+  b.style.display = n ? "" : "none";
+  b.textContent = `${a.active} ALARM${a.active === 1 ? "" : "S"}` + (a.unacked ? `, ${a.unacked} TO ACKNOWLEDGE` : "");
+  b.className = "badge " + (a.worst === "fault" || a.worst === "alarm" ? "b-bad" : "b-warn");
+}
+let alarmSig = "";
+async function pollAlarms() {
+  try {
+    const j = await api("/api/alarms");
+    showAlarmBadge(j);
+    const sig = JSON.stringify(j.alarms) + level;
+    if (sig !== alarmSig) {
+      alarmSig = sig;
+      const tb = $("alarmrows"); tb.textContent = "";
+      for (const a of j.alarms) {
+        const tr = document.createElement("tr");
+        if (a.unacked) tr.className = "unacked";
+        const since = a.since;
+        const state = a.active ? (a.unacked ? "Active, not acknowledged" : "Active, acknowledged")
+                               : "Cleared, not acknowledged";
+        const td = t => { const c = document.createElement("td"); c.textContent = t; tr.appendChild(c); return c; };
+        td(since);
+        const name = td(""); const dot = document.createElement("span"); dot.className = "sev sev-" + a.severity;
+        name.append(dot, `${a.text} `); const small = document.createElement("span"); small.className = "note";
+        small.textContent = `${a.severity}, ${a.name} (${a.id})`; name.appendChild(small);
+        td(state + (a.latch && a.active && a.unacked ? " (latched)" : ""));
+        const act = td("");
+        if (a.unacked && level >= 1) {
+          const b = document.createElement("button"); b.textContent = "Acknowledge";
+          b.onclick = () => ackAlarm(a.id); act.appendChild(b);
+        }
+        tb.appendChild(tr);
+      }
+      if (!j.alarms.length) tb.innerHTML = '<tr><td colspan="4" class="note">No alarms</td></tr>';
+      $("ackall").style.display = j.unacked && level >= 1 ? "" : "none";
+    }
+  } catch (e) { }
+  setTimeout(pollAlarms, 1000);
+}
+async function ackAlarm(id) {
+  $("alarmerr").textContent = "";
+  try { await api("/api/alarms/ack", form({ id })); alarmSig = ""; }
+  catch (e) { $("alarmerr").textContent = e.message === "login" ? "Log in to acknowledge" : explain(e); }
+}
+$("ackall").onclick = () => ackAlarm("all");
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 
 const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", restore_defaults: "Defaults restored",
@@ -367,7 +424,7 @@ $("restorebtn").onclick = async () => {
     catch (e) { document.body.classList.add("stale"); await new Promise(r => setTimeout(r, 2000)); }
   }
   defs.forEach(d => byId[d.id] = d);
-  build(); pollValues(); pollInfo(); pollEvents();
+  build(); pollValues(); pollInfo(); pollEvents(); pollAlarms();
 })();
 </script>
 </body>

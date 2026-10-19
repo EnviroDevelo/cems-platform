@@ -18,6 +18,7 @@ MODULES = [  # (module, object-name patterns)
     ("Parameter table", r"^param\.o"),
     ("Parameter store (FRAM)", r"param_store|plat_crc32|nvm_|plat_store_task"),
     ("Event log / data logger", r"plat_log|nor_|log_csv"),
+    ("Alarm manager", r"plat_alarm"),
     ("Firmware update + signature check", r"fw_update|fw_flash|fw_sig|fw_pubkey"),
     ("Modbus TCP", r"modbus|mbtcp"),
     ("Web server + page + logins", r"http_|web_|plat_sha256|plat_net_tasks"),
@@ -146,7 +147,7 @@ measured peak 28 KB during a handshake).
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
-| Alarm manager (50 alarms) | ~6 | ~3 | |
+| Application alarm table (the ~50 alarms of 70_alarm_map) | ~2.5 | 0 | 24 bytes of constants each; RAM per alarm is already reserved (96 slots) |
 | Translated VM/MUX application | **unknown** | **unknown** | retained data alone is 12.5 KB; size it as soon as the Stage 4 code compiles together |
 
 ## Other non-volatile memory

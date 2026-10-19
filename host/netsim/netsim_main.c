@@ -262,6 +262,8 @@ int main(int argc, char **argv) {
         fw_init(bsp_fw_flash(), &fram_dev, STORE_META_ADDR + 128u, fwver ? fwver : app->ident.revision);
         fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* may "reset" (exit 3) to roll back */
     }
+    { int ae = alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause);
+      if (ae) { fprintf(stderr, "alarm table error at id %d\n", ae); return 1; } }
     param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
     auth_init();

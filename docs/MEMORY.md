@@ -8,28 +8,29 @@ module, and before choosing hardware. Last run: 2026-10-20.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 259.1 KB | 1016.0 KB | 25 % | 756.9 KB |
-| RAM (STM32H573/H563, 640 KB) | 309.3 KB | 640.0 KB | 48 % | 330.7 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 266.3 KB | 1016.0 KB | 26 % | 749.7 KB |
+| RAM (STM32H573/H563, 640 KB) | 311.8 KB | 640.0 KB | 49 % | 328.2 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 9.5 | 0.1 |
-| Parameter table | 5.1 | 24.2 |
+| Scan engine, queue, watchdog, diag | 10.2 | 0.1 |
+| Parameter table | 5.3 | 24.2 |
 | Parameter store (FRAM) | 4.8 | 28.7 |
 | Event log / data logger | 14.1 | 6.8 |
+| Alarm manager | 3.5 | 2.4 |
 | Firmware update + signature check | 3.5 | 1.3 |
 | Modbus TCP | 6.0 | 17.5 |
-| Web server + page + logins | 22.9 | 40.3 |
+| Web server + page + logins | 24.3 | 40.3 |
 | HTTPS (tls.c + mbedTLS) | 70.0 | 38.8 |
-| Touch UI + EVE driver | 16.4 | 0.9 |
+| Touch UI + EVE driver | 17.5 | 0.9 |
 | Task layer (FreeRTOS glue) | 2.2 | 51.0 |
 | Board support (BSP) | 0.8 | 0.5 |
 | lwIP + Ethernet driver | 51.1 | 48.5 |
 | FreeRTOS kernel + heap | 9.1 | 48.8 |
 | ST HAL + startup | 17.7 | 0.0 |
-| Demo application | 0.8 | 0.1 |
+| Demo application | 1.2 | 0.1 |
 | C library | 25.0 | 0.8 |
 | Other | 0.2 | 0.0 |
 | Main stack (interrupts, start-up) | 0.0 | 1.0 |
@@ -42,7 +43,7 @@ measured peak 28 KB during a handshake).
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
-| Alarm manager (50 alarms) | ~6 | ~3 | |
+| Application alarm table (the ~50 alarms of 70_alarm_map) | ~2.5 | 0 | 24 bytes of constants each; RAM per alarm is already reserved (96 slots) |
 | Translated VM/MUX application | **unknown** | **unknown** | retained data alone is 12.5 KB; size it as soon as the Stage 4 code compiles together |
 
 ## Other non-volatile memory

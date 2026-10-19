@@ -172,6 +172,10 @@ void plat_start(const plat_app_t *app) {
     fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
     fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
     tls_start(fram);
+    if (alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause) != 0) {
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "alarm table", 0, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {

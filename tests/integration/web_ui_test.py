@@ -44,6 +44,22 @@ async def run(unit):
         await pg.screenshot(path=os.path.join(ROOT, "build", "web_operator.png"), full_page=True)
         print("refused value message:", repr(refused)); ok &= refused == "Outside the allowed range"
         print("value shown after change:", repr(shown)); ok &= shown == "1500 ms"
+        # alarms: badge, list, acknowledge one row
+        await pg.fill("#filter", "demo_fault")
+        await pg.click('#rows button:has-text("Change")')
+        await pg.fill("#rows td input", "1")
+        await pg.click('#rows button:has-text("Set")')
+        await pg.fill("#filter", "")
+        await pg.wait_for_function("document.getElementById('alarmrows').innerText.includes('Demo fault')", timeout=5000)
+        badge = await pg.inner_text("#alarmbadge")
+        rows = await pg.inner_text("#alarmrows")
+        await pg.locator("#alarms").screenshot(path=os.path.join(ROOT, "build", "web_alarms.png"))
+        await pg.click('#alarmrows tr:has-text("Demo fault") button:has-text("Acknowledge")')
+        await pg.wait_for_timeout(1500)
+        rows2 = await pg.inner_text("#alarmrows")
+        print("alarm badge:", repr(badge), "| rows:", rows.replace("\n", " | ")[:200], "| after ack:", rows2.replace("\n", " | ")[:200])
+        ok &= badge.startswith("2 ALARMS") and "TO ACKNOWLEDGE" in badge and "Demo fault" in rows \
+              and "Active, not acknowledged" in rows and "Demo fault" in rows2 and "Active, acknowledged" in rows2
         # firmware upload as admin
         img = os.path.join(TMPD, "fw.bin"); open(img, "wb").write(os.urandom(150000))
         cfw = os.path.join(TMPD, "fw.cfw")

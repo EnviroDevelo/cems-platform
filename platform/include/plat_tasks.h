@@ -24,6 +24,7 @@
 #include "param_store.h"
 #include "modbus.h"
 #include "plat_log.h"
+#include "plat_alarm.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -41,6 +42,8 @@ typedef struct plat_app_s {
     size_t              n_log_chans;
     const uint16_t     *ui_home_ids;     /* parameters shown as tiles on the touchscreen's home screen (up to 6) */
     size_t              n_ui_home;
+    const alarm_def_t  *alarms;          /* its alarms (IDs 100..255; may be NULL); the logic calls alarm_set() */
+    size_t              n_alarms;
 } plat_app_t;
 
 typedef enum {

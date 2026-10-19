@@ -12,6 +12,7 @@
 #include "log_csv.h"
 #include "fw_update.h"
 #include "tls.h"
+#include "plat_alarm.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -196,6 +197,11 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"pool_peak\":"); json_uint(o, t.pool_peak); out_str(o, "}"); }
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
+    { alarm_summary_t s; alarm_summary(&s);
+      out_str(o, ",\"alarms\":{\"active\":"); json_uint(o, s.active);
+      out_str(o, ",\"unacked\":"); json_uint(o, s.unacked);
+      out_str(o, ",\"worst\":"); if (s.worst >= 0) json_str(o, alarm_sev_name((uint8_t)s.worst)); else out_str(o, "null");
+      out_str(o, "}"); }
     out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
     out_str(o, ",\"log_status\":"); json_uint(o, plat_log_status());
     out_str(o, ",\"default_passwords\":"); json_bool(o, auth_any_default());
@@ -672,6 +678,52 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error)); out_str(o, "}");
 }
 
+/* ---------------- alarms ---------------- */
+static void get_alarms(http_out_t *o) {
+    alarm_summary_t s;
+    alarm_summary(&s);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"active\":"); json_uint(o, s.active);
+    out_str(o, ",\"unacked\":"); json_uint(o, s.unacked);
+    out_str(o, ",\"worst\":"); if (s.worst >= 0) json_str(o, alarm_sev_name((uint8_t)s.worst)); else out_str(o, "null");
+    out_str(o, ",\"alarms\":[");
+    uint64_t pos = 0;
+    alarm_view_t v;
+    for (bool first = true; alarm_next(&pos, &v); first = false) {
+        if (!first) out_str(o, ",");
+        out_str(o, "{\"id\":"); json_uint(o, v.id);
+        out_str(o, ",\"name\":"); json_str(o, v.name);
+        out_str(o, ",\"text\":"); json_str(o, v.text);
+        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"active\":"); json_bool(o, v.active);
+        out_str(o, ",\"unacked\":"); json_bool(o, v.unacked);
+        out_str(o, ",\"latch\":"); json_bool(o, (v.flags & AL_LATCH) != 0);
+        out_str(o, ",\"time\":"); json_uint(o, v.t_raise);
+        { char t[32]; log_fmt_time(t, sizeof t, v.t_raise ? v.t_raise : v.up_raise, v.t_raise != 0);
+          out_str(o, ",\"since\":"); json_str(o, t); }
+        out_str(o, ",\"uptime\":"); json_uint(o, v.up_raise);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+/* id=<n> or id=all. Through the parameter table like the touchscreen and Modbus, so
+ * the acknowledge is logged with this login and source. */
+static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char v[8];
+    unsigned long id = ALARM_ACK_ALL;
+    if (!form_get((const char *)r->body, r->body_len, "id", v, sizeof v)) { json_error(o, 400, "id", -1); return; }
+    if (strcmp(v, "all")) {
+        char *e; id = strtoul(v, &e, 10);
+        alarm_view_t a;
+        if (*e || !v[0] || id > ALARM_ID_MAX || !alarm_get((uint16_t)id, &a)) { json_error(o, 404, "no such alarm", -1); return; }
+    }
+    param_err_t pe = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = (uint32_t)id }, PLAT_SRC_WEB, lvl);
+    if (pe != PERR_OK) { json_error(o, perr_status(pe), perr_name(pe), -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 static void post_fw_activate(http_out_t *o, uint8_t lvl) {
     if (lvl < PLAT_LVL_FACTORY) { json_error(o, 403, "access", -1); return; }
     fw_err_t e = fw_request_activate();
@@ -748,6 +800,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/backup")) get_backup(o, lvl);
     else if (get && !strcmp(r->path, "/api/log/info")) get_log_info(o);
     else if (get && !strcmp(r->path, "/api/fw")) get_fw(o);
+    else if (get && !strcmp(r->path, "/api/alarms")) get_alarms(o);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
@@ -764,6 +817,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/password")) post_password(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/restore")) post_restore(r, o, lvl);
         else if (!strcmp(r->path, "/api/fw/activate")) post_fw_activate(o, lvl);
+        else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

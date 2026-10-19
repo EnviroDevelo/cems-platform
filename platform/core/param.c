@@ -31,6 +31,11 @@ uint16_t        plat_log_interval_s = 60; /* data-log interval (plat_log) */
 uint32_t        plat_log_status_word;     /* written by plat_log */
 
 #define NET (PF_PERSIST | PF_ANY_MODE | PF_NO_MODBUS)
+static uint16_t  p_alarm_ack;
+extern uint16_t plat_alarm_active_count, plat_alarm_unack_count;            /* plat_alarm.c */
+extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16];
+void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+
 static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
                PLAT_LVL_OPERATOR, PF_LOCAL_ONLY | PF_ANY_MODE, NULL),
@@ -52,6 +57,11 @@ static const param_def_t plat_defs[] = {
                PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_HW_REV, "hw_rev", p_hw_rev, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_FACTORY,
                PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_ALARM_ACK, "alarm_ack", p_alarm_ack, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_ANY_MODE, NULL),
+    PARAM_UINT(PARAM_ID_ALARM_ACTIVE, "alarm_active", plat_alarm_active_count, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_ALARM_UNACKED, "alarm_unacked", plat_alarm_unack_count, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_ACTIVE_BITS, "alarm_active_bits", plat_alarm_active_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_LOG_INTERVAL_S, "log_interval", plat_log_interval_s, CT_U16, 0, 3600, 60,
                PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE, "s"),
     PARAM_UINT(PARAM_ID_LOG_STATUS, "log_status", plat_log_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
@@ -324,6 +334,11 @@ param_err_t param_apply(const plat_cmd_t *c) {
             else param_set_defaults(PARAM_USER_ONLY);
         }
         p_restore = false;
+        return PERR_OK;
+    }
+    if (d->id == PARAM_ID_ALARM_ACK) {                 /* momentary command, logged by the alarm manager */
+        if (param_on_alarm_ack && n.u) param_on_alarm_ack((uint16_t)n.u, c->src, c->level);
+        p_alarm_ack = 0;
         return PERR_OK;
     }
     if (d->id == PARAM_ID_CTRL_MODE && n.u == PARAM_MODE_REMOTE && p_mode != PARAM_MODE_REMOTE)

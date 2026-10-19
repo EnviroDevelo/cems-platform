@@ -7,6 +7,7 @@
 #include "plat_sys.h"
 #include "bsp_host.h"
 #include "app_demo.h"
+#include "plat_tasks.h"
 
 static scan_engine_t s; static plat_cmdq_t q; static plat_seqlock_t lock;
 
@@ -17,6 +18,7 @@ static void power_up(void) {
     param_init(app_demo_params, app_demo_n_params);
     param_store_init(bsp_param_nvm(), NULL, app_demo_retain, app_demo_n_retain, 1, NULL);
     param_store_boot();
+    alarm_init(app_demo_plat.alarms, app_demo_plat.n_alarms, BSP_RESET_POWER_ON);
     scan_set_sys(&s, &plat_sys);
     plat_val_t v; param_read(DEMO_PARAM_START_DELAY, &v);
     printf("  power up: start_delay=%u ms, valve_name=\"%s\", run_seconds=%u, store status=0x%04x%s\n",

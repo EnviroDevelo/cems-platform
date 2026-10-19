@@ -30,10 +30,11 @@ runs on top of it.
 | EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
 | Firmware image signing (D14): ECDSA P-256 signature over the image header (which holds the payload's SHA-256); key tool | `platform/net/fw_sig.c`, `platform/core/fw_pubkey.c` (generated), `tools/fwkey.py`, `tools/mkfwimage.py --key` | Done; host-tested (keys made in the test: product key accepted; unsigned, other-key, edited-header and edited-payload images refused) and end to end through netsim with a key made by `fwkey.py`. Compiled and linked for the H5 |
 | HTTPS (D11): own key and certificate, TLS 1.2 server, session tickets, port-80 redirect | `tls.h`, `platform/net/tls.c`, `tls_config.h`, `third_party/mbedtls` | Done; host-tested, handshakes against Python's TLS client (resumption, certificate trust by IP, redirect) and Chromium. Compiled and linked for the H5 |
-| Demo application (shows the contract) | `app_demo/` | Done |
+| Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
+| Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
-Not in this revision (next modules, in the order proposed): alarm manager (alarm list and acknowledge on the touchscreen and web); QSPI for
-the display.
+Not in this revision (next modules, in the order proposed): notification of alarms
+(email, relay: a Stage 8 decision; the hook is in place); QSPI for the display.
 
 ## 2. Tasks and priorities
 
@@ -326,6 +327,70 @@ needs only HTTPS, a gateway setting (already there) and a correct clock. A cloud
 dashboard reached by the instrument itself (MQTT/HTTPS outbound) is possible later but
 means building and running a service, and is not proposed now.
 
+## 5e. Alarm manager
+
+Answers Analysis `70_Alarms_Logging.md` section 8. The old program had two layers (source
+bits in the logic, plus the panel's own alarm table) and they disagreed: texts landed on
+the wrong alarms (K1, K2), range alarms were evaluated twice with different rules (K3),
+one coil acknowledged 70 alarms and also cleared their sources (K7). Now there is one
+layer. The logic only reports a condition each scan:
+
+```c
+alarm_set(ALARM_VALVE_FB_01, ValveOut[0] && !ValveFeedback[0]);
+alarm_set_range(ALARM_AI1_RANGE, AnalogSensor[0], RangeMin[0], RangeMax[0], 0.5f);
+```
+
+and the manager owns everything else, from one `alarm_def_t` per alarm in
+`plat_app_t.alarms`:
+
+| Field | Meaning | Old program |
+|---|---|---|
+| `id`, `name` | 100..255 for the application (1..99 are the platform's); the name goes in the event log | the panel table ID |
+| `severity` | status, warning, alarm, fault: the colour and the order of the list | (classification 2/4, meaning unknown) |
+| `on_delay_ms`, `off_delay_ms` | the condition must last this long to raise / be gone this long to clear | delay on/off (10 s on the analog alarms) |
+| `delay_param` | an integer parameter in seconds that replaces the on-delay (valve feedback settling time, N11) | none |
+| `enable_param` | a bool parameter: off suppresses the alarm at once | `AnalogSuppression[n]`, but RAM (K4); make it `PF_PERSIST` |
+| `text_param` | a text parameter with an editable description, shown everywhere | Modify Alarm Property (K1, K2) |
+| `AL_LATCH` | stays active after the condition goes, until acknowledged | `FlowValidationAlarm` |
+| `AL_NO_ACK` | status alarm: shown while active, nothing to acknowledge | alarms 79, 80, 87 (K8) |
+| `AL_NOTIFY` | passed to `alarm_on_change` (notification, Stage 8) | the email rungs |
+
+States: active and not acknowledged; active and acknowledged; cleared but not yet
+acknowledged (so a short alarm is never missed). Acknowledging only moves the state: it
+never touches the condition or a source tag and never re-sends anything (K7, N3). One
+alarm or all, from:
+
+- the touchscreen: the alarm pill in the header (count, and how many are new, coloured
+  by the worst) opens the Alarms screen: most urgent first, an Acknowledge button per
+  row and "Ack all" (`docs/ui/alarms.png`). No login needed (D19);
+- the web page: the Alarms section and a badge in the header; acknowledging needs a
+  login (every web write does);
+- Modbus: write the alarm ID (65535 = all) to parameter 40 `alarm_ack`, wherever the
+  application maps it; read 41/42 (counts) and 43/44 (16 words each: bit ID % 16 of
+  word ID / 16 is active / unacknowledged), so the master finally sees the
+  acknowledge state (K12). The demo maps them at holding 20 and input registers 0, 1,
+  10-25 and 30-45.
+
+Every raise, clear and acknowledge is in the event log, the acknowledge with where it
+came from and the login level (K11).
+
+Platform alarms (always present; the application doesn't define them):
+
+| ID | Name | Raised when |
+|---|---|---|
+| 1 | CAL_INVALID (fault) | no valid factory data: measurement blocked |
+| 2 | PARAM_WRITE_FAIL (fault) | the FRAM write did not verify for 2 s, or no FRAM (settings not kept) |
+| 3 | LOG_STORAGE_FAULT (fault) | a log flash erase, write or read-back failed |
+| 4 | IP_CONFLICT (alarm) | another device answers at the static address |
+| 5 | REMOTE_LINK_LOST (alarm) | REMOTE mode and no remote traffic for the timeout |
+| 6 | UNEXPECTED_RESET (warning, latched) | the last reset was the watchdog or a brown-out |
+| 7 | FW_ROLLED_BACK (warning, latched) | a firmware update failed its trial |
+| 8 | DISPLAY_FAULT (warning) | the touchscreen stopped responding for 5 s |
+| 10 | NOTIFY_FAIL | reserved for the application (`70_alarm_map` core 10) |
+
+Costs: 3.5 KB of flash and 2.4 KB of RAM for up to 96 alarms (`docs/MEMORY.md`); the
+scan spends a few microseconds per alarm.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -342,20 +407,22 @@ work before integration.
 8. Tags the logic rewrites every scan should not be `PF_PERSIST` or retained unless the original retains them; the store only saves real changes, so this costs nothing either way, but it keeps the image meaningful.
 9. The application must read `param_store_calibration_valid()` and `param_remote_link_lost()` and act on them (block measurement; go to its safe state).
 10. **Modbus map from the old slave map.** Generate `mb_map_t` from `stage4/4G/modbus_map.csv`. Strings and buffers the master reads become `PARAM_TEXT`/`PARAM_BYTES` entries; bit arrays become `PARAM_ARRAY_BOOL`; timer presets become `PARAM_UINT` on `.Preset`. **Open item (Rule 0):** the byte order UniLogic uses to pack BUFFER bytes into registers, and the word order of 32-bit values, aren't in the analysis. The map supports both orders (`MBF_BYTE_LO_FIRST`, `MBF_WORD_LO_FIRST`), so this is a single flag per entry once it is known (a UniLogic screenshot of the Modbus slave data map, or one register read from a running unit, settles it).
-11. **Logged values.** The old project's LOG columns become `plat_log_chan_t` entries (name up to 16 characters, unit up to 6). Call `plat_log_put()` once per scan per channel with the real reading and its quality (FLAG while in calibration or purge, BAD on a sensor fault, N/A when the channel is not measured); never a last-held value. Alarm 3 (LOG_STORAGE_FAULT) maps to `plat_log_status() & LSTAT_NOR_FAULT`.
+11. **Logged values.** The old project's LOG columns become `plat_log_chan_t` entries (name up to 16 characters, unit up to 6). Call `plat_log_put()` once per scan per channel with the real reading and its quality (FLAG while in calibration or purge, BAD on a sensor fault, N/A when the channel is not measured); never a last-held value. Alarm 3 (LOG_STORAGE_FAULT) is raised by the platform itself. A value logged while one of its alarms is active can be marked FLAG with `alarm_active(id)`.
 12. **Touchscreen.** List the values the operator should see first in `plat_app_t.ui_home_ids`. Mark critical setpoints `PF_CONFIRM`. `Touched_Bit`/`VNC_Touched_Bit` (rule 4) are not needed by this UI; if the logic uses them as "someone is at the panel", the UI can set them from its activity time.
+13. **Alarms from `70_alarm_map.csv`.** One `alarm_def_t` per distinct `new_id` from 100 up (the core IDs 2, 3 and 10 are already the platform's), in `plat_app_t.alarms`; `alarm_set()` from the logic where the old program set the source bit (the source arrays `AlarmsVM`, `AlarmsMUX`, `FBAlarmsMUX` can stay for the old Modbus coils, but nothing should clear them on acknowledge any more). Range alarms: `alarm_set_range()` with the retained limits and an enable parameter; the analog ones keep their 10 s delays. Valve feedback: `delay_param` on a settling-time parameter (default 5 s, to be confirmed). FLOW_VALIDATION: `AL_LATCH`. DIGITAL_STOP and ANALYSER_NOT_OK: `AL_NO_ACK` if they stay status alarms. Descriptions: `text_param` on the existing description parameters (`PARAM_TEXT16`), which fixes K1/K2 by construction. Map `alarm_ack` onto the old coil 91 only if the master still needs it, as "acknowledge all" (write 65535).
 
 ## 7. How it was checked
 
 | Check | Result |
 |---|---|
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 7,835 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
+| Alarm manager (`make test`, `tests/test_alarm.c`) | Table errors; raise, acknowledge (through the parameter, any mode, no login), clear; cleared-but-unacknowledged kept; on- and off-delays with restarts; the delay parameter; latch held until acknowledged, or cleared later if acknowledged while active; status alarms; suppression at once and delays again after; range deadband on both sides and a value sitting on a limit raising once; UTF-16 descriptions; order and paging; acknowledge all; the watchdog-reset and IP-conflict platform alarms |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 8,386 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
 | Firmware update end to end (`tests/integration/fw_test.py`): image from `tools/mkfwimage.py`, netsim with file-backed banks; a swap exits the process as a reset | 30 checks: login needed; 300 KB upload; damaged file and other-hardware image refused; activate, restart as the new version on trial, confirmed after the trial, events logged; second update "hangs" in its trial, watchdog reset rolls it back, the old version runs with `rolled_back`, the failed image stays available; with a product key (`CEMS_FW_PUBKEY`): unsigned and other-key images refused, the product-signed image accepted |
-| Touchscreen (`make test`, `tests/test_ui.c`): the EVE driver against a simulated BT817 that decodes the SPI framing and executes the command lists; the UI driven by simulated touches | Start-up sequence and panel registers; chip missing; co-processor fault recovered; command-buffer overflow caught. UI: every screen; settings refused without login with the reason; wrong then right password; out-of-range refused then accepted; text with capitals; arrays sent to the web; mode to REMOTE only after confirmation, touchscreen writes then refused, LOCAL taken back without login; IP entry with the network confirmation; ON/OFF; a PF_CONFIRM entry; events show the touchscreen as the source; firmware restart confirmed; lockout after five wrong passwords; slide-off cancels; idle logout, dimming and wake-only first touch |
-| Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 60 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer |
-| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Admin firmware upload with progress, "Ready in the spare bank" and the restart button (`docs/web_firmware.png`); login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors |
+| Touchscreen (`make test`, `tests/test_ui.c`): the EVE driver against a simulated BT817 that decodes the SPI framing and executes the command lists; the UI driven by simulated touches | Start-up sequence and panel registers; chip missing; co-processor fault recovered; command-buffer overflow caught. UI: every screen; settings refused without login with the reason; wrong then right password; out-of-range refused then accepted; text with capitals; arrays sent to the web; mode to REMOTE only after confirmation, touchscreen writes then refused, LOCAL taken back without login; IP entry with the network confirmation; ON/OFF; a PF_CONFIRM entry; events show the touchscreen as the source; firmware restart confirmed; lockout after five wrong passwords; slide-off cancels; idle logout, dimming and wake-only first touch; the alarm pill counts alarms and new ones, opens the list, one acknowledged then all, without a login |
+| Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 86 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer; alarms: the platform's calibration alarm, a latching application alarm raised and held, the counts and per-alarm bits read over Modbus, acknowledged over Modbus (and logged as such), a range alarm waiting out its 2 s on-delay with its edited description, acknowledge refused without a login, acknowledge all, suppression |
+| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Admin firmware upload with progress, "Ready in the spare bank" and the restart button (`docs/web_firmware.png`); login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors; the alarm badge and list, one alarm acknowledged from its row |
 | Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM, NOR and the display: 182 KB flash (of a 1 MB bank), 269 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
@@ -380,6 +447,7 @@ work before integration.
 | D16 | UI library | Own plain-C layer on the EVE co-processor commands (built-in widgets and ROM fonts), not LVGL | The spec asked for a prototype of each. The co-processor's buttons, keypads and text cover menus and setpoint entry, need no frame buffer or image assets, and keep the UI at about 20 KB of code and 10 KB of RAM. LVGL's EVE renderer is still possible behind the same task if richer graphics are wanted |
 | D11 | Web transport | **HTTPS only (Gary, 20 Oct); built.** TLS 1.2, ECDHE-ECDSA-AES128-GCM-SHA256 on P-256, mbedTLS 3.6.7 LTS (vendored subset, `third_party/mbedtls`) in a fixed 36 KB pool. Session tickets, so a browser's repeat connections skip the public-key work. Port 80 only redirects to https:// (parameter 6 `http_redirect` closes it). **No production certificate step (Gary, 20 Oct):** each unit makes its own key at first start (kept in FRAM META, never in a backup file) and a self-signed certificate from it (stable: deterministic signing), with its IP address in it. The browser warns once per unit; the fingerprint is on the touchscreen and the web page so a technician can check it is the real unit, and the certificate can be downloaded and trusted on the site laptops to stop the warning. Cost: 70 KB flash, 39 KB RAM | Industrial sites: passwords and settings must not cross the network in clear. A company CA at production would only remove the one-time warning, at the cost of a production step and a key to guard |
 | D17 | Remote access | Through a site VPN router (outbound VPN, vendor remote-access service); never port-forwarding; the instrument itself never connects out | Keeps the instrument off the open internet; nothing to build or host; works the same for Modbus diagnostics |
+| D19 | Alarm acknowledge and power-up | Acknowledging needs no login on the touchscreen (the operator at the instrument, as on the old panel); the web needs a login like every web write; Modbus follows `modbus_write_en`. Alarm states are not kept over a power cut: at power-up every condition is evaluated afresh (with its delays), and the event log keeps the history | An acknowledge changes nothing in the process, so a login would only slow the operator down. Keeping latched, unacknowledged alarms across a power cut is 32 bytes of FRAM if wanted |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout

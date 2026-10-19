@@ -20,6 +20,8 @@
  *   GET  /api/log/events.csv[?from=&to=] the whole event log (s since 1970, inclusive)
  *   GET  /api/log/data.csv[?from=&to=]   the whole data log
  *   GET  /api/tls/cert     the unit's HTTPS certificate (DER), to trust it on the site's laptops
+ *   GET  /api/alarms       alarms shown (active or unacknowledged), most urgent first, and counts
+ *   POST /api/alarms/ack   id=<alarm ID>|all  (any login; logged with the login and source)
  *   GET  /api/fw           firmware status: running and staged versions, trial, upload progress
  *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (tech/factory level)
  *   POST /api/fw/activate  restart on the staged image (tech/factory level); it confirms itself after a

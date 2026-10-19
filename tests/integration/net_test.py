@@ -286,6 +286,54 @@ def main():
     print(f"   TLS: {info['tls']}")
     check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 36864, "TLS statistics")
 
+    # ---------------- alarms ----------------
+    def alarms(w=web):
+        st, j = w.json("/api/alarms")
+        return j, {a["id"]: a for a in j["alarms"]}
+    j, a = alarms()
+    check(1 in a and a[1]["severity"] == "fault" and a[1]["active"] and a[1]["name"] == "CAL_INVALID",
+          "platform alarm: calibration invalid")
+    web.json("/api/write", {"id": 1007, "v": 1}); time.sleep(0.3)
+    j, a = alarms()
+    check(100 in a and a[100]["active"] and a[100]["unacked"] and a[100]["latch"], "application alarm raised (latching)")
+    check(j["alarms"][0]["id"] == 100, "most urgent first (unacknowledged fault, newest)")
+    web.json("/api/write", {"id": 1007, "v": 0}); time.sleep(0.3)
+    j, a = alarms()
+    check(100 in a and a[100]["active"], "latched after its condition went")
+    mbc = ModbusTcpClient("127.0.0.1", port=MB); mbc.connect()
+    rr = mbc.read_input_registers(0, 2, slave=1)
+    rb = mbc.read_input_registers(10, 16, slave=1); ru = mbc.read_input_registers(30, 16, slave=1)
+    check(not rr.isError() and rr.registers[0] == j["active"] and rr.registers[1] == j["unacked"],
+          f"Modbus: alarm counts ({rr.registers if not rr.isError() else rr})")
+    check(not rb.isError() and rb.registers[100 // 16] & (1 << (100 % 16)) and ru.registers[100 // 16] & (1 << (100 % 16)),
+          "Modbus: active and unacknowledged bits per alarm (K12)")
+    wr = mbc.write_register(20, 100, slave=1); time.sleep(0.3)
+    j, a = alarms()
+    check(not wr.isError() and 100 not in a, "acknowledged from Modbus: the latched alarm clears")
+    ru = mbc.read_input_registers(30, 16, slave=1)
+    check(not (ru.registers[100 // 16] & (1 << (100 % 16))), "Modbus: bit cleared")
+    st, j2 = web.json("/api/write", [("id", 1010), ("v", "Stack level")]); time.sleep(0.05)
+    web.json("/api/write", {"id": 1008, "v": 95}); time.sleep(1.0)
+    j, a = alarms()
+    check(101 not in a, "range alarm waits for its 2 s on-delay")
+    time.sleep(1.5)
+    j, a = alarms()
+    check(101 in a and a[101]["text"] == "Stack level", f"range alarm raised, with its edited description ({a.get(101, {}).get('text')})")
+    st, _ = Web().json("/api/alarms/ack", {"id": "all"})
+    check(st == 401, "acknowledging from the web needs a login")
+    st, _ = web.json("/api/alarms/ack", {"id": 77})
+    check(st == 404, "unknown alarm")
+    st, _ = web.json("/api/alarms/ack", {"id": "all"}); time.sleep(0.3)
+    j, a = alarms()
+    check(st == 200 and j["unacked"] == 0 and a[101]["active"], "acknowledge all from the web (still active)")
+    web.json("/api/write", {"id": 1009, "v": 0}); time.sleep(0.3)
+    j, a = alarms()
+    check(101 not in a, "range alarm switched off: suppressed at once")
+    web.json("/api/write", {"id": 1009, "v": 1}); web.json("/api/write", {"id": 1008, "v": 50})
+    st, info = web.json("/api/info")
+    check(info["alarms"]["active"] == j["active"], "alarm counts in /api/info")
+    mbc.close()
+
     # ---------------- event log ----------------
     st, j = web.json("/api/log/events?n=200")
     ev = j["events"] if st == 200 else []
@@ -298,6 +346,11 @@ def main():
           "web write logged with the login level")
     check(kinds.count("login_fail") >= 1 and "login" in kinds and "password" in kinds and "restore_backup" in kinds,
           "logins, password change and restore logged")
+    check(any(e["event"] == "alarm" and e["detail"] == "DEMO_FAULT" and e["arg"] == 100 for e in ev), "alarm raise logged")
+    check(any(e["event"] == "alarm_ack" and e["detail"] == "DEMO_FAULT" and e["source"] == "modbus" for e in ev),
+          "Modbus acknowledge logged with its source")
+    check(any(e["event"] == "alarm_ack" and e["detail"] == "DEMO_LEVEL_RANGE" and e["source"] == "web" and e["level"] == "admin"
+              for e in ev), "web acknowledge logged with the login")
     check(sum(1 for e in ev if e["event"] == "param" and e["arg"] == 1006) == 1, "a multi-coil write is one block event")
     st, body, hdr = web.req("/api/log/events.csv", csrf=False)
     lines = body.decode().splitlines()
@@ -305,7 +358,7 @@ def main():
           and len(lines) == len(ev) + 1, f"event CSV ({len(lines) - 1} rows)")
     st, j = web.json("/api/log/info")
     check(st == 200 and j["status"] == 0 and j["events"]["used"] == len(ev), "log info")
-    n_events = len(ev)
+    n_events = len([e for e in ev if not e["event"].startswith("alarm")])   # the platform's own alarms come and go
 
     time.sleep(1.5)                                  # let the store save
     log = unit.stop()
@@ -324,10 +377,11 @@ def main():
     st, j = web.json("/api/login", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "changed admin password survived the restart")
     st, j = web.json("/api/log/events?n=200")
-    ev = j["events"] if st == 200 else []
+    allev = j["events"] if st == 200 else []
+    ev = [e for e in allev if not e["event"].startswith("alarm")]
     check(len(ev) == n_events + 3 and [e["event"] for e in ev[:3]] == ["login", "login_fail", "power_up"],
           "event log continues across the restart")
-    check([e["seq"] for e in ev] == list(range(len(ev), 0, -1)), "sequence numbers contiguous")
+    check([e["seq"] for e in allev] == list(range(len(allev), 0, -1)), "sequence numbers contiguous")
     st, j = web.json("/api/log/info")
     check(st == 200 and j["status"] == 0, "write position from FRAM (not rebuilt)")
     log = unit.stop()

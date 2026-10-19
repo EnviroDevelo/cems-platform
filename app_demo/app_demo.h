@@ -11,6 +11,7 @@
 #include "param_store.h"
 #include "modbus.h"
 #include "ul_system.h"
+#include "plat_alarm.h"
 
 #define DEMO_PARAM_START_DELAY 1001u
 #define DEMO_PARAM_RUN_HOURS   1002u   /* written by the logic, persisted, read-only outside */
@@ -18,7 +19,13 @@
 #define DEMO_PARAM_START_IN    1004u
 #define DEMO_PARAM_VALVE_NAME  1005u
 #define DEMO_PARAM_ACK         1006u
+#define DEMO_PARAM_FAULT       1007u
+#define DEMO_PARAM_LEVEL       1008u
+#define DEMO_PARAM_LEVEL_AL_EN 1009u
+#define DEMO_PARAM_LEVEL_TEXT  1010u
 #define DEMO_BLOCK_CYCLES      1100u
+#define DEMO_ALARM_FAULT       100u
+#define DEMO_ALARM_LEVEL       101u
 
 typedef struct {               /* what UI / web / Modbus may display */
     uint32_t delay_preset, delay_current;

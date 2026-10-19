@@ -3,6 +3,7 @@
 #include "param.h"
 #include "param_store.h"
 #include "plat_log.h"
+#include "plat_alarm.h"
 
 static int sys_apply(const plat_cmd_t *c) {
     param_err_t e = param_apply(c);
@@ -15,6 +16,7 @@ static void sys_pre_logic(uint32_t now_ms) {
     param_scan_service(now_ms);        /* remote-link watchdog: the logic sees it this scan */
     param_store_scan_service();        /* snapshot for the store task, or apply an import */
     plat_log_scan(now_ms);             /* data-log intervals, clock-change events */
+    alarm_scan(now_ms);                /* delays and states; conditions set by last scan's logic */
 }
 
 const scan_sys_t plat_sys = { .apply = sys_apply, .pre_logic = sys_pre_logic, .publish = param_publish };

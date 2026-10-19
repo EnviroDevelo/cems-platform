@@ -16,6 +16,7 @@
 #include "plat_diag.h"
 #include "ul_system.h"
 #include "tls.h"
+#include "plat_alarm.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -50,6 +51,7 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
+    T_ALARMS, T_ACK_ALL,
     T_ROW0 = 200            /* .. T_ROW0 + ROWS - 1 */
 };
 
@@ -93,6 +95,9 @@ static struct {
     unsigned ev_n;
     bool     ev_busy, ev_want;
     uint32_t ev_t;
+    /* alarms */
+    size_t   al_first;
+    uint16_t al_ids[ROWS];
 } U;
 
 /* ---------------- helpers ---------------- */
@@ -397,6 +402,7 @@ static void tap(uint8_t t, uint32_t now) {
         goto_scr(UI_LOGIN);
         return;
     case T_MODE: mode_tap(now); return;
+    case T_ALARMS: U.al_first = 0; goto_scr(UI_ALARMS); return;
     default: break;
     }
     switch (U.scr) {
@@ -435,6 +441,16 @@ static void tap(uint8_t t, uint32_t now) {
         if (t == T_PGUP && U.ev_off >= ROWS) { U.ev_off -= ROWS; U.ev_want = true; }
         else if (t == T_PGDN) { U.ev_off += ROWS; U.ev_want = true; }
         U.dirty = true;
+        break;
+    case UI_ALARMS:
+        if (t == T_PGUP) { U.al_first = U.al_first >= ROWS ? U.al_first - ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { U.al_first += ROWS; U.dirty = true; }
+        else if (t == T_ACK_ALL || (t >= T_ROW0 && t < T_ROW0 + ROWS && U.al_ids[t - T_ROW0])) {
+            uint16_t id = t == T_ACK_ALL ? ALARM_ACK_ALL : U.al_ids[t - T_ROW0];
+            param_err_t e = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = id }, PLAT_SRC_LOCAL, U.level);
+            if (e != PERR_OK) toast(true, now, "%s", perr_text(e));
+            else toast(false, now, t == T_ACK_ALL ? "All alarms acknowledged" : "Acknowledged");
+        }
         break;
     case UI_SYSTEM:
         if (t == T_FW_ACT) {
@@ -495,10 +511,18 @@ static void header(uint32_t now) {
     color(0xFFFFFFu);
     text((int16_t)(x + 65), 32, F_TEXT, OPT_CENTER, remote ? "REMOTE" : "LOCAL");
     x = (int16_t)(x + 140);
-    if (!param_store_calibration_valid()) { box(x, 14, 150, 36, C_BAD, 18); color(0xFFFFFFu); text((int16_t)(x + 75), 32, F_SMALL, OPT_CENTER, "CAL INVALID"); x = (int16_t)(x + 160); }
-    if (plat_net_status_word & NETST_CONFLICT) { box(x, 14, 150, 36, C_BAD, 18); color(0xFFFFFFu); text((int16_t)(x + 75), 32, F_SMALL, OPT_CENTER, "IP CONFLICT"); x = (int16_t)(x + 160); }
-    if (param_remote_link_lost()) { box(x, 14, 150, 36, C_WARN, 18); color(0xFFFFFFu); text((int16_t)(x + 75), 32, F_SMALL, OPT_CENTER, "LINK LOST"); x = (int16_t)(x + 160); }
-    if ((plat_log_status() & LSTAT_NOR_FAULT) && x < 860) { box(x, 14, 120, 36, C_BAD, 18); color(0xFFFFFFu); text((int16_t)(x + 60), 32, F_SMALL, OPT_CENTER, "LOG FAULT"); }
+    alarm_summary_t as;
+    alarm_summary(&as);
+    if (as.shown) {                                   /* one pill for every alarm: tap for the list */
+        char a[32];
+        if (as.unacked) snprintf(a, sizeof a, "%u ALARM%s  %u NEW", as.active, as.active == 1 ? "" : "S", as.unacked);
+        else snprintf(a, sizeof a, "%u ALARM%s", as.active, as.active == 1 ? "" : "S");
+        uint32_t c = !as.worst_unacked ? 0x5B6577u : as.worst >= AL_SEV_ALARM ? C_BAD : as.worst == AL_SEV_WARNING ? C_WARN : 0x5B6577u;
+        eve_tag(E, T_ALARMS);
+        box(x, 10, 230, 44, U.pressed == T_ALARMS ? C_PRESS : c, 22);
+        color(0xFFFFFFu); text((int16_t)(x + 115), 32, F_TEXT, OPT_CENTER, a);
+        eve_tag(E, 0);
+    }
     char t[16];
     snprintf(t, sizeof t, "%02u:%02u:%02u", RTC_Time.Hours, RTC_Time.Minutes, RTC_Time.Seconds);
     color(0xC9D2E3u);
@@ -772,6 +796,54 @@ static void draw_system(uint32_t now) {
     kv(544, BODY_Y + 338, "Store status", b);
 }
 
+static uint32_t sev_colour(uint8_t s) {
+    return s >= AL_SEV_ALARM ? C_BAD : s == AL_SEV_WARNING ? C_WARN : C_GREY;
+}
+
+static void draw_alarms(void) {
+    alarm_view_t v[ROWS];
+    alarm_summary_t as;
+    alarm_summary(&as);
+    if (U.al_first >= as.shown) U.al_first = as.shown > ROWS ? (as.shown - 1u) / ROWS * ROWS : 0;
+    size_t n = alarm_list(v, U.al_first, ROWS);
+    box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
+    memset(U.al_ids, 0, sizeof U.al_ids);
+    for (size_t r = 0; r < n; ++r) {
+        const alarm_view_t *a = &v[r];
+        int16_t y = (int16_t)(BODY_Y + 4 + (int)r * ROW_H);
+        if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+        box(24, (int16_t)(y + 8), 8, ROW_H - 16, sev_colour(a->severity), 2);
+        char t[48], line[112];
+        if (a->t_raise) {
+            unsigned yy, mo, d, h, mi, s;
+            plat_civil_from_unix(a->t_raise, &yy, &mo, &d, &h, &mi, &s);
+            snprintf(t, sizeof t, "%02u/%02u %02u:%02u:%02u", d, mo, h, mi, s);
+        } else {
+            snprintf(t, sizeof t, "uptime %lu min", (unsigned long)(a->up_raise / 60u));
+        }
+        snprintf(line, sizeof line, "%s  -  %s%s", t,
+                 a->active ? (a->unacked ? "active, not acknowledged" : "active") : "cleared, not acknowledged",
+                 a->active && a->unacked && (a->flags & AL_LATCH) ? " (latched)" : "");
+        /* the description in 7-bit ASCII (the ROM fonts): anything else shows as '?' */
+        char d7[64]; size_t k = 0;
+        for (const unsigned char *p = (const unsigned char *)a->text; *p && k + 1 < sizeof d7; ++p) {
+            if (*p < 0x80) d7[k++] = (char)*p;
+            else if ((*p & 0xC0) != 0x80) d7[k++] = '?';
+        }
+        d7[k] = 0;
+        color(C_INK); text(44, (int16_t)(y + 18), a->unacked ? F_TEXT : F_TEXT, OPT_CENTERY, d7);
+        color(a->unacked ? sev_colour(a->severity) : C_MUTE); text(44, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, line);
+        if (a->unacked) {
+            U.al_ids[r] = a->id;
+            button((uint8_t)(T_ROW0 + r), 724, (int16_t)(y + 4), 164, ROW_H - 8, "Acknowledge", C_ACCENT, true);
+        }
+    }
+    if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No alarms"); }
+    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.al_first > 0);
+    button(T_ACK_ALL, 908, BODY_Y + 132, 100, 120, "Ack all", C_WARN, as.unacked > 0);
+    button(T_PGDN, 908, BODY_Y + 264, 100, 128, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
+}
+
 static void draw_confirm(void) {
     color(0x000000u); eve_cmd(E, DL_COLOR_A(140));
     eve_rect(E, 0, 0, W, 600, 1);
@@ -805,6 +877,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_LOGIN:  draw_login(now); break;
     case UI_EVENTS: draw_events(); break;
     case UI_SYSTEM: draw_system(now); break;
+    case UI_ALARMS: draw_alarms(); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {
