@@ -9,7 +9,9 @@ CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-s
 CPPFLAGS = -DPLAT_HOST -Iplatform/include -Iplatform/bsp -Iapp_demo
 
 CORE = platform/core/scan_engine.c platform/core/plat_cmdq.c \
-       platform/core/task_monitor.c platform/core/plat_diag.c platform/bsp/bsp_host.c
+       platform/core/task_monitor.c platform/core/plat_diag.c platform/core/param.c \
+       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c \
+       platform/bsp/nvm_ram.c platform/bsp/bsp_host.c
 
 BUILD = build
 
@@ -19,7 +21,7 @@ all: test sim
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c | $(BUILD)
+$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests $^ -o $@ -lm
 
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c | $(BUILD)
@@ -41,12 +43,14 @@ clean:
 EXT ?= $(abspath ../ext)
 FR   = $(EXT)/FreeRTOS-Kernel
 RTOS_SRC = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
-           platform/core/plat_diag.c platform/os/plat_tasks_freertos.c app_demo/app_demo.c \
+           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
+           platform/core/plat_sys.c platform/bsp/nvm_ram.c \
+           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c app_demo/app_demo.c \
            host/rtos_sim/bsp_posix.c host/rtos_sim/rtos_main.c \
            $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c $(FR)/portable/MemMang/heap_3.c \
            $(FR)/portable/ThirdParty/GCC/Posix/port.c $(FR)/portable/ThirdParty/GCC/Posix/utils/wait_for_event.c
 $(BUILD)/rtos_sim: $(RTOS_SRC) | $(BUILD)
-	$(CC) -std=gnu11 -O1 -g -Wall -Iplatform/include -Iapp_demo -Ihost/rtos_sim \
+	$(CC) -std=gnu11 -O1 -g -Wall -Iplatform/include -Iplatform/bsp -Iapp_demo -Ihost/rtos_sim \
 	  -I$(FR)/include -I$(FR)/portable/ThirdParty/GCC/Posix -I$(FR)/portable/ThirdParty/GCC/Posix/utils \
 	  $^ -o $@ -lpthread
 rtos: $(BUILD)/rtos_sim

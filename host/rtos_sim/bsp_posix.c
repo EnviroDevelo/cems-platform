@@ -27,3 +27,8 @@ void bsp_system_reset(void) {
     fflush(stdout);
     exit(plat_diag.fault == PLAT_FAULT_TASK_SILENT ? 42 : 1);
 }
+
+static uint8_t   fram[128u * 1024u];
+static nvm_ram_t fram_ram;
+static nvm_dev_t fram_dev;
+nvm_dev_t *bsp_param_nvm(void) { nvm_ram_init(&fram_dev, &fram_ram, fram, sizeof fram, true); return &fram_dev; }

@@ -11,6 +11,7 @@
 #include "main.h"
 #include "bsp.h"
 #include "plat_io.h"
+#include "nvm.h"
 
 #ifndef DI_01_ACTIVE_LOW
 #define DI_01_ACTIVE_LOW 0
@@ -381,3 +382,22 @@ bsp_reset_cause_t bsp_reset_cause(void) {
 }
 
 void bsp_system_reset(void) { NVIC_SystemReset(); }
+
+/* ---------------- parameter NVM ---------------- */
+bool nvm_fram_spi_open(nvm_dev_t *d);    /* nvm_fram_spi.c */
+
+nvm_dev_t *bsp_param_nvm(void) {
+    static nvm_dev_t dev;
+    if (nvm_fram_spi_open(&dev)) return &dev;
+#ifndef FRAM_CS_Pin
+    /* No FRAM in this hardware configuration (e.g. the bare STM32H573I-DK): a RAM
+     * stand-in with the default layout, so the store logic runs; nothing survives
+     * power-off and the store reports PSTAT_NVM_VOLATILE. */
+    static uint8_t   mem[0x16000];
+    static nvm_ram_t ram;
+    nvm_ram_init(&dev, &ram, mem, sizeof mem, false);
+    return &dev;
+#else
+    return NULL;          /* FRAM configured but not answering: store runs on defaults, alarm raised */
+#endif
+}

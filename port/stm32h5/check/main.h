@@ -11,4 +11,9 @@
 #define DO_01_ACTIVE_LOW 1
 #define DO_02_Pin GPIO_PIN_1
 #define DO_02_GPIO_Port GPIOA
+/* compile-check both FRAM paths: define CHECK_WITH_FRAM to build the SPI driver */
+#ifdef CHECK_WITH_FRAM
+#define FRAM_CS_Pin GPIO_PIN_4
+#define FRAM_CS_GPIO_Port GPIOE
+#endif
 #endif

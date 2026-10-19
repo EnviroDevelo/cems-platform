@@ -51,10 +51,14 @@ static void apply_cmds(scan_engine_t *s) {
     if (!s->cmdq) return;
     plat_cmd_t c;
     for (uint32_t n = 0; n < PLAT_SCAN_MAX_CMDS && plat_cmdq_pop(s->cmdq, &c); ++n) {
-        int rc = s->app->apply_cmd ? s->app->apply_cmd(&c) : -1;
+        int rc = SCAN_CMD_UNKNOWN;
+        if (s->sys && s->sys->apply) rc = s->sys->apply(&c);
+        if (rc == SCAN_CMD_UNKNOWN) rc = s->app->apply_cmd ? s->app->apply_cmd(&c) : -1;
         if (rc == 0) s->stats.cmds_applied++; else s->stats.cmds_rejected++;
     }
 }
+
+void scan_set_sys(scan_engine_t *s, const scan_sys_t *sys) { s->sys = sys; }
 
 void scan_step(scan_engine_t *s) {
     const scan_app_t *app = s->app;
@@ -79,6 +83,7 @@ void scan_step(scan_engine_t *s) {
 
     /* 4. external writes, between scans as far as the logic is concerned */
     apply_cmds(s);
+    if (s->sys && s->sys->pre_logic) s->sys->pre_logic(now);
 
     /* 5. logic */
     Ladder_Initial_Cycle = !s->started;
@@ -92,9 +97,10 @@ void scan_step(scan_engine_t *s) {
     if (s->hw->io_write) s->hw->io_write(&s->out);
 
     /* 7. publish */
-    if (app->publish) {
+    if (app->publish || (s->sys && s->sys->publish)) {
         if (s->snap_lock) plat_seq_write_begin(s->snap_lock);
-        app->publish();
+        if (s->sys && s->sys->publish) s->sys->publish();
+        if (app->publish) app->publish();
         if (s->snap_lock) plat_seq_write_end(s->snap_lock);
     }
 

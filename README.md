@@ -10,7 +10,7 @@ PLC-style scan and provides the services around it.
 ## Host builds (Linux/macOS/WSL, gcc)
 
 ```
-make test      # unit tests (161 checks)
+make test      # unit tests (1,048 checks)
 make sim       # PC simulation of the demo application
 make rtos      # the real FreeRTOS task layer on the FreeRTOS POSIX port (needs EXT=path with FreeRTOS-Kernel)
 make target    # compile-check for STM32H5 with arm-none-eabi-gcc (needs EXT, see port/stm32h5/check.mk)

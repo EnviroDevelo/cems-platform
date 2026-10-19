@@ -8,7 +8,7 @@
  * ctrl           14        PLAT_CTRL_PERIOD_MS      PLAT_SILENCE_CTRL_MS
  * scan           13        PLAT_SCAN_PERIOD_MS      PLAT_SILENCE_SCAN_MS
  * supervisor     12        PLAT_SUPERVISOR_PERIOD_MS (kicks the IWDG)
- * store          10        event / 100 ms           PLAT_SILENCE_STORE_MS
+ * store          10        every 20 ms (param_store_poll) PLAT_SILENCE_STORE_MS
  * (lwIP tcpip)   8         created by tcpip_init    (not monitored directly)
  * modbus         7         socket events            PLAT_SILENCE_MODBUS_MS
  * http           6         socket events            PLAT_SILENCE_HTTP_MS
@@ -18,6 +18,19 @@
 #define PLAT_TASKS_H
 #include "scan_engine.h"
 #include "task_monitor.h"
+#include "param.h"
+#include "param_store.h"
+
+/* Everything an application hands to the platform. */
+typedef struct plat_app_s {
+    const scan_app_t   *scan;            /* the program (Function1 and its I/O mapping) */
+    const param_def_t  *params;          /* its parameter-table entries (IDs >= 1000) */
+    size_t              n_params;
+    const retain_def_t *retain;          /* its retained blocks (strings, arrays, structs) */
+    size_t              n_retain;
+    uint16_t            layout_version;  /* bump when a stored record changes meaning */
+    param_migrate_fn    migrate;         /* may be NULL */
+} plat_app_t;
 
 typedef enum {
     PLAT_TASK_CTRL = 0,
@@ -29,7 +42,9 @@ typedef enum {
     PLAT_TASK_COUNT
 } plat_task_id_t;
 
-void plat_start(const scan_app_t *app);   /* never returns */
+/* Start-up order: diag record, BSP, safe outputs, app->init, parameter table,
+ * load FRAM (defaults first, then stored values), tasks, scheduler. */
+void plat_start(const plat_app_t *app);   /* never returns */
 
 /* Shared platform objects, for the service modules. */
 extern scan_engine_t  plat_scan;

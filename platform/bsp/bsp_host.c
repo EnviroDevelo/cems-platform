@@ -35,3 +35,12 @@ void bsp_io_safe_state(void) { memset(&bsp_host.out, 0, sizeof bsp_host.out); bs
 void bsp_wdg_kick(void) { bsp_host.wdg_kicks++; }
 bsp_reset_cause_t bsp_reset_cause(void) { return bsp_host.reset_cause; }
 void bsp_system_reset(void) { bsp_host.resets++; }
+
+/* Simulated 128 KB FRAM that survives "reboots" within one process. */
+uint8_t   bsp_host_fram[128u * 1024u];
+nvm_ram_t bsp_host_fram_ram;
+static nvm_dev_t fram_dev;
+nvm_dev_t *bsp_param_nvm(void) {
+    nvm_ram_init(&fram_dev, &bsp_host_fram_ram, bsp_host_fram, sizeof bsp_host_fram, true);
+    return &fram_dev;
+}

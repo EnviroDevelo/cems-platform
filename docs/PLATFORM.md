@@ -1,6 +1,6 @@
 # CEMS Core Platform: firmware structure, scan contract and integration rules
 
-Rev A, 19 Oct 2026. Implements the "Firmware architecture and toolchain" section of
+Rev B, 19 Oct 2026 (Rev B adds the shared parameter table, control arbitration and the FRAM parameter store). Implements the "Firmware architecture and toolchain" section of
 *CEMS Supervisor Design Specification Rev 1.00* (file name: *CEMS Instrument Core
 Platform Design Specification Rev 1.00.pdf*). This is the code that every instrument
 in the family shares. The VM/MUX program translated in `Existing Design/Analysis/stage4`
@@ -18,10 +18,13 @@ runs on top of it.
 | Fault record that survives a reset | `plat_diag.h/.c`, `port/stm32h5/noinit_section.ld` | Done, host-tested, placement checked in the ELF |
 | FreeRTOS task set, priorities, hooks | `platform/os/plat_tasks_freertos.c`, `port/stm32h5/FreeRTOSConfig.h` | Done, run under the FreeRTOS POSIX port |
 | Board support: interface, PC simulation, STM32H5 | `bsp.h`, `platform/bsp/bsp_host.c`, `port/stm32h5/bsp_stm32h5.c` | H5 version compiled and linked, not yet run on the DK |
+| Shared parameter table, local/remote arbitration, remote-link watchdog | `param.h/.c`, `plat_sys.c` | Done, host-tested |
+| Parameter store: FRAM images, dual copies, factory/user split, fail safe, migration, backup/restore | `param_store.h/.c`, `nvm.h`, `nvm_ram.c`, `plat_crc32.c`, `platform/os/plat_store_task.c` | Done, host + RTOS tested |
+| SPI FRAM driver | `port/stm32h5/nvm_fram_spi.c` | Compiled and linked, not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): shared parameter table and
-FRAM store; Modbus TCP; HTTP/JSON; logger; EVE driver and UI; firmware update/bootloader.
+Not in this revision (next modules, in the order proposed): Modbus TCP and HTTP/JSON
+on lwIP; logger; EVE driver and UI; firmware update/bootloader.
 
 ## 2. Tasks and priorities
 
@@ -70,7 +73,62 @@ The application provides one `scan_app_t` (see `app_demo/app_demo.c`) and calls
 2000 ms preset). Every scan-based PLC behaves this way. The application's timer model
 (assumption A4.10) keeps responsibility for matching UniLogic.
 
-## 4. Integration rules for the application (VM/MUX) code
+## 4. Parameter table and store
+
+**One table.** Every setting the touchscreen, web page or Modbus can see is a
+`param_def_t` bound to the application tag that holds it (`PARAM_INT`, `PARAM_UINT`,
+`PARAM_REAL`, `PARAM_BIT` macros). Writes from any of the three are checked in the same
+order: known ID, writable, login level, local/remote mode, type, range, then the
+application's interlock. So a limit can't be bypassed by using a different route.
+`param_check()` gives a server its answer straight away (Modbus exception, HTTP
+status), and `param_apply()` re-checks in the scan before the tag changes.
+
+**Arbitration.** The unit always powers up in LOCAL mode, and only the touchscreen can
+change the mode. In LOCAL, web and Modbus writes are refused. In REMOTE, the
+touchscreen's setpoint writes are refused, but the local operator can always switch
+back. Entries flagged `PF_ANY_MODE` (alarm acknowledge, network settings) ignore the
+mode. Modbus can be made read-only with `modbus_write_en`, and network and security
+settings are never writable over Modbus. In REMOTE mode, if no web or Modbus request
+arrives within `comms_timeout` (10 s by default), `remote_link_lost` comes on, and the
+application moves to its defined safe state.
+
+**What is stored.** Every `PF_PERSIST` parameter, plus *retained blocks* registered
+with `RETAIN()`: the strings, arrays and structs the application keeps across power-off.
+The old project retains 342 tags (10.8 KB), mostly strings and buffers
+(20_Data_Dictionary.md), so blocks are essential, not optional.
+
+**How it is stored.** There are two regions, FACTORY (calibration, serial, hardware
+revision) and USER, each with two copies (A/B) in FRAM. Each copy is a header (magic,
+layout version, sequence, CRC-32) followed by records tagged by ID. Saves alternate
+between copies, and boot picks the newest copy whose CRCs pass. The store task saves
+within about 1 s of a change, and only when something actually changed. That covers
+values the logic writes (counters, sequences) as well as operator settings. FRAM
+endurance (10^13 to 10^14 writes) makes a once-a-second rate a non-issue over the
+product's life.
+
+| Spec rule | How it is met | Test |
+|---|---|---|
+| Versioned layout; new firmware keeps calibration | Records found by ID; unknown IDs skipped, missing IDs default; `migrate` hook for renumber/rescale; rewritten in the new layout | `t_migration`, `t_unknown_and_resized_records` |
+| Dual copies, CRC and sequence, newest valid wins | As above; corrupting either copy loads the other | `t_alternates_copies` |
+| Safe on power loss | Power cut at **every byte offset** of a save: the unit always comes up with the complete old or complete new values | `t_power_cut_every_byte` |
+| Factory vs user; restore defaults never touches calibration | Separate regions; `restore_defaults` resets the user region only | `t_restore_defaults_cmd` |
+| Fail safe: never run silently on defaults | No valid factory image sets `PSTAT_CAL_INVALID` (alarm; the application blocks measurement via `param_store_calibration_valid()`). The damaged image is not overwritten until someone actually changes a factory value | `t_blank_fram`, `t_both_factory_copies_bad` |
+| Backup and restore with integrity checks | `param_store_export/import`: CRC over the file and each image; structure checked before anything is applied; factory part only at factory level | `t_export_import` |
+| Out-of-range stored value | Ignored, default kept, `PSTAT_REC_SKIPPED` | `t_out_of_range_stored` |
+
+**Memory map (128 KB FRAM).** Factory A/B at 0x00000/0x01000 (4 KB each), user A/B at
+0x02000/0x0C000 (40 KB each, against 10.8 KB used today), 0x16000 to 0x1FFFF free for
+the logger's write pointer and future use.
+
+**Known limits of this revision.**
+- External writes carry one scalar each. Writing a *string* from the touchscreen or
+  web (valve names, alarm descriptions) needs a string command path, which comes with
+  the HTTP/UI modules. Retained strings are already stored.
+- A value the logic changes within the last second before power-off may be lost (the
+  demo shows this). Operator settings are saved within 1 s of the write.
+- Import and export run in the store task. The HTTP module will add the hand-over.
+
+## 5. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
 stop the Stage 4 chunks from linking together correctly**, so they need fixing in that
@@ -81,19 +139,22 @@ work before integration.
 3. `ul_timer_t` is repeated in every chunk header. Use the one in `ul_system.h`, which has the same layout.
 4. `Touched_Bit` and `VNC_Touched_Bit` (General.* HMI bits, used in 4F4) will be supplied by the UI module. Until then, the application should define them itself.
 5. Physical I/O tags (`TA30_DI[]`, `UID_DO[]` …) remain application tags. The platform hands over channel images, and `io_in`/`io_out` do the mapping. Channel numbers follow `10_IO_Map.md`.
-6. The application must not call the BSP or FreeRTOS directly. Anything it needs from the platform comes through `scan_app_t` or `ul_system.h`.
+6. The application must not call the BSP or FreeRTOS directly. Anything it needs from the platform comes through `plat_app_t`, `ul_system.h` or `param.h`.
+7. **Parameter table from the data dictionary.** The 148 SETTING tags become `param_def_t` entries (IDs from 1000), and the other retained tags become `RETAIN()` blocks. `stage2/data_dictionary.csv` has the type, retain flag and power-up value for each, so the table can be generated rather than typed. Ranges must come from the HMI element limits (Stage 5 `hmi_elements.csv`); where a limit isn't known, it is a Rule 0 item, not a guess.
+8. Tags the logic rewrites every scan should not be `PF_PERSIST` or retained unless the original retains them; the store only saves real changes, so this costs nothing either way, but it keeps the image meaningful.
+9. The application must read `param_store_calibration_valid()` and `param_remote_link_lost()` and act on them (block measurement; go to its safe state).
 
-## 5. How it was checked
+## 6. How it was checked
 
 | Check | Result |
 |---|---|
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption | 161 checks, 0 failures, gcc -Werror with AddressSanitizer and UBSan |
-| PC simulation (`make sim`): demo app, DI timeline, a web write, a late scan | Timer fires on time across the late scan; the write lands on the next scan |
-| FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror. ELF: 12.8 KB flash, 89 KB RAM (48 KB FreeRTOS heap + 39 KB stacks). `plat_diag` is in the NOLOAD `.noinit` section. SVC, PendSV and SysTick come from the FreeRTOS port |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4 | 1,048 checks, 0 failures, gcc -Werror with AddressSanitizer and UBSan |
+| PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
+| FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror, with and without the SPI FRAM driver. ELF: 23 KB flash; 150 KB RAM with FRAM (48 KB heap, 39 KB stacks, 44 KB store staging), 238 KB on the bare DK (adds a 90 KB RAM stand-in for the FRAM). `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
-## 6. Decisions needed
+## 7. Decisions (working defaults, change any of them)
 
 | # | Decision | Proposal | Why it matters |
 |---|---|---|---|
@@ -101,8 +162,12 @@ work before integration.
 | D2 | Fast control loop rate | 1 kHz task tick for now; a hardware timer ISR if any loop needs more | The spec allows 1 to 10 kHz; the loop list doesn't exist yet |
 | D3 | Network stack | lwIP 2.2.1 from ST's `stm32h5-classic-coremw-apps`, added by hand | CubeMX doesn't offer lwIP for the H5 (ST recommends NetX Duo). The spec says lwIP; NetX Duo is ThreadX-based, and choosing it would mean changing the RTOS |
 | D4 | Hard-fault handling | Record PC/LR in `plat_diag`, then reset | Not written yet; small, belongs in the port |
+| D5 | Factory network default | Static 192.168.1.50/24, gateway 192.168.1.1, DHCP off | Always settable from the touchscreen, so a unit can be recovered locally |
+| D6 | FRAM size | 128 KB (1 Mbit, e.g. Infineon FM25V10 / CY15B104 class, or Fujitsu MB85RS1MT) | Two copies of 10.8 KB plus growth and logger metadata don't fit a 32 KB part comfortably |
+| D7 | Modbus writes at first power-up | Enabled; any client IP | Plugs into a DAHS without setup; an admin can make Modbus read-only or limit it to one IP |
+| D8 | Touchscreen writes in REMOTE mode | Refused, except the mode switch and `PF_ANY_MODE` entries | Stops the local panel and the PLC fighting over a setpoint; the spec only states the remote side |
 
-## 7. Repository layout
+## 8. Repository layout
 
 ```
 platform/include/   public headers (no HAL, no FreeRTOS except plat_port.h on target)

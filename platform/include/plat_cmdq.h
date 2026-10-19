@@ -28,12 +28,25 @@ typedef enum {
     PLAT_VAL_BOOL
 } plat_val_kind_t;
 
+/* One scalar value as carried between tasks. */
+typedef union { int32_t i; uint32_t u; float f; bool b; } plat_val_t;
+
+/* Write authority of the requester (from the UI or web login). */
+typedef enum {
+    PLAT_LVL_VIEW = 0,    /* not logged in: read only */
+    PLAT_LVL_OPERATOR,
+    PLAT_LVL_ADMIN,
+    PLAT_LVL_FACTORY
+} plat_level_t;
+
 typedef struct {
-    uint16_t id;          /* parameter-table ID */
-    uint8_t  src;         /* plat_src_t */
-    uint8_t  kind;        /* plat_val_kind_t */
-    union { int32_t i; uint32_t u; float f; bool b; } v;
-    uint32_t token;       /* caller's reference, returned with the result */
+    uint16_t   id;        /* parameter-table ID */
+    uint8_t    src;       /* plat_src_t */
+    uint8_t    kind;      /* plat_val_kind_t */
+    uint8_t    level;     /* plat_level_t */
+    uint8_t    rsvd[3];
+    plat_val_t v;
+    uint32_t   token;     /* caller's reference, returned with the result */
 } plat_cmd_t;
 
 typedef struct {

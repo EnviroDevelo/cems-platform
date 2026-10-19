@@ -8,6 +8,7 @@
 #include "plat_config.h"
 #include "plat_diag.h"
 #include "bsp.h"
+#include "plat_sys.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -99,7 +100,7 @@ DEF_TASK(ui,     PLAT_STACK_UI);
     do { if (xTaskCreateStatic((fn), (name), (stk), (arg), (prio), nm##_stack, &nm##_tcb) == NULL) \
              fatal(PLAT_FAULT_ASSERT, -1, name, __LINE__); } while (0)
 
-void plat_start(const scan_app_t *app) {
+void plat_start(const plat_app_t *app) {
     plat_diag_boot(bsp_reset_cause());
     bsp_init();
     bsp_io_safe_state();
@@ -115,7 +116,20 @@ void plat_start(const scan_app_t *app) {
 
     plat_cmdq_init(&plat_cmdq);
     plat_snap_lock.seq = 0;
-    scan_init(&plat_scan, app, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
+    scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
+
+    /* A table error is a programming error: stop here with outputs safe, the
+     * watchdog fed, and the offending ID in the fault record (debugger or next boot). */
+    if (param_init(app->params, app->n_params) != PERR_OK) {
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "param table", param_table_error(), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
+    if (!param_store_init(bsp_param_nvm(), NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "store table", param_store_status(), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
+    param_store_boot();
+    scan_set_sys(&plat_scan, &plat_sys);
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);
     MAKE(scan_task,       "scan",   PLAT_STACK_SCAN,       PLAT_PRIO_SCAN,       NULL, scan);

@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "plat_io.h"
+#include "nvm.h"
 
 /* Calendar time from the hardware RTC. dow_iso: 1 = Monday ... 7 = Sunday
  * (STM32 RTC convention). The scan engine converts to UniLogic's 1 = Sunday. */
@@ -39,5 +40,9 @@ void     bsp_io_safe_state(void);        /* all outputs to their defined safe st
 void     bsp_wdg_kick(void);
 bsp_reset_cause_t bsp_reset_cause(void); /* read once at boot, then cleared */
 void     bsp_system_reset(void);
+
+/* The parameter NVM: the FRAM if it answers, otherwise a RAM fallback with
+ * persistent = false (the store then reports PSTAT_NVM_VOLATILE). */
+nvm_dev_t *bsp_param_nvm(void);
 
 #endif

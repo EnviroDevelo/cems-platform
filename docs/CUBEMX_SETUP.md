@@ -42,6 +42,25 @@ add this in `main.h` between `/* USER CODE BEGIN Private defines */` and the mat
 Channel numbers line up with `10_IO_Map.md` (DIG_IN_01 = DI_01, and so on). On the
 real board, all 22 inputs and 20 outputs come from the schematic.
 
+## 3a. Parameter FRAM (optional on the DK)
+
+The bare DK has no FRAM. Without one the platform uses a RAM stand-in and reports
+`PSTAT_NVM_VOLATILE`, which is fine for everything except power-cycle tests. To test
+real persistence, wire an SPI FRAM breakout (any MB85RS / FM25 / CY15B part; 128 KB
+matches the product) to a free SPI on the DK's expansion connector **(check which SPI
+and pins the DK brings out)**:
+
+| CubeMX | Setting |
+|---|---|
+| SPIx | Full-duplex master, 8 bit, CPOL low, CPHA 1 edge, NSS software, prescaler for ≤ 20 MHz to start |
+| GPIO | Output push-pull, initial level high, user label **`FRAM_CS`** |
+
+In `main.h` (USER CODE section), if needed: `#define FRAM_SPI_HANDLE hspi2` (default
+`hspi1`); for parts of 64 KB or less, `#define FRAM_SIZE 32768` and
+`#define FRAM_ADDR_BYTES 2`. Also add `nvm_fram_spi.c` to the build. With `FRAM_CS`
+defined but no chip answering, the store runs on defaults and raises the
+calibration-invalid alarm (it never quietly falls back to RAM on the product).
+
 ## 4. FreeRTOS
 
 1. Help → Manage embedded software packages → STMicroelectronics → install **X-CUBE-FREERTOS** (FreeRTOS V11.x).
@@ -57,9 +76,9 @@ real board, all 22 inputs and 20 outputs come from the schematic.
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/`, `port/stm32h5/bsp_stm32h5.c`, and for a first test `app_demo/`, into the project.
-2. Include paths: `platform/include`, `app_demo`.
-3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_spi.c`, and for a first test `app_demo/`, into the project.
+2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
+3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` *is* needed: it is the RAM stand-in.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.
 5. In `main.c`:
 
@@ -70,7 +89,7 @@ real board, all 22 inputs and 20 outputs come from the schematic.
 /* USER CODE END Includes */
 ...
   /* USER CODE BEGIN 2 */
-  plat_start(&app_demo);          /* creates all tasks, starts FreeRTOS, never returns */
+  plat_start(&app_demo_plat);     /* loads FRAM, creates all tasks, starts FreeRTOS, never returns */
   /* USER CODE END 2 */
 ```
 
@@ -82,6 +101,7 @@ block can be disabled.
 
 - Hold the user button (DI_01) for 2 s and LED DO_01 comes on; release it and the LED goes off. That is the demo TON running on the 10 ms scan.
 - In the debugger: `plat_scan.stats.scans` rises by 100 per second, `plat_scan.stats.max_exec_us` stays tiny for the demo, and `plat_diag.boots` counts warm resets.
+- `param_store_status()` reads 0x001C on a bare DK (calibration invalid, user defaulted, RAM stand-in). With an FRAM fitted it reads 0x000C on the first boot and 0x0006 after a power cycle (user valid, calibration still invalid until a factory value is set).
 - Watchdog test: put a breakpoint-free `for(;;);` in `plat_ui_task_body` (define it in a test file) and the unit resets after about 5 s, with `plat_diag.fault_name` = "ui". The debugger can stop the IWDG; enable `DBGMCU` IWDG freeze only if you want it frozen while halted.
 
 ## 7. Networking (next module, decision D3)
