@@ -205,7 +205,7 @@ static void get_params(http_out_t *o) {
         out_str(o, ",\"flags\":["); bool f = false;
         static const struct { uint16_t bit; const char *n; } fl[] = {
             { PF_RO, "ro" }, { PF_PERSIST, "persist" }, { PF_FACTORY, "factory" }, { PF_ANY_MODE, "any_mode" },
-            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" } };
+            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" }, { PF_CONFIRM, "confirm" } };
         for (size_t k = 0; k < sizeof fl / sizeof fl[0]; ++k)
             if (d->flags & fl[k].bit) { if (f) out_str(o, ","); json_str(o, fl[k].n); f = true; }
         out_str(o, "]}");

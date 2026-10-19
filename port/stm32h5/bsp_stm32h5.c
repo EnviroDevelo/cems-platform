@@ -431,6 +431,10 @@ nor_dev_t *bsp_log_nor(void) {
 struct fw_flash *fw_flash_stm32h5(void);   /* fw_flash_stm32h5.c */
 struct fw_flash *bsp_fw_flash(void) { return fw_flash_stm32h5(); }
 
+/* ---------------- display ---------------- */
+struct eve_bus *eve_bus_stm32h5(void);      /* eve_bus_stm32h5.c */
+struct eve_bus *bsp_eve_bus(void) { return eve_bus_stm32h5(); }
+
 /* ---------------- random numbers ----------------
  * Hardware RNG (CubeMX: RNG activated, handle hrng). Session tokens and password
  * salts depend on it. Without the RNG the fallback below mixes the unique ID, the

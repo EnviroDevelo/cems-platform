@@ -1,6 +1,6 @@
 # CEMS Core Platform: firmware structure, scan contract and integration rules
 
-Rev D, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking. Rev D: event log and data logger, firmware update over the network). Implements the "Firmware architecture and toolchain" section of
+Rev D, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking. Rev D: event log and data logger, firmware update over the network, EVE display driver and touch UI). Implements the "Firmware architecture and toolchain" section of
 *CEMS Supervisor Design Specification Rev 1.00* (file name: *CEMS Instrument Core
 Platform Design Specification Rev 1.00.pdf*). This is the code that every instrument
 in the family shares. The VM/MUX program translated in `Existing Design/Analysis/stage4`
@@ -27,10 +27,11 @@ runs on top of it.
 | Network on the H5: lwIP 2.2.1 + FreeRTOS, Ethernet driver (LAN8742 PHY), bring-up, live address changes | `port/stm32h5/lwip/*`, `platform/os/plat_net_tasks.c` | Compiled and linked with the real lwIP, HAL and PHY driver; not yet run on hardware |
 | Event log and data logger on serial NOR, CSV export, event list on the web page | `plat_log.h/.c`, `nor.h`, `nor_sim.c`, `log_csv.h/.c`, `port/stm32h5/nor_spi.c` | Done; host-tested incl. 400 random power cuts, on real sockets and in Chromium. SPI NOR driver compiled and linked, not yet run on hardware |
 | Firmware update over the network: streamed upload into the free flash bank, bank swap, trial boot, automatic confirm or rollback; image tool | `fw_update.h/.c`, `fw_flash_sim.c`, `port/stm32h5/fw_flash_stm32h5.c`, `tools/mkfwimage.py` | Done; host-tested, end to end on real sockets (upload, swap, trial, confirm, crash, rollback) and in Chromium. Flash driver compiled and linked, not yet run on hardware |
+| EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): EVE driver and touch UI;
-alarm manager; image signing (D14).
+Not in this revision (next modules, in the order proposed): alarm manager (alarm list
+and acknowledge on the touchscreen and web); image signing (D14); QSPI for the display.
 
 ## 2. Tasks and priorities
 
@@ -254,6 +255,41 @@ Limits of this foundation, all planned:
   follows ST's FLASH_SwapBank example; check it on the DK with the debugger attached
   before the first update.
 
+## 5c. Touchscreen
+
+Riverdi RVT70HSBNWC00-B (BT817, 1024x600, capacitive touch) on SPI, driven by the UI
+task (lowest priority: it slows under load and never delays control). The BT817 draws
+from a list of co-processor commands, so the H5 keeps no frame buffer: each frame is
+about 2 to 4 KB of commands, built in RAM and sent in one burst. Touch comes back as
+the tag of the widget under the finger, and an action happens on release over the
+same widget (sliding off cancels it).
+
+Screens (`docs/ui/all_screens.png`, rendered from the actual command lists):
+
+- **Home**: up to six value tiles (`plat_app_t.ui_home_ids`) and the LOCAL/REMOTE
+  control with a plain explanation.
+- **Settings**: the whole parameter table, six rows a page, each row showing whether
+  it can be changed and, if not, why ("Log in as admin to change this", "Not allowed
+  in REMOTE mode", "Change this one on the web page" for byte buffers and arrays).
+- **Edit**: numeric keypad with range shown; IP address entry; ON/OFF; a full
+  keyboard for text (ASCII and UTF-16 entries). Writes go through `param_post` with
+  source `PLAT_SRC_LOCAL`, so every limit, mode rule and interlock applies.
+- **Log in**: operator/admin/factory with the web's passwords; five wrong attempts
+  lock it for 30 s; a login lapses after 10 minutes without a touch.
+- **Events**: the event log, newest first, paged.
+- **System**: running and spare firmware, trial countdown, upload progress, "Restart
+  on x.y.z" (admin, confirmed: the spec's local confirmation), network address/link/MAC,
+  serial, restarts and last fault, calibration, log and store status, brightness.
+
+A header shows LOCAL/REMOTE and the alarms (CAL INVALID, LINK LOST, LOG FAULT) on
+every screen. Confirm dialogs come up before a mode change, a network change,
+"restore defaults", a firmware restart, and any entry flagged `PF_CONFIRM` (critical
+setpoints). Taking LOCAL control needs no login (the local operator can always take
+control back); handing control to REMOTE needs an operator login. The screen dims
+after 10 minutes; the first touch only wakes it. A display that doesn't answer is
+retried every 5 s and the instrument runs on without it; the firmware trial treats a
+fitted-but-dead display as unhealthy.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -269,8 +305,9 @@ work before integration.
 7. **Parameter table from the data dictionary.** The 148 SETTING tags become `param_def_t` entries (IDs from 1000), and the other retained tags become `RETAIN()` blocks. `stage2/data_dictionary.csv` has the type, retain flag and power-up value for each, so the table can be generated rather than typed. Ranges must come from the HMI element limits (Stage 5 `hmi_elements.csv`); where a limit isn't known, it is a Rule 0 item, not a guess.
 8. Tags the logic rewrites every scan should not be `PF_PERSIST` or retained unless the original retains them; the store only saves real changes, so this costs nothing either way, but it keeps the image meaningful.
 9. The application must read `param_store_calibration_valid()` and `param_remote_link_lost()` and act on them (block measurement; go to its safe state).
-11. **Logged values.** The old project's LOG columns become `plat_log_chan_t` entries (name up to 16 characters, unit up to 6). Call `plat_log_put()` once per scan per channel with the real reading and its quality (FLAG while in calibration or purge, BAD on a sensor fault, N/A when the channel is not measured); never a last-held value. Alarm 3 (LOG_STORAGE_FAULT) maps to `plat_log_status() & LSTAT_NOR_FAULT`.
 10. **Modbus map from the old slave map.** Generate `mb_map_t` from `stage4/4G/modbus_map.csv`. Strings and buffers the master reads become `PARAM_TEXT`/`PARAM_BYTES` entries; bit arrays become `PARAM_ARRAY_BOOL`; timer presets become `PARAM_UINT` on `.Preset`. **Open item (Rule 0):** the byte order UniLogic uses to pack BUFFER bytes into registers, and the word order of 32-bit values, aren't in the analysis. The map supports both orders (`MBF_BYTE_LO_FIRST`, `MBF_WORD_LO_FIRST`), so this is a single flag per entry once it is known (a UniLogic screenshot of the Modbus slave data map, or one register read from a running unit, settles it).
+11. **Logged values.** The old project's LOG columns become `plat_log_chan_t` entries (name up to 16 characters, unit up to 6). Call `plat_log_put()` once per scan per channel with the real reading and its quality (FLAG while in calibration or purge, BAD on a sensor fault, N/A when the channel is not measured); never a last-held value. Alarm 3 (LOG_STORAGE_FAULT) maps to `plat_log_status() & LSTAT_NOR_FAULT`.
+12. **Touchscreen.** List the values the operator should see first in `plat_app_t.ui_home_ids`. Mark critical setpoints `PF_CONFIRM`. `Touched_Bit`/`VNC_Touched_Bit` (rule 4) are not needed by this UI; if the logic uses them as "someone is at the panel", the UI can set them from its activity time.
 
 ## 7. How it was checked
 
@@ -280,9 +317,10 @@ work before integration.
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
 | Firmware update end to end (`tests/integration/fw_test.py`): image from `tools/mkfwimage.py`, netsim with file-backed banks; a swap exits the process as a reset | 23 checks: login needed; 300 KB upload; damaged file and other-hardware image refused; activate, restart as the new version on trial, confirmed after the trial, events logged; second update "hangs" in its trial, watchdog reset rolls it back, the old version runs with `rolled_back`, the failed image stays available |
+| Touchscreen (`make test`, `tests/test_ui.c`): the EVE driver against a simulated BT817 that decodes the SPI framing and executes the command lists; the UI driven by simulated touches | Start-up sequence and panel registers; chip missing; co-processor fault recovered; command-buffer overflow caught. UI: every screen; settings refused without login with the reason; wrong then right password; out-of-range refused then accepted; text with capitals; arrays sent to the web; mode to REMOTE only after confirmation, touchscreen writes then refused, LOCAL taken back without login; IP entry with the network confirmation; ON/OFF; a PF_CONFIRM entry; events show the touchscreen as the source; firmware restart confirmed; lockout after five wrong passwords; slide-off cancels; idle logout, dimming and wake-only first touch |
 | Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 60 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer |
 | Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Admin firmware upload with progress, "Ready in the spare bank" and the restart button (`docs/web_firmware.png`); login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM and NOR: 163 KB flash (of a 1 MB bank), 260 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM, NOR and the display: 182 KB flash (of a 1 MB bank), 269 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
 ## 8. Decisions (working defaults, change any of them)
@@ -303,6 +341,7 @@ work before integration.
 | D13 | Log flash | 16 MB SPI NOR (W25Q128JV or equivalent JEDEC part) on its own chip select; the DK's OCTOSPI flash is not used | Cheap, and the logger needs nothing faster than plain SPI. Decide at schematic; any size from 64 KB works |
 | D14 | Firmware authenticity | Unsigned images accepted now (SHA-256 integrity, admin login, product ID check); ECDSA P-256 signatures with the public key in the image when the security work is done (`PLAT_FW_REQUIRE_SIGNED 1`) | Anyone with the admin password can load firmware today. Signing needs a key-management decision (who holds the private key) |
 | D15 | Trial length and rollback rule | 60 s healthy running; a watchdog/fault reset or a second power cut during the trial rolls back | Long enough to cover start-up and the first scans and connections, short enough that a field engineer sees the result |
+| D16 | UI library | Own plain-C layer on the EVE co-processor commands (built-in widgets and ROM fonts), not LVGL | The spec asked for a prototype of each. The co-processor's buttons, keypads and text cover menus and setpoint entry, need no frame buffer or image assets, and keep the UI at about 20 KB of code and 10 KB of RAM. LVGL's EVE renderer is still possible behind the same task if richer graphics are wanted |
 | D11 | Web transport | HTTP on port 80 now; HTTPS (mbedTLS) later | The spec allows HTTP on an isolated control network; HTTPS adds about 100 KB flash and 40 KB RAM and can come with the firmware-update work |
 
 ## 9. Repository layout
@@ -315,9 +354,11 @@ platform/net/       Modbus TCP, HTTP server, web API, logins (socket API: POSIX 
 platform/bsp/       simulated board, RAM FRAM and RAM NOR (also the target's stand-ins)
 port/stm32h5/       STM32H5 BSP, FRAM and NOR drivers, FreeRTOSConfig.h, linker snippet, compile/link check
 port/stm32h5/lwip/  lwipopts.h, Ethernet driver (from ST, SLA0044), network bring-up
+platform/ui/         EVE display driver and the touch UI
 web/                the web page source (embedded by tools/embed_web.py)
 app_demo/           example application on the scan contract
-host/               PC simulation, FreeRTOS POSIX run, networked simulation (netsim)
+host/               PC simulation, FreeRTOS POSIX run, networked simulation (netsim), BT817 simulator
+tools/              web page embedding, firmware image tool, screen previews, target compile check
 tests/              host unit tests; tests/integration: network and browser tests
 docs/               this file, CUBEMX_SETUP.md
 ```

@@ -1,5 +1,6 @@
 /* log_csv.c - see log_csv.h */
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include "log_csv.h"
 #include "plat_cmdq.h"
@@ -69,6 +70,53 @@ const char *log_level_name(uint8_t l) {
     case PLAT_LVL_ADMIN:    return "admin";
     case PLAT_LVL_FACTORY:  return "factory";
     default:                return "?";
+    }
+}
+
+static void num_text(char *b, size_t cap, double v, bool ip) {
+    if (!isfinite(v)) { snprintf(b, cap, "-"); return; }
+    if (ip && v >= 0 && v <= 4294967295.0) {
+        uint32_t u = (uint32_t)v;
+        snprintf(b, cap, "%u.%u.%u.%u", (unsigned)(u >> 24), (unsigned)((u >> 16) & 255u), (unsigned)((u >> 8) & 255u), (unsigned)(u & 255u));
+    } else if (v == floor(v) && fabs(v) < 1e15) {
+        char *p = b;                                  /* whole numbers in full, not 3.2e+09 */
+        if (cap < 24) { b[0] = 0; return; }           /* (newlib-nano's printf has no %lld) */
+        if (v < 0) { *p++ = '-'; v = -v; }
+        p = put_uint(p, (unsigned long long)v, 1);
+        *p = 0;
+    } else {
+        fmt_float(b, cap, v);
+    }
+}
+
+void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail, size_t dcap) {
+    static const char *const nm[] = {
+        [LOG_EV_POWER_UP] = "Power-up", [LOG_EV_PARAM] = "Setting changed", [LOG_EV_MODE] = "Mode",
+        [LOG_EV_RESTORE_DEFAULTS] = "Defaults restored", [LOG_EV_TIME_SET] = "Clock set", [LOG_EV_LOGIN] = "Login",
+        [LOG_EV_LOGIN_FAIL] = "Login failed", [LOG_EV_LOGOUT] = "Logout", [LOG_EV_PASSWORD] = "Password changed",
+        [LOG_EV_RESTORE_BACKUP] = "Backup restored", [LOG_EV_ALARM_RAISE] = "Alarm", [LOG_EV_ALARM_CLEAR] = "Alarm cleared",
+        [LOG_EV_ALARM_ACK] = "Alarm acknowledged", [LOG_EV_FW_UPDATE] = "Firmware", [LOG_EV_FW_ROLLBACK] = "Firmware rolled back",
+        [LOG_EV_LOG_FAULT] = "Log fault", [LOG_EV_STORE_FAULT] = "Storage fault", [LOG_EV_LOST] = "Events lost" };
+    static const char *const reset[] = { "", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out" };
+    const char *w = e->code < sizeof nm / sizeof nm[0] && nm[e->code] ? nm[e->code] : (e->code >= LOG_EV_APP ? "Application" : "Event");
+    snprintf(what, wcap, "%s", w);
+    char a[24], b[24];
+    bool ip = e->code == LOG_EV_PARAM && (strstr(e->text, "_ip") || !strcmp(e->text, "net_mask") || !strcmp(e->text, "net_gw"));
+    num_text(a, sizeof a, e->old_v, ip);
+    num_text(b, sizeof b, e->new_v, ip);
+    switch (e->code) {
+    case LOG_EV_PARAM: snprintf(detail, dcap, "%s (%lu): %s -> %s", e->text, (unsigned long)e->arg, a, b); break;
+    case LOG_EV_MODE: snprintf(detail, dcap, "%s -> %s", e->old_v != 0.0 ? "REMOTE" : "LOCAL", e->new_v != 0.0 ? "REMOTE" : "LOCAL"); break;
+    case LOG_EV_POWER_UP: snprintf(detail, dcap, "%s, %s", e->arg < 7u ? reset[e->arg] : "reset", e->text); break;
+    case LOG_EV_TIME_SET:
+        if (isfinite(e->old_v)) snprintf(detail, dcap, "stepped %ld s", (long)(e->new_v - e->old_v));
+        else snprintf(detail, dcap, "clock set");
+        break;
+    case LOG_EV_PASSWORD: snprintf(detail, dcap, "%s", log_level_name((uint8_t)e->arg)); break;
+    default:
+        if (e->arg && e->text[0]) snprintf(detail, dcap, "%s #%lu", e->text, (unsigned long)e->arg);
+        else if (e->arg) snprintf(detail, dcap, "#%lu", (unsigned long)e->arg);
+        else snprintf(detail, dcap, "%s", e->text);
     }
 }
 

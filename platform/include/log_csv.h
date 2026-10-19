@@ -45,6 +45,9 @@ void log_csv_feed(log_csv_t *c, const uint8_t *slots, uint32_t n, http_out_t *o)
 void log_fmt_time(char *buf, size_t cap, uint32_t t, bool clock_set);  /* cap >= 24 */
 void log_fmt_fixed(char *buf, size_t cap, double v, unsigned dec);     /* no printf %f on the target */
 const char *log_src_name(uint8_t src);
+/* plain words for an event, as the web page shows it: what ("Setting changed") and the
+ * detail ("start_delay (1001): 2000 -> 1500") */
+void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail, size_t dcap);
 const char *log_level_name(uint8_t level);
 
 #endif

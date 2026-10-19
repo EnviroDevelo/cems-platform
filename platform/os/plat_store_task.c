@@ -9,6 +9,8 @@
 #include "fw_update.h"
 #include "bsp.h"
 
+__attribute__((weak)) bool plat_ui_healthy(void) { return true; }
+
 /* before a firmware swap: give the store and the log ~1.2 s to save what is pending */
 static void flush_before_swap(void) {
     for (int k = 0; k < 60; ++k) {
@@ -28,7 +30,7 @@ void plat_store_task_body(void) {
         uint32_t now = bsp_ms();
         if (now - fw_t >= 1000u) {          /* activation, and confirming a trial image */
             uint32_t sc = plat_scan.stats.scans;
-            fw_service(now, sc - fw_scans >= 50u);   /* healthy: the scan is running */
+            fw_service(now, sc - fw_scans >= 50u && plat_ui_healthy());   /* healthy: scan running, display working */
             fw_scans = sc;
             fw_t = now;
         }

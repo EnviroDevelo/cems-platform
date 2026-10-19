@@ -39,6 +39,8 @@ typedef struct plat_app_s {
     mb_ident_t          ident;           /* vendor / product / revision for Modbus 43/14 and the web page */
     const plat_log_chan_t *log_chans;    /* data-log channels; the logic calls plat_log_put(i, ...) (may be NULL) */
     size_t              n_log_chans;
+    const uint16_t     *ui_home_ids;     /* parameters shown as tiles on the touchscreen's home screen (up to 6) */
+    size_t              n_ui_home;
 } plat_app_t;
 
 typedef enum {
@@ -80,5 +82,6 @@ void plat_modbus_task_body(void);
 void plat_http_task_body(void);
 void plat_ui_task_body(void);
 void plat_net_task_body(void);           /* network bring-up and upkeep (port) */
+bool plat_ui_healthy(void);              /* display working or not fitted (plat_ui_task.c; weak default true) */
 
 #endif

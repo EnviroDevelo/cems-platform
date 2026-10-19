@@ -27,5 +27,9 @@ Chromium).
 
 Firmware update files: `tools/mkfwimage.py build.bin cems-x.y.z.cfw --version x.y.z`.
 
+Touchscreen previews: `UI_DUMP=build/ui ./build/tests` writes each screen's EVE command
+list, and `python3 tools/eve_preview.py build/ui/*.eve` renders them to PNG (needs
+Pillow). Current screens: `docs/ui/`.
+
 The product build is the STM32CubeIDE project. These host builds are for testing
 outside the IDE.

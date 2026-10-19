@@ -51,6 +51,10 @@ const plat_log_chan_t app_demo_log[] = {
     { "delay_left", "s", 1 },
 };
 
+/* touchscreen home screen tiles */
+static const uint16_t app_demo_home[] = { DEMO_PARAM_START_DELAY, DEMO_PARAM_RUN_HOURS, DEMO_PARAM_START_IN,
+                                          DEMO_PARAM_VALVE_OUT, DEMO_PARAM_VALVE_NAME };
+
 /* TimerOnDelay, simplified demo model (the real one lives in the application layer). */
 static void ton(ul_timer_t *t, bool in) {
     if (!in) { t->Current = t->Preset; t->Out = false; return; }
@@ -97,4 +101,5 @@ const plat_app_t app_demo_plat = {
     .ident = { .vendor = "CEMS", .product = "CEMS Supervisor (demo app)", .revision = "0.3.0-dev",
                .write_level = PLAT_LVL_OPERATOR },
     .log_chans = app_demo_log, .n_log_chans = sizeof app_demo_log / sizeof app_demo_log[0],
+    .ui_home_ids = app_demo_home, .n_ui_home = sizeof app_demo_home / sizeof app_demo_home[0],
 };

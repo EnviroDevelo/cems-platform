@@ -51,6 +51,7 @@ typedef enum { PT_BOOL = 0, PT_INT, PT_UINT, PT_FLOAT, PT_BYTES, PT_TEXT, PT_TEX
 #define PF_ANY_MODE    0x0008u  /* writable from any source in any mode (e.g. alarm ack) */
 #define PF_LOCAL_ONLY  0x0010u  /* only from the touchscreen */
 #define PF_NO_MODBUS   0x0020u  /* never from Modbus (network and security settings) */
+#define PF_CONFIRM     0x0040u  /* the touchscreen asks "are you sure?" before changing it (critical setpoints) */
 
 typedef int (*param_interlock_fn)(uint16_t id, plat_val_t v);  /* 0 = allow */
 

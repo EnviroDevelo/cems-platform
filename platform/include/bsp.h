@@ -55,6 +55,10 @@ nor_dev_t *bsp_log_nor(void);
 struct fw_flash;
 struct fw_flash *bsp_fw_flash(void);
 
+/* The display's SPI transport (eve.h); NULL if this hardware has no display. */
+struct eve_bus;
+struct eve_bus *bsp_eve_bus(void);
+
 /* Random bytes for password salts and web session tokens (hardware RNG on the H5). */
 void bsp_random(void *buf, uint32_t len);
 

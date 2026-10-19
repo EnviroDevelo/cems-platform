@@ -11,7 +11,7 @@ CPPFLAGS = -DPLAT_HOST -Iplatform/include -Iplatform/bsp -Iapp_demo
 CORE = platform/core/scan_engine.c platform/core/plat_cmdq.c \
        platform/core/task_monitor.c platform/core/plat_diag.c platform/core/param.c \
        platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/fw_update.c \
-       platform/net/mbtcp.c platform/net/http_util.c platform/net/http_api.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c \
+       platform/net/mbtcp.c platform/net/http_util.c platform/net/http_api.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/ui/eve.c platform/ui/ui.c \
        platform/bsp/nvm_ram.c platform/bsp/nor_sim.c platform/bsp/fw_flash_sim.c platform/bsp/bsp_host.c
 
 BUILD = build
@@ -22,8 +22,8 @@ all: test sim
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests $^ -o $@ -lm
+$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c host/eve_sim/eve_sim.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests -Ihost/eve_sim $^ -o $@ -lm
 
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
@@ -33,8 +33,8 @@ test: $(BUILD)/tests $(BUILD)/tests128
 	./$(BUILD)/tests128 | tail -1
 
 # the same tests with the 128 KB FRAM memory map
-$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=131072u -Itests $^ -o $@ -lm
+$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c host/eve_sim/eve_sim.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=131072u -Itests -Ihost/eve_sim $^ -o $@ -lm
 
 sim: $(BUILD)/sim
 	./$(BUILD)/sim

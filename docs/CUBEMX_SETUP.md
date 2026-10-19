@@ -119,6 +119,30 @@ CubeMX generates `HAL_ETH_MspInit` (the pins). The platform's `ethernetif.c` def
 On first power-up the unit answers on 192.168.1.50 (web: http://192.168.1.50/, Modbus
 TCP port 502). Change the address from the web page (admin) or, later, the touchscreen.
 
+## 3e. Display (Riverdi RVT70HSBNWC00-B through a RiBUS breakout)
+
+| CubeMX | Setting |
+|---|---|
+| SPIx | Full-duplex master, 8-bit, mode 0, NSS software. Its own SPI if possible (the UI task owns it) |
+| GPIO | `EVE_CS` output, initial high; `EVE_PD` output, initial high (the BT817's PD_N) |
+
+In `main.h` (USER CODE section), if the handle isn't `hspi3`, and the prescalers for your
+SPI kernel clock (11 MHz or less at start-up, 30 MHz or less after):
+
+```c
+#define EVE_SPI_HANDLE hspi1
+#define EVE_SPI_SLOW SPI_BAUDRATEPRESCALER_32
+#define EVE_SPI_FAST SPI_BAUDRATEPRESCALER_8
+```
+
+Add `platform/ui/`, `platform/os/plat_ui_task.c` and `port/stm32h5/eve_bus_stm32h5.c`.
+Bring-up order (spec): the chip ID (REG_ID = 0x7C) answers, then the first frame
+shows. If the touch doesn't respond, the module's touch controller may need
+`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c) **(check with Riverdi which
+controller the uxTouch variant uses)**. If the picture is shifted or flickers, the
+timing values came from Riverdi's library for this module and are worth checking
+against its datasheet.
+
 ## 3d. Firmware update
 
 Nothing to configure in CubeMX beyond the HAL modules: FLASH and ICACHE (on by default).

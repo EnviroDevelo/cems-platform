@@ -58,6 +58,15 @@ static void apply_cfg(const net_cfg_t *c) {
     }
 }
 
+/* for the touchscreen's System screen (ui.h) */
+bool ui_net_status(uint32_t *ip, bool *link_up, uint8_t mac[6]) {
+    if (!ready) return false;
+    *ip = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&nif)));
+    *link_up = netif_is_link_up(&nif);
+    plat_net_mac(mac);
+    return true;
+}
+
 static void tcpip_done(void *arg) { (void)arg; tcpip_up = true; }
 
 void plat_net_task_body(void) {
