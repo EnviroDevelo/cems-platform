@@ -19,6 +19,7 @@ static uint16_t p_comms_timeout_s = 10;
 static bool     p_modbus_write_en = true;
 static uint32_t p_modbus_allow_ip;
 static bool     p_dhcp;
+static bool     p_http_redirect = true;
 static uint32_t p_ip   = 0xC0A80132u;   /* 192.168.1.50  - DECISION D5 */
 static uint32_t p_mask = 0xFFFFFF00u;   /* 255.255.255.0 */
 static uint32_t p_gw   = 0xC0A80101u;   /* 192.168.1.1   */
@@ -39,6 +40,7 @@ static const param_def_t plat_defs[] = {
     PARAM_BIT_D(PARAM_ID_MODBUS_WRITE_EN, "modbus_write_en", p_modbus_write_en, true, PLAT_LVL_ADMIN, NET),
     PARAM_UINT(PARAM_ID_MODBUS_ALLOW_IP, "modbus_allow_ip", p_modbus_allow_ip, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_BIT_D(PARAM_ID_HTTP_REDIRECT, "http_redirect", p_http_redirect, true, PLAT_LVL_ADMIN, NET),
     PARAM_BIT (PARAM_ID_NET_DHCP, "net_dhcp", p_dhcp, PLAT_LVL_ADMIN, NET),
     PARAM_UINT(PARAM_ID_NET_IP,   "net_ip",   p_ip,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80132u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_MASK, "net_mask", p_mask, CT_U32, 0, 0xFFFFFFFFu, 0xFFFFFF00u, PLAT_LVL_ADMIN, NET, NULL),

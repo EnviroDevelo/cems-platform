@@ -7,13 +7,13 @@ from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CHROME = os.environ.get("CHROME", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome")
-URL = "http://127.0.0.1:18095/"
+URL = "https://127.0.0.1:18095/"
 
 async def run(unit):
     ok = True
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME)
-        pg = await b.new_page(viewport={"width": 1200, "height": 900})
+        pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True)
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "401" not in m.text and "400" not in m.text else None)

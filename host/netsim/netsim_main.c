@@ -3,7 +3,8 @@
  * as on the RTOS. The parameter FRAM is a file, so settings survive restarts.
  *
  *   ./build/netsim [modbus_port] [http_port] [fram_file] [nor_file]
- *   (defaults 1502 8080 netsim_fram.bin netsim_nor.bin; the NOR file holds the logs)
+ *   (defaults 1502 8443 netsim_fram.bin netsim_nor.bin; the NOR file holds the logs)
+ *   The web interface is HTTPS on the second port; plain HTTP on the port after it only redirects.
  * The two program-flash banks are netsim_fw.bin (next to the NOR file). A firmware
  * activation swaps them and exits with status 3 ("reset"); start it again to boot the
  * "new image". Environment: CEMS_FW_VERSION (the version this run reports),
@@ -31,6 +32,8 @@
 #include "plat_tasks.h"
 #include "app_demo.h"
 #include "fw_update.h"
+#include "tls.h"
+#include <math.h>
 
 /* ---------------- critical sections ---------------- */
 static pthread_mutex_t crit;
@@ -168,7 +171,8 @@ scan_engine_t plat_scan;
 plat_cmdq_t plat_cmdq;
 plat_seqlock_t plat_snap_lock;
 static mbtcp_server_t mbs;
-static http_server_t hs;
+static http_server_t hs, hr;           /* HTTPS, and the plain-HTTP redirect on the next port */
+static uint8_t redirect_buf[2048];
 static uint8_t http_buf[4096 + STORE_FAC_SLOT + STORE_USR_SLOT + 64];
 static volatile int running = 1;
 
@@ -193,7 +197,7 @@ static void *store_thread(void *a) {
     return NULL;
 }
 static void *modbus_thread(void *a) { (void)a; while (running) mbtcp_poll(&mbs, 100); return NULL; }
-static void *http_thread(void *a)   { (void)a; while (running) http_poll(&hs, 100); return NULL; }
+static void *http_thread(void *a)   { (void)a; while (running) { http_poll(&hs, 50); http_poll(&hr, 50); } return NULL; }
 /* stand-in for the touchscreen: "remote", "local", "set <id> <value>" on stdin */
 static void *console_thread(void *a) {
     (void)a;
@@ -222,7 +226,7 @@ static void http_wait(void) { struct timespec t = { 0, 10000000L }; nanosleep(&t
 static void on_signal(int s) { (void)s; running = 0; }
 
 int main(int argc, char **argv) {
-    uint16_t mport = argc > 1 ? (uint16_t)atoi(argv[1]) : 1502, hport = argc > 2 ? (uint16_t)atoi(argv[2]) : 8080;
+    uint16_t mport = argc > 1 ? (uint16_t)atoi(argv[1]) : 1502, hport = argc > 2 ? (uint16_t)atoi(argv[2]) : 8443;
     if (argc > 3) fram_path = argv[3];
     if (argc > 4) nor_path = argv[4];
     snprintf(fw_path, sizeof fw_path, "%.*sfw.bin", (int)(strlen(nor_path) > 7 ? strlen(nor_path) - 7 : 0), nor_path);
@@ -261,8 +265,18 @@ int main(int argc, char **argv) {
                       .log_chans = app->log_chans, .n_log_chans = (unsigned)app->n_log_chans };
     http_api_init(&hc);
     if (mbtcp_open(&mbs, mport) != 0) { perror("modbus listen"); return 1; }
-    if (http_open(&hs, hport, http_buf, sizeof http_buf) != 0) { perror("http listen"); return 1; }
-    fprintf(stderr, "netsim: Modbus TCP on %u, web on http://127.0.0.1:%u/, store status 0x%04x\n",
+    {
+        int trc = tls_init(&fram_dev, STORE_META_ADDR + 256u, param_tag_get(param_find(PARAM_ID_SERIAL)).u,
+                           0x7F000001u);                  /* certificate for 127.0.0.1 */
+        if (trc != 0) { fprintf(stderr, "tls_init failed: -0x%04x\n", (unsigned)-trc); return 1; }
+        if (tls_key_was_created()) plat_log_event(LOG_EV_TLS_KEY, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, NULL);
+        fprintf(stderr, "HTTPS certificate SHA-256 %s\n", tls_fingerprint());
+    }
+    if (http_open(&hs, hport, http_buf, sizeof http_buf) != 0) { perror("https listen"); return 1; }
+    hs.tls = true;
+    if (http_open(&hr, (uint16_t)(hport + 1), redirect_buf, sizeof redirect_buf) != 0) { perror("http listen"); return 1; }
+    hr.redirect_only = true;
+    fprintf(stderr, "netsim: Modbus TCP on %u, web on https://127.0.0.1:%u/ (http on the next port redirects), store status 0x%04x\n",
             mport, hport, param_store_status());
 
     pthread_t th[5];
@@ -278,6 +292,6 @@ int main(int argc, char **argv) {
     scan_stats_t ss = scan_stats(&plat_scan);
     fprintf(stderr, "netsim: stopped. scans %u, late %u, max dt %u ms; modbus frames %u; http served %u\n",
             ss.scans, ss.late_starts, ss.max_dt_ms, mbs.frames, hs.served);
-    mbtcp_close_all(&mbs); http_close(&hs);
+    mbtcp_close_all(&mbs); http_close(&hs); http_close(&hr);
     return 0;
 }

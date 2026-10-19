@@ -115,6 +115,9 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
       If it fails before that, the unit goes back to the current firmware by itself.</p>
     <p class="note" id="diag"></p>
   </section>
+  <p class="note" style="text-align:center">HTTPS certificate fingerprint (SHA-256): <span id="tlsfp">-</span>.
+    Compare it with the one on the touchscreen (System) before logging in.
+    <a href="/api/tls/cert">Download the certificate</a> to trust this unit on this computer.</p>
 </main>
 <script>
 "use strict";
@@ -233,6 +236,7 @@ async function refreshInfo() {
     $("link").style.display = i.link_lost ? "" : "none"; $("link").className = "badge b-warn";
     $("cal").style.display = i.cal_valid ? "none" : "";
     $("ipc").style.display = i.ip_conflict ? "" : "none";
+    if (i.tls_fingerprint) $("tlsfp").textContent = i.tls_fingerprint;
     $("defpw").style.display = i.default_passwords ? "block" : "none";
     const newLevel = LV.indexOf(i.session.level);
     const changed = newLevel !== level || i.mode !== mode;
@@ -258,7 +262,7 @@ const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", rest
   time_set: "Clock set", login: "Login", login_fail: "Login failed", logout: "Logout", password: "Password changed",
   restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
   fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
-  events_lost: "Events lost", ip_conflict: "Address conflict" };
+  events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key" };
 const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
 const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
 function evDetail(e) {

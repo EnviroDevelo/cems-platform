@@ -9,7 +9,7 @@ backup/restore, concurrent clients, and that everything survives a restart.
 
     PYTHONPATH=<pymodbus source> python3 tests/integration/net_test.py
 """
-import http.cookiejar, json, os, signal, struct, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
+import http.cookiejar, ssl, json, os, signal, struct, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 
 from pymodbus.client import ModbusTcpClient
 from pymodbus.pdu import ExceptionResponse
@@ -19,7 +19,8 @@ MB, WEB = 15020, 18080
 TMP = tempfile.mkdtemp()
 FRAM = os.path.join(TMP, "fram.bin")
 NOR = os.path.join(TMP, "nor.bin")
-BASE = f"http://127.0.0.1:{WEB}"
+BASE = f"https://127.0.0.1:{WEB}"
+CTX = ssl._create_unverified_context()   # the unit's certificate is self-signed (checked separately)
 passed = failed = 0
 
 
@@ -40,7 +41,7 @@ class Unit:
         threading.Thread(target=self._read, daemon=True).start()
         for _ in range(100):
             try:
-                urllib.request.urlopen(BASE + "/api/info", timeout=1).read(); return
+                urllib.request.urlopen(BASE + "/api/info", timeout=1, context=CTX).read(); return
             except Exception:
                 time.sleep(0.05)
         raise RuntimeError("netsim did not start: " + "".join(self.log))
@@ -62,7 +63,7 @@ class Unit:
 class Web:
     def __init__(self):
         self.jar = http.cookiejar.CookieJar()
-        self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
+        self.op = urllib.request.build_opener(urllib.request.HTTPSHandler(context=CTX), urllib.request.HTTPCookieProcessor(self.jar))
 
     def req(self, path, form=None, raw=None, csrf=True):
         data, headers = None, {}
@@ -240,6 +241,50 @@ def main():
     bad = bytearray(backup); bad[-1] ^= 1
     st, body, _ = web.req("/api/restore", raw=bytes(bad))
     check(st == 400, "damaged backup refused")
+
+    # ---------------- HTTPS ----------------
+    import hashlib, socket
+    def tls_conn(session=None):
+        raw = socket.create_connection(("127.0.0.1", WEB), timeout=5)
+        t = CTX.wrap_socket(raw, server_hostname="127.0.0.1", session=session)
+        t.sendall(b"GET /api/info HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        data = b""
+        while True:
+            chunk = t.recv(4096)
+            if not chunk: break
+            data += chunk
+        return t, data
+    t1, d1 = tls_conn()
+    der = t1.getpeercert(binary_form=True)
+    fp = ":".join(f"{b:02X}" for b in hashlib.sha256(der).digest())
+    info = json.loads(d1.split(b"\r\n\r\n", 1)[1])
+    check(t1.version() == "TLSv1.2" and t1.cipher()[0] == "ECDHE-ECDSA-AES128-GCM-SHA256", f"TLS 1.2 ECDHE-ECDSA-AES128-GCM ({t1.version()} {t1.cipher()[0]})")
+    check(info["tls_fingerprint"] == fp, "fingerprint on the page matches the certificate the browser got")
+    t2, d2 = tls_conn(session=t1.session)
+    check(t2.session_reused and d2.startswith(b"HTTP/1.1 200"), "next connection resumes the session (no public-key work)")
+    st, body, hdr = web.req("/api/tls/cert", csrf=False)
+    check(st == 200 and body == der, "certificate download is the served certificate")
+    try:
+        CTX2 = ssl.create_default_context(); CTX2.load_verify_locations(cadata=der)
+        with socket.create_connection(("127.0.0.1", WEB), timeout=5) as raw, CTX2.wrap_socket(raw, server_hostname="127.0.0.1") as t3:
+            ok_verify = True
+    except ssl.SSLError as e:
+        ok_verify = False; print("   verify:", e)
+    check(ok_verify, "once the downloaded certificate is trusted, the connection verifies (IP address in the certificate)")
+    import http.client
+    hc = http.client.HTTPConnection("127.0.0.1", WEB + 1, timeout=5); hc.request("GET", "/api/values")
+    rr = hc.getresponse()
+    check(rr.status == 301 and rr.getheader("Location") == "https://127.0.0.1/api/values", "plain HTTP redirects to https://")
+    raw = socket.create_connection(("127.0.0.1", WEB), timeout=5); raw.sendall(b"GET / HTTP/1.1\r\n\r\n")
+    try:
+        junk = raw.recv(100)
+    except OSError:
+        junk = b""
+    check(not junk.startswith(b"HTTP/"), "plain HTTP to the HTTPS port gets no page")
+    raw.close()
+    st, info = web.json("/api/info")
+    print(f"   TLS: {info['tls']}")
+    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 36864, "TLS statistics")
 
     # ---------------- event log ----------------
     st, j = web.json("/api/log/events?n=200")

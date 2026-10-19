@@ -4,20 +4,22 @@
 #include "http_api.h"
 #include "plat_net.h"
 #include "bsp.h"
+#include "tls.h"
 
 typedef struct { int fd; http_server_t *s; } conn_t;
 
 static int recv_fd(void *ctx, uint8_t *buf, uint32_t cap) {
     conn_t *c = ctx;
-    ssize_t got = recv(c->fd, buf, cap, 0);
+    int got = c->s->tls ? tls_read(buf, cap) : (int)recv(c->fd, buf, cap, 0);
     if (c->s->alive) c->s->alive();
-    return got > 0 ? (int)got : -1;
+    return got > 0 ? got : -1;
 }
 
 static int send_fd(void *ctx, const void *p, size_t n) {
     conn_t *c = ctx;
     int fd = c->fd;
     if (c->s->alive) c->s->alive();
+    if (c->s->tls) return tls_write(p, (uint32_t)n);
     const uint8_t *b = p;
     while (n) {
         ssize_t w = send(fd, b, n, 0);
@@ -52,18 +54,19 @@ static void serve(http_server_t *s, int fd) {
     http_out_t o;
     conn_t c = { fd, s };
     out_init(&o, send_fd, &c);
+    if (s->tls && tls_accept(fd) != 0) { s->tls_failed++; return; }
     http_req_t r;
     uint32_t n = 0;
     int hl = 0;
     while (hl == 0) {                                   /* headers */
         if (n >= s->cap) { s->too_large++; http_simple(&o, 413, "too large"); return; }
-        ssize_t got = recv(fd, s->buf + n, s->cap - n, 0);
-        if (s->alive) s->alive();
+        int got = recv_fd(&c, s->buf + n, s->cap - n);
         if (got <= 0) { s->timeouts++; return; }
         n += (uint32_t)got;
         hl = http_parse_head((const char *)s->buf, n, &r);
     }
     if (hl < 0) { s->bad_requests++; http_simple(&o, 400, "bad request"); return; }
+    if (s->redirect_only) { http_redirect_https(&r, &o); s->served++; return; }
     if (!strcmp(r.method, "POST") && !r.has_length) { s->bad_requests++; http_simple(&o, 400, "length required"); return; }
     if (http_wants_stream(&r)) {                        /* firmware upload: not buffered */
         r.body = s->buf + hl;
@@ -74,8 +77,7 @@ static void serve(http_server_t *s, int fd) {
     }
     if (r.content_length > s->cap - (uint32_t)hl) { s->too_large++; http_simple(&o, 413, "too large"); return; }
     while (n < (uint32_t)hl + r.content_length) {       /* body */
-        ssize_t got = recv(fd, s->buf + n, (uint32_t)hl + r.content_length - n, 0);
-        if (s->alive) s->alive();
+        int got = recv_fd(&c, s->buf + n, (uint32_t)hl + r.content_length - n);
         if (got <= 0) { s->timeouts++; return; }
         n += (uint32_t)got;
     }
@@ -95,6 +97,7 @@ void http_poll(http_server_t *s, uint32_t timeout_ms) {
     int fd = accept(s->lfd, NULL, NULL);
     if (fd < 0) return;
     serve(s, fd);
+    if (s->tls) tls_close();
     shutdown(fd, SHUT_WR);
     closesocket(fd);
 }

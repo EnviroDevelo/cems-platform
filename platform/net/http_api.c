@@ -11,6 +11,7 @@
 #include "bsp.h"
 #include "log_csv.h"
 #include "fw_update.h"
+#include "tls.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -62,6 +63,9 @@ int http_parse_head(const char *buf, uint32_t len, http_req_t *r) {
                 memcpy(num, v, vl);
                 for (size_t k = 0; k < vl; ++k) if (!isdigit((unsigned char)num[k])) return -1;
                 r->content_length = (uint32_t)strtoul(num, NULL, 10); r->has_length = true;
+            } else if (kl == 4 && ieq(p, "host", 4)) {
+                size_t n = vl < sizeof r->host - 1 ? vl : sizeof r->host - 1;
+                memcpy(r->host, v, n); r->host[n] = 0;
             } else if (kl == 6 && ieq(p, "x-cems", 6)) {
                 r->csrf = vl == 1 && v[0] == '1';
             } else if (kl == 17 && ieq(p, "transfer-encoding", 17)) {
@@ -107,6 +111,23 @@ static void json_error(http_out_t *o, int st, const char *err, long id) {
     out_str(o, "{\"ok\":false,\"error\":"); json_str(o, err);
     if (id >= 0) { out_str(o, ",\"id\":"); json_int(o, id); }
     out_str(o, "}");
+}
+
+void http_redirect_https(const http_req_t *r, http_out_t *o) {
+    char host[64], loc[200];
+    size_t k = 0;
+    for (const char *p = r->host; *p && *p != ':' && k + 1 < sizeof host; ++p)    /* drop the port */
+        if (isalnum((unsigned char)*p) || *p == '.' || *p == '-' || *p == '[' || *p == ']') host[k++] = *p;
+    host[k] = 0;
+    if (!k) { http_simple(o, 400, "use https://"); return; }
+    snprintf(loc, sizeof loc, "Location: https://%s%s\r\nContent-Length: 0\r\n", host, r->path[0] == '/' ? r->path : "/");
+    char l[48];
+    snprintf(l, sizeof l, "HTTP/1.1 301 Moved Permanently\r\n");
+    out_str(o, l);
+    out_str(o, "Cache-Control: no-store\r\nConnection: close\r\n");
+    out_str(o, loc);
+    out_str(o, "\r\n");
+    out_flush(o);
 }
 
 void http_simple(http_out_t *o, int st, const char *msg) { json_error(o, st, msg, -1); out_flush(o); }
@@ -167,6 +188,12 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
     out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
+    out_str(o, ",\"tls_fingerprint\":"); json_str(o, tls_fingerprint());
+    { tls_stats_t t = tls_stats();
+      out_str(o, ",\"tls\":{\"handshakes\":"); json_uint(o, t.handshakes);
+      out_str(o, ",\"resumed\":"); json_uint(o, t.resumed);
+      out_str(o, ",\"failed\":"); json_uint(o, t.failed);
+      out_str(o, ",\"pool_peak\":"); json_uint(o, t.pool_peak); out_str(o, "}"); }
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
@@ -610,6 +637,19 @@ static void get_log_events(const http_req_t *r, http_out_t *o) {
     out_str(o, "]}");
 }
 
+/* the unit's certificate, to import on the site's laptops so browsers stop warning */
+static void get_cert(http_out_t *o) {
+    size_t n;
+    const uint8_t *c = tls_cert(&n);
+    if (!n) { json_error(o, 503, "no certificate", -1); return; }
+    plat_val_t s;
+    char extra[128];
+    snprintf(extra, sizeof extra, "Content-Length: %lu\r\nContent-Disposition: attachment; filename=\"cems-%lu.crt\"\r\n",
+             (unsigned long)n, (unsigned long)(param_read(PARAM_ID_SERIAL, &s) ? s.u : 0));
+    head(o, 200, "application/x-x509-ca-cert", extra);
+    out_bytes(o, c, n);
+}
+
 /* ---------------- firmware update ---------------- */
 static const char *fw_state_name(fw_state_t s) {
     switch (s) { case FW_ST_PENDING: return "pending"; case FW_ST_TRIAL: return "trial";
@@ -644,11 +684,23 @@ bool http_wants_stream(const http_req_t *r) {
     return !strcmp(r->method, "POST") && !strcmp(r->path, "/api/fw/upload");
 }
 
+/* Read and drop the rest of a refused upload, so the client gets the answer instead
+ * of a broken connection (with TLS, closing on unread data resets the connection). */
+static void drain(http_read_fn rd, void *ctx, uint32_t left) {
+    if (left > 2u * 1024u * 1024u || !cfg.scratch) return;   /* not for absurd lengths */
+    while (left) {
+        int n = rd(ctx, cfg.scratch, left < cfg.scratch_size ? left : cfg.scratch_size);
+        if (n <= 0) return;
+        left -= (uint32_t)n;
+    }
+}
+
 void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now) {
     uint8_t lvl = auth_session(r->sid, now, NULL);
-    if (!r->csrf) { json_error(o, 403, "missing X-CEMS header", -1); out_flush(o); return; }
-    if (lvl == 0) { json_error(o, 401, "login", -1); out_flush(o); return; }
-    if (lvl < PLAT_LVL_FACTORY) { json_error(o, 403, "access", -1); out_flush(o); return; }   /* tech level (D14) */
+    uint32_t rest = r->content_length - r->body_len;
+    if (!r->csrf) { drain(rd, ctx, rest); json_error(o, 403, "missing X-CEMS header", -1); out_flush(o); return; }
+    if (lvl == 0) { drain(rd, ctx, rest); json_error(o, 401, "login", -1); out_flush(o); return; }
+    if (lvl < PLAT_LVL_FACTORY) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_flush(o); return; }   /* tech level (D14) */
     fw_err_t e = fw_upload_begin(r->content_length);
     if (e == FW_OK) e = fw_upload_data(r->body, r->body_len);
     uint32_t got = r->body_len;
@@ -661,7 +713,7 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
         e = fw_upload_data(cfg.scratch, (uint32_t)n);
     }
     if (e == FW_OK) e = fw_upload_end();
-    else fw_upload_abort();
+    else { fw_upload_abort(); drain(rd, ctx, r->content_length - got); }
     if (e != FW_OK) {
         plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, (uint32_t)e, NAN, NAN, "upload refused");
         json_error(o, e == FW_E_BUSY ? 409 : 400, fw_err_name(e), -1);
@@ -695,6 +747,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/backup")) get_backup(o, lvl);
     else if (get && !strcmp(r->path, "/api/log/info")) get_log_info(o);
     else if (get && !strcmp(r->path, "/api/fw")) get_fw(o);
+    else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
     else if (get && !strcmp(r->path, "/api/log/data.csv")) get_log_csv(r, o, LOG_RING_DATA);

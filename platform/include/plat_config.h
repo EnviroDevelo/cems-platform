@@ -70,8 +70,11 @@
 #ifndef PLAT_MODBUS_PORT
 #define PLAT_MODBUS_PORT          502
 #endif
+#ifndef PLAT_HTTPS_PORT
+#define PLAT_HTTPS_PORT           443    /* DECISION D11: the web interface is HTTPS only */
+#endif
 #ifndef PLAT_HTTP_PORT
-#define PLAT_HTTP_PORT            80
+#define PLAT_HTTP_PORT            80     /* only redirects to https:// (parameter 6 turns it off) */
 #endif
 #define PLAT_SILENCE_NET_MS       5000u
 

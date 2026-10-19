@@ -29,6 +29,7 @@
 #include "nvm.h"
 #include "bsp.h"
 #include "plat_log.h"
+#include "tls.h"
 
 static struct netif nif;
 static volatile bool ready;
@@ -112,6 +113,7 @@ static void publish_status(bool dhcp, uint32_t *was) {
     if (probing) st |= NETST_PROBING;
     if (dhcp ? dhcp_supplied_address(&nif) : bound) st |= NETST_READY;
     plat_net_status_word = st;
+    if (st & NETST_READY) tls_set_ip(lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&nif))));   /* certificate follows the address */
     if ((st ^ *was) & NETST_CONFLICT)
         plat_log_event(LOG_EV_IP_CONFLICT, PLAT_SRC_INTERNAL, 0, lwip_ntohl(ip4_addr_get_u32(&want_ip)),
                        NAN, (st & NETST_CONFLICT) ? 1.0 : 0.0, NULL);

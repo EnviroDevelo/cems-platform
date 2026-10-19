@@ -19,6 +19,7 @@
  *   GET  /api/log/events[?n=50]          the newest events, newest first (JSON)
  *   GET  /api/log/events.csv[?from=&to=] the whole event log (s since 1970, inclusive)
  *   GET  /api/log/data.csv[?from=&to=]   the whole data log
+ *   GET  /api/tls/cert     the unit's HTTPS certificate (DER), to trust it on the site's laptops
  *   GET  /api/fw           firmware status: running and staged versions, trial, upload progress
  *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (tech/factory level)
  *   POST /api/fw/activate  restart on the staged image (tech/factory level); it confirms itself after a
@@ -44,6 +45,7 @@ typedef struct {
     char     path[64];
     char     query[256];
     char     sid[AUTH_TOKEN_LEN + 1];
+    char     host[64];             /* Host header (for the https:// redirect) */
     bool     csrf;                 /* X-CEMS: 1 present */
     bool     has_length;
     uint32_t content_length;
@@ -76,6 +78,9 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now_ms);
 typedef int (*http_read_fn)(void *ctx, uint8_t *buf, uint32_t cap);
 bool http_wants_stream(const http_req_t *r);
 void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now_ms);
+
+/* Port 80: send the browser to the same page over HTTPS. */
+void http_redirect_https(const http_req_t *r, http_out_t *o);
 
 /* Answer without a request (e.g. 413 body too large, 400 bad request). */
 void http_simple(http_out_t *o, int status, const char *msg);

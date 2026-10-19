@@ -11,6 +11,8 @@
 #include "bsp.h"
 #include "plat_sys.h"
 #include "fw_update.h"
+#include "tls.h"
+#include <math.h>
 #include "web_auth.h"
 #include "modbus.h"
 
@@ -109,6 +111,16 @@ DEF_TASK(net,    PLAT_STACK_NET);
     do { if (xTaskCreateStatic((fn), (name), (stk), (arg), (prio), nm##_stack, &nm##_tcb) == NULL) \
              fatal(PLAT_FAULT_ASSERT, -1, name, __LINE__); } while (0)
 
+/* HTTPS key and certificate (D11): the key is made at the first start (~0.3 s). */
+static void tls_start(nvm_dev_t *fram) {
+    const param_def_t *ds = param_find(PARAM_ID_SERIAL), *di = param_find(PARAM_ID_NET_IP);
+    bsp_wdg_kick();
+    int rc = tls_init(fram, STORE_META_ADDR + 256u, ds ? param_tag_get(ds).u : 0, di ? param_tag_get(di).u : 0);
+    bsp_wdg_kick();
+    if (rc != 0) plat_diag_fault(PLAT_FAULT_ASSERT, -1, "tls", (uint32_t)rc, bsp_ms());   /* web stays closed; the rest runs */
+    else if (tls_key_was_created()) plat_log_event(LOG_EV_TLS_KEY, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, NULL);
+}
+
 /* Event log and data logger: before the tasks start, so the power-up event comes first. */
 static void log_start(const plat_app_t *app, nvm_dev_t *fram) {
     bsp_rtc_t t;
@@ -159,6 +171,7 @@ void plat_start(const plat_app_t *app) {
     log_start(app, fram);
     fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
     fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
+    tls_start(fram);
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {

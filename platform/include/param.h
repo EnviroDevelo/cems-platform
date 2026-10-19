@@ -91,7 +91,8 @@ enum {
     PARAM_ID_REMOTE_LINK_LOST = 2,   /* RO status: remote mode and no remote traffic for the timeout */
     PARAM_ID_COMMS_TIMEOUT_S  = 3,   /* remote-link watchdog, s (0 = off) */
     PARAM_ID_MODBUS_WRITE_EN  = 4,   /* 0 = Modbus is read-only */
-    PARAM_ID_MODBUS_ALLOW_IP  = 5,   /* 0 = any client; else only this IPv4 (host order) */
+    PARAM_ID_MODBUS_ALLOW_IP  = 5,
+    PARAM_ID_HTTP_REDIRECT    = 6,   /* port 80 answers with a redirect to https:// (else closed) */   /* 0 = any client; else only this IPv4 (host order) */
     PARAM_ID_NET_DHCP         = 10,
     PARAM_ID_NET_IP           = 11,  /* IPv4, host byte order */
     PARAM_ID_NET_MASK         = 12,

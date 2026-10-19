@@ -3,11 +3,12 @@
 tools/mkfwimage.py is uploaded over HTTP, activated (netsim swaps its file-backed
 banks and exits as if reset), started again as the new version, confirmed after a
 healthy trial; then a second update whose trial "crashes" is rolled back."""
-import http.cookiejar, json, os, random, subprocess, sys, tempfile, time, urllib.request, urllib.error
+import http.cookiejar, ssl, json, os, random, subprocess, sys, tempfile, time, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WEB, MB = 18097, 15097
-BASE = f"http://127.0.0.1:{WEB}"
+BASE = f"https://127.0.0.1:{WEB}"
+CTX = ssl._create_unverified_context()   # the unit's certificate is self-signed (checked separately)
 TMP = tempfile.mkdtemp()
 passed = failed = 0
 
@@ -31,7 +32,7 @@ class Unit:
             if self.p.poll() is not None:
                 return                                   # exited during start-up (rollback)
             try:
-                urllib.request.urlopen(BASE + "/api/info", timeout=1).read(); return
+                urllib.request.urlopen(BASE + "/api/info", timeout=1, context=CTX).read(); return
             except Exception:
                 time.sleep(0.05)
 
@@ -50,7 +51,7 @@ class Unit:
 
 class Web:
     def __init__(self):
-        self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.op = urllib.request.build_opener(urllib.request.HTTPSHandler(context=CTX), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
     def req(self, path, data=None, ctype="application/x-www-form-urlencoded"):
         h = {"X-CEMS": "1", "Content-Type": ctype} if data is not None else {}

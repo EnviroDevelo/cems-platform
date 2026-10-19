@@ -9,3 +9,4 @@ for cfg in "" "-DCHECK_WITH_I2C_FRAM" "-DCHECK_WITH_FRAM" "-DCHECK_WITH_I2C_FRAM
     fi
     printf '%-45s %s\n' "[${cfg:-no FRAM, no NOR}]" "$(tail -1 build/check.log | awk '{print "text+data", $1+$2, "bss+data", $2+$3}')"
 done
+python3 tools/mem_report.py build/target/cems_check.map docs/MEMORY.md

@@ -28,10 +28,10 @@ runs on top of it.
 | Event log and data logger on serial NOR, CSV export, event list on the web page | `plat_log.h/.c`, `nor.h`, `nor_sim.c`, `log_csv.h/.c`, `port/stm32h5/nor_spi.c` | Done; host-tested incl. 400 random power cuts, on real sockets and in Chromium. SPI NOR driver compiled and linked, not yet run on hardware |
 | Firmware update over the network: streamed upload into the free flash bank, bank swap, trial boot, automatic confirm or rollback; image tool | `fw_update.h/.c`, `fw_flash_sim.c`, `port/stm32h5/fw_flash_stm32h5.c`, `tools/mkfwimage.py` | Done; host-tested, end to end on real sockets (upload, swap, trial, confirm, crash, rollback) and in Chromium. Flash driver compiled and linked, not yet run on hardware |
 | EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
+| HTTPS (D11): own key and certificate, TLS 1.2 server, session tickets, port-80 redirect | `tls.h`, `platform/net/tls.c`, `tls_config.h`, `third_party/mbedtls` | Done; host-tested, handshakes against Python's TLS client (resumption, certificate trust by IP, redirect) and Chromium. Compiled and linked for the H5 |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): HTTPS (D11); image signing
-(D14); alarm manager (alarm list and acknowledge on the touchscreen and web); QSPI for
+Not in this revision (next modules, in the order proposed): image signing (D14); alarm manager (alarm list and acknowledge on the touchscreen and web); QSPI for
 the display.
 
 ## 2. Tasks and priorities
@@ -303,9 +303,12 @@ address later is detected too (the address is defended and kept, and the alarm r
 DHCP leases get the same check inside the DHCP client. Probing takes 2-7 s, during
 which the unit has no address. Status: parameter 14 `net_status` (`NETST_*`).
 
-**Security model (planned, D11/D17).** Defence in depth, in the spirit of IEC 62443:
-- HTTPS only for the web interface (D11), logins with lockout, tech-level firmware
-  updates with signed images (D14), every change in the event log;
+**Security model (D11/D17).** Defence in depth, in the spirit of IEC 62443:
+- HTTPS only for the web interface (D11, built): the unit's own key and self-signed
+  certificate, fingerprint shown on the touchscreen (System) and the web page, the
+  certificate downloadable (`/api/tls/cert`) to trust it on the site's laptops; port 80
+  only redirects; logins with lockout, tech-level firmware updates with signed images
+  (D14, next), every change in the event log;
 - Modbus TCP has no security of its own (nor do the PLCs that use it): it stays on the
   control network, with the existing allowed-client IP and the "Modbus read-only"
   switch, and is never routed to the internet;
@@ -373,8 +376,9 @@ work before integration.
 | D14 | Firmware authenticity | **Decided (Gary, 20 Oct): the signing key is a tech-level credential, never a user-level one.** The private key stays with the technicians/build machine and signs each .cfw; the instrument holds only the public key and rejects unsigned or wrongly signed images (`PLAT_FW_REQUIRE_SIGNED 1`). Uploading and activating firmware also need the factory (tech) login, on the web and the touchscreen (Gary, 20 Oct). Until signing is built: unsigned images, SHA-256 integrity, tech login, product ID check | Site users (operator, admin) can't change firmware; and even a tech login can't make firmware the unit will accept without the signing key |
 | D15 | Trial length and rollback rule | 60 s healthy running; a watchdog/fault reset or a second power cut during the trial rolls back | Long enough to cover start-up and the first scans and connections, short enough that a field engineer sees the result |
 | D16 | UI library | Own plain-C layer on the EVE co-processor commands (built-in widgets and ROM fonts), not LVGL | The spec asked for a prototype of each. The co-processor's buttons, keypads and text cover menus and setpoint entry, need no frame buffer or image assets, and keep the UI at about 20 KB of code and 10 KB of RAM. LVGL's EVE renderer is still possible behind the same task if richer graphics are wanted |
-| D11 | Web transport | **HTTPS only (Gary, 20 Oct).** TLS 1.2 and 1.3 with mbedTLS 3.6 LTS on port 443, ECDSA P-256 keys, the H573's crypto hardware where mbedTLS supports it. Port 80 only redirects to HTTPS (and can be switched off). Each unit makes its own key at first start and keeps it in the factory FRAM area; its certificate is signed by a CEMS company CA at production (tech tool), so a site that trusts the CA once gets no browser warnings; until then a self-signed certificate. About 120 KB flash, 30-40 KB RAM per connection, two connections at a time | Industrial sites: passwords and settings must not cross the network in clear |
+| D11 | Web transport | **HTTPS only (Gary, 20 Oct); built.** TLS 1.2, ECDHE-ECDSA-AES128-GCM-SHA256 on P-256, mbedTLS 3.6.7 LTS (vendored subset, `third_party/mbedtls`) in a fixed 36 KB pool. Session tickets, so a browser's repeat connections skip the public-key work. Port 80 only redirects to https:// (parameter 6 `http_redirect` closes it). **No production certificate step (Gary, 20 Oct):** each unit makes its own key at first start (kept in FRAM META, never in a backup file) and a self-signed certificate from it (stable: deterministic signing), with its IP address in it. The browser warns once per unit; the fingerprint is on the touchscreen and the web page so a technician can check it is the real unit, and the certificate can be downloaded and trusted on the site laptops to stop the warning. Cost: 70 KB flash, 39 KB RAM | Industrial sites: passwords and settings must not cross the network in clear. A company CA at production would only remove the one-time warning, at the cost of a production step and a key to guard |
 | D17 | Remote access | Through a site VPN router (outbound VPN, vendor remote-access service); never port-forwarding; the instrument itself never connects out | Keeps the instrument off the open internet; nothing to build or host; works the same for Modbus diagnostics |
+| D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout
 

@@ -143,6 +143,15 @@ controller the uxTouch variant uses)**. If the picture is shifted or flickers, t
 timing values came from Riverdi's library for this module and are worth checking
 against its datasheet.
 
+## 3f. HTTPS (mbedTLS)
+
+Add `third_party/mbedtls/library/*.c` and `platform/net/tls.c` to the build, the include
+paths `third_party/mbedtls/include`, `third_party/mbedtls/library` and `platform/net`,
+and the preprocessor define `MBEDTLS_CONFIG_FILE="tls_config.h"` (Project →
+Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor). The RNG must be
+enabled (3b). Browse to `https://192.168.1.50/` and accept the certificate once, after
+comparing its fingerprint with the touchscreen's System screen.
+
 ## 3d. Firmware update
 
 Nothing to configure in CubeMX beyond the HAL modules: FLASH and ICACHE (on by default).

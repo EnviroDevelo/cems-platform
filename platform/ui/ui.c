@@ -15,6 +15,7 @@
 #include "http_util.h"
 #include "plat_diag.h"
 #include "ul_system.h"
+#include "tls.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -704,7 +705,7 @@ static void kv(int16_t x, int16_t y, const char *k, const char *v) {
 
 static void draw_system(uint32_t now) {
     char b[96], c[48];
-    box(16, BODY_Y, 496, 390, C_CARD, 8);
+    box(16, BODY_Y, 496, 392, C_CARD, 8);
     box(528, BODY_Y, 480, 390, C_CARD, 8);
     /* firmware */
     fw_status_t st; fw_status(&st);
@@ -731,6 +732,15 @@ static void draw_system(uint32_t now) {
     button(T_BRIGHT_DN, 32, BODY_Y + 306, 140, 64, "-", C_ACCENT, true);
     color(C_INK); text(262, BODY_Y + 338, F_BIG, OPT_CENTER, b);
     button(T_BRIGHT_UP, 352, BODY_Y + 306, 140, 64, "+", C_ACCENT, true);
+    /* HTTPS fingerprint: a technician compares it with the browser's to know it reached this unit */
+    const char *fp = tls_fingerprint();
+    color(C_MUTE); text(32, BODY_Y + 378, F_SMALL, 0, fp[0] ? "HTTPS certificate fingerprint (SHA-256)" : "HTTPS not available");
+    if (fp[0]) {
+        char l1[49], l2[48];
+        memcpy(l1, fp, 47); l1[47] = 0;                     /* 16 bytes per line */
+        memcpy(l2, fp + 48, 47); l2[47] = 0;
+        color(C_INK); text(32, BODY_Y + 400, F_SMALL, 0, l1); text(32, BODY_Y + 420, F_SMALL, 0, l2);
+    }
     /* unit */
     color(C_INK); text(544, BODY_Y + 10, F_TEXT, 0, "Unit");
     plat_val_t v;

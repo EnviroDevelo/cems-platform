@@ -4,7 +4,7 @@
 #ifndef PLAT_NET_H
 #define PLAT_NET_H
 
-#if defined(PLAT_HOST)
+#if defined(PLAT_HOST) || defined(PLAT_POSIX_SOCKETS)   /* PC builds, incl. the FreeRTOS POSIX run */
   #include <sys/types.h>
   #include <sys/socket.h>
   #include <sys/select.h>
