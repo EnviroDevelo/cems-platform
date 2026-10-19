@@ -9,10 +9,10 @@
 #define PLAT_SCAN_PERIOD_MS       10u    /* DECISION D1: 10 ms, matches g_dt_ms used in Stage 4G/4H/4I tests */
 #endif
 #ifndef PLAT_SCAN_MAX_CMDS
-#define PLAT_SCAN_MAX_CMDS        16u    /* external writes applied per scan, bounds scan time */
+#define PLAT_SCAN_MAX_CMDS        PLAT_CMDQ_DEPTH /* apply everything queued: a multi-value write never straddles scans */
 #endif
 #ifndef PLAT_CMDQ_DEPTH
-#define PLAT_CMDQ_DEPTH           32u    /* pending external writes (UI + web + Modbus) */
+#define PLAT_CMDQ_DEPTH           128u   /* pending scalar writes (UI + web + Modbus); one FC16 can carry 123 */
 #endif
 
 /* ---- parameter FRAM ---- */

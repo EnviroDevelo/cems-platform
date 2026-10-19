@@ -9,6 +9,8 @@ void test_monitor_all(void);
 void test_diag_all(void);
 void test_param_all(void);
 void test_store_all(void);
+void test_blob_all(void);
+void test_modbus_all(void);
 
 int main(void) {
     test_scan_all();
@@ -18,6 +20,8 @@ int main(void) {
     test_diag_all();
     test_param_all();
     test_store_all();
+    test_blob_all();
+    test_modbus_all();
     printf("\n%d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

@@ -2,6 +2,15 @@
 #include <math.h>
 #include <string.h>
 #include "param.h"
+#include "plat_port.h"
+#include "plat_seqlock.h"
+
+#ifndef PARAM_BLOB_POOL
+#define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
+#endif
+#ifndef PARAM_BLOBQ_DEPTH
+#define PARAM_BLOBQ_DEPTH 16u     /* one FC16 of 123 registers can touch 13 ten-register names */
+#endif
 
 /* ---------------- platform parameter storage ---------------- */
 static uint8_t  p_mode = PARAM_MODE_LOCAL;
@@ -46,6 +55,10 @@ static const param_def_t *tab[PARAM_MAX];     /* sorted by id */
 static plat_val_t         shadow[PARAM_MAX];  /* value at end of last scan, index = tab index */
 static size_t             n_tab;
 static uint16_t           tab_err_id;
+static uint32_t           blob_off[PARAM_MAX];       /* offset in blob_shadow, blobs only */
+static uint8_t            blob_shadow[PARAM_BLOB_POOL];
+static plat_cmdq_t       *bound_q;
+static plat_seqlock_t    *bound_lock;
 static volatile uint32_t  last_remote_ms;
 static volatile bool      remote_entered;     /* mode just switched to REMOTE */
 void (*param_on_restore_defaults)(void);
@@ -82,8 +95,31 @@ static int64_t as_i64(uint8_t pt, plat_val_t v) {
     }
 }
 
+static uint8_t elem_ptype(uint8_t ct) {
+    switch (ct) {
+    case CT_F32: return PT_FLOAT;
+    case CT_BOOL: return PT_BOOL;
+    case CT_I8: case CT_I16: case CT_I32: return PT_INT;
+    default: return PT_UINT;
+    }
+}
+
+static bool blob_def_ok(const param_def_t *d) {
+    if (d->size == 0 || d->ptype > PT_ARRAY) return false;
+    if (d->ptype != PT_ARRAY) return d->ctype == CT_BLOB && (d->ptype != PT_TEXT16 || d->size % 2u == 0);
+    size_t es = param_ctype_size(d->ctype);
+    if (es == 0 || d->size % es != 0) return false;
+    switch (elem_ptype(d->ctype)) {
+    case PT_FLOAT: return isfinite(d->vmin.f) && isfinite(d->vmax.f) && d->vmin.f <= d->vmax.f;
+    case PT_INT:   return d->vmin.i <= d->vmax.i;
+    case PT_UINT:  return d->vmin.u <= d->vmax.u;
+    default:       return true;
+    }
+}
+
 static bool def_ok(const param_def_t *d) {
     if (d->id == 0 || d->ptr == NULL || d->name == NULL) return false;
+    if (PARAM_IS_BLOB(d)) return blob_def_ok(d);
     if (param_ctype_size(d->ctype) == 0) return false;
     if (d->ptype == PT_FLOAT) {
         if (d->ctype != CT_F32) return false;
@@ -114,9 +150,17 @@ param_err_t param_init(const param_def_t *app_defs, size_t n_app) {
         while (j > 0 && tab[j - 1]->id > x->id) { tab[j] = tab[j - 1]; --j; }
         tab[j] = x;
     }
+    uint32_t pool = 0;
     for (size_t i = 0; i < n_tab; ++i) {
         if (!def_ok(tab[i]) || (i > 0 && tab[i]->id == tab[i - 1]->id)) { tab_err_id = tab[i]->id; return PERR_TABLE; }
         shadow[i] = tab[i]->vdef;
+        if (PARAM_IS_BLOB(tab[i])) {
+            if (pool + tab[i]->size > PARAM_BLOB_POOL) { tab_err_id = tab[i]->id; return PERR_TABLE; }
+            blob_off[i] = pool;
+            if (tab[i]->dflt) memcpy(blob_shadow + pool, tab[i]->dflt, tab[i]->size);
+            else memset(blob_shadow + pool, 0, tab[i]->size);
+            pool += (tab[i]->size + 3u) & ~3u;
+        }
     }
     return PERR_OK;
 }
@@ -180,6 +224,10 @@ void param_set_defaults(int which) {
     for (size_t i = 0; i < n_tab; ++i) {
         const param_def_t *d = tab[i];
         if (which == PARAM_USER_ONLY && (d->flags & PF_FACTORY)) continue;
+        if (PARAM_IS_BLOB(d)) {
+            if (d->dflt) memcpy(d->ptr, d->dflt, d->size); else memset(d->ptr, 0, d->size);
+            continue;
+        }
         param_tag_set(d, d->vdef);
     }
 }
@@ -219,20 +267,27 @@ static bool in_range(const param_def_t *d, plat_val_t v) {
     }
 }
 
-static param_err_t check_def(const param_def_t *d, uint8_t kind, plat_val_t v, uint8_t src, uint8_t level,
-                             plat_val_t *norm) {
+/* who may write: identical for scalars and blocks */
+static param_err_t access_ok(const param_def_t *d, uint8_t src, uint8_t level) {
     if (!d) return PERR_NO_ID;
     if (d->flags & PF_RO) return PERR_READONLY;
-    if (src != PLAT_SRC_INTERNAL) {
-        if (level < d->level) return PERR_ACCESS;
-        if (src == PLAT_SRC_MODBUS && ((d->flags & PF_NO_MODBUS) || !p_modbus_write_en)) return PERR_ACCESS;
-        if ((d->flags & PF_LOCAL_ONLY) && src != PLAT_SRC_LOCAL) return PERR_MODE;
-        if (!(d->flags & PF_ANY_MODE)) {
-            uint8_t mode = p_mode;
-            if (src == PLAT_SRC_LOCAL && mode != PARAM_MODE_LOCAL) return PERR_MODE;
-            if (src != PLAT_SRC_LOCAL && mode != PARAM_MODE_REMOTE) return PERR_MODE;
-        }
+    if (src == PLAT_SRC_INTERNAL) return PERR_OK;
+    if (level < d->level) return PERR_ACCESS;
+    if (src == PLAT_SRC_MODBUS && ((d->flags & PF_NO_MODBUS) || !p_modbus_write_en)) return PERR_ACCESS;
+    if ((d->flags & PF_LOCAL_ONLY) && src != PLAT_SRC_LOCAL) return PERR_MODE;
+    if (!(d->flags & PF_ANY_MODE)) {
+        uint8_t mode = p_mode;
+        if (src == PLAT_SRC_LOCAL && mode != PARAM_MODE_LOCAL) return PERR_MODE;
+        if (src != PLAT_SRC_LOCAL && mode != PARAM_MODE_REMOTE) return PERR_MODE;
     }
+    return PERR_OK;
+}
+
+static param_err_t check_def(const param_def_t *d, uint8_t kind, plat_val_t v, uint8_t src, uint8_t level,
+                             plat_val_t *norm) {
+    param_err_t a = access_ok(d, src, level);
+    if (a != PERR_OK) return a;
+    if (PARAM_IS_BLOB(d)) return PERR_TYPE;
     param_err_t e = normalise(d, kind, v, norm);
     if (e != PERR_OK) return e;
     return in_range(d, *norm) ? PERR_OK : PERR_RANGE;
@@ -265,12 +320,15 @@ param_err_t param_apply(const plat_cmd_t *c) {
 }
 
 void param_publish(void) {
-    for (size_t i = 0; i < n_tab; ++i) shadow[i] = param_tag_get(tab[i]);
+    for (size_t i = 0; i < n_tab; ++i) {
+        if (PARAM_IS_BLOB(tab[i])) memcpy(blob_shadow + blob_off[i], tab[i]->ptr, tab[i]->size);
+        else shadow[i] = param_tag_get(tab[i]);
+    }
 }
 
 bool param_read(uint16_t id, plat_val_t *out) {
     long i = find_index(id);
-    if (i < 0) return false;
+    if (i < 0 || PARAM_IS_BLOB(tab[i])) return false;
     *out = shadow[i];      /* one aligned word: atomic */
     return true;
 }
@@ -287,4 +345,162 @@ void param_scan_service(uint32_t now_ms) {
     if (p_mode != PARAM_MODE_REMOTE || p_comms_timeout_s == 0) { p_link_lost = false; return; }
     if (remote_entered) { last_remote_ms = now_ms; remote_entered = false; }
     p_link_lost = (uint32_t)(now_ms - last_remote_ms) > (uint32_t)p_comms_timeout_s * 1000u;
+}
+
+/* ---------------- servers: posting writes ---------------- */
+void param_bind(plat_cmdq_t *cmdq, plat_seqlock_t *snap_lock) { bound_q = cmdq; bound_lock = snap_lock; }
+
+param_err_t param_post(uint16_t id, uint8_t kind, plat_val_t v, uint8_t src, uint8_t level) {
+    param_err_t e = param_check(id, kind, v, src, level);
+    if (e != PERR_OK) return e;
+    plat_cmd_t c = { .id = id, .src = src, .kind = kind, .level = level, .v = v };
+    if (!bound_q || !plat_cmdq_post(bound_q, &c)) return PERR_BUSY;
+    return PERR_OK;
+}
+
+/* ---------------- blocks ---------------- */
+typedef struct {
+    uint16_t id, off, len;
+    uint8_t  src, level;
+    bool     whole;
+    uint8_t  data[PARAM_BLOB_MAX_WRITE];
+} blobcmd_t;
+
+static blobcmd_t blobq[PARAM_BLOBQ_DEPTH];
+static volatile uint32_t bq_head, bq_tail;
+_Static_assert((PARAM_BLOBQ_DEPTH & (PARAM_BLOBQ_DEPTH - 1u)) == 0u, "PARAM_BLOBQ_DEPTH must be a power of 2");
+
+/* one element of an array, decoded and range-checked */
+static bool elem_ok(const param_def_t *d, const uint8_t *p) {
+    param_def_t t = *d;
+    t.ptype = elem_ptype(d->ctype);
+    union { uint8_t b[4]; uint32_t u; } tmp = { { 0 } };
+    memcpy(tmp.b, p, param_ctype_size(d->ctype));
+    if (t.ptype == PT_BOOL) return tmp.b[0] <= 1u;     /* check the byte before reading it as a bool */
+    t.ptr = tmp.b;
+    plat_val_t v = param_tag_get(&t);
+    switch (t.ptype) {
+    case PT_FLOAT: return isfinite(v.f) && v.f >= d->vmin.f && v.f <= d->vmax.f;
+    case PT_BOOL:  return tmp.b[0] <= 1u;
+    case PT_INT:   return v.i >= d->vmin.i && v.i <= d->vmax.i;
+    default:       return v.u >= d->vmin.u && v.u <= d->vmax.u;
+    }
+}
+
+bool param_blob_valid(const param_def_t *d, const uint8_t *data, uint16_t off, uint16_t len) {
+    switch (d->ptype) {
+    case PT_BYTES: return true;
+    case PT_TEXT:
+        for (uint16_t k = 0; k < len; ++k) if (data[k] < 0x20u || data[k] > 0x7Eu) return false;
+        return true;
+    case PT_TEXT16:
+        if (len % 2u) return false;
+        for (uint16_t k = 0; k < len; k += 2) {
+            uint16_t u = (uint16_t)(data[k] | (data[k + 1] << 8));
+            if (u < 0x20u || (u >= 0x7Fu && u < 0xA0u) || (u >= 0xD800u && u <= 0xDFFFu)) return false;
+        }
+        return true;
+    case PT_ARRAY: {
+        size_t es = param_ctype_size(d->ctype);
+        if (off % es || len % es) return false;
+        for (uint16_t k = 0; k < len; k += (uint16_t)es) if (!elem_ok(d, data + k)) return false;
+        return true;
+    }
+    default: return false;
+    }
+}
+
+/* A whole stored image of a block (used by param_store on load). */
+bool param_blob_image_ok(const param_def_t *d, const uint8_t *data) {
+    if (d->ptype == PT_TEXT) {                 /* NUL-terminated within size, printable before it */
+        uint16_t n = 0;
+        while (n < d->size && data[n]) n++;
+        return n < d->size && param_blob_valid(d, data, 0, n);
+    }
+    if (d->ptype == PT_TEXT16) {
+        uint16_t n = 0;
+        while (n + 1u < d->size && (data[n] | data[n + 1])) n = (uint16_t)(n + 2);
+        return n + 1u < d->size && param_blob_valid(d, data, 0, n);
+    }
+    return param_blob_valid(d, data, 0, d->size);
+}
+
+param_err_t param_blob_check(uint16_t id, uint16_t off, const void *data, uint16_t len, bool whole,
+                             uint8_t src, uint8_t level) {
+    const param_def_t *d = param_find(id);
+    param_err_t a = access_ok(d, src, level);
+    if (a != PERR_OK) return a;
+    if (!PARAM_IS_BLOB(d)) return PERR_TYPE;
+    if (len > PARAM_BLOB_MAX_WRITE) return PERR_RANGE;
+    if (whole) off = 0;
+    if ((d->ptype == PT_TEXT || d->ptype == PT_TEXT16) && !whole) return PERR_TYPE;
+    uint32_t room = d->size;
+    if (d->ptype == PT_TEXT) room -= 1u;              /* keep the terminator */
+    if (d->ptype == PT_TEXT16) room -= 2u;
+    if ((uint32_t)off + len > room) return PERR_RANGE;
+    if (!param_blob_valid(d, data, off, len)) return PERR_RANGE;
+    return PERR_OK;
+}
+
+param_err_t param_blob_post_many(const param_blob_write_t *w, size_t n, uint8_t src, uint8_t level) {
+    for (size_t k = 0; k < n; ++k) {
+        param_err_t e = param_blob_check(w[k].id, w[k].off, w[k].data, w[k].len, w[k].whole, src, level);
+        if (e != PERR_OK) return e;
+    }
+    bool ok;
+    PLAT_CRIT_ENTER();
+    ok = (uint32_t)(bq_head - bq_tail) + n <= PARAM_BLOBQ_DEPTH;
+    for (size_t k = 0; ok && k < n; ++k) {
+        blobcmd_t *b = &blobq[bq_head % PARAM_BLOBQ_DEPTH];
+        b->id = w[k].id; b->off = w[k].whole ? 0 : w[k].off; b->len = w[k].len; b->src = src; b->level = level;
+        b->whole = w[k].whole;
+        memcpy(b->data, w[k].data, w[k].len);
+        bq_head++;
+    }
+    PLAT_CRIT_EXIT();
+    return ok ? PERR_OK : PERR_BUSY;
+}
+
+param_err_t param_blob_post(uint16_t id, uint16_t off, const void *data, uint16_t len, bool whole,
+                            uint8_t src, uint8_t level) {
+    param_blob_write_t w = { .id = id, .off = off, .len = len, .whole = whole, .data = data };
+    return param_blob_post_many(&w, 1, src, level);
+}
+
+param_err_t param_post_many(const plat_cmd_t *c, size_t n) {
+    for (size_t k = 0; k < n; ++k) {
+        param_err_t e = param_check(c[k].id, c[k].kind, c[k].v, c[k].src, c[k].level);
+        if (e != PERR_OK) return e;
+    }
+    if (n == 0) return PERR_OK;
+    if (!bound_q || !plat_cmdq_post_batch(bound_q, c, (uint32_t)n)) return PERR_BUSY;
+    return PERR_OK;
+}
+
+void param_blob_drain(void) {
+    for (unsigned n = 0; n < PARAM_BLOBQ_DEPTH; ++n) {   /* everything queued before this scan */
+        blobcmd_t b;
+        bool have;
+        PLAT_CRIT_ENTER();
+        have = bq_head != bq_tail;
+        if (have) { b = blobq[bq_tail % PARAM_BLOBQ_DEPTH]; bq_tail++; }
+        PLAT_CRIT_EXIT();
+        if (!have) return;
+        /* checked again: the mode or Modbus permission may have changed since */
+        if (param_blob_check(b.id, b.off, b.data, b.len, b.whole, b.src, b.level) != PERR_OK) continue;
+        const param_def_t *d = param_find(b.id);
+        uint8_t *dst = d->ptr;
+        if (b.whole) memset(dst, 0, d->size);
+        memcpy(dst + b.off, b.data, b.len);
+    }
+}
+
+param_err_t param_read_blob(uint16_t id, uint16_t off, void *buf, uint16_t len) {
+    long i = find_index(id);
+    if (i < 0) return PERR_NO_ID;
+    if (!PARAM_IS_BLOB(tab[i])) return PERR_TYPE;
+    if ((uint32_t)off + len > tab[i]->size) return PERR_RANGE;
+    const uint8_t *src = blob_shadow + blob_off[i] + off;
+    if (!bound_lock) { memcpy(buf, src, len); return PERR_OK; }
+    return plat_seq_read(bound_lock, buf, src, len, 8) ? PERR_OK : PERR_BUSY;
 }

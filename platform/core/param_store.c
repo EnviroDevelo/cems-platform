@@ -124,7 +124,8 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
         const param_def_t *d = param_at(i);
         if (!(d->flags & PF_PERSIST)) continue;
         if (S.n_items >= MAX_ITEMS) { ok = false; break; }
-        S.items[S.n_items++] = (item_t){ .id = d->id, .size = (uint16_t)param_ctype_size(d->ctype),
+        S.items[S.n_items++] = (item_t){ .id = d->id,
+                                         .size = PARAM_IS_BLOB(d) ? d->size : (uint16_t)param_ctype_size(d->ctype),
                                          .region = (uint8_t)((d->flags & PF_FACTORY) ? 0u : 1u), .pdef = d };
     }
     for (size_t k = 0; k < n_blocks; ++k) {
@@ -159,6 +160,7 @@ static uint32_t build_payload(uint8_t region, uint8_t *out, uint32_t cap) {
 
 /* Is a stored parameter value acceptable? (decoded exactly as the tag holds it) */
 static bool param_bytes_ok(const param_def_t *d, const uint8_t *data) {
+    if (PARAM_IS_BLOB(d)) return param_blob_image_ok(d, data);
     param_def_t tmp = *d;
     union { uint8_t b[4]; float f; } scratch = { { 0 } };
     memcpy(scratch.b, data, param_ctype_size(d->ctype));

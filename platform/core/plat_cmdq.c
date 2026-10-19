@@ -22,6 +22,16 @@ bool plat_cmdq_post(plat_cmdq_t *q, const plat_cmd_t *c) {
     return ok;
 }
 
+bool plat_cmdq_post_batch(plat_cmdq_t *q, const plat_cmd_t *c, uint32_t n) {
+    bool ok;
+    PLAT_CRIT_ENTER();
+    ok = (uint32_t)(q->head - q->tail) + n <= PLAT_CMDQ_DEPTH;
+    if (ok) for (uint32_t k = 0; k < n; ++k) { q->buf[q->head % PLAT_CMDQ_DEPTH] = c[k]; q->head++; }
+    else q->dropped++;
+    PLAT_CRIT_EXIT();
+    return ok;
+}
+
 bool plat_cmdq_pop(plat_cmdq_t *q, plat_cmd_t *out) {
     bool ok;
     PLAT_CRIT_ENTER();

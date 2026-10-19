@@ -58,6 +58,8 @@ typedef struct {
 
 void plat_cmdq_init(plat_cmdq_t *q);
 bool plat_cmdq_post(plat_cmdq_t *q, const plat_cmd_t *c);   /* false if full (counted) */
+/* All n or none, inside one critical section, so the scan sees the whole batch or none of it. */
+bool plat_cmdq_post_batch(plat_cmdq_t *q, const plat_cmd_t *c, uint32_t n);
 bool plat_cmdq_pop(plat_cmdq_t *q, plat_cmd_t *out);
 uint32_t plat_cmdq_count(const plat_cmdq_t *q);
 

@@ -24,16 +24,24 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "plat_cmdq.h"
+#include "plat_seqlock.h"
 
 #ifndef PARAM_MAX
 #define PARAM_MAX 512
 #endif
 
-/* C type of the bound tag */
-typedef enum { CT_BOOL = 0, CT_U8, CT_I8, CT_U16, CT_I16, CT_U32, CT_I32, CT_F32 } param_ctype_t;
+/* C type of the bound tag (for arrays: of each element) */
+typedef enum { CT_BOOL = 0, CT_U8, CT_I8, CT_U16, CT_I16, CT_U32, CT_I32, CT_F32, CT_BLOB } param_ctype_t;
 
-/* External (wire) type */
-typedef enum { PT_BOOL = 0, PT_INT, PT_UINT, PT_FLOAT } param_ptype_t;
+/* External (wire) type.
+ * Scalars: PT_BOOL, PT_INT, PT_UINT, PT_FLOAT.
+ * Blocks ("blobs", .size bytes at .ptr):
+ *   PT_BYTES  raw bytes (CT_BLOB), e.g. a UniLogic BUFFER
+ *   PT_TEXT   8-bit text, NUL-terminated within .size (CT_BLOB); printable ASCII only
+ *   PT_TEXT16 UTF-16LE text, NUL-terminated within .size (CT_BLOB); e.g. alarm descriptions
+ *   PT_ARRAY  array of .ctype elements, each range-checked with vmin..vmax */
+typedef enum { PT_BOOL = 0, PT_INT, PT_UINT, PT_FLOAT, PT_BYTES, PT_TEXT, PT_TEXT16, PT_ARRAY } param_ptype_t;
+#define PARAM_IS_BLOB(d) ((d)->ptype >= PT_BYTES)
 
 /* Flags */
 #define PF_RO          0x0001u  /* never written from outside (status values) */
@@ -57,7 +65,9 @@ typedef struct {
     plat_val_t vmin, vmax, vdef;
     const char *name;       /* key for JSON / labels: [A-Za-z0-9_] */
     const char *unit;       /* may be NULL */
-    param_interlock_fn interlock;   /* may be NULL */
+    param_interlock_fn interlock;   /* may be NULL (scalars only) */
+    uint16_t   size;        /* blobs: bytes at ptr */
+    const void *dflt;       /* blobs: default content (NULL = zeros) */
 } param_def_t;
 
 /* Result codes (mapped to Modbus exceptions and HTTP errors by those modules) */
@@ -70,7 +80,8 @@ typedef enum {
     PERR_TYPE,         /* value kind not accepted     -> 03 */
     PERR_RANGE,        /* outside min..max, or NaN    -> 03 */
     PERR_INTERLOCK,    /* refused by the application  -> 04 / HTTP 409 */
-    PERR_TABLE         /* table error found at init */
+    PERR_TABLE,        /* table error found at init */
+    PERR_BUSY          /* write queue full, or a reader collided with the scan -> 06 / HTTP 503 */
 } param_err_t;
 
 /* ---------------- platform parameters ---------------- */
@@ -111,6 +122,29 @@ enum { PARAM_MODE_LOCAL = 0, PARAM_MODE_REMOTE = 1 };
       .vmin.b = false, .vmax.b = true, .vdef.b = (DEF), .name = (NAME), .unit = NULL }
 #define PARAM_BIT(ID, NAME, VAR, LVL, FLAGS) PARAM_BIT_D(ID, NAME, VAR, false, LVL, FLAGS)
 
+/* Blocks: the variable must be an array; its size is taken from it. */
+#define PARAM_TEXT(ID, NAME, VAR, DFLT, LVL, FLAGS) \
+    { .id = (ID), .ctype = CT_BLOB, .ptype = PT_TEXT, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME) }
+#define PARAM_TEXT16(ID, NAME, VAR, DFLT, LVL, FLAGS) \
+    { .id = (ID), .ctype = CT_BLOB, .ptype = PT_TEXT16, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME) }
+#define PARAM_BYTES(ID, NAME, VAR, LVL, FLAGS) \
+    { .id = (ID), .ctype = CT_BLOB, .ptype = PT_BYTES, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME) }
+#define PARAM_ARRAY_INT(ID, NAME, VAR, CT, MIN, MAX, LVL, FLAGS) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .vmin.i = (MIN), .vmax.i = (MAX), .size = (uint16_t)sizeof(VAR), .name = (NAME) }
+#define PARAM_ARRAY_UINT(ID, NAME, VAR, CT, MIN, MAX, LVL, FLAGS) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .vmin.u = (MIN), .vmax.u = (MAX), .size = (uint16_t)sizeof(VAR), .name = (NAME) }
+#define PARAM_ARRAY_REAL(ID, NAME, VAR, MIN, MAX, LVL, FLAGS) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .vmin.f = (MIN), .vmax.f = (MAX), .size = (uint16_t)sizeof(VAR), .name = (NAME) }
+#define PARAM_ARRAY_BOOL(ID, NAME, VAR, LVL, FLAGS) \
+    { .id = (ID), .ctype = CT_BOOL, .ptype = PT_ARRAY, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
+      .vmin.b = false, .vmax.b = true, .size = (uint16_t)sizeof(VAR), .name = (NAME) }
+
 /* ---------------- API ---------------- */
 
 /* Build the table from the platform entries plus the application's. Checks for
@@ -144,6 +178,39 @@ bool param_read(uint16_t id, plat_val_t *out);
 plat_val_t param_tag_get(const param_def_t *d);
 void       param_tag_set(const param_def_t *d, plat_val_t v);
 size_t     param_ctype_size(uint8_t ctype);
+
+/* ---------------- servers: post writes, read blocks ----------------
+ * Bind the queue the scan drains and the lock it publishes under (plat_start does
+ * this; tests may pass NULL lock for direct reads). */
+void param_bind(plat_cmdq_t *cmdq, plat_seqlock_t *snap_lock);
+
+/* Check and queue a scalar write, from any task. PERR_BUSY if the queue is full. */
+param_err_t param_post(uint16_t id, uint8_t kind, plat_val_t v, uint8_t src, uint8_t level);
+
+/* Blocks. A write replaces len bytes at byte offset off. whole = true replaces the
+ * entire content from offset 0 and zero-fills the rest (how text is written);
+ * text entries only accept whole writes. Arrays: off and len must be whole
+ * elements, and each element is range-checked. */
+#define PARAM_BLOB_MAX_WRITE 128u
+param_err_t param_blob_check(uint16_t id, uint16_t off, const void *data, uint16_t len, bool whole,
+                             uint8_t src, uint8_t level);
+param_err_t param_blob_post(uint16_t id, uint16_t off, const void *data, uint16_t len, bool whole,
+                            uint8_t src, uint8_t level);
+void        param_blob_drain(void);       /* scan task: apply queued block writes */
+
+/* Batches (Modbus FC15/16, a web form): every item is checked first, then all are
+ * queued at once or none is (PERR_BUSY if they don't all fit). The scan applies a
+ * batch in one scan. Scalars and blocks are separate batches. */
+typedef struct { uint16_t id, off, len; bool whole; const void *data; } param_blob_write_t;
+param_err_t param_post_many(const plat_cmd_t *cmds, size_t n);
+param_err_t param_blob_post_many(const param_blob_write_t *w, size_t n, uint8_t src, uint8_t level);
+
+/* Any task: len bytes from offset off, as of the end of the last scan. */
+param_err_t param_read_blob(uint16_t id, uint16_t off, void *buf, uint16_t len);
+
+/* Validation helpers (also used by param_store on load). */
+bool param_blob_valid(const param_def_t *d, const uint8_t *data, uint16_t off, uint16_t len);
+bool param_blob_image_ok(const param_def_t *d, const uint8_t *data);
 
 /* ---------------- arbitration and the remote-link watchdog ---------------- */
 uint8_t param_ctrl_mode(void);                 /* PARAM_MODE_LOCAL / REMOTE, any task */

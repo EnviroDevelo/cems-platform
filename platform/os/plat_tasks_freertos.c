@@ -129,6 +129,7 @@ void plat_start(const plat_app_t *app) {
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
     param_store_boot();
+    param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);

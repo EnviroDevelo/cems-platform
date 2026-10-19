@@ -12,7 +12,7 @@ static struct {
     bool first_seen[8];
     uint32_t dt_seen[8];
     bool di0_at_logic;
-    int32_t applied_ids[40]; int napplied;
+    int32_t applied_ids[200]; int napplied;
     bool reject_odd;
     bool do3;
     int publishes; uint32_t seq_during_publish;
@@ -163,15 +163,22 @@ static void t_outputs_default_off(void) {
     CHECK_EQ(A.scans, 1);
 }
 
-static void t_cmds_bounded_and_ordered(void) {
+static void t_cmds_all_in_one_scan_ordered(void) {
     setup();
     for (int k = 0; k < 20; ++k) { plat_cmd_t c = { .id = (uint16_t)k }; CHECK(plat_cmdq_post(&Q, &c)); }
     scan_step(&S);
-    CHECK_EQ(A.napplied, PLAT_SCAN_MAX_CMDS);
-    scan_step(&S);
-    CHECK_EQ(A.napplied, 20);
+    CHECK_EQ(A.napplied, 20);                 /* everything queued is applied before the logic runs */
     int ordered = 1; for (int k = 0; k < 20; ++k) if (A.applied_ids[k] != k) ordered = 0;
     CHECK(ordered);
+    /* batches: all or nothing */
+    setup();
+    static plat_cmd_t many[PLAT_CMDQ_DEPTH + 1];
+    for (unsigned k = 0; k <= PLAT_CMDQ_DEPTH; ++k) many[k].id = (uint16_t)k;
+    CHECK(plat_cmdq_post(&Q, &many[0]));
+    CHECK(!plat_cmdq_post_batch(&Q, many, PLAT_CMDQ_DEPTH));       /* one slot short: nothing queued */
+    CHECK_EQ(plat_cmdq_count(&Q), 1);
+    CHECK(plat_cmdq_post_batch(&Q, many, PLAT_CMDQ_DEPTH - 1));     /* fits exactly */
+    CHECK_EQ(plat_cmdq_count(&Q), PLAT_CMDQ_DEPTH);
 }
 
 static void t_cmd_reject_counted(void) {
@@ -224,7 +231,7 @@ void test_scan_all(void) {
     RUN(t_inputs_frozen);
     RUN(t_outputs);
     RUN(t_outputs_default_off);
-    RUN(t_cmds_bounded_and_ordered);
+    RUN(t_cmds_all_in_one_scan_ordered);
     RUN(t_cmd_reject_counted);
     RUN(t_publish_in_lock);
     RUN(t_exec_time);

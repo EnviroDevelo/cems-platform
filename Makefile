@@ -10,7 +10,7 @@ CPPFLAGS = -DPLAT_HOST -Iplatform/include -Iplatform/bsp -Iapp_demo
 
 CORE = platform/core/scan_engine.c platform/core/plat_cmdq.c \
        platform/core/task_monitor.c platform/core/plat_diag.c platform/core/param.c \
-       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c \
+       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/net/mbtcp.c \
        platform/bsp/nvm_ram.c platform/bsp/bsp_host.c
 
 BUILD = build
@@ -21,7 +21,7 @@ all: test sim
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c | $(BUILD)
+$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests $^ -o $@ -lm
 
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c | $(BUILD)
@@ -32,7 +32,7 @@ test: $(BUILD)/tests $(BUILD)/tests128
 	./$(BUILD)/tests128 | tail -1
 
 # the same tests with the 128 KB FRAM memory map
-$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c | $(BUILD)
+$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=131072u -Itests $^ -o $@ -lm
 
 sim: $(BUILD)/sim
