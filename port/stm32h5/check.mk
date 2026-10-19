@@ -8,7 +8,11 @@ FR      = $(EXT)/FreeRTOS-Kernel
 DEV     = -DSTM32H573xx -DUSE_HAL_DRIVER
 CFLAGS  = -mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard -std=c11 -O2 \
           -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Werror -ffunction-sections -fdata-sections
-INC     = -Iplatform/include -Iplatform/bsp -Iapp_demo -Iport/stm32h5 -Iport/stm32h5/check \
+LW      = $(EXT)/lwip
+LWIP_SRC = $(wildcard $(LW)/src/core/*.c) $(wildcard $(LW)/src/core/ipv4/*.c) $(wildcard $(LW)/src/api/*.c) \
+           $(LW)/src/netif/ethernet.c $(LW)/contrib/ports/freertos/sys_arch.c
+INC     = -I$(LW)/src/include -I$(LW)/contrib/ports/freertos/include -Iport/stm32h5/lwip -I$(EXT)/lan8742 \
+          -Iplatform/include -Iplatform/bsp -Iapp_demo -Iport/stm32h5 -Iport/stm32h5/check \
           -I$(FR)/include -I$(FR)/portable/GCC/ARM_CM33_NTZ/non_secure \
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
@@ -16,6 +20,10 @@ SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/ta
           platform/core/plat_sys.c platform/bsp/nvm_ram.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
           port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c \
+          platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/http_util.c \
+          platform/net/http_api.c platform/net/http_server.c platform/net/web_auth.c platform/net/web_page.c \
+          platform/os/plat_net_tasks.c port/stm32h5/lwip/plat_net_lwip.c port/stm32h5/lwip/ethernetif.c \
+          $(EXT)/lan8742/lan8742.c $(LWIP_SRC) \
           app_demo/app_demo.c port/stm32h5/check/check_main.c \
           $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c \
           $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/port.c $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/portasm.c
@@ -26,6 +34,8 @@ vpath %.c $(sort $(dir $(SRCS)))
 all: $(OBJS)
 	@echo "target compile check OK: $(words $(OBJS)) files"
 	@$(dir $(ARMCC))arm-none-eabi-size $(filter-out $(OUT)/tasks.o $(OUT)/list.o $(OUT)/queue.o $(OUT)/timers.o $(OUT)/port.o $(OUT)/portasm.o,$(OBJS))
+THIRD = $(addprefix $(OUT)/,$(notdir $(LWIP_SRC:.c=.o))) $(OUT)/lan8742.o
+$(THIRD): CFLAGS := $(filter-out -Werror -Wconversion -Wshadow -Wextra,$(CFLAGS))
 $(OUT)/%.o: %.c | $(OUT)
 	$(ARMCC) $(CFLAGS) $(DEV) $(INC) -c $< -o $@
 $(OUT):
@@ -33,7 +43,7 @@ $(OUT):
 
 # Link check: full ELF with startup, system file and the HAL modules the BSP uses,
 # against the ST template linker script patched with noinit_section.ld.
-HALSRC  = $(addprefix $(EXT)/stm32h5xx-hal-driver/Src/stm32h5xx_hal, .c _cortex.c _gpio.c _rcc.c _rcc_ex.c _rtc.c _rtc_ex.c _iwdg.c _pwr.c _pwr_ex.c _spi.c _spi_ex.c _i2c.c _i2c_ex.c _dma.c _dma_ex.c)
+HALSRC  = $(addprefix $(EXT)/stm32h5xx-hal-driver/Src/stm32h5xx_hal, .c _cortex.c _gpio.c _rcc.c _rcc_ex.c _rtc.c _rtc_ex.c _iwdg.c _pwr.c _pwr_ex.c _spi.c _spi_ex.c _i2c.c _i2c_ex.c _dma.c _dma_ex.c _eth.c _eth_ex.c _rng.c _rng_ex.c)
 LSRC    = $(EXT)/cmsis-device-h5/Source/Templates/system_stm32h5xx.c $(HALSRC) $(FR)/portable/MemMang/heap_4.c
 LOBJS   = $(OBJS) $(addprefix $(OUT)/,$(notdir $(LSRC:.c=.o))) $(OUT)/startup_stm32h573xx.o
 vpath %.c $(sort $(dir $(LSRC)))

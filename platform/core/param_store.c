@@ -23,6 +23,10 @@ _Static_assert(STORE_META_ADDR < PLAT_FRAM_SIZE, "map larger than the FRAM");
 
 extern uint32_t param_store_status_word;    /* storage of PARAM_ID_STORE_STATUS (param.c) */
 
+/* Platform-owned retained blocks (e.g. password hashes): kept in FRAM, never
+ * visible through the parameter table. Provided by web_auth.c; none otherwise. */
+__attribute__((weak)) const retain_def_t *plat_store_blocks(size_t *n) { *n = 0; return NULL; }
+
 /* one persisted item: a PF_PERSIST parameter or a retained block */
 typedef struct {
     uint16_t id, size;
@@ -58,6 +62,9 @@ static struct {
     bool first_done;
     /* scan <-> store handshake */
     volatile uint8_t req;        /* REQ_* set by store task, cleared by scan when done */
+    /* other tasks -> store task */
+    volatile uint8_t job, job_state;
+    uint8_t *job_buf; uint32_t job_len; uint8_t job_level; volatile int32_t job_result;
     const uint8_t *imp_buf[2];   /* import: payloads to apply */
     uint32_t imp_len[2];
     uint16_t imp_ver[2];
@@ -128,9 +135,13 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
                                          .size = PARAM_IS_BLOB(d) ? d->size : (uint16_t)param_ctype_size(d->ctype),
                                          .region = (uint8_t)((d->flags & PF_FACTORY) ? 0u : 1u), .pdef = d };
     }
-    for (size_t k = 0; k < n_blocks; ++k) {
-        const retain_def_t *b = &blocks[k];
-        if (S.n_items >= MAX_ITEMS || b->id < PARAM_ID_APP_FIRST || b->size == 0 || !b->ptr ||
+    size_t n_plat = 0;
+    const retain_def_t *plat = plat_store_blocks(&n_plat);
+    for (size_t k = 0; k < n_plat + n_blocks; ++k) {
+        bool is_plat = k < n_plat;
+        const retain_def_t *b = is_plat ? &plat[k] : &blocks[k - n_plat];
+        bool id_ok = is_plat ? (b->id >= PARAM_ID_PLAT_BLOCK_FIRST && b->id < PARAM_ID_APP_FIRST) : b->id >= PARAM_ID_APP_FIRST;
+        if (S.n_items >= MAX_ITEMS || !id_ok || b->size == 0 || !b->ptr ||
             find_item(b->id) || param_find(b->id)) { ok = false; continue; }
         S.items[S.n_items++] = (item_t){ .id = b->id, .size = b->size,
                                          .region = (uint8_t)((b->flags & RF_FACTORY) ? 0u : 1u), .rdef = b };
@@ -328,11 +339,55 @@ void param_store_scan_service(void) {
 }
 
 /* ---------------- store task side ---------------- */
+/* Jobs from other tasks (the web server), run here so only the store task
+ * touches the NVM device. */
+enum { JOB_NONE = 0, JOB_EXPORT, JOB_IMPORT };
+enum { JS_IDLE = 0, JS_PENDING, JS_RUNNING, JS_DONE };
+
+static void run_job(void) {
+    if (S.job_state == JS_PENDING) {
+        PLAT_DMB();
+        if (S.job == JOB_EXPORT) {
+            S.job_result = (int32_t)param_store_export(S.job_buf, S.job_len);
+            S.job_state = JS_DONE;
+        } else {
+            int rc = param_store_import(S.job_buf, S.job_len, S.job_level);
+            if (rc != 0) { S.job_result = rc; S.job_state = JS_DONE; }
+            else S.job_state = JS_RUNNING;                    /* applied by the next scan */
+        }
+    } else if (S.job_state == JS_RUNNING && !param_store_import_busy()) {
+        S.job_result = 0;
+        PLAT_DMB();
+        S.job_state = JS_DONE;
+    }
+}
+
+int param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level) {
+    if (S.job_state != JS_IDLE) return -1;
+    S.job = is_export ? JOB_EXPORT : JOB_IMPORT;
+    S.job_buf = buf; S.job_len = len; S.job_level = level;
+    PLAT_DMB();
+    S.job_state = JS_PENDING;
+    return 0;
+}
+
+bool param_store_job_done(int32_t *result) {
+    if (S.job_state != JS_DONE) return false;
+    PLAT_DMB();
+    *result = S.job_result;
+    S.job_state = JS_IDLE;
+    return true;
+}
+
 /* State machine, store task:
  *   idle --(period elapsed)--> request snapshot --(scan builds payloads)-->
  *   compare CRC with what NVM holds --> write changed regions --> idle */
 void param_store_poll(uint32_t now_ms) {
-    if (!S.dev || (S.status & PSTAT_TABLE_ERROR)) return;
+    if (!S.dev || (S.status & PSTAT_TABLE_ERROR)) {
+        if (S.job_state == JS_PENDING) { S.job_result = -10; S.job_state = JS_DONE; }   /* never leave a caller waiting */
+        return;
+    }
+    if (!S.started) run_job();                          /* between saves: staging buffers are not in use */
     if (S.req != REQ_NONE) return;                      /* the scan has not serviced the request yet */
 
     if (S.started) {                                    /* snapshot complete: staging buffers are ours */

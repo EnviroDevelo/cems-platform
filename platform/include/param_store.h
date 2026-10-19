@@ -143,4 +143,14 @@ uint32_t param_store_export(uint8_t *buf, uint32_t cap);
 int  param_store_import(const uint8_t *buf, uint32_t len, uint8_t level);
 bool param_store_import_busy(void);
 
+/* From another task (the web server): ask the store task to export (is_export)
+ * or import. -1 if a job is already running. Then poll param_store_job_done()
+ * until true; result = bytes exported, or 0 / < 0 for an import. buf must stay
+ * valid until then. */
+int  param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level);
+bool param_store_job_done(int32_t *result);
+
+/* Platform-owned retained blocks, IDs PARAM_ID_PLAT_BLOCK_FIRST..999 (weak; web_auth.c). */
+const retain_def_t *plat_store_blocks(size_t *n);
+
 #endif

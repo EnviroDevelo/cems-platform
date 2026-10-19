@@ -405,3 +405,31 @@ nvm_dev_t *bsp_param_nvm(void) {
     return NULL;          /* FRAM configured but not answering: defaults + calibration alarm */
 #endif
 }
+
+/* ---------------- random numbers ----------------
+ * Hardware RNG (CubeMX: RNG activated, handle hrng). Session tokens and password
+ * salts depend on it. Without the RNG the fallback below mixes the unique ID, the
+ * cycle counter and the tick: unpredictable enough for TCP sequence numbers, NOT
+ * for security. The web server is then only fit for bench use. */
+#ifdef HAL_RNG_MODULE_ENABLED
+extern RNG_HandleTypeDef hrng;
+#endif
+
+void bsp_random(void *buf, uint32_t len) {
+    uint8_t *p = buf;
+    while (len) {
+        uint32_t r = 0;
+#ifdef HAL_RNG_MODULE_ENABLED
+        if (HAL_RNG_GenerateRandomNumber(&hrng, &r) != HAL_OK)
+#endif
+        {
+            static uint32_t x = 0x9E3779B9u;
+            x ^= DWT->CYCCNT ^ HAL_GetTick() ^ *(const uint32_t *)UID_BASE;
+            x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+            r = x;
+        }
+        uint32_t n = len < 4u ? len : 4u;
+        for (uint32_t k = 0; k < n; ++k) p[k] = (uint8_t)(r >> (8u * k));
+        p += n; len -= n;
+    }
+}

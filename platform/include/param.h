@@ -99,6 +99,7 @@ enum {
     PARAM_ID_SERIAL           = 50,  /* factory */
     PARAM_ID_HW_REV           = 51,  /* factory */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
+    PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
 

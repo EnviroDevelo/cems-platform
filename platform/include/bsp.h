@@ -45,4 +45,7 @@ void     bsp_system_reset(void);
  * persistent = false (the store then reports PSTAT_NVM_VOLATILE). */
 nvm_dev_t *bsp_param_nvm(void);
 
+/* Random bytes for password salts and web session tokens (hardware RNG on the H5). */
+void bsp_random(void *buf, uint32_t len);
+
 #endif

@@ -74,6 +74,32 @@ device is added later, those move to one shared file that dispatches by handle.
 The SPI FRAM driver (`nvm_fram_spi.c`, `FRAM_CS` label) stays available if the
 product board uses an SPI part.
 
+## 3b. Ethernet and RNG
+
+| CubeMX | Setting |
+|---|---|
+| ETH | RMII mode. Pins as the DK schematic routes them to its LAN8742 PHY **(check: CubeMX's board preset normally sets these)**. Tx and Rx descriptor counts 4 |
+| ETH NVIC | Global interrupt enabled, priority 7 (any value 5 or higher works with FreeRTOS) |
+| RNG | Activated (handle `hrng`). Session tokens and password salts need it |
+
+Do **not** enable LwIP or NetX Duo middleware in CubeMX (the H5 doesn't offer lwIP).
+The platform brings its own lwIP configuration. Add to the project:
+
+- lwIP 2.2.1 sources: `src/core/*.c`, `src/core/ipv4/*.c`, `src/api/*.c`,
+  `src/netif/ethernet.c`, and `contrib/ports/freertos/sys_arch.c`, from
+  https://github.com/lwip-tcpip/lwip (tag `STABLE-2_2_1_RELEASE`);
+- the PHY driver `lan8742.c/.h` from https://github.com/STMicroelectronics/stm32-lan8742;
+- `port/stm32h5/lwip/` (lwipopts.h, arch/cc.h, ethernetif.c, plat_net_lwip.c) and
+  `platform/net/`, `platform/os/plat_net_tasks.c`;
+- include paths: `lwip/src/include`, `lwip/contrib/ports/freertos/include`,
+  `port/stm32h5/lwip`, the lan8742 folder.
+
+CubeMX generates `HAL_ETH_MspInit` (the pins). The platform's `ethernetif.c` defines
+`ETH_IRQHandler`, so untick its generation in NVIC → Code generation.
+
+On first power-up the unit answers on 192.168.1.50 (web: http://192.168.1.50/, Modbus
+TCP port 502). Change the address from the web page (admin) or, later, the touchscreen.
+
 ## 4. FreeRTOS
 
 1. Help → Manage embedded software packages → STMicroelectronics → install **X-CUBE-FREERTOS** (FreeRTOS V11.x).

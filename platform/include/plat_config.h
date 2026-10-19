@@ -37,7 +37,7 @@
 #define PLAT_SILENCE_CTRL_MS      50u
 #define PLAT_SILENCE_SCAN_MS      200u
 #define PLAT_SILENCE_STORE_MS     2000u
-#define PLAT_SILENCE_MODBUS_MS    5000u
+#define PLAT_SILENCE_MODBUS_MS    10000u /* up to 4 slow clients x 1 s send timeout */
 #define PLAT_SILENCE_HTTP_MS      5000u
 #define PLAT_SILENCE_UI_MS        5000u
 
@@ -48,9 +48,11 @@
 #define PLAT_PRIO_SCAN            13     /* Highest tier: VM/MUX sequence scan */
 #define PLAT_PRIO_SUPERVISOR      12     /* watchdog supervisor (short, periodic) */
 #define PLAT_PRIO_STORE           10     /* High tier: parameter store + logger owner */
+#define PLAT_PRIO_ETH_RX          9      /* Ethernet receive (ST runs it highest; here below control) */
 #define PLAT_PRIO_TCPIP           8      /* Medium tier: lwIP tcpip_thread (TCPIP_THREAD_PRIO) */
 #define PLAT_PRIO_MODBUS          7      /* Medium tier: Modbus TCP server */
 #define PLAT_PRIO_HTTP            6      /* Medium tier: HTTP server */
+#define PLAT_PRIO_NET             4      /* network bring-up, link and address changes */
 #define PLAT_PRIO_UI              3      /* Lowest tier: touch UI */
 
 /* ---- stacks, in 32-bit words (FreeRTOS units) ---- */
@@ -61,5 +63,16 @@
 #define PLAT_STACK_MODBUS         1024
 #define PLAT_STACK_HTTP           1536
 #define PLAT_STACK_UI             2048
+#define PLAT_STACK_ETH_RX         512
+#define PLAT_STACK_NET            768
+
+/* ---- network services ---- */
+#ifndef PLAT_MODBUS_PORT
+#define PLAT_MODBUS_PORT          502
+#endif
+#ifndef PLAT_HTTP_PORT
+#define PLAT_HTTP_PORT            80
+#endif
+#define PLAT_SILENCE_NET_MS       5000u
 
 #endif

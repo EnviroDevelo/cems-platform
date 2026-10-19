@@ -1,4 +1,5 @@
 /* bsp_host.c - simulated board. Everything is a plain variable in bsp_host. */
+#include <stdio.h>
 #include <string.h>
 #include "bsp_host.h"
 
@@ -43,4 +44,10 @@ static nvm_dev_t fram_dev;
 nvm_dev_t *bsp_param_nvm(void) {
     nvm_ram_init(&fram_dev, &bsp_host_fram_ram, bsp_host_fram, sizeof bsp_host_fram, true);
     return &fram_dev;
+}
+
+void bsp_random(void *buf, uint32_t len) {
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (!f || fread(buf, 1, len, f) != len) { uint8_t *p = buf; for (uint32_t k = 0; k < len; ++k) p[k] = (uint8_t)(k * 37u + 11u); }
+    if (f) fclose(f);
 }

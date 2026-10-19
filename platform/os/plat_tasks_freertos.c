@@ -9,6 +9,8 @@
 #include "plat_diag.h"
 #include "bsp.h"
 #include "plat_sys.h"
+#include "web_auth.h"
+#include "modbus.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -16,6 +18,8 @@ plat_seqlock_t plat_snap_lock;
 task_monitor_t plat_monitor;
 
 static int tm_ids[PLAT_TASK_COUNT];
+static const plat_app_t *the_app;
+const plat_app_t *plat_app(void) { return the_app; }
 
 void plat_checkin(plat_task_id_t id) {
     if ((unsigned)id < PLAT_TASK_COUNT) tm_checkin(&plat_monitor, tm_ids[id], bsp_ms());
@@ -31,6 +35,7 @@ __attribute__((weak)) void plat_store_task_body(void)  { idle_body(PLAT_TASK_STO
 __attribute__((weak)) void plat_modbus_task_body(void) { idle_body(PLAT_TASK_MODBUS); }
 __attribute__((weak)) void plat_http_task_body(void)   { idle_body(PLAT_TASK_HTTP); }
 __attribute__((weak)) void plat_ui_task_body(void)     { idle_body(PLAT_TASK_UI); }
+__attribute__((weak)) void plat_net_task_body(void)    { idle_body(PLAT_TASK_NET); }
 
 /* ---------------- fixed platform tasks ---------------- */
 static void ctrl_task(void *arg) {
@@ -75,10 +80,11 @@ static void supervisor_task(void *arg) {
      * the IWDG and the hardware resets the unit. */
 }
 
-enum { BODY_STORE, BODY_MODBUS, BODY_HTTP, BODY_UI };
+enum { BODY_STORE, BODY_MODBUS, BODY_HTTP, BODY_UI, BODY_NET };
 static void (*const service_bodies[])(void) = {
     [BODY_STORE] = plat_store_task_body, [BODY_MODBUS] = plat_modbus_task_body,
     [BODY_HTTP] = plat_http_task_body,   [BODY_UI] = plat_ui_task_body,
+    [BODY_NET] = plat_net_task_body,
 };
 
 static void service_task(void *arg) {
@@ -95,12 +101,14 @@ DEF_TASK(store,  PLAT_STACK_STORE);
 DEF_TASK(modbus, PLAT_STACK_MODBUS);
 DEF_TASK(http,   PLAT_STACK_HTTP);
 DEF_TASK(ui,     PLAT_STACK_UI);
+DEF_TASK(net,    PLAT_STACK_NET);
 
 #define MAKE(fn, name, stk, prio, arg, nm) \
     do { if (xTaskCreateStatic((fn), (name), (stk), (arg), (prio), nm##_stack, &nm##_tcb) == NULL) \
              fatal(PLAT_FAULT_ASSERT, -1, name, __LINE__); } while (0)
 
 void plat_start(const plat_app_t *app) {
+    the_app = app;
     plat_diag_boot(bsp_reset_cause());
     bsp_init();
     bsp_io_safe_state();
@@ -113,6 +121,7 @@ void plat_start(const plat_app_t *app) {
     tm_ids[PLAT_TASK_MODBUS] = tm_register(&plat_monitor, "modbus", PLAT_SILENCE_MODBUS_MS);
     tm_ids[PLAT_TASK_HTTP]   = tm_register(&plat_monitor, "http",   PLAT_SILENCE_HTTP_MS);
     tm_ids[PLAT_TASK_UI]     = tm_register(&plat_monitor, "ui",     PLAT_SILENCE_UI_MS);
+    tm_ids[PLAT_TASK_NET]    = tm_register(&plat_monitor, "net",    PLAT_SILENCE_NET_MS);
 
     plat_cmdq_init(&plat_cmdq);
     plat_snap_lock.seq = 0;
@@ -130,6 +139,11 @@ void plat_start(const plat_app_t *app) {
     }
     param_store_boot();
     param_bind(&plat_cmdq, &plat_snap_lock);
+    auth_init();
+    if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "modbus map", 0, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     scan_set_sys(&plat_scan, &plat_sys);
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);
@@ -139,6 +153,7 @@ void plat_start(const plat_app_t *app) {
     MAKE(service_task,    "modbus", PLAT_STACK_MODBUS,     PLAT_PRIO_MODBUS,     (void *)(uintptr_t)BODY_MODBUS, modbus);
     MAKE(service_task,    "http",   PLAT_STACK_HTTP,       PLAT_PRIO_HTTP,       (void *)(uintptr_t)BODY_HTTP,   http);
     MAKE(service_task,    "ui",     PLAT_STACK_UI,         PLAT_PRIO_UI,         (void *)(uintptr_t)BODY_UI,     ui);
+    MAKE(service_task,    "net",    PLAT_STACK_NET,        PLAT_PRIO_NET,        (void *)(uintptr_t)BODY_NET,    net);
 
     vTaskStartScheduler();
     fatal(PLAT_FAULT_MALLOC_FAILED, -1, "scheduler", 0);   /* only if idle/timer task creation failed */

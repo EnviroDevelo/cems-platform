@@ -1,0 +1,532 @@
+/* http_api.c - see http_api.h */
+#include <ctype.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "http_api.h"
+#include "param.h"
+#include "param_store.h"
+#include "plat_diag.h"
+#include "bsp.h"
+
+extern const uint8_t  web_index_gz[];      /* web_page.c, generated from web/index.html */
+extern const uint32_t web_index_gz_len;
+
+static http_cfg_t cfg;
+
+static size_t blen(const char *s, size_t max) { size_t n = 0; while (n < max && s[n]) n++; return n; }
+static uint8_t    blob_buf[4096];          /* one block value at a time (HTTP task only) */
+
+void http_api_init(const http_cfg_t *c) { cfg = *c; }
+
+/* ---------------- parsing ---------------- */
+static bool ieq(const char *a, const char *b, size_t n) {
+    for (size_t k = 0; k < n; ++k) if (tolower((unsigned char)a[k]) != tolower((unsigned char)b[k])) return false;
+    return true;
+}
+
+int http_parse_head(const char *buf, uint32_t len, http_req_t *r) {
+    const char *end = NULL;
+    for (uint32_t k = 0; k + 3 < len; ++k)
+        if (buf[k] == '\r' && buf[k + 1] == '\n' && buf[k + 2] == '\r' && buf[k + 3] == '\n') { end = buf + k; break; }
+    if (!end) return len > 4096 ? -1 : 0;
+    memset(r, 0, sizeof *r);
+    /* request line: METHOD SP target SP HTTP/1.x */
+    const char *p = buf, *le = memchr(buf, '\r', (size_t)(end - buf + 2));
+    const char *sp1 = memchr(p, ' ', (size_t)(le - p));
+    if (!sp1 || sp1 - p >= (long)sizeof r->method) return -1;
+    memcpy(r->method, p, (size_t)(sp1 - p));
+    const char *t = sp1 + 1, *sp2 = memchr(t, ' ', (size_t)(le - t));
+    if (!sp2 || le - sp2 < 9 || memcmp(sp2 + 1, "HTTP/1.", 7) != 0) return -1;
+    const char *q = memchr(t, '?', (size_t)(sp2 - t));
+    const char *pe = q ? q : sp2;
+    if (pe - t >= (long)sizeof r->path || pe == t || *t != '/') return -1;
+    memcpy(r->path, t, (size_t)(pe - t));
+    if (q) { if (sp2 - q - 1 >= (long)sizeof r->query) return -1; memcpy(r->query, q + 1, (size_t)(sp2 - q - 1)); }
+    /* headers */
+    for (p = le + 2; p < end;) {
+        const char *he = memchr(p, '\r', (size_t)(end - p + 2));
+        const char *colon = memchr(p, ':', (size_t)(he - p));
+        if (colon) {
+            size_t kl = (size_t)(colon - p);
+            const char *v = colon + 1; while (v < he && *v == ' ') v++;
+            size_t vl = (size_t)(he - v);
+            if (kl == 14 && ieq(p, "content-length", 14)) {
+                char num[12] = { 0 };
+                if (vl == 0 || vl >= sizeof num) return -1;
+                memcpy(num, v, vl);
+                for (size_t k = 0; k < vl; ++k) if (!isdigit((unsigned char)num[k])) return -1;
+                r->content_length = (uint32_t)strtoul(num, NULL, 10); r->has_length = true;
+            } else if (kl == 6 && ieq(p, "x-cems", 6)) {
+                r->csrf = vl == 1 && v[0] == '1';
+            } else if (kl == 17 && ieq(p, "transfer-encoding", 17)) {
+                return -1;                                          /* no chunked uploads */
+            } else if (kl == 6 && ieq(p, "cookie", 6)) {
+                for (const char *c = v; c + 4 <= he; ++c)
+                    if ((c == v || c[-1] == ' ' || c[-1] == ';') && memcmp(c, "sid=", 4) == 0) {
+                        const char *s0 = c + 4, *s1 = s0;
+                        while (s1 < he && *s1 != ';' && *s1 != ' ') s1++;
+                        if (s1 - s0 == AUTH_TOKEN_LEN) memcpy(r->sid, s0, AUTH_TOKEN_LEN);
+                        break;
+                    }
+            }
+        }
+        p = he + 2;
+    }
+    return (int)(end - buf + 4);
+}
+
+/* ---------------- responses ---------------- */
+static const char *reason(int st) {
+    switch (st) {
+    case 200: return "OK"; case 400: return "Bad Request"; case 401: return "Unauthorized";
+    case 403: return "Forbidden"; case 404: return "Not Found"; case 405: return "Method Not Allowed";
+    case 409: return "Conflict"; case 413: return "Payload Too Large"; case 429: return "Too Many Requests";
+    case 500: return "Internal Server Error"; case 503: return "Service Unavailable"; default: return "Error";
+    }
+}
+
+static void head(http_out_t *o, int st, const char *ctype, const char *extra) {
+    char l[64];
+    snprintf(l, sizeof l, "HTTP/1.1 %d %s\r\n", st, reason(st));
+    out_str(o, l);
+    out_str(o, "Content-Type: "); out_str(o, ctype); out_str(o, "\r\n");
+    out_str(o, "Cache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n"
+               "X-Frame-Options: DENY\r\n");
+    if (extra) out_str(o, extra);
+    out_str(o, "\r\n");
+}
+
+static void json_error(http_out_t *o, int st, const char *err, long id) {
+    head(o, st, "application/json", NULL);
+    out_str(o, "{\"ok\":false,\"error\":"); json_str(o, err);
+    if (id >= 0) { out_str(o, ",\"id\":"); json_int(o, id); }
+    out_str(o, "}");
+}
+
+void http_simple(http_out_t *o, int st, const char *msg) { json_error(o, st, msg, -1); out_flush(o); }
+
+static const char *perr_name(param_err_t e) {
+    switch (e) {
+    case PERR_NO_ID: return "unknown"; case PERR_READONLY: return "readonly"; case PERR_ACCESS: return "access";
+    case PERR_MODE: return "mode"; case PERR_TYPE: return "type"; case PERR_RANGE: return "range";
+    case PERR_INTERLOCK: return "interlock"; case PERR_BUSY: return "busy"; default: return "error";
+    }
+}
+static int perr_status(param_err_t e) {
+    switch (e) {
+    case PERR_NO_ID: return 404; case PERR_READONLY: case PERR_ACCESS: return 403;
+    case PERR_MODE: case PERR_INTERLOCK: return 409; case PERR_BUSY: return 503; default: return 400;
+    }
+}
+
+static const char *ptype_name(const param_def_t *d) {
+    static const char *n[] = { "bool", "int", "uint", "float", "bytes", "text", "text16", "array" };
+    return d->ptype <= PT_ARRAY ? n[d->ptype] : "?";
+}
+static const char *ctype_name(uint8_t ct) {
+    static const char *n[] = { "bool", "u8", "i8", "u16", "i16", "u32", "i32", "f32", "blob" };
+    return ct <= CT_BLOB ? n[ct] : "?";
+}
+static uint8_t elem_pt(uint8_t ct) {
+    return ct == CT_F32 ? PT_FLOAT : ct == CT_BOOL ? PT_BOOL : (ct == CT_I8 || ct == CT_I16 || ct == CT_I32) ? PT_INT : PT_UINT;
+}
+
+static void json_val(http_out_t *o, uint8_t pt, plat_val_t v) {
+    switch (pt) {
+    case PT_BOOL:  json_bool(o, v.b); break;
+    case PT_INT:   json_int(o, v.i); break;
+    case PT_UINT:  json_uint(o, v.u); break;
+    case PT_FLOAT: json_float(o, v.f); break;
+    default:       out_str(o, "null");
+    }
+}
+
+/* ---------------- GET handlers ---------------- */
+static void level_name_json(http_out_t *o, uint8_t l) {
+    static const char *n[] = { "view", "operator", "admin", "factory" };
+    json_str(o, l <= 3 ? n[l] : "view");
+}
+
+static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
+    plat_val_t v;
+    uint32_t left = 0;
+    uint8_t lvl = auth_session(r->sid, now, &left);
+    scan_stats_t ss = { 0 };
+    if (cfg.scan) ss = scan_stats(cfg.scan);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"product\":"); json_str(o, cfg.product);
+    out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    out_str(o, ",\"serial\":"); json_uint(o, param_read(PARAM_ID_SERIAL, &v) ? v.u : 0);
+    out_str(o, ",\"hw_rev\":"); json_uint(o, param_read(PARAM_ID_HW_REV, &v) ? v.u : 0);
+    out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
+    out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
+    out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
+    out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
+    out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
+    out_str(o, ",\"default_passwords\":"); json_bool(o, auth_any_default());
+    out_str(o, ",\"login_locked_s\":"); json_uint(o, (auth_locked_ms(now) + 999u) / 1000u);
+    out_str(o, ",\"session\":{\"level\":"); level_name_json(o, lvl);
+    out_str(o, ",\"write_s_left\":"); json_uint(o, left / 1000u); out_str(o, "}");
+    out_str(o, ",\"scan\":{\"scans\":"); json_uint(o, ss.scans);
+    out_str(o, ",\"max_exec_us\":"); json_uint(o, ss.max_exec_us);
+    out_str(o, ",\"overruns\":"); json_uint(o, ss.overruns);
+    out_str(o, ",\"late_starts\":"); json_uint(o, ss.late_starts); out_str(o, "}");
+    out_str(o, ",\"last_fault\":{\"code\":"); json_uint(o, plat_diag.fault);
+    out_str(o, ",\"name\":"); json_strn(o, plat_diag.fault_name, blen(plat_diag.fault_name, sizeof plat_diag.fault_name));
+    out_str(o, ",\"boots\":"); json_uint(o, plat_diag.boots); out_str(o, "}}");
+}
+
+static void get_params(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "[");
+    for (size_t i = 0; i < param_count(); ++i) {
+        const param_def_t *d = param_at(i);
+        if (i) out_str(o, ",");
+        out_str(o, "{\"id\":"); json_uint(o, d->id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        out_str(o, ",\"type\":"); json_str(o, ptype_name(d));
+        if (d->unit) { out_str(o, ",\"unit\":"); json_str(o, d->unit); }
+        uint8_t pt = d->ptype;
+        if (pt == PT_ARRAY) { out_str(o, ",\"elem\":"); json_str(o, ctype_name(d->ctype)); pt = elem_pt(d->ctype); }
+        if (pt <= PT_FLOAT && pt != PT_BOOL) {
+            out_str(o, ",\"min\":"); json_val(o, pt, d->vmin);
+            out_str(o, ",\"max\":"); json_val(o, pt, d->vmax);
+        }
+        if (d->ptype <= PT_FLOAT) { out_str(o, ",\"def\":"); json_val(o, d->ptype, d->vdef); }
+        if (PARAM_IS_BLOB(d)) { out_str(o, ",\"size\":"); json_uint(o, d->size); }
+        out_str(o, ",\"level\":"); json_uint(o, d->level);
+        out_str(o, ",\"flags\":["); bool f = false;
+        static const struct { uint16_t bit; const char *n; } fl[] = {
+            { PF_RO, "ro" }, { PF_PERSIST, "persist" }, { PF_FACTORY, "factory" }, { PF_ANY_MODE, "any_mode" },
+            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" } };
+        for (size_t k = 0; k < sizeof fl / sizeof fl[0]; ++k)
+            if (d->flags & fl[k].bit) { if (f) out_str(o, ","); json_str(o, fl[k].n); f = true; }
+        out_str(o, "]}");
+    }
+    out_str(o, "]");
+}
+
+static void value_json(http_out_t *o, const param_def_t *d) {
+    if (!PARAM_IS_BLOB(d)) {
+        plat_val_t v;
+        if (param_read(d->id, &v)) json_val(o, d->ptype, v); else out_str(o, "null");
+        return;
+    }
+    if (d->size > sizeof blob_buf || param_read_blob(d->id, 0, blob_buf, d->size) != PERR_OK) { out_str(o, "null"); return; }
+    switch (d->ptype) {
+    case PT_TEXT:  json_strn(o, (const char *)blob_buf, blen((const char *)blob_buf, d->size)); break;
+    case PT_TEXT16: {
+        static char u8[3 * sizeof blob_buf / 2 + 1];
+        if (utf16le_to_utf8(blob_buf, d->size / 2u, u8, sizeof u8) < 0) out_str(o, "null"); else json_str(o, u8);
+        break;
+    }
+    case PT_BYTES: {
+        out_str(o, "\"");
+        char h[65];
+        for (uint16_t k = 0; k < d->size; k += 32) {
+            uint16_t n = (uint16_t)(d->size - k < 32 ? d->size - k : 32);
+            hex_encode(blob_buf + k, n, h); out_str(o, h);
+        }
+        out_str(o, "\"");
+        break;
+    }
+    case PT_ARRAY: {
+        size_t es = param_ctype_size(d->ctype);
+        param_def_t t = *d;
+        t.ptype = elem_pt(d->ctype);
+        out_str(o, "[");
+        for (size_t k = 0; k < d->size / es; ++k) {
+            if (k) out_str(o, ",");
+            if (d->ctype == CT_BOOL) { json_bool(o, blob_buf[k] != 0); continue; }
+            t.ptr = blob_buf + k * es;
+            json_val(o, t.ptype, param_tag_get(&t));
+        }
+        out_str(o, "]");
+        break;
+    }
+    default: out_str(o, "null");
+    }
+}
+
+static void get_values(const http_req_t *r, http_out_t *o, uint32_t now) {
+    char ids[sizeof r->query];
+    bool filter = form_get(r->query, strlen(r->query), "ids", ids, sizeof ids);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"t\":"); json_uint(o, now);
+    out_str(o, ",\"v\":{");
+    bool first = true;
+    if (filter) {
+        for (char *p = ids; *p;) {
+            char *e; unsigned long id = strtoul(p, &e, 10);
+            if (e == p) break;
+            const param_def_t *d = id <= 0xFFFFu ? param_find((uint16_t)id) : NULL;
+            if (d) { if (!first) out_str(o, ","); first = false;
+                     out_str(o, "\""); json_uint(o, id); out_str(o, "\":"); value_json(o, d); }
+            p = *e == ',' ? e + 1 : e;
+            if (*e != ',') break;
+        }
+    } else {
+        for (size_t i = 0; i < param_count(); ++i) {
+            const param_def_t *d = param_at(i);
+            if (!first) out_str(o, ",");
+            first = false;
+            out_str(o, "\""); json_uint(o, d->id); out_str(o, "\":"); value_json(o, d);
+        }
+    }
+    out_str(o, "}}");
+}
+
+/* ---------------- writes ---------------- */
+static bool parse_ipv4(const char *s, uint32_t *out) {
+    unsigned long p[4]; char *e = (char *)(uintptr_t)s;
+    for (int k = 0; k < 4; ++k) {
+        if (!isdigit((unsigned char)*e)) return false;
+        p[k] = strtoul(e, &e, 10);
+        if (p[k] > 255 || (k < 3 && *e++ != '.')) return false;
+    }
+    if (*e) return false;
+    *out = (uint32_t)(p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]);
+    return true;
+}
+
+/* a text value -> (kind, value) for a scalar entry of type pt */
+static bool parse_scalar(uint8_t pt, const char *s, uint8_t *kind, plat_val_t *v) {
+    char *e;
+    if (!*s) return false;
+    switch (pt) {
+    case PT_BOOL:
+        if (!strcmp(s, "true") || !strcmp(s, "1")) { *kind = PLAT_VAL_BOOL; v->b = true; return true; }
+        if (!strcmp(s, "false") || !strcmp(s, "0")) { *kind = PLAT_VAL_BOOL; v->b = false; return true; }
+        return false;
+    case PT_INT: {
+        long x = strtol(s, &e, 10);
+        if (*e) return false;
+        *kind = PLAT_VAL_I32; v->i = (int32_t)x;
+        return x >= -2147483647L - 1 && x <= 2147483647L;
+    }
+    case PT_UINT: {
+        if (strchr(s, '.')) { *kind = PLAT_VAL_U32; return parse_ipv4(s, &v->u); }
+        if (*s == '-') return false;
+        unsigned long x = strtoul(s, &e, 10);
+        if (*e || x > 4294967295UL) return false;
+        *kind = PLAT_VAL_U32; v->u = (uint32_t)x;
+        return true;
+    }
+    case PT_FLOAT: {
+        float f = strtof(s, &e);
+        if (*e || !isfinite(f)) return false;
+        *kind = PLAT_VAL_F32; v->f = f;
+        return true;
+    }
+    default: return false;
+    }
+}
+
+/* an array element value -> bytes */
+static bool parse_elem(const param_def_t *d, const char *s, uint8_t *out) {
+    uint8_t kind; plat_val_t v;
+    uint8_t pt = elem_pt(d->ctype);
+    if (!parse_scalar(pt, s, &kind, &v)) return false;
+    union { uint8_t b[4]; uint8_t u8; int8_t i8; uint16_t u16; int16_t i16; uint32_t u32; int32_t i32; float f; } t = { { 0 } };
+    switch (d->ctype) {
+    case CT_BOOL: t.u8 = v.b ? 1 : 0; break;
+    case CT_U8:  if (v.u > 255u) return false; t.u8 = (uint8_t)v.u; break;
+    case CT_I8:  if (v.i < -128 || v.i > 127) return false; t.i8 = (int8_t)v.i; break;
+    case CT_U16: if (v.u > 65535u) return false; t.u16 = (uint16_t)v.u; break;
+    case CT_I16: if (v.i < -32768 || v.i > 32767) return false; t.i16 = (int16_t)v.i; break;
+    case CT_U32: t.u32 = v.u; break;
+    case CT_I32: t.i32 = v.i; break;
+    case CT_F32: t.f = v.f; break;
+    default: return false;
+    }
+    memcpy(out, t.b, param_ctype_size(d->ctype));
+    return true;
+}
+
+#define MAX_WRITES 32
+static plat_cmd_t         w_cmds[MAX_WRITES];
+static param_blob_write_t w_blobs[MAX_WRITES];
+static uint8_t            w_data[MAX_WRITES][PARAM_BLOB_MAX_WRITE];
+
+static void post_write(const http_req_t *r, http_out_t *o, uint8_t lvl, uint32_t now) {
+    form_iter_t it;
+    char key[16];
+    static char val[512];
+    size_t ns = 0, nb = 0;
+    long cur_id = -1, cur_off = 0;
+    bool have_v = false;
+    form_begin(&it, (const char *)r->body, r->body_len);
+    for (;;) {
+        bool more = form_next(&it, key, sizeof key, val, sizeof val);
+        if (more && key[0] == 0) { json_error(o, 400, "form", -1); return; }
+        bool flush = !more || !strcmp(key, "id");
+        if (flush && cur_id >= 0) {
+            json_error(o, 400, "no value", cur_id); return;          /* an id without a v */
+        }
+        if (!more) break;
+        if (!strcmp(key, "id")) { char *e; cur_id = strtol(val, &e, 10); if (*e || cur_id < 1 || cur_id > 65535) { json_error(o, 400, "id", -1); return; } cur_off = 0; have_v = false; continue; }
+        if (!strcmp(key, "o"))  { char *e; cur_off = strtol(val, &e, 10); if (*e || cur_off < 0 || cur_off > 65535) { json_error(o, 400, "offset", cur_id); return; } continue; }
+        if (strcmp(key, "v") != 0 || cur_id < 0 || have_v) { json_error(o, 400, "form", cur_id); return; }
+        have_v = true;
+        const param_def_t *d = param_find((uint16_t)cur_id);
+        if (!d) { json_error(o, 404, "unknown", cur_id); return; }
+        if (ns + nb >= MAX_WRITES) { json_error(o, 413, "too many", -1); return; }
+        if (!PARAM_IS_BLOB(d)) {
+            plat_cmd_t *c = &w_cmds[ns];
+            memset(c, 0, sizeof *c);
+            c->id = d->id; c->src = PLAT_SRC_WEB; c->level = lvl;
+            if (!parse_scalar(d->ptype, val, &c->kind, &c->v)) { json_error(o, 400, "value", cur_id); return; }
+            ns++;
+        } else {
+            uint8_t *buf = w_data[nb];
+            int n = -1; bool whole = false; uint32_t off = 0;
+            switch (d->ptype) {
+            case PT_TEXT:   n = (int)strlen(val); if (n > (int)PARAM_BLOB_MAX_WRITE) n = -1; else memcpy(buf, val, (size_t)n); whole = true; break;
+            case PT_TEXT16: n = utf8_to_utf16le(val, buf, PARAM_BLOB_MAX_WRITE); whole = true; break;
+            case PT_BYTES:  n = hex_decode(val, buf, PARAM_BLOB_MAX_WRITE); off = (uint32_t)cur_off; break;
+            case PT_ARRAY: {
+                size_t es = param_ctype_size(d->ctype); n = 0;
+                for (char *p = val;;) {
+                    char *comma = strchr(p, ',');
+                    if (comma) *comma = 0;
+                    if ((size_t)n + es > PARAM_BLOB_MAX_WRITE || !parse_elem(d, p, buf + n)) { n = -1; break; }
+                    n += (int)es;
+                    if (!comma) break;
+                    p = comma + 1;
+                }
+                off = (uint32_t)cur_off * (uint32_t)es;
+                break;
+            }
+            default: break;
+            }
+            if (n < 0 || off > 65535u) { json_error(o, 400, "value", cur_id); return; }
+            w_blobs[nb] = (param_blob_write_t){ .id = d->id, .off = (uint16_t)off, .len = (uint16_t)n, .whole = whole, .data = buf };
+            nb++;
+        }
+        cur_id = -1;
+    }
+    if (ns + nb == 0) { json_error(o, 400, "nothing", -1); return; }
+    /* check everything, then queue */
+    for (size_t k = 0; k < ns; ++k) {
+        param_err_t e = param_check(w_cmds[k].id, w_cmds[k].kind, w_cmds[k].v, PLAT_SRC_WEB, lvl);
+        if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), w_cmds[k].id); return; }
+    }
+    for (size_t k = 0; k < nb; ++k) {
+        param_err_t e = param_blob_check(w_blobs[k].id, w_blobs[k].off, w_blobs[k].data, w_blobs[k].len,
+                                         w_blobs[k].whole, PLAT_SRC_WEB, lvl);
+        if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), w_blobs[k].id); return; }
+    }
+    param_err_t e = param_post_many(w_cmds, ns);
+    if (e == PERR_OK) e = param_blob_post_many(w_blobs, nb, PLAT_SRC_WEB, lvl);
+    if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), -1); return; }
+    auth_touch(r->sid, now);
+    param_comms_activity(PLAT_SRC_WEB, now);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"queued\":"); json_uint(o, (unsigned long)(ns + nb)); out_str(o, "}");
+}
+
+static uint8_t parse_level(const char *s) {
+    if (!strcmp(s, "operator") || !strcmp(s, "1")) return PLAT_LVL_OPERATOR;
+    if (!strcmp(s, "admin") || !strcmp(s, "2")) return PLAT_LVL_ADMIN;
+    if (!strcmp(s, "factory") || !strcmp(s, "3")) return PLAT_LVL_FACTORY;
+    return 0;
+}
+
+static void post_login(const http_req_t *r, http_out_t *o, uint32_t now) {
+    char lv[16], pw[AUTH_PW_MAX + 2];
+    form_get((const char *)r->body, r->body_len, "level", lv, sizeof lv);
+    form_get((const char *)r->body, r->body_len, "password", pw, sizeof pw);
+    uint8_t level = parse_level(lv);
+    if (!level) { json_error(o, 400, "level", -1); return; }
+    char tok[AUTH_TOKEN_LEN + 1];
+    auth_rc_t rc = auth_login(level, pw, now, tok);
+    memset(pw, 0, sizeof pw);
+    if (rc == AUTH_LOCKED) { json_error(o, 429, "locked", -1); return; }
+    if (rc != AUTH_OK) { json_error(o, 401, "password", -1); return; }
+    char cookie[96];
+    snprintf(cookie, sizeof cookie, "Set-Cookie: sid=%s; Path=/; HttpOnly; SameSite=Strict\r\n", tok);
+    head(o, 200, "application/json", cookie);
+    out_str(o, "{\"ok\":true,\"level\":"); level_name_json(o, level);
+    out_str(o, ",\"default_password\":"); json_bool(o, auth_is_default(level)); out_str(o, "}");
+}
+
+static void post_password(const http_req_t *r, http_out_t *o, uint8_t lvl, uint32_t now) {
+    char lv[16], pw[AUTH_PW_MAX + 2];
+    form_get((const char *)r->body, r->body_len, "level", lv, sizeof lv);
+    form_get((const char *)r->body, r->body_len, "password", pw, sizeof pw);
+    uint8_t target = parse_level(lv);
+    if (!target) { json_error(o, 400, "level", -1); return; }
+    if (lvl < target) { json_error(o, 403, "access", -1); return; }
+    auth_rc_t rc = auth_set_password(target, pw);
+    memset(pw, 0, sizeof pw);
+    if (rc != AUTH_OK) { json_error(o, 400, "password rules", -1); return; }
+    auth_touch(r->sid, now);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+static bool wait_job(int32_t *result) {
+    for (int k = 0; k < 500; ++k) {                       /* up to ~5 s */
+        if (param_store_job_done(result)) return true;
+        if (cfg.wait) cfg.wait();
+    }
+    return false;
+}
+
+static void get_backup(http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    if (!cfg.scratch || param_store_job_start(true, cfg.scratch, cfg.scratch_size, lvl) != 0) { json_error(o, 503, "busy", -1); return; }
+    int32_t n;
+    if (!wait_job(&n)) { json_error(o, 503, "timeout", -1); return; }  /* (a late job finishes harmlessly) */
+    if (n <= 0) { json_error(o, 500, "nothing stored", -1); return; }
+    plat_val_t s;
+    char extra[160];
+    snprintf(extra, sizeof extra, "Content-Length: %ld\r\nContent-Disposition: attachment; filename=\"cems-%lu.bkp\"\r\n",
+             (long)n, (unsigned long)(param_read(PARAM_ID_SERIAL, &s) ? s.u : 0));
+    head(o, 200, "application/octet-stream", extra);
+    out_bytes(o, cfg.scratch, (size_t)n);
+}
+
+static void post_restore(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    if (param_store_job_start(false, (uint8_t *)(uintptr_t)r->body, r->body_len, lvl) != 0) { json_error(o, 503, "busy", -1); return; }
+    int32_t rc;
+    if (!wait_job(&rc)) { json_error(o, 503, "timeout", -1); return; }
+    if (rc != 0) { json_error(o, 400, rc == -5 ? "nothing to restore at this level" : "invalid file", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* ---------------- router ---------------- */
+void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
+    bool get = !strcmp(r->method, "GET"), post = !strcmp(r->method, "POST");
+    uint32_t left;
+    uint8_t lvl = auth_session(r->sid, now, &left);
+
+    if (get && (!strcmp(r->path, "/") || !strcmp(r->path, "/index.html"))) {
+        char extra[64];
+        snprintf(extra, sizeof extra, "Content-Encoding: gzip\r\nContent-Length: %lu\r\n", (unsigned long)web_index_gz_len);
+        head(o, 200, "text/html; charset=utf-8", extra);
+        out_bytes(o, web_index_gz, web_index_gz_len);
+    }
+    else if (get && !strcmp(r->path, "/api/info"))   get_info(r, o, now);
+    else if (get && !strcmp(r->path, "/api/params")) get_params(o);
+    else if (get && !strcmp(r->path, "/api/values")) get_values(r, o, now);
+    else if (get && !strcmp(r->path, "/api/backup")) get_backup(o, lvl);
+    else if (post && strncmp(r->path, "/api/", 5) == 0) {
+        if (!r->csrf) json_error(o, 403, "missing X-CEMS header", -1);
+        else if (!strcmp(r->path, "/api/login")) post_login(r, o, now);
+        else if (!strcmp(r->path, "/api/logout")) { auth_logout(r->sid); head(o, 200, "application/json",
+                     "Set-Cookie: sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict\r\n"); out_str(o, "{\"ok\":true}"); }
+        else if (lvl == 0) json_error(o, 401, "login", -1);
+        else if (!strcmp(r->path, "/api/write")) post_write(r, o, lvl, now);
+        else if (!strcmp(r->path, "/api/password")) post_password(r, o, lvl, now);
+        else if (!strcmp(r->path, "/api/restore")) post_restore(r, o, lvl);
+        else json_error(o, 404, "not found", -1);
+    }
+    else if (!get && !post) json_error(o, 405, "method", -1);
+    else json_error(o, 404, "not found", -1);
+    out_flush(o);
+}

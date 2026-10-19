@@ -243,10 +243,15 @@ typedef struct {
     uint8_t  kind;
     plat_val_t v;
     uint16_t off, len;
-    uint8_t  data[PARAM_BLOB_MAX_WRITE];
+    uint8_t *data;                /* blocks: one of blob_data[] */
 } op_t;
 
-static op_t ops[MB_MAX_OPS];      /* only the Modbus task writes; static to keep it off the stack */
+#define MB_MAX_BLOB_OPS 16u       /* = the block write queue depth */
+static op_t    ops[MB_MAX_OPS];   /* only the Modbus task writes; static to keep it off the stack */
+static uint8_t blob_data[MB_MAX_BLOB_OPS][PARAM_BLOB_MAX_WRITE];
+static size_t  n_blob_data;
+
+static uint8_t *claim_blob(void) { return n_blob_data < MB_MAX_BLOB_OPS ? blob_data[n_blob_data++] : NULL; }
 
 static param_err_t scalar_from_regs(const ent_t *e, const uint16_t *r, op_t *op) {
     const mb_map_t *m = e->m;
@@ -272,6 +277,7 @@ static uint8_t plan_regs(const ent_t *e, uint16_t r0, uint16_t n, const uint16_t
     const mb_map_t *m = e->m;
     const param_def_t *d = e->d;
     memset(op, 0, sizeof *op);
+    if ((m->fmt == MBF_BYTES || m->fmt == MBF_ARRAY) && (op->data = claim_blob()) == NULL) return EX_BUSY;
     if (m->fmt == MBF_BYTES) {
         bool text = d->ptype == PT_TEXT || d->ptype == PT_TEXT16;
         if (text && (r0 != 0 || n != e->span)) return EX_VALUE;          /* text: whole entry only */
@@ -325,6 +331,7 @@ static uint8_t plan_bits(const ent_t *e, uint16_t b0, uint16_t n, const uint8_t 
     op->id = e->d->id;
     if (e->m->fmt == MBF_BIT) { op->kind = PLAT_VAL_BOOL; op->v.b = bits[0] != 0; return 0; }
     if (n > PARAM_BLOB_MAX_WRITE) return EX_VALUE;
+    if ((op->data = claim_blob()) == NULL) return EX_BUSY;
     op->blob = true; op->off = b0; op->len = n;
     for (uint16_t k = 0; k < n; ++k) op->data[k] = bits[k] ? 1u : 0u;
     return 0;
@@ -363,6 +370,7 @@ static uint8_t check_and_queue(size_t n_ops) {
 static uint16_t wr_regs(uint8_t fc, uint16_t a, uint16_t q, const uint16_t *regs, uint8_t *resp) {
     if ((uint32_t)a + q > 65536u) return exc(fc, EX_ADDR, resp);
     size_t n_ops = 0;
+    n_blob_data = 0;
     for (uint16_t k = 0; k < q;) {
         const ent_t *e = find(MB_HOLDING, (uint16_t)(a + k));
         if (!e) return exc(fc, EX_ADDR, resp);
@@ -380,6 +388,7 @@ static uint16_t wr_regs(uint8_t fc, uint16_t a, uint16_t q, const uint16_t *regs
 static uint16_t wr_bits(uint8_t fc, uint16_t a, uint16_t q, const uint8_t *bits, uint8_t *resp) {
     if ((uint32_t)a + q > 65536u) return exc(fc, EX_ADDR, resp);
     size_t n_ops = 0;
+    n_blob_data = 0;
     for (uint16_t k = 0; k < q;) {
         const ent_t *e = find(MB_COILS, (uint16_t)(a + k));
         if (!e) return exc(fc, EX_ADDR, resp);

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CEMS Supervisor</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1d2330;--mute:#667085;--line:#d9dde4;--accent:#1f5fae;--ok:#16794a;--warn:#a15c00;--bad:#b42318}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;background:#14213d;color:#fff}
+header h1{font-size:16px;margin:0 8px 0 0}
+header .meta{color:#c9d2e3;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;background:#e8ecf3;color:var(--ink)}
+.b-ok{background:#d9f2e6;color:var(--ok)}.b-warn{background:#fdecd2;color:var(--warn)}.b-bad{background:#fde2e0;color:var(--bad)}
+#lost{display:none;padding:8px 16px;background:var(--bad);color:#fff;font-weight:600}
+body.stale #lost{display:block}
+body.stale .val{color:#9aa3b2}
+main{max-width:1100px;margin:0 auto;padding:12px 16px 40px}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;margin:12px 0;padding:12px}
+h2{font-size:14px;margin:0 0 8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input,select,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+button{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
+button.ghost{background:#fff;color:var(--accent)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--mute);font-weight:600}
+td.val{font-variant-numeric:tabular-nums;word-break:break-all;max-width:360px}
+td.lim,td.acc{color:var(--mute);font-size:12px}
+.err{color:var(--bad);font-size:12px}
+.note{color:var(--mute);font-size:12px}
+.warnbox{background:#fdecd2;color:var(--warn);border-radius:6px;padding:8px;margin-bottom:8px;display:none}
+#filter{min-width:220px}
+@media (max-width:640px){td.lim,th.lim{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="product">CEMS Supervisor</h1>
+  <span class="meta" id="ident"></span>
+  <span class="badge" id="mode">-</span>
+  <span class="badge" id="link" style="display:none">REMOTE LINK LOST</span>
+  <span class="badge b-bad" id="cal" style="display:none">CALIBRATION INVALID</span>
+  <span class="badge" id="conn">connecting</span>
+</header>
+<div id="lost">Connection lost. Last update <span id="lasttime">-</span>. Retrying.</div>
+<main>
+  <section>
+    <div class="warnbox" id="defpw">Factory default passwords are in use. Change them under Administration.</div>
+    <div class="row" id="loginrow">
+      <select id="lvl"><option value="operator">Operator</option><option value="admin">Admin</option><option value="factory">Factory</option></select>
+      <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="loginbtn">Log in</button>
+      <span class="note">Viewing needs no login. Changes need one.</span>
+      <span class="err" id="loginerr"></span>
+    </div>
+    <div class="row" id="userrow" style="display:none">
+      <span>Logged in as <b id="who"></b>. Changes allowed for <span id="left"></span> more without activity.</span>
+      <button class="ghost" id="logoutbtn">Log out</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="row" style="justify-content:space-between">
+      <h2>Parameters</h2>
+      <input id="filter" placeholder="Filter by name or ID">
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Value</th><th class="lim">Range</th><th>Access</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+
+  <section id="admin" style="display:none">
+    <h2>Administration</h2>
+    <div class="row">
+      <a id="backup" href="/api/backup"><button class="ghost" type="button">Download parameter backup</button></a>
+      <input type="file" id="restorefile">
+      <button id="restorebtn">Restore from file</button>
+      <span class="err" id="restoreerr"></span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select id="pwlvl"><option value="operator">Operator</option><option value="admin">Admin</option><option value="factory">Factory</option></select>
+      <input id="newpw" type="password" placeholder="New password (4-32, no spaces)" autocomplete="new-password">
+      <button id="pwbtn">Change password</button>
+      <span class="err" id="pwerr"></span>
+    </div>
+    <p class="note" id="diag"></p>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const LV = ["view","operator","admin","factory"];
+let defs = [], byId = {}, level = 0, mode = "local", lastOk = 0, editing = null;
+
+async function api(path, body, raw) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "X-CEMS": "1" }, body };
+  if (body !== undefined && !raw) opt.headers["Content-Type"] = "application/x-www-form-urlencoded";
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status, info: j });
+  return j;
+}
+const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
+
+function fmt(d, v) {
+  if (v === null || v === undefined) return "-";
+  if (Array.isArray(v)) return v.map(x => typeof x === "boolean" ? (x ? 1 : 0) : x).join(", ");
+  if (typeof v === "boolean") return v ? "on" : "off";
+  if (d.name.startsWith("net_") && d.type === "uint" && d.name !== "net_dhcp")
+    return [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".");
+  return String(v) + (d.unit ? " " + d.unit : "");
+}
+function writable(d) {
+  if (d.flags.includes("ro") || level < d.level) return false;
+  if (d.flags.includes("local_only")) return false;            /* touchscreen only */
+  if (d.flags.includes("any_mode")) return true;
+  return mode === "remote";
+}
+function accessText(d) {
+  if (d.flags.includes("ro")) return "read only";
+  let t = LV[d.level] || "?";
+  if (d.flags.includes("local_only")) t += ", touchscreen only";
+  else if (!d.flags.includes("any_mode")) t += ", remote mode";
+  if (d.flags.includes("factory")) t += ", factory data";
+  return t;
+}
+function rangeText(d) {
+  if (d.min !== undefined) {
+    if (d.type === "uint" && d.min === 0 && d.max === 4294967295) return "";   /* no real limit */
+    return d.min + " .. " + d.max;
+  }
+  if (d.size !== undefined) return d.size + " bytes";
+  return "";
+}
+
+function build() {
+  const tb = $("rows"); tb.textContent = "";
+  const f = $("filter").value.trim().toLowerCase();
+  for (const d of defs) {
+    if (f && !d.name.toLowerCase().includes(f) && String(d.id) !== f) continue;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${d.id}</td><td></td><td class="val" id="v${d.id}">-</td><td class="lim"></td><td class="acc"></td><td></td>`;
+    tr.children[1].textContent = d.name;
+    tr.children[3].textContent = rangeText(d);
+    tr.children[4].textContent = accessText(d);
+    const cell = tr.children[5];
+    if (writable(d)) {
+      const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Change";
+      b.onclick = () => edit(d, tr); cell.appendChild(b);
+    }
+    tb.appendChild(tr);
+  }
+}
+
+function edit(d, tr) {
+  editing = d.id;
+  const cell = tr.children[5]; cell.textContent = "";
+  const inp = document.createElement("input");
+  inp.size = 18;
+  const cur = lastValues[d.id];
+  inp.value = cur === undefined ? "" : (Array.isArray(cur) ? cur.map(x => typeof x === "boolean" ? (x ? 1 : 0) : x).join(",") : String(cur));
+  if (d.type === "bool") inp.placeholder = "true / false";
+  const ok = document.createElement("button"); ok.textContent = "Set";
+  const no = document.createElement("button"); no.className = "ghost"; no.textContent = "Cancel";
+  const err = document.createElement("div"); err.className = "err";
+  ok.onclick = async () => {
+    try { await api("/api/write", form({ id: d.id, v: inp.value })); editing = null; build(); }
+    catch (e) { err.textContent = explain(e); }
+  };
+  no.onclick = () => { editing = null; build(); };
+  cell.append(inp, ok, no, err);
+  inp.focus();
+}
+function explain(e) {
+  const m = { range: "Outside the allowed range", mode: "Not allowed in the current local/remote mode",
+              access: "Your login level is too low", login: "Please log in again", value: "Not a valid value",
+              readonly: "Read only", busy: "Instrument busy, try again", type: "Wrong type of value" };
+  return m[e.message] || ("Refused: " + e.message);
+}
+
+let lastValues = {};
+async function pollValues() {
+  try {
+    const j = await api("/api/values");
+    lastValues = j.v; lastOk = Date.now();
+    for (const d of defs) { const c = $("v" + d.id); if (c) c.textContent = fmt(d, j.v[d.id]); }
+    document.body.classList.remove("stale");
+    $("conn").textContent = "live"; $("conn").className = "badge b-ok";
+  } catch (e) {
+    document.body.classList.add("stale");
+    $("conn").textContent = "offline"; $("conn").className = "badge b-bad";
+    $("lasttime").textContent = lastOk ? new Date(lastOk).toLocaleTimeString() : "never";
+  }
+  setTimeout(pollValues, 500);
+}
+
+async function refreshInfo() {
+  try {
+    const i = await api("/api/info");
+    $("product").textContent = i.product;
+    $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
+    const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
+    $("link").style.display = i.link_lost ? "" : "none"; $("link").className = "badge b-warn";
+    $("cal").style.display = i.cal_valid ? "none" : "";
+    $("defpw").style.display = i.default_passwords ? "block" : "none";
+    const newLevel = LV.indexOf(i.session.level);
+    const changed = newLevel !== level || i.mode !== mode;
+    level = newLevel; mode = i.mode;
+    $("loginrow").style.display = level ? "none" : "flex";
+    $("userrow").style.display = level ? "flex" : "none";
+    $("who").textContent = i.session.level;
+    $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
+    $("admin").style.display = level >= 2 ? "block" : "none";
+    $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
+      `Store status 0x${i.store_status.toString(16)}. Boots ${i.last_fault.boots}` +
+      (i.last_fault.code ? `, last fault ${i.last_fault.code} (${i.last_fault.name})` : "") + ".";
+    if (i.login_locked_s) $("loginerr").textContent = `Too many attempts: wait ${i.login_locked_s} s`;
+    if (changed && editing === null) build();
+  } catch (e) { /* the value poll shows the connection state */ }
+}
+async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
+
+$("loginbtn").onclick = async () => {
+  $("loginerr").textContent = "";
+  try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
+  catch (e) { $("loginerr").textContent = e.message === "locked" ? "Too many attempts, wait 30 s" : "Wrong password"; }
+};
+$("pw").onkeydown = e => { if (e.key === "Enter") $("loginbtn").click(); };
+$("logoutbtn").onclick = async () => { await api("/api/logout", "").catch(() => {}); await refreshInfo(); };
+$("filter").oninput = build;
+$("pwbtn").onclick = async () => {
+  $("pwerr").textContent = "";
+  try { await api("/api/password", form({ level: $("pwlvl").value, password: $("newpw").value })); $("newpw").value = ""; $("pwerr").textContent = "Changed"; }
+  catch (e) { $("pwerr").textContent = e.message === "access" ? "Your level cannot change that password" : "4-32 characters, no spaces"; }
+};
+$("restorebtn").onclick = async () => {
+  const f = $("restorefile").files[0]; $("restoreerr").textContent = "";
+  if (!f) { $("restoreerr").textContent = "Choose a backup file first"; return; }
+  if (!confirm("Replace the instrument's settings with this backup?")) return;
+  try { await api("/api/restore", await f.arrayBuffer(), true); $("restoreerr").textContent = "Restored"; }
+  catch (e) { $("restoreerr").textContent = e.message; }
+};
+
+(async function start() {
+  for (;;) {
+    try { defs = await api("/api/params"); break; }
+    catch (e) { document.body.classList.add("stale"); await new Promise(r => setTimeout(r, 2000)); }
+  }
+  defs.forEach(d => byId[d.id] = d);
+  build(); pollValues(); pollInfo();
+})();
+</script>
+</body>
+</html>

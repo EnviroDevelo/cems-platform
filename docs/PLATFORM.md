@@ -1,6 +1,6 @@
 # CEMS Core Platform: firmware structure, scan contract and integration rules
 
-Rev B, 19 Oct 2026 (Rev B adds the shared parameter table, control arbitration and the FRAM parameter store). Implements the "Firmware architecture and toolchain" section of
+Rev C, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking). Implements the "Firmware architecture and toolchain" section of
 *CEMS Supervisor Design Specification Rev 1.00* (file name: *CEMS Instrument Core
 Platform Design Specification Rev 1.00.pdf*). This is the code that every instrument
 in the family shares. The VM/MUX program translated in `Existing Design/Analysis/stage4`
@@ -21,10 +21,14 @@ runs on top of it.
 | Shared parameter table, local/remote arbitration, remote-link watchdog | `param.h/.c`, `plat_sys.c` | Done, host-tested |
 | Parameter store: FRAM images, dual copies, factory/user split, fail safe, migration, backup/restore | `param_store.h/.c`, `nvm.h`, `nvm_ram.c`, `plat_crc32.c`, `platform/os/plat_store_task.c` | Done, host + RTOS tested |
 | FRAM drivers: I2C (DMA, interrupt or polling) and SPI | `port/stm32h5/nvm_fram_i2c.c`, `nvm_fram_spi.c` | Compiled and linked in every configuration, not yet run on hardware |
+| Text, UTF-16 text, byte buffers and arrays as table entries | `param.h` (`PARAM_TEXT`, `PARAM_TEXT16`, `PARAM_BYTES`, `PARAM_ARRAY_*`) | Done, host-tested |
+| Modbus TCP server (port 502) | `modbus.h/.c` (engine and map), `mbtcp.h`, `platform/net/mbtcp.c` | Done; host-tested, and tested on real sockets with pymodbus |
+| Web interface (port 80): JSON API, logins, sessions, backup/restore, the page | `http_api.h`, `http_server.h`, `web_auth.h`, `platform/net/*`, `web/index.html` | Done; host-tested, on real sockets, and in headless Chromium |
+| Network on the H5: lwIP 2.2.1 + FreeRTOS, Ethernet driver (LAN8742 PHY), bring-up, live address changes | `port/stm32h5/lwip/*`, `platform/os/plat_net_tasks.c` | Compiled and linked with the real lwIP, HAL and PHY driver; not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): Modbus TCP and HTTP/JSON
-on lwIP; logger; EVE driver and UI; firmware update/bootloader.
+Not in this revision (next modules, in the order proposed): logger; firmware
+update/bootloader; EVE driver and touch UI.
 
 ## 2. Tasks and priorities
 
@@ -41,7 +45,9 @@ then networking, and the UI last. Nothing below the scan can delay it.
 | lwIP tcpip_thread | 8 | event-driven | via modbus/http | lwIP |
 | modbus | 7 | socket events | 5 s | `plat_modbus_task_body()` |
 | http | 6 | socket events | 5 s | `plat_http_task_body()` |
+| net | 4 | every 250 ms | 5 s | `plat_net_task_body()`: lwIP start, link, address changes |
 | ui | 3 | touch/redraw | 5 s | `plat_ui_task_body()` |
+| eth_rx | 9 | Ethernet receive | n/a | created by the Ethernet driver; ST runs it highest, here it is below control |
 
 Every service body is a weak default that only checks in. A module replaces it by
 defining a function with the same name, so adding Modbus later doesn't touch this file.
@@ -142,7 +148,44 @@ no CPU and doesn't starve the network tasks; polling during the boot load) and S
   demo shows this). Operator settings are saved within 1 s of the write.
 - Import and export run in the store task. The HTTP module will add the hand-over.
 
-## 5. Integration rules for the application (VM/MUX) code
+## 5. Modbus TCP and the web interface
+
+**One source of truth.** Both servers only ever touch the parameter table. A Modbus
+write, a web write and a touchscreen write pass the same checks (level, mode, range,
+interlock), and both servers read the copy the scan publishes, so neither can catch the
+logic half way through a scan. Multi-value writes are checked completely and queued as
+one batch, and the scan applies everything queued before it runs the logic. So a
+16-register write either lands whole in one scan or not at all.
+
+**Modbus map.** The application lists where each table entry appears (`mb_map_t`):
+coils, discrete inputs, holding and input registers; 16- and 32-bit values (either word
+order); floats as IEEE or scaled integers (`dec`); text and byte buffers packed two bytes
+per register (either byte order); bit arrays on coils. That covers every shape in the
+old slave map (`stage4/4G/modbus_map.csv`: 201 entries; INT16, BIT arrays, TIMER
+.Preset/.Out, REAL, 10- and 30-register BUFFERs), so the old addresses can be kept for
+existing DAHS configurations. Exceptions: 01 writes disabled or level too low; 02
+unmapped, read-only, or half a 32-bit value; 03 range or type; 04 wrong local/remote
+mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes room
+(a PLC that rebooted without closing would otherwise hold a slot). Optional single
+allowed client IP. TCP keepalive notices a vanished client in about 50 s.
+
+**Web interface.** One page (4.6 KB gzip) loads once, then polls JSON: values every
+0.5 s, status every 2 s. Viewing needs no login. Changes need a login (operator, admin
+or factory); a session allows changes for 10 minutes after the login or the last change.
+Five wrong passwords lock login for 30 s. Passwords are stored as salted SHA-256 in FRAM,
+outside the readable table. Every POST must carry an `X-CEMS: 1` header and the cookie
+is `HttpOnly; SameSite=Strict`, so another web page cannot submit changes. If the
+instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner appears
+and the values grey out until polling recovers. Admin users can download a parameter
+backup and restore it. Screenshots: `docs/web_ui.png`, `docs/web_ui_connection_lost.png`.
+
+**Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
+ported to native FreeRTOS. The address comes from the parameter table (static
+192.168.1.50/24 by default, or DHCP) and a change from the touchscreen or web takes effect
+immediately. The MAC address is derived from the chip's unique ID: locally
+administered, different on every unit, and stable across reboots.
+
+## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
 stop the Stage 4 chunks from linking together correctly**, so they need fixing in that
@@ -157,18 +200,21 @@ work before integration.
 7. **Parameter table from the data dictionary.** The 148 SETTING tags become `param_def_t` entries (IDs from 1000), and the other retained tags become `RETAIN()` blocks. `stage2/data_dictionary.csv` has the type, retain flag and power-up value for each, so the table can be generated rather than typed. Ranges must come from the HMI element limits (Stage 5 `hmi_elements.csv`); where a limit isn't known, it is a Rule 0 item, not a guess.
 8. Tags the logic rewrites every scan should not be `PF_PERSIST` or retained unless the original retains them; the store only saves real changes, so this costs nothing either way, but it keeps the image meaningful.
 9. The application must read `param_store_calibration_valid()` and `param_remote_link_lost()` and act on them (block measurement; go to its safe state).
+10. **Modbus map from the old slave map.** Generate `mb_map_t` from `stage4/4G/modbus_map.csv`. Strings and buffers the master reads become `PARAM_TEXT`/`PARAM_BYTES` entries; bit arrays become `PARAM_ARRAY_BOOL`; timer presets become `PARAM_UINT` on `.Preset`. **Open item (Rule 0):** the byte order UniLogic uses to pack BUFFER bytes into registers, and the word order of 32-bit values, aren't in the analysis. The map supports both orders (`MBF_BYTE_LO_FIRST`, `MBF_WORD_LO_FIRST`), so this is a single flag per entry once it is known (a UniLogic screenshot of the Modbus slave data map, or one register read from a running unit, settles it).
 
-## 6. How it was checked
+## 7. How it was checked
 
 | Check | Result |
 |---|---|
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4 | 1,048 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4 | 2,191 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror in five configurations (no FRAM, SPI, I2C+DMA, I2C+interrupt, I2C with the 128 KB map). With the I2C part: 27.5 KB flash, 122 KB RAM; bare DK 154 KB RAM (adds a 32 KB RAM stand-in). `plat_diag` is in the NOLOAD `.noinit` section |
+| Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 49 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused, and after a restart: settings and the changed password kept, mode back to LOCAL |
+| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Login, an out-of-range value refused with a plain message, an accepted change shown within a second, the connection-lost banner when the unit stops, no script errors |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror in five configurations (no FRAM, SPI, I2C+DMA, I2C+interrupt, I2C with the 128 KB map), each linked with lwIP 2.2.1, the Ethernet driver and both servers. With the I2C FRAM: 136.5 KB flash (of 2 MB), 250 KB RAM (of 640 KB). `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
-## 7. Decisions (working defaults, change any of them)
+## 8. Decisions (working defaults, change any of them)
 
 | # | Decision | Proposal | Why it matters |
 |---|---|---|---|
@@ -180,17 +226,23 @@ work before integration.
 | D6 | FRAM | Development: your 32 KB I2C MB85RC256V (16% headroom with today's data). Product: decide at schematic; a 128 KB part (e.g. MB85RC1MT, I2C, same driver) is one setting away | 32 KB works but is tight once the instrument family adds data |
 | D7 | Modbus writes at first power-up | Enabled; any client IP | Plugs into a DAHS without setup; an admin can make Modbus read-only or limit it to one IP |
 | D8 | Touchscreen writes in REMOTE mode | Refused, except the mode switch and `PF_ANY_MODE` entries | Stops the local panel and the PLC fighting over a setpoint; the spec only states the remote side |
+| D9 | Default passwords | operator 1111, admin 2222, factory 9999; the page warns while any is unchanged; "restore defaults" also restores these | Change at commissioning. A per-unit factory password (e.g. from the serial) is an option if units leave the factory |
+| D10 | MAC address | Locally administered, from the chip unique ID | Fine for site networks. For production, buy an IEEE OUI block or fit an EUI-48 chip (e.g. 24AA02E48) |
+| D11 | Web transport | HTTP on port 80 now; HTTPS (mbedTLS) later | The spec allows HTTP on an isolated control network; HTTPS adds about 100 KB flash and 40 KB RAM and can come with the firmware-update work |
 
-## 8. Repository layout
+## 9. Repository layout
 
 ```
 platform/include/   public headers (no HAL, no FreeRTOS except plat_port.h on target)
 platform/core/      portable logic: scan engine, queue, monitor, diag
 platform/os/        FreeRTOS binding (tasks, hooks)
+platform/net/       Modbus TCP, HTTP server, web API, logins (socket API: POSIX or lwIP)
 platform/bsp/       simulated board for host builds
-port/stm32h5/       STM32H5 BSP, FreeRTOSConfig.h, linker snippet, compile/link check
+port/stm32h5/       STM32H5 BSP, FRAM drivers, FreeRTOSConfig.h, linker snippet, compile/link check
+port/stm32h5/lwip/  lwipopts.h, Ethernet driver (from ST, SLA0044), network bring-up
+web/                the web page source (embedded by tools/embed_web.py)
 app_demo/           example application on the scan contract
-host/               PC simulation and the FreeRTOS POSIX run
-tests/              host unit tests
+host/               PC simulation, FreeRTOS POSIX run, networked simulation (netsim)
+tests/              host unit tests; tests/integration: network and browser tests
 docs/               this file, CUBEMX_SETUP.md
 ```

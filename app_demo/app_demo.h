@@ -9,11 +9,16 @@
 #include "scan_engine.h"
 #include "param.h"
 #include "param_store.h"
+#include "modbus.h"
 #include "ul_system.h"
 
 #define DEMO_PARAM_START_DELAY 1001u
 #define DEMO_PARAM_RUN_HOURS   1002u   /* written by the logic, persisted, read-only outside */
-#define DEMO_BLOCK_VALVE_NAME  1100u
+#define DEMO_PARAM_VALVE_OUT   1003u
+#define DEMO_PARAM_START_IN    1004u
+#define DEMO_PARAM_VALVE_NAME  1005u
+#define DEMO_PARAM_ACK         1006u
+#define DEMO_BLOCK_CYCLES      1100u
 
 typedef struct {               /* what UI / web / Modbus may display */
     uint32_t delay_preset, delay_current;
@@ -31,6 +36,7 @@ extern const size_t       app_demo_n_params;
 extern const retain_def_t app_demo_retain[];
 extern const size_t       app_demo_n_retain;
 extern demo_snapshot_t    demo_snapshot;   /* guarded by the scan's snapshot seqlock */
+extern const mb_map_t     app_demo_modbus[];
 extern char               ValveName[11];
 extern uint32_t           RunSeconds;
 
