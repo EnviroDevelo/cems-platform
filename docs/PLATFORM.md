@@ -30,8 +30,9 @@ runs on top of it.
 | EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): alarm manager (alarm list
-and acknowledge on the touchscreen and web); image signing (D14); QSPI for the display.
+Not in this revision (next modules, in the order proposed): HTTPS (D11); image signing
+(D14); alarm manager (alarm list and acknowledge on the touchscreen and web); QSPI for
+the display.
 
 ## 2. Tasks and priorities
 
@@ -290,6 +291,36 @@ after 10 minutes; the first touch only wakes it. A display that doesn't answer i
 retried every 5 s and the instrument runs on without it; the firmware trial treats a
 fitted-but-dead display as unhealthy.
 
+## 5d. Duplicate addresses, network security and remote access
+
+**Duplicate address check.** Before a static address is used it is probed with ARP
+(RFC 5227, lwIP's ACD). If another device answers, the instrument does not take the
+address, so the device already using it (often the PLC) keeps working; the IP CONFLICT
+alarm shows on the touchscreen header and the web page, the System screen says
+"192.168.1.50 IN USE by another device", the event log records it, and the address is
+checked again every 30 s and whenever the cable is plugged in. A device that claims the
+address later is detected too (the address is defended and kept, and the alarm raised).
+DHCP leases get the same check inside the DHCP client. Probing takes 2-7 s, during
+which the unit has no address. Status: parameter 14 `net_status` (`NETST_*`).
+
+**Security model (planned, D11/D17).** Defence in depth, in the spirit of IEC 62443:
+- HTTPS only for the web interface (D11), logins with lockout, tech-level firmware
+  updates with signed images (D14), every change in the event log;
+- Modbus TCP has no security of its own (nor do the PLCs that use it): it stays on the
+  control network, with the existing allowed-client IP and the "Modbus read-only"
+  switch, and is never routed to the internet;
+- the instrument makes no outbound connections of its own.
+
+**Remote access (D17).** Never by port-forwarding the instrument to the internet. A
+site that wants remote access fits an industrial remote-access router (for example
+Ewon Cosy, Teltonika RUT with RMS, or Moxa/Phoenix equivalents) on the control
+network, cellular or site internet. The router keeps an outbound, encrypted VPN to the
+vendor's service; an engineer connects their laptop to that VPN and opens
+`https://192.168.1.50/` exactly as on site, with the same logins. The instrument
+needs only HTTPS, a gateway setting (already there) and a correct clock. A cloud
+dashboard reached by the instrument itself (MQTT/HTTPS outbound) is possible later but
+means building and running a service, and is not proposed now.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -342,7 +373,8 @@ work before integration.
 | D14 | Firmware authenticity | **Decided (Gary, 20 Oct): the signing key is a tech-level credential, never a user-level one.** The private key stays with the technicians/build machine and signs each .cfw; the instrument holds only the public key and rejects unsigned or wrongly signed images (`PLAT_FW_REQUIRE_SIGNED 1`). Uploading and activating firmware also need the factory (tech) login, on the web and the touchscreen (Gary, 20 Oct). Until signing is built: unsigned images, SHA-256 integrity, tech login, product ID check | Site users (operator, admin) can't change firmware; and even a tech login can't make firmware the unit will accept without the signing key |
 | D15 | Trial length and rollback rule | 60 s healthy running; a watchdog/fault reset or a second power cut during the trial rolls back | Long enough to cover start-up and the first scans and connections, short enough that a field engineer sees the result |
 | D16 | UI library | Own plain-C layer on the EVE co-processor commands (built-in widgets and ROM fonts), not LVGL | The spec asked for a prototype of each. The co-processor's buttons, keypads and text cover menus and setpoint entry, need no frame buffer or image assets, and keep the UI at about 20 KB of code and 10 KB of RAM. LVGL's EVE renderer is still possible behind the same task if richer graphics are wanted |
-| D11 | Web transport | HTTP on port 80 now; HTTPS (mbedTLS) later | The spec allows HTTP on an isolated control network; HTTPS adds about 100 KB flash and 40 KB RAM and can come with the firmware-update work |
+| D11 | Web transport | **HTTPS only (Gary, 20 Oct).** TLS 1.2 and 1.3 with mbedTLS 3.6 LTS on port 443, ECDSA P-256 keys, the H573's crypto hardware where mbedTLS supports it. Port 80 only redirects to HTTPS (and can be switched off). Each unit makes its own key at first start and keeps it in the factory FRAM area; its certificate is signed by a CEMS company CA at production (tech tool), so a site that trusts the CA once gets no browser warnings; until then a self-signed certificate. About 120 KB flash, 30-40 KB RAM per connection, two connections at a time | Industrial sites: passwords and settings must not cross the network in clear |
+| D17 | Remote access | Through a site VPN router (outbound VPN, vendor remote-access service); never port-forwarding; the instrument itself never connects out | Keeps the instrument off the open internet; nothing to build or host; works the same for Modbus diagnostics |
 
 ## 9. Repository layout
 

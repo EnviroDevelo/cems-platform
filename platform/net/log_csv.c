@@ -96,7 +96,8 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         [LOG_EV_LOGIN_FAIL] = "Login failed", [LOG_EV_LOGOUT] = "Logout", [LOG_EV_PASSWORD] = "Password changed",
         [LOG_EV_RESTORE_BACKUP] = "Backup restored", [LOG_EV_ALARM_RAISE] = "Alarm", [LOG_EV_ALARM_CLEAR] = "Alarm cleared",
         [LOG_EV_ALARM_ACK] = "Alarm acknowledged", [LOG_EV_FW_UPDATE] = "Firmware", [LOG_EV_FW_ROLLBACK] = "Firmware rolled back",
-        [LOG_EV_LOG_FAULT] = "Log fault", [LOG_EV_STORE_FAULT] = "Storage fault", [LOG_EV_LOST] = "Events lost" };
+        [LOG_EV_LOG_FAULT] = "Log fault", [LOG_EV_STORE_FAULT] = "Storage fault", [LOG_EV_LOST] = "Events lost",
+        [LOG_EV_IP_CONFLICT] = "Address conflict" };
     static const char *const reset[] = { "", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out" };
     const char *w = e->code < sizeof nm / sizeof nm[0] && nm[e->code] ? nm[e->code] : (e->code >= LOG_EV_APP ? "Application" : "Event");
     snprintf(what, wcap, "%s", w);
@@ -113,6 +114,11 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         else snprintf(detail, dcap, "clock set");
         break;
     case LOG_EV_PASSWORD: snprintf(detail, dcap, "%s", log_level_name((uint8_t)e->arg)); break;
+    case LOG_EV_IP_CONFLICT:
+        snprintf(detail, dcap, "%u.%u.%u.%u %s", (unsigned)(e->arg >> 24), (unsigned)((e->arg >> 16) & 255u),
+                 (unsigned)((e->arg >> 8) & 255u), (unsigned)(e->arg & 255u),
+                 e->new_v != 0.0 ? "is used by another device" : "is free again");
+        break;
     default:
         if (e->arg && e->text[0]) snprintf(detail, dcap, "%s #%lu", e->text, (unsigned long)e->arg);
         else if (e->arg) snprintf(detail, dcap, "#%lu", (unsigned long)e->arg);

@@ -495,6 +495,7 @@ static void header(uint32_t now) {
     text((int16_t)(x + 65), 32, F_TEXT, OPT_CENTER, remote ? "REMOTE" : "LOCAL");
     x = (int16_t)(x + 140);
     if (!param_store_calibration_valid()) { box(x, 14, 150, 36, C_BAD, 18); color(0xFFFFFFu); text((int16_t)(x + 75), 32, F_SMALL, OPT_CENTER, "CAL INVALID"); x = (int16_t)(x + 160); }
+    if (plat_net_status_word & NETST_CONFLICT) { box(x, 14, 150, 36, C_BAD, 18); color(0xFFFFFFu); text((int16_t)(x + 75), 32, F_SMALL, OPT_CENTER, "IP CONFLICT"); x = (int16_t)(x + 160); }
     if (param_remote_link_lost()) { box(x, 14, 150, 36, C_WARN, 18); color(0xFFFFFFu); text((int16_t)(x + 75), 32, F_SMALL, OPT_CENTER, "LINK LOST"); x = (int16_t)(x + 160); }
     if ((plat_log_status() & LSTAT_NOR_FAULT) && x < 860) { box(x, 14, 120, 36, C_BAD, 18); color(0xFFFFFFu); text((int16_t)(x + 60), 32, F_SMALL, OPT_CENTER, "LOG FAULT"); }
     char t[16];
@@ -743,7 +744,9 @@ static void draw_system(uint32_t now) {
     bool have = ui_net_status(&ip, &link, mac);
     if (!have && param_read(PARAM_ID_NET_IP, &v)) ip = v.u;
     fmt_ip(c, sizeof c, ip);
-    snprintf(b, sizeof b, "%s%s", c, have ? (link ? "  (link up)" : "  (no link)") : "");
+    if (plat_net_status_word & NETST_CONFLICT) snprintf(b, sizeof b, "%s IN USE by another device", c);
+    else if (plat_net_status_word & NETST_PROBING) snprintf(b, sizeof b, "%s (checking...)", c);
+    else snprintf(b, sizeof b, "%s%s", c, have ? (link ? "  (link up)" : "  (no link)") : "");
     kv(544, BODY_Y + 190, "Address", b);
     if (have) { snprintf(b, sizeof b, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); kv(544, BODY_Y + 216, "MAC", b); }
     color(C_INK); text(544, BODY_Y + 252, F_TEXT, 0, "Storage");

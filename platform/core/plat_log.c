@@ -168,6 +168,7 @@ const char *plat_log_event_name(uint16_t c) {
         [LOG_EV_ALARM_RAISE] = "alarm", [LOG_EV_ALARM_CLEAR] = "alarm_clear", [LOG_EV_ALARM_ACK] = "alarm_ack",
         [LOG_EV_FW_UPDATE] = "fw_update", [LOG_EV_FW_ROLLBACK] = "fw_rollback",
         [LOG_EV_LOG_FAULT] = "log_fault", [LOG_EV_STORE_FAULT] = "store_fault", [LOG_EV_LOST] = "events_lost",
+        [LOG_EV_IP_CONFLICT] = "ip_conflict",
     };
     if (c < sizeof n / sizeof n[0] && n[c]) return n[c];
     return c >= LOG_EV_APP ? "app" : "unknown";

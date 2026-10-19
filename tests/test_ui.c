@@ -19,6 +19,7 @@
 #include "plat_sha256.h"
 #include "bsp_host.h"
 #include "ul_system.h"
+#include "log_csv.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -307,6 +308,19 @@ static void t_ui(void) {
     CHECK_EQ(ui_screen(), scr);
     CHECK(ui_brightness(now) > 10);
     CHECK(tap("Home")); CHECK_EQ(ui_screen(), UI_HOME);
+
+    /* duplicate address: alarm in the header, explained on the System screen and in the log text */
+    plat_net_status_word = NETST_CONFLICT | NETST_LINK;
+    frame();
+    CHECK(shows("IP CONFLICT"));
+    CHECK(tap("System")); CHECK(shows("IN USE by another device"));
+    dump("ip_conflict");
+    { log_event_t ev = { .code = LOG_EV_IP_CONFLICT, .arg = 0xC0A80132u, .new_v = 1.0, .old_v = NAN };
+      char w[32], dt[64]; log_event_text(&ev, w, sizeof w, dt, sizeof dt);
+      CHECK(!strcmp(w, "Address conflict")); CHECK(!strcmp(dt, "192.168.1.50 is used by another device")); }
+    plat_net_status_word = 0;
+    frame();
+    CHECK(!shows("IP CONFLICT"));
     CHECK_EQ(eve.overflow, false);
     CHECK_EQ(eve.faults, 0);
     plat_log_reset_for_test();

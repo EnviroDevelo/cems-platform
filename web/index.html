@@ -42,6 +42,7 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
   <span class="badge" id="mode">-</span>
   <span class="badge" id="link" style="display:none">REMOTE LINK LOST</span>
   <span class="badge b-bad" id="cal" style="display:none">CALIBRATION INVALID</span>
+  <span class="badge b-bad" id="ipc" style="display:none">IP ADDRESS CONFLICT</span>
   <span class="badge" id="conn">connecting</span>
 </header>
 <div id="lost">Connection lost. Last update <span id="lasttime">-</span>. Retrying.</div>
@@ -231,6 +232,7 @@ async function refreshInfo() {
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
     $("link").style.display = i.link_lost ? "" : "none"; $("link").className = "badge b-warn";
     $("cal").style.display = i.cal_valid ? "none" : "";
+    $("ipc").style.display = i.ip_conflict ? "" : "none";
     $("defpw").style.display = i.default_passwords ? "block" : "none";
     const newLevel = LV.indexOf(i.session.level);
     const changed = newLevel !== level || i.mode !== mode;
@@ -256,7 +258,7 @@ const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", rest
   time_set: "Clock set", login: "Login", login_fail: "Login failed", logout: "Logout", password: "Password changed",
   restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
   fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
-  events_lost: "Events lost" };
+  events_lost: "Events lost", ip_conflict: "Address conflict" };
 const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
 const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
 function evDetail(e) {

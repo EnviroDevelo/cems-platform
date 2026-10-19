@@ -96,6 +96,7 @@ enum {
     PARAM_ID_NET_IP           = 11,  /* IPv4, host byte order */
     PARAM_ID_NET_MASK         = 12,
     PARAM_ID_NET_GW           = 13,
+    PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* factory */
     PARAM_ID_HW_REV           = 51,  /* factory */
@@ -107,6 +108,13 @@ enum {
 };
 
 enum { PARAM_MODE_LOCAL = 0, PARAM_MODE_REMOTE = 1 };
+
+/* PARAM_ID_NET_STATUS bits */
+#define NETST_LINK      0x0001u  /* Ethernet cable connected */
+#define NETST_CONFLICT  0x0002u  /* ALARM: another device answers at our static address (not taken; re-checked every 30 s) */
+#define NETST_PROBING   0x0004u  /* checking the address before using it (about 2-7 s) */
+#define NETST_READY     0x0008u  /* address in use: static and checked, or leased by DHCP */
+extern uint32_t plat_net_status_word;
 
 /* ---------------- definition helpers for application tables ----------------
  *   PARAM_INT (1001, "num_valves", NumberOfValves, CT_I16, 1, 20, 10, PLAT_LVL_ADMIN, PF_PERSIST, NULL)

@@ -84,6 +84,7 @@ typedef enum {
     LOG_EV_LOG_FAULT,        /* arg = LSTAT bits */
     LOG_EV_STORE_FAULT,      /* arg = PSTAT bits */
     LOG_EV_LOST,             /* arg = events lost because the RAM queue was full */
+    LOG_EV_IP_CONFLICT,      /* arg = the address another device is using; new = 0 when it cleared */
     LOG_EV_APP = 100
 } log_event_code_t;
 

@@ -44,6 +44,7 @@
 #define LWIP_ICMP                       1             /* ping */
 #define LWIP_DHCP                       1
 #define LWIP_AUTOIP                     0
+#define LWIP_ACD                        1   /* duplicate-address check for static addresses and DHCP leases */
 #define LWIP_UDP                        1
 #define LWIP_TCP                        1
 #define LWIP_DNS                        0
