@@ -163,6 +163,17 @@ Add `port/stm32h5/fw_flash_stm32h5.c` to the build. To produce update files:
    (keep `--version` the same as the version string in `plat_app_t.ident.revision`).
 3. On the web page (factory/tech login): Administration → Firmware → choose the .cfw → Upload → "Restart on 0.4.0".
 
+Signed images (D14), once, for the product, on the technicians' build machine:
+
+    python3 tools/fwkey.py new ~/cems-keys/cems-fw-key.pem      # private key: never in the repository
+    python3 tools/fwkey.py pubkey ~/cems-keys/cems-fw-key.pem > platform/core/fw_pubkey.c
+
+Commit the new `fw_pubkey.c` (the public key only). From then on every build refuses
+unsigned images, so sign each one: add `--key ~/cems-keys/cems-fw-key.pem` to step 2.
+Check a file with `python3 tools/mkfwimage.py cems-0.4.0.cfw --check --pub $(python3 tools/fwkey.py hex ~/cems-keys/cems-fw-key.pem)`.
+Back the key up somewhere safe: lose it and units in the field can't be updated except
+with the debugger; leak it and anyone with a tech login can install their own firmware.
+
 The first update on the DK should be done with the debugger attached (see
 `docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to
 return to a plain setup, clear it in STM32CubeProgrammer (Option bytes → User

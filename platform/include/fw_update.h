@@ -21,8 +21,13 @@
  *
  * Image file (.cfw, made by tools/mkfwimage.py): a 256-byte header, then the raw
  * binary linked for the start of flash. Integrity: SHA-256 over the payload, CRC over
- * the header. Authenticity: a signature hook (fw_signature_check) - unsigned images
- * are accepted while PLAT_FW_REQUIRE_SIGNED is 0 (decision D14).
+ * the header. Authenticity (decision D14): an ECDSA P-256 signature over the header
+ * (which holds the payload's SHA-256), made by tools/mkfwimage.py with the product's
+ * private key - a tech-level credential that never leaves the technicians - and
+ * checked against the public key built into the firmware (fw_pubkey.c, made by
+ * tools/fwkey.py). A build with a public key refuses unsigned or wrongly signed
+ * images. A development build without one accepts unsigned images and says so on the
+ * web page and the touchscreen.
  *
  * Threading
  *   fw_upload_*()        one uploader at a time (the HTTP task); writes the free bank only
@@ -42,9 +47,6 @@
 #define FW_TRIAL_MS     60000u        /* healthy running time before a new image confirms itself */
 #endif
 extern uint32_t fw_trial_ms;          /* = FW_TRIAL_MS; the PC simulation shortens it */
-#ifndef PLAT_FW_REQUIRE_SIGNED
-#define PLAT_FW_REQUIRE_SIGNED 0
-#endif
 #ifndef PLAT_FW_PRODUCT
 #define PLAT_FW_PRODUCT 0x434D5331u   /* "1SMC": CEMS Supervisor hardware family 1 */
 #endif
@@ -112,6 +114,7 @@ typedef struct {
     uint32_t   trial_left_ms;                /* in TRIAL */
     fw_err_t   last_error;
     bool       rolled_back;                  /* this boot came back from a failed trial */
+    bool       signing_required;             /* false = development build: unsigned images accepted */
 } fw_status_t;
 
 /* Set up. fram_addr: 64 bytes for the boot record (STORE_META_ADDR + 128).
@@ -133,10 +136,13 @@ void     fw_service(uint32_t now_ms, bool healthy);   /* store task */
 void     fw_status(fw_status_t *out);
 const char *fw_err_name(fw_err_t e);
 
-/* Signature hook: return true if sig is a valid signature of hash (32 bytes) by the
- * product key. The weak default accepts nothing (signed images then fail), so a
- * signing scheme is a strong definition of this function. */
+/* Signatures (fw_sig.c): true if sig (r||s) is a valid ECDSA P-256 signature of hash
+ * by the product key; false always when the build has no key. */
 bool fw_signature_check(const uint8_t hash[32], const uint8_t sig[64]);
+bool fw_signing_required(void);              /* this build has the product's public key */
+extern const uint8_t fw_pubkey[65];          /* uncompressed P-256 point (fw_pubkey.c) */
+extern const bool    fw_pubkey_present;
+void fw_pubkey_override_for_test(const uint8_t *q65);   /* NULL = back to the built-in key */
 
 /* Called by fw_service just before the swap (the store task flushes the parameter
  * store and the log through it). May be NULL. */

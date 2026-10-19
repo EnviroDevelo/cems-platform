@@ -12,6 +12,11 @@
 #include "param.h"
 #include "param_store.h"
 #include "bsp_host.h"
+#include "tls.h"
+#include "mbedtls/ecdsa.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/sha256.h"
 
 #define BANK (128u * 1024u)
 static uint8_t b0[BANK], b1[BANK];
@@ -217,6 +222,65 @@ static void t_rollback(void) {
     fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK_EQ(fs.swaps, swaps + 4);
 }
 
+/* ---------------- signatures (D14) ---------------- */
+static mbedtls_ecdsa_context sk[2];
+static uint8_t pub[2][65];
+static mbedtls_ctr_drbg_context rng;
+
+static void sign_file(int which) {            /* as tools/mkfwimage.py --key does */
+    fw_header_t h; memcpy(&h, file, sizeof h);
+    h.flags = FW_F_SIGNED;
+    memset(h.sig, 0, sizeof h.sig);
+    uint8_t dg[32];
+    mbedtls_sha256((const uint8_t *)&h, FW_SIGNED_LEN, dg, 0);
+    mbedtls_mpi r, s2; mbedtls_mpi_init(&r); mbedtls_mpi_init(&s2);
+    CHECK_EQ(mbedtls_ecdsa_sign(&sk[which].MBEDTLS_PRIVATE(grp), &r, &s2, &sk[which].MBEDTLS_PRIVATE(d), dg, 32,
+                                mbedtls_ctr_drbg_random, &rng), 0);
+    mbedtls_mpi_write_binary(&r, h.sig, 32);
+    mbedtls_mpi_write_binary(&s2, h.sig + 32, 32);
+    mbedtls_mpi_free(&r); mbedtls_mpi_free(&s2);
+    memcpy(file, &h, sizeof h);
+    reheader();
+}
+
+static void t_signed(void) {
+    static mbedtls_entropy_context ent;
+    tls_crypto_init();
+    mbedtls_entropy_init(&ent); mbedtls_ctr_drbg_init(&rng);
+    CHECK_EQ(mbedtls_ctr_drbg_seed(&rng, mbedtls_entropy_func, &ent, NULL, 0), 0);
+    for (int k = 0; k < 2; ++k) {
+        mbedtls_ecdsa_init(&sk[k]);
+        CHECK_EQ(mbedtls_ecdsa_genkey(&sk[k], MBEDTLS_ECP_DP_SECP256R1, mbedtls_ctr_drbg_random, &rng), 0);
+        size_t n = 0;
+        CHECK_EQ(mbedtls_ecp_point_write_binary(&sk[k].MBEDTLS_PRIVATE(grp), &sk[k].MBEDTLS_PRIVATE(Q),
+                                                MBEDTLS_ECP_PF_UNCOMPRESSED, &n, pub[k], 65), 0);
+        CHECK_EQ(n, 65);
+    }
+    fw_status_t st;
+    CHECK(!fw_signing_required());                       /* this development build has no key */
+    fw_pubkey_override_for_test(pub[0]);                 /* a production build */
+    CHECK(fw_signing_required());
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    fw_status(&st); CHECK(st.signing_required);
+    uint32_t len = make_image(20000, "0.8.0", PLAT_FW_PRODUCT, 31);
+    CHECK_EQ(upload(len, 2048), FW_E_SIGNATURE);        /* unsigned: refused */
+    sign_file(1);
+    CHECK_EQ(upload(len, 2048), FW_E_SIGNATURE);        /* signed with another key: refused */
+    sign_file(0);
+    CHECK_EQ(upload(len, 2048), FW_OK);                  /* the product key: accepted */
+    fw_status(&st); CHECK(st.staged); CHECK(!strcmp(st.staged_version, "0.8.0"));
+    /* someone edits a signed header (another version number) and fixes the CRC: refused */
+    { fw_header_t h; memcpy(&h, file, sizeof h); strcpy(h.version_str, "9.9.9"); h.version = 0x090909; memcpy(file, &h, sizeof h); reheader(); }
+    CHECK_EQ(upload(len, 2048), FW_E_SIGNATURE);
+    /* or the payload (its SHA-256 no longer matches the signed one) */
+    make_image(20000, "0.8.0", PLAT_FW_PRODUCT, 31); sign_file(0);
+    file[FW_HDR_SIZE + 5] ^= 1;
+    CHECK_EQ(upload(len, 2048), FW_E_HASH);
+    fw_pubkey_override_for_test(NULL);
+    for (int k = 0; k < 2; ++k) mbedtls_ecdsa_free(&sk[k]);
+    mbedtls_ctr_drbg_free(&rng); mbedtls_entropy_free(&ent);
+}
+
 /* ---------------- over HTTP ---------------- */
 static char out[8192]; static size_t outn;
 static int cap(void *ctx, const void *p, size_t n) { (void)ctx; if (outn + n >= sizeof out) return -1; memcpy(out + outn, p, n); outn += n; out[outn] = 0; return 0; }
@@ -298,6 +362,7 @@ void test_fw_all(void) {
     RUN(t_upload);
     RUN(t_activate_confirm);
     RUN(t_rollback);
+    RUN(t_signed);
     RUN(t_http);
     fw_reset_for_test();
     fw_trial_ms = FW_TRIAL_MS;

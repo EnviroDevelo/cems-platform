@@ -8,22 +8,22 @@ module, and before choosing hardware. Last run: 2026-10-20.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 258.0 KB | 1016.0 KB | 25 % | 758.0 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 259.1 KB | 1016.0 KB | 25 % | 756.9 KB |
 | RAM (STM32H573/H563, 640 KB) | 309.3 KB | 640.0 KB | 48 % | 330.7 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 9.4 | 0.1 |
+| Scan engine, queue, watchdog, diag | 9.5 | 0.1 |
 | Parameter table | 5.1 | 24.2 |
 | Parameter store (FRAM) | 4.8 | 28.7 |
 | Event log / data logger | 14.1 | 6.8 |
-| Firmware update | 3.2 | 1.3 |
+| Firmware update + signature check | 3.5 | 1.3 |
 | Modbus TCP | 6.0 | 17.5 |
 | Web server + page + logins | 22.9 | 40.3 |
-| HTTPS (tls.c + mbedTLS) | 69.5 | 38.8 |
-| Touch UI + EVE driver | 16.3 | 0.9 |
+| HTTPS (tls.c + mbedTLS) | 70.0 | 38.8 |
+| Touch UI + EVE driver | 16.4 | 0.9 |
 | Task layer (FreeRTOS glue) | 2.2 | 51.0 |
 | Board support (BSP) | 0.8 | 0.5 |
 | lwIP + Ethernet driver | 51.1 | 48.5 |
@@ -42,7 +42,6 @@ measured peak 28 KB during a handshake).
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
-| Image signature check (ECDSA P-256) | ~2 | ~1 | shares mbedTLS |
 | Alarm manager (50 alarms) | ~6 | ~3 | |
 | Translated VM/MUX application | **unknown** | **unknown** | retained data alone is 12.5 KB; size it as soon as the Stage 4 code compiles together |
 

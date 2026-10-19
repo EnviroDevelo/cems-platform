@@ -26,7 +26,8 @@ pymodbus on PYTHONPATH), `python3 tests/integration/fw_test.py` (firmware update
 rollback) and `python3 tests/integration/web_ui_test.py` (needs Python Playwright and
 Chromium).
 
-Firmware update files: `tools/mkfwimage.py build.bin cems-x.y.z.cfw --version x.y.z`.
+Firmware update files: `tools/mkfwimage.py build.bin cems-x.y.z.cfw --version x.y.z`
+(add `--key <pem>` to sign; key set-up in `docs/CUBEMX_SETUP.md` 3d).
 
 Touchscreen previews: `UI_DUMP=build/ui ./build/tests` writes each screen's EVE command
 list, and `python3 tools/eve_preview.py build/ui/*.eve` renders them to PNG (needs

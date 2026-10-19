@@ -27,6 +27,7 @@
 #define TLS_POOL_SIZE (36u * 1024u)    /* mbedTLS memory: one session (16 KB in / 4 KB out buffers); peak measured 28 KB */
 #endif
 
+void tls_crypto_init(void);                 /* the mbedTLS memory pool (once; tls_init does it too) */
 int  tls_init(nvm_dev_t *fram, uint32_t key_addr, uint32_t serial, uint32_t ip);   /* 0 = ok */
 bool tls_ready(void);
 bool tls_key_was_created(void);        /* this start made a new key (first start, or FRAM lost) */

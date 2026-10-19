@@ -23,8 +23,10 @@ def check(cond, what):
 
 
 class Unit:
-    def __init__(self, version, cause="power", trial_ms=3000):
+    def __init__(self, version, cause="power", trial_ms=3000, pubkey=None):
         env = dict(os.environ, CEMS_FW_VERSION=version, CEMS_RESET_CAUSE=cause, CEMS_FW_TRIAL_MS=str(trial_ms))
+        if pubkey:
+            env["CEMS_FW_PUBKEY"] = pubkey
         self.p = subprocess.Popen([os.path.join(ROOT, "build", "netsim"), str(MB), str(WEB),
                                    os.path.join(TMP, "fram.bin"), os.path.join(TMP, "nor.bin")],
                                   stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
@@ -65,7 +67,7 @@ class Web:
         return self.req("/api/login", b"level=factory&password=9999")[0]
 
 
-def image(version, size, product=None):
+def image(version, size, product=None, key=None):
     b = os.path.join(TMP, f"{version}.bin")
     with open(b, "wb") as f:
         f.write(random.randbytes(size))
@@ -73,8 +75,17 @@ def image(version, size, product=None):
     cmd = [sys.executable, os.path.join(ROOT, "tools", "mkfwimage.py"), b, out, "--version", version]
     if product:
         cmd += ["--product", hex(product)]
+    if key:
+        cmd += ["--key", key]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     return open(out, "rb").read()
+
+
+def new_key(name):
+    pem = os.path.join(TMP, name + ".pem")
+    tool = os.path.join(ROOT, "tools", "fwkey.py")
+    subprocess.run([sys.executable, tool, "new", pem], check=True, stdout=subprocess.DEVNULL)
+    return pem, subprocess.run([sys.executable, tool, "hex", pem], check=True, capture_output=True, text=True).stdout.strip()
 
 
 def self_admin_refused(w):
@@ -95,6 +106,7 @@ def main():
     w = Web()
     st, j = w.req("/api/fw")
     check(st == 200 and j["running"] == "0.3.0" and j["state"] == "idle" and j["staged"] is None, f"status before ({j})")
+    check(j["signing_required"] is False, "development build: no signing key")
     img = image("0.4.0", 300_000)
     st, j = w.req("/api/fw/upload", img, "application/octet-stream")
     check(st == 401, "upload needs a login")
@@ -146,6 +158,21 @@ def main():
     check(j["running"] == "0.4.0" and j["state"] == "idle" and j["rolled_back"] is True, f"back on 0.4.0 ({j})")
     check(j["staged"] == "0.5.0", "the failed image stays in the free bank")
     check(any(e["event"] == "fw_rollback" for e in events(w)), "fw_rollback event")
+    u.stop()
+
+    print("production build (signing key present)")
+    pem, pub = new_key("product")
+    other, _ = new_key("other")
+    u = Unit("0.4.0", "power", pubkey=pub)
+    w = Web()
+    check(w.req("/api/fw")[1]["signing_required"] is True, "signing required")
+    check(w.login() == 200, "login")
+    st, j = w.req("/api/fw/upload", image("0.6.0", 50_000), "application/octet-stream")
+    check(st == 400 and j.get("error") == "signature not valid", f"unsigned image refused ({st} {j})")
+    st, j = w.req("/api/fw/upload", image("0.6.0", 50_000, key=other), "application/octet-stream")
+    check(st == 400 and j.get("error") == "signature not valid", f"image signed with another key refused ({st} {j})")
+    st, j = w.req("/api/fw/upload", image("0.6.0", 50_000, key=pem), "application/octet-stream")
+    check(st == 200 and j.get("staged") == "0.6.0", f"image signed with the product key accepted ({st} {j})")
     u.stop()
     print(f"\n{passed} checks passed, {failed} failed")
     return 1 if failed else 0

@@ -18,7 +18,7 @@ MODULES = [  # (module, object-name patterns)
     ("Parameter table", r"^param\.o"),
     ("Parameter store (FRAM)", r"param_store|plat_crc32|nvm_|plat_store_task"),
     ("Event log / data logger", r"plat_log|nor_|log_csv"),
-    ("Firmware update", r"fw_update|fw_flash"),
+    ("Firmware update + signature check", r"fw_update|fw_flash|fw_sig|fw_pubkey"),
     ("Modbus TCP", r"modbus|mbtcp"),
     ("Web server + page + logins", r"http_|web_|plat_sha256|plat_net_tasks"),
     ("HTTPS (tls.c + mbedTLS)", r"^tls\.o|^(aes|asn1parse|asn1write|bignum|bignum_core|cipher|cipher_wrap|constant_time|ctr_drbg|ecdh|ecdsa|ecp|ecp_curves|entropy|gcm|hmac_drbg|md|memory_buffer_alloc|oid|pk|pk_ecc|pk_wrap|pkparse|pkwrite|platform|platform_util|sha256|ssl_\w+|x509\w*)\.o"),
@@ -146,7 +146,6 @@ measured peak 28 KB during a handshake).
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
-| Image signature check (ECDSA P-256) | ~2 | ~1 | shares mbedTLS |
 | Alarm manager (50 alarms) | ~6 | ~3 | |
 | Translated VM/MUX application | **unknown** | **unknown** | retained data alone is 12.5 KB; size it as soon as the Stage 4 code compiles together |
 

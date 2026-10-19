@@ -722,6 +722,9 @@ static void draw_system(uint32_t now) {
     } else if (st.last_error != FW_OK) {
         kv(32, BODY_Y + 128, "Last upload", fw_err_name(st.last_error));
     }
+    if (!st.uploading && !st.signing_required) {
+        color(C_WARN); text(32, BODY_Y + 156, F_SMALL, 0, "Development build: unsigned firmware is accepted");
+    }
     if (st.staged && st.state != FW_ST_TRIAL) {
         snprintf(b, sizeof b, "Restart on %s", st.staged_version);
         button(T_FW_ACT, 32, BODY_Y + 184, 460, 64, b, C_WARN, U.level >= PLAT_LVL_FACTORY);

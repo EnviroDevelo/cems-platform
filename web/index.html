@@ -325,6 +325,7 @@ async function refreshFw() {
     if (f.state === "trial") t += ` (on trial: keeps itself in ${f.trial_left_s} s)`;
     if (f.rolled_back) t += ". The last update failed its trial and was rolled back";
     if (f.staged) t += `. Ready in the spare bank: ${f.staged}`;
+    if (!f.signing_required) t += ". Development build: unsigned firmware is accepted";
     $("fwinfo").textContent = t + ".";
     $("fwact").style.display = f.staged && f.state !== "trial" && level >= 3 ? "" : "none";
     $("fwact").textContent = `Restart on ${f.staged || "new firmware"}`;

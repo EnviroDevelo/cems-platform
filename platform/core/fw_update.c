@@ -48,14 +48,10 @@ static struct {
 void (*fw_before_swap)(void);
 uint32_t fw_trial_ms = FW_TRIAL_MS;       /* the store task flushes the parameter store and the log */
 
-__attribute__((weak)) bool fw_signature_check(const uint8_t hash[32], const uint8_t sig[64]) {
-    (void)hash; (void)sig;
-    return false;
-}
 
 const char *fw_err_name(fw_err_t e) {
     static const char *const n[] = { "ok", "busy", "state", "not a firmware image", "wrong product", "size",
-                                     "flash error", "checksum mismatch", "signature", "no image" };
+                                     "flash error", "checksum mismatch", "signature not valid", "no image" };
     return (unsigned)e < sizeof n / sizeof n[0] ? n[e] : "error";
 }
 
@@ -250,7 +246,7 @@ fw_err_t fw_upload_end(void) {
         sha256_t s; uint8_t h[32];
         sha256_init(&s); sha256_update(&s, &F.hdr, FW_SIGNED_LEN); sha256_final(&s, h);
         if (!fw_signature_check(h, F.hdr.sig)) return fail(FW_E_SIGNATURE);
-    } else if (PLAT_FW_REQUIRE_SIGNED) {
+    } else if (fw_signing_required()) {
         return fail(FW_E_SIGNATURE);
     }
     if (!bank_hash_ok(&F.hdr)) return fail(FW_E_FLASH);      /* what the flash actually holds */
@@ -321,6 +317,7 @@ void fw_status(fw_status_t *o) {
     o->trial_left_ms = F.rec.state == FW_ST_TRIAL ? F.trial_left : 0;
     o->last_error = F.last_err;
     o->rolled_back = F.rolled_back;
+    o->signing_required = fw_signing_required();
 }
 
 void fw_reset_for_test(void) { memset(&F, 0, sizeof F); fw_before_swap = NULL; }

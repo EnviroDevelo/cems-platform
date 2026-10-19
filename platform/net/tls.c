@@ -139,10 +139,21 @@ static int ticket_parse(void *p, mbedtls_ssl_session *s, unsigned char *buf, siz
     return rc;
 }
 
-int tls_init(nvm_dev_t *fram, uint32_t key_addr, uint32_t serial, uint32_t ip) {
-    ready = created = conf_done = false;
+void tls_crypto_init(void) {
+    static bool done;
+    if (done) return;
+    done = true;
     mbedtls_memory_buffer_alloc_init(pool, sizeof pool);
     mbedtls_platform_set_time(up_time);
+}
+
+int tls_init(nvm_dev_t *fram, uint32_t key_addr, uint32_t serial, uint32_t ip) {
+    if (ready) {                               /* (again, e.g. in tests) */
+        mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); mbedtls_ssl_ticket_free(&ticket);
+        mbedtls_x509_crt_free(&crt); mbedtls_pk_free(&key); mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&ent);
+    }
+    ready = created = conf_done = false;
+    tls_crypto_init();
     mbedtls_entropy_init(&ent);
     mbedtls_ctr_drbg_init(&drbg);
     mbedtls_pk_init(&key);

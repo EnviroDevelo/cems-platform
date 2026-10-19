@@ -8,7 +8,8 @@
  * The two program-flash banks are netsim_fw.bin (next to the NOR file). A firmware
  * activation swaps them and exits with status 3 ("reset"); start it again to boot the
  * "new image". Environment: CEMS_FW_VERSION (the version this run reports),
- * CEMS_RESET_CAUSE (power, software, iwdg), CEMS_FW_TRIAL_MS (trial length).
+ * CEMS_RESET_CAUSE (power, software, iwdg), CEMS_FW_TRIAL_MS (trial length),
+ * CEMS_FW_PUBKEY (hex P-256 public key: acts as a signed production build).
  *
  * DI0 is driven by a pattern (8 s on, 4 s off) so values change on their own. */
 #define _POSIX_C_SOURCE 200809L
@@ -232,6 +233,12 @@ int main(int argc, char **argv) {
     snprintf(fw_path, sizeof fw_path, "%.*sfw.bin", (int)(strlen(nor_path) > 7 ? strlen(nor_path) - 7 : 0), nor_path);
     if (getenv("CEMS_FW_TRIAL_MS")) fw_trial_ms = (uint32_t)atoi(getenv("CEMS_FW_TRIAL_MS"));
     const char *fwver = getenv("CEMS_FW_VERSION");
+    static uint8_t fwkey[65];                    /* CEMS_FW_PUBKEY: hex public key, as a signed production build */
+    const char *kx = getenv("CEMS_FW_PUBKEY");
+    if (kx && strlen(kx) == 130) {
+        for (int k = 0; k < 65; ++k) { unsigned v; sscanf(kx + 2 * k, "%2x", &v); fwkey[k] = (uint8_t)v; }
+        fw_pubkey_override_for_test(fwkey);
+    }
     pthread_mutexattr_t ma; pthread_mutexattr_init(&ma); pthread_mutexattr_settype(&ma, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&crit, &ma);
     clock_gettime(CLOCK_MONOTONIC, &t0);

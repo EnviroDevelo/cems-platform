@@ -668,6 +668,7 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"received\":"); json_uint(o, st.upload_bytes);
     out_str(o, ",\"total\":"); json_uint(o, st.upload_total);
     out_str(o, ",\"rolled_back\":"); json_bool(o, st.rolled_back);
+    out_str(o, ",\"signing_required\":"); json_bool(o, st.signing_required);
     out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error)); out_str(o, "}");
 }
 
