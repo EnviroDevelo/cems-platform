@@ -15,6 +15,10 @@
 #ifdef CHECK_WITH_I2C_FRAM
 #define FRAM_I2C_HANDLE hi2c1
 #endif
+#ifdef CHECK_WITH_NOR
+#define NOR_CS_Pin GPIO_PIN_5
+#define NOR_CS_GPIO_Port GPIOE
+#endif
 #ifdef CHECK_WITH_FRAM
 #define FRAM_CS_Pin GPIO_PIN_4
 #define FRAM_CS_GPIO_Port GPIOE

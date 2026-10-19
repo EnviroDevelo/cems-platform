@@ -25,6 +25,8 @@ static uint32_t p_gw   = 0xC0A80101u;   /* 192.168.1.1   */
 static bool     p_restore;              /* momentary */
 static uint32_t p_serial, p_hw_rev;
 uint32_t        param_store_status_word; /* written by param_store */
+uint16_t        plat_log_interval_s = 60; /* data-log interval (plat_log) */
+uint32_t        plat_log_status_word;     /* written by plat_log */
 
 #define NET (PF_PERSIST | PF_ANY_MODE | PF_NO_MODBUS)
 static const param_def_t plat_defs[] = {
@@ -45,6 +47,10 @@ static const param_def_t plat_defs[] = {
                PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_HW_REV, "hw_rev", p_hw_rev, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_FACTORY,
                PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_LOG_INTERVAL_S, "log_interval", plat_log_interval_s, CT_U16, 0, 3600, 60,
+               PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE, "s"),
+    PARAM_UINT(PARAM_ID_LOG_STATUS, "log_status", plat_log_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
+               PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_STORE_STATUS, "store_status", param_store_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
 };
@@ -62,6 +68,7 @@ static plat_seqlock_t    *bound_lock;
 static volatile uint32_t  last_remote_ms;
 static volatile bool      remote_entered;     /* mode just switched to REMOTE */
 void (*param_on_restore_defaults)(void);
+void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);
 
 size_t param_ctype_size(uint8_t ct) {
     switch (ct) {
@@ -307,6 +314,7 @@ param_err_t param_apply(const plat_cmd_t *c) {
 
     if (d->id == PARAM_ID_RESTORE_DEFAULTS) {          /* momentary command */
         if (n.b) {
+            if (param_on_change) param_on_change(d, (plat_val_t){ .u = 0 }, n, c->src, c->level);
             if (param_on_restore_defaults) param_on_restore_defaults();
             else param_set_defaults(PARAM_USER_ONLY);
         }
@@ -315,7 +323,12 @@ param_err_t param_apply(const plat_cmd_t *c) {
     }
     if (d->id == PARAM_ID_CTRL_MODE && n.u == PARAM_MODE_REMOTE && p_mode != PARAM_MODE_REMOTE)
         remote_entered = true;                        /* grace: timing starts at the next service */
+    plat_val_t old = param_tag_get(d);
     param_tag_set(d, n);
+    if (param_on_change) {
+        plat_val_t now_v = param_tag_get(d);
+        if (old.u != now_v.u) param_on_change(d, old, now_v, c->src, c->level);
+    }
     return PERR_OK;
 }
 
@@ -490,6 +503,14 @@ void param_blob_drain(void) {
         if (param_blob_check(b.id, b.off, b.data, b.len, b.whole, b.src, b.level) != PERR_OK) continue;
         const param_def_t *d = param_find(b.id);
         uint8_t *dst = d->ptr;
+        if (param_on_change) {                       /* only report a real change */
+            bool same = b.whole ? (memcmp(dst, b.data, b.len) == 0 && (b.len == d->size || dst[b.len] == 0))
+                                : memcmp(dst + b.off, b.data, b.len) == 0;
+            if (b.whole) memset(dst, 0, d->size);
+            memcpy(dst + b.off, b.data, b.len);
+            if (!same) param_on_change(d, (plat_val_t){ .u = 0 }, (plat_val_t){ .u = 0 }, b.src, b.level);
+            continue;
+        }
         if (b.whole) memset(dst, 0, d->size);
         memcpy(dst + b.off, b.data, b.len);
     }

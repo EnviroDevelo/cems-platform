@@ -8,7 +8,7 @@
  * ctrl           14        PLAT_CTRL_PERIOD_MS      PLAT_SILENCE_CTRL_MS
  * scan           13        PLAT_SCAN_PERIOD_MS      PLAT_SILENCE_SCAN_MS
  * supervisor     12        PLAT_SUPERVISOR_PERIOD_MS (kicks the IWDG)
- * store          10        every 20 ms (param_store_poll) PLAT_SILENCE_STORE_MS
+ * store          10        every 20 ms (param store + logger) PLAT_SILENCE_STORE_MS
  * (lwIP tcpip)   8         created by tcpip_init    (not monitored directly)
  * modbus         7         socket events            PLAT_SILENCE_MODBUS_MS
  * http           6         socket events            PLAT_SILENCE_HTTP_MS
@@ -23,6 +23,7 @@
 #include "param.h"
 #include "param_store.h"
 #include "modbus.h"
+#include "plat_log.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -36,6 +37,8 @@ typedef struct plat_app_s {
     const mb_map_t     *modbus_map;      /* where table entries appear on Modbus (may be NULL) */
     size_t              n_modbus_map;
     mb_ident_t          ident;           /* vendor / product / revision for Modbus 43/14 and the web page */
+    const plat_log_chan_t *log_chans;    /* data-log channels; the logic calls plat_log_put(i, ...) (may be NULL) */
+    size_t              n_log_chans;
 } plat_app_t;
 
 typedef enum {

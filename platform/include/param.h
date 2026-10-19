@@ -98,7 +98,9 @@ enum {
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* factory */
     PARAM_ID_HW_REV           = 51,  /* factory */
+    PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
+    PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
@@ -221,5 +223,8 @@ void    param_scan_service(uint32_t now_ms);   /* scan task, every scan */
 
 /* Called by param_apply when PARAM_ID_RESTORE_DEFAULTS is written (set by param_store). */
 extern void (*param_on_restore_defaults)(void);
+/* Called in the scan task after an external write changed a value (the event log
+ * sets it). Scalars: old and new value. Blocks and the restore command: values 0. */
+extern void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);
 
 #endif

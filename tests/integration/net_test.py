@@ -16,7 +16,9 @@ from pymodbus.pdu import ExceptionResponse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MB, WEB = 15020, 18080
-FRAM = os.path.join(tempfile.mkdtemp(), "fram.bin")
+TMP = tempfile.mkdtemp()
+FRAM = os.path.join(TMP, "fram.bin")
+NOR = os.path.join(TMP, "nor.bin")
 BASE = f"http://127.0.0.1:{WEB}"
 passed = failed = 0
 
@@ -32,7 +34,7 @@ def check(cond, what):
 
 class Unit:
     def __init__(self):
-        self.p = subprocess.Popen([os.path.join(ROOT, "build", "netsim"), str(MB), str(WEB), FRAM],
+        self.p = subprocess.Popen([os.path.join(ROOT, "build", "netsim"), str(MB), str(WEB), FRAM, NOR],
                                   stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         self.log = []
         threading.Thread(target=self._read, daemon=True).start()
@@ -239,6 +241,27 @@ def main():
     st, body, _ = web.req("/api/restore", raw=bytes(bad))
     check(st == 400, "damaged backup refused")
 
+    # ---------------- event log ----------------
+    st, j = web.json("/api/log/events?n=200")
+    ev = j["events"] if st == 200 else []
+    kinds = [e["event"] for e in ev]
+    check(st == 200 and kinds[-1] == "power_up" and ev[-1]["seq"] == 1, "event log starts with the power-up")
+    check(any(e["event"] == "mode" and e["source"] == "touchscreen" and e["new"] == 1 for e in ev), "mode change logged")
+    check(any(e["event"] == "param" and e["source"] == "modbus" and e["arg"] == 1001 and e["old"] == 2000 and e["new"] == 1500
+              for e in ev), "Modbus write logged with old and new value")
+    check(any(e["event"] == "param" and e["source"] == "web" and e["level"] == "admin" and e["new"] == 2500 for e in ev),
+          "web write logged with the login level")
+    check(kinds.count("login_fail") >= 1 and "login" in kinds and "password" in kinds and "restore_backup" in kinds,
+          "logins, password change and restore logged")
+    check(sum(1 for e in ev if e["event"] == "param" and e["arg"] == 1006) == 1, "a multi-coil write is one block event")
+    st, body, hdr = web.req("/api/log/events.csv", csrf=False)
+    lines = body.decode().splitlines()
+    check(st == 200 and hdr.get("Content-Type", "").startswith("text/csv") and lines[0].startswith("seq,time,event")
+          and len(lines) == len(ev) + 1, f"event CSV ({len(lines) - 1} rows)")
+    st, j = web.json("/api/log/info")
+    check(st == 200 and j["status"] == 0 and j["events"]["used"] == len(ev), "log info")
+    n_events = len(ev)
+
     time.sleep(1.5)                                  # let the store save
     log = unit.stop()
     check("stopped" in log, "clean stop")
@@ -255,6 +278,13 @@ def main():
     check(st == 401, "old admin password no longer works")
     st, j = web.json("/api/login", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "changed admin password survived the restart")
+    st, j = web.json("/api/log/events?n=200")
+    ev = j["events"] if st == 200 else []
+    check(len(ev) == n_events + 3 and [e["event"] for e in ev[:3]] == ["login", "login_fail", "power_up"],
+          "event log continues across the restart")
+    check([e["seq"] for e in ev] == list(range(len(ev), 0, -1)), "sequence numbers contiguous")
+    st, j = web.json("/api/log/info")
+    check(st == 200 and j["status"] == 0, "write position from FRAM (not rebuilt)")
     log = unit.stop()
     print(log.strip().splitlines()[-1])
 

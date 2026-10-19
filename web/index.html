@@ -72,6 +72,20 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
     </table>
   </section>
 
+  <section>
+    <div class="row" style="justify-content:space-between">
+      <h2>Event log</h2>
+      <span class="row">
+        <a href="/api/log/events.csv"><button class="ghost" type="button">Events CSV</button></a>
+        <a href="/api/log/data.csv"><button class="ghost" type="button">Data CSV</button></a>
+      </span>
+    </div>
+    <table>
+      <thead><tr><th>Time</th><th>Event</th><th>From</th><th>Detail</th></tr></thead>
+      <tbody id="events"></tbody>
+    </table>
+    <p class="note" id="logstat"></p>
+  </section>
   <section id="admin" style="display:none">
     <h2>Administration</h2>
     <div class="row">
@@ -223,6 +237,53 @@ async function refreshInfo() {
 }
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 
+const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", restore_defaults: "Defaults restored",
+  time_set: "Clock set", login: "Login", login_fail: "Login failed", logout: "Logout", password: "Password changed",
+  restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
+  fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
+  events_lost: "Events lost" };
+const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
+const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
+function evDetail(e) {
+  const name = e.detail || "";
+  switch (e.event) {
+  case "param": return `${name} (${e.arg}): ${num(e.old)} → ${num(e.new)}`;
+  case "mode": return `${e.old ? "REMOTE" : "LOCAL"} → ${e.new ? "REMOTE" : "LOCAL"}`;
+  case "power_up": return `${RESET[e.arg] || "reset " + e.arg}, ${e.detail}`;
+  case "time_set": return e.old === null ? "clock set" : `stepped ${num(e.new - e.old)} s`;
+  case "password": return LV[e.arg] || "";
+  default: return [e.detail, e.arg ? "#" + e.arg : ""].filter(Boolean).join(" ");
+  }
+}
+let lastSeq = -1;
+async function pollEvents() {
+  try {
+    const j = await api("/api/log/events?n=20");
+    const top = j.events.length ? j.events[0].seq : 0;
+    if (top !== lastSeq) {
+      lastSeq = top;
+      const tb = $("events"); tb.textContent = "";
+      for (const e of j.events) {
+        const tr = document.createElement("tr");
+        [e.time, EVT[e.event] || e.event, e.source + (e.level ? " / " + e.level : ""), evDetail(e)].forEach(t => {
+          const td = document.createElement("td"); td.textContent = t; tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+      }
+      if (!j.events.length) tb.innerHTML = '<tr><td colspan="4" class="note">No events yet</td></tr>';
+    }
+    const li = await api("/api/log/info");
+    const pct = r => r ? Math.round(100 * r.used / r.slots) + "%" : "-";
+    $("logstat").textContent = `Data every ${li.interval_s} s. Ring fill: events ${pct(li.events)}, data ${pct(li.data)} ` +
+      "(the oldest records are overwritten when full)." +
+      (li.status & 2 ? " LOG FLASH FAULT." : "") + (li.status & 1 ? " Log kept in RAM only (no flash fitted)." : "") +
+      (li.status & 16 ? " Clock not set." : "");
+  } catch (e) {
+    if (e.status === 503) $("logstat").textContent = "Log not available on this unit.";
+  }
+  setTimeout(pollEvents, 5000);
+}
+
 $("loginbtn").onclick = async () => {
   $("loginerr").textContent = "";
   try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
@@ -250,7 +311,7 @@ $("restorebtn").onclick = async () => {
     catch (e) { document.body.classList.add("stale"); await new Promise(r => setTimeout(r, 2000)); }
   }
   defs.forEach(d => byId[d.id] = d);
-  build(); pollValues(); pollInfo();
+  build(); pollValues(); pollInfo(); pollEvents();
 })();
 </script>
 </body>

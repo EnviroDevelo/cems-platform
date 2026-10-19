@@ -9,6 +9,9 @@
 #include "param_store.h"
 #include "plat_diag.h"
 #include "bsp.h"
+#include "log_csv.h"
+
+extern uint16_t plat_log_interval_s;
 
 extern const uint8_t  web_index_gz[];      /* web_page.c, generated from web/index.html */
 extern const uint32_t web_index_gz_len;
@@ -165,6 +168,7 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
+    out_str(o, ",\"log_status\":"); json_uint(o, plat_log_status());
     out_str(o, ",\"default_passwords\":"); json_bool(o, auth_any_default());
     out_str(o, ",\"login_locked_s\":"); json_uint(o, (auth_locked_ms(now) + 999u) / 1000u);
     out_str(o, ",\"session\":{\"level\":"); level_name_json(o, lvl);
@@ -443,8 +447,9 @@ static void post_login(const http_req_t *r, http_out_t *o, uint32_t now) {
     char tok[AUTH_TOKEN_LEN + 1];
     auth_rc_t rc = auth_login(level, pw, now, tok);
     memset(pw, 0, sizeof pw);
-    if (rc == AUTH_LOCKED) { json_error(o, 429, "locked", -1); return; }
-    if (rc != AUTH_OK) { json_error(o, 401, "password", -1); return; }
+    if (rc == AUTH_LOCKED) { plat_log_event(LOG_EV_LOGIN_FAIL, PLAT_SRC_WEB, level, 0, NAN, NAN, "locked"); json_error(o, 429, "locked", -1); return; }
+    if (rc != AUTH_OK) { plat_log_event(LOG_EV_LOGIN_FAIL, PLAT_SRC_WEB, level, 0, NAN, NAN, NULL); json_error(o, 401, "password", -1); return; }
+    plat_log_event(LOG_EV_LOGIN, PLAT_SRC_WEB, level, 0, NAN, NAN, NULL);
     char cookie[96];
     snprintf(cookie, sizeof cookie, "Set-Cookie: sid=%s; Path=/; HttpOnly; SameSite=Strict\r\n", tok);
     head(o, 200, "application/json", cookie);
@@ -462,6 +467,7 @@ static void post_password(const http_req_t *r, http_out_t *o, uint8_t lvl, uint3
     auth_rc_t rc = auth_set_password(target, pw);
     memset(pw, 0, sizeof pw);
     if (rc != AUTH_OK) { json_error(o, 400, "password rules", -1); return; }
+    plat_log_event(LOG_EV_PASSWORD, PLAT_SRC_WEB, lvl, target, NAN, NAN, NULL);
     auth_touch(r->sid, now);
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true}");
@@ -495,8 +501,111 @@ static void post_restore(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     int32_t rc;
     if (!wait_job(&rc)) { json_error(o, 503, "timeout", -1); return; }
     if (rc != 0) { json_error(o, 400, rc == -5 ? "nothing to restore at this level" : "invalid file", -1); return; }
+    plat_log_event(LOG_EV_RESTORE_BACKUP, PLAT_SRC_WEB, lvl, 0, NAN, NAN, NULL);
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true}");
+}
+
+/* ---------------- logs ---------------- */
+static log_csv_t csv;        /* HTTP task only */
+
+static bool wait_log(int32_t *result) {
+    for (int k = 0; k < 500; ++k) {
+        if (plat_log_read_done(result)) return true;
+        if (cfg.wait) cfg.wait();
+    }
+    return false;
+}
+
+/* everything queued before this request is in the flash (so a write just made is listed) */
+static bool log_sync(void) {
+    int32_t r;
+    return plat_log_read_start(LOG_RING_EVENTS, 0, 0, NULL) == 0 && wait_log(&r);
+}
+
+static uint32_t query_u32(const http_req_t *r, const char *key, uint32_t dflt) {
+    char v[16];
+    if (!form_get(r->query, strlen(r->query), key, v, sizeof v) || !v[0]) return dflt;
+    for (const char *p = v; *p; ++p) if (!isdigit((unsigned char)*p)) return dflt;
+    return (uint32_t)strtoul(v, NULL, 10);
+}
+
+static void get_log_info(http_out_t *o) {
+    (void)log_sync();
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"status\":"); json_uint(o, plat_log_status());
+    out_str(o, ",\"interval_s\":"); json_uint(o, plat_log_interval_s);
+    static const char *const nm[LOG_RINGS] = { "events", "data" };
+    for (uint8_t k = 0; k < LOG_RINGS; ++k) {
+        log_ring_info_t inf;
+        out_str(o, ",\""); out_str(o, nm[k]); out_str(o, "\":");
+        if (!plat_log_info(k, &inf)) { out_str(o, "null"); continue; }
+        out_str(o, "{\"slots\":"); json_uint(o, inf.nslots);
+        out_str(o, ",\"used\":"); json_uint(o, inf.used);
+        out_str(o, ",\"next_seq\":"); json_uint(o, inf.next_seq); out_str(o, "}");
+    }
+    out_str(o, "}");
+}
+
+static void get_log_csv(const http_req_t *r, http_out_t *o, uint8_t ring) {
+    log_ring_info_t inf;
+    uint32_t chunk = cfg.scratch_size / LOG_SLOT;
+    if (!cfg.scratch || chunk == 0 || !log_sync() || !plat_log_info(ring, &inf)) { json_error(o, 503, "log not available", -1); return; }
+    plat_val_t s;
+    char extra[128];
+    snprintf(extra, sizeof extra, "Content-Disposition: attachment; filename=\"cems-%lu-%s.csv\"\r\n",
+             (unsigned long)(param_read(PARAM_ID_SERIAL, &s) ? s.u : 0), ring == LOG_RING_DATA ? "data" : "events");
+    head(o, 200, "text/csv; charset=utf-8", extra);
+    log_csv_begin(&csv, ring, cfg.log_chans, cfg.n_log_chans, plat_log_interval_s,
+                  query_u32(r, "from", 0), query_u32(r, "to", 0), o);
+    uint32_t pos = inf.oldest, left = inf.used;
+    while (left && !o->err) {
+        uint32_t n = left < chunk ? left : chunk;
+        int32_t got = -1;
+        if (plat_log_read_start(ring, pos, n, cfg.scratch) != 0 || !wait_log(&got) || got != (int32_t)n) {
+            out_str(o, "\r\n# read error\r\n");
+            break;
+        }
+        log_csv_feed(&csv, cfg.scratch, n, o);
+        pos = (pos + n) % inf.nslots;
+        left -= n;
+    }
+}
+
+static void get_log_events(const http_req_t *r, http_out_t *o) {
+    log_ring_info_t inf;
+    uint32_t n = query_u32(r, "n", 50);
+    if (!cfg.scratch || !log_sync() || !plat_log_info(LOG_RING_EVENTS, &inf)) { json_error(o, 503, "log not available", -1); return; }
+    if (n > 200u) n = 200u;
+    if (n > inf.used) n = inf.used;
+    if (n > cfg.scratch_size / LOG_SLOT) n = cfg.scratch_size / LOG_SLOT;
+    int32_t got = 0;
+    if (n && (plat_log_read_start(LOG_RING_EVENTS, (inf.wr + inf.nslots - n) % inf.nslots, n, cfg.scratch) != 0 ||
+              !wait_log(&got) || got != (int32_t)n)) { json_error(o, 503, "busy", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"events\":[");
+    bool first = true;
+    for (uint32_t k = n; k-- > 0;) {
+        log_event_t e;
+        if (!plat_log_decode_event(cfg.scratch + k * LOG_SLOT, &e)) continue;
+        if (!first) out_str(o, ",");
+        first = false;
+        char tb[32];
+        log_fmt_time(tb, sizeof tb, e.time, e.clock_set);
+        out_str(o, "{\"seq\":"); json_uint(o, e.seq);
+        out_str(o, ",\"time\":"); json_str(o, tb);
+        out_str(o, ",\"t\":"); json_uint(o, e.time);
+        out_str(o, ",\"code\":"); json_uint(o, e.code);
+        out_str(o, ",\"event\":"); json_str(o, plat_log_event_name(e.code));
+        out_str(o, ",\"source\":"); json_str(o, log_src_name(e.src));
+        out_str(o, ",\"level\":"); json_str(o, log_level_name(e.level));
+        out_str(o, ",\"arg\":"); json_uint(o, e.arg);
+        out_str(o, ",\"detail\":"); json_str(o, e.text);
+        out_str(o, ",\"old\":"); json_float(o, (float)e.old_v);
+        out_str(o, ",\"new\":"); json_float(o, (float)e.new_v);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
 }
 
 /* ---------------- router ---------------- */
@@ -515,10 +624,16 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/params")) get_params(o);
     else if (get && !strcmp(r->path, "/api/values")) get_values(r, o, now);
     else if (get && !strcmp(r->path, "/api/backup")) get_backup(o, lvl);
+    else if (get && !strcmp(r->path, "/api/log/info")) get_log_info(o);
+    else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
+    else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
+    else if (get && !strcmp(r->path, "/api/log/data.csv")) get_log_csv(r, o, LOG_RING_DATA);
     else if (post && strncmp(r->path, "/api/", 5) == 0) {
         if (!r->csrf) json_error(o, 403, "missing X-CEMS header", -1);
         else if (!strcmp(r->path, "/api/login")) post_login(r, o, now);
-        else if (!strcmp(r->path, "/api/logout")) { auth_logout(r->sid); head(o, 200, "application/json",
+        else if (!strcmp(r->path, "/api/logout")) {
+            if (lvl) plat_log_event(LOG_EV_LOGOUT, PLAT_SRC_WEB, lvl, 0, NAN, NAN, NULL);
+            auth_logout(r->sid); head(o, 200, "application/json",
                      "Set-Cookie: sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict\r\n"); out_str(o, "{\"ok\":true}"); }
         else if (lvl == 0) json_error(o, 401, "login", -1);
         else if (!strcmp(r->path, "/api/write")) post_write(r, o, lvl, now);

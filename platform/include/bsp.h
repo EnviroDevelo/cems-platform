@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include "plat_io.h"
 #include "nvm.h"
+#include "nor.h"
 
 /* Calendar time from the hardware RTC. dow_iso: 1 = Monday ... 7 = Sunday
  * (STM32 RTC convention). The scan engine converts to UniLogic's 1 = Sunday. */
@@ -44,6 +45,11 @@ void     bsp_system_reset(void);
 /* The parameter NVM: the FRAM if it answers, otherwise a RAM fallback with
  * persistent = false (the store then reports PSTAT_NVM_VOLATILE). */
 nvm_dev_t *bsp_param_nvm(void);
+
+/* The data-log flash (serial NOR): the chip if it answers, otherwise a small RAM
+ * stand-in with persistent = false when none is configured (LSTAT_VOLATILE), or
+ * NULL when one is configured but does not answer (logging off, alarm). */
+nor_dev_t *bsp_log_nor(void);
 
 /* Random bytes for password salts and web session tokens (hardware RNG on the H5). */
 void bsp_random(void *buf, uint32_t len);

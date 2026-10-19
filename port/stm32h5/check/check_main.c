@@ -5,6 +5,7 @@
 RTC_HandleTypeDef hrtc;
 IWDG_HandleTypeDef hiwdg;
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi2;
 I2C_HandleTypeDef hi2c1;
 RNG_HandleTypeDef hrng;
 int main(void) {

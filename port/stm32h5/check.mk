@@ -17,11 +17,11 @@ INC     = -I$(LW)/src/include -I$(LW)/contrib/ports/freertos/include -Iport/stm3
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-          platform/core/plat_sys.c platform/bsp/nvm_ram.c \
+          platform/core/plat_sys.c platform/core/plat_log.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
-          port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c \
+          port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c \
           platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/http_util.c \
-          platform/net/http_api.c platform/net/http_server.c platform/net/web_auth.c platform/net/web_page.c \
+          platform/net/http_api.c platform/net/http_server.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c \
           platform/os/plat_net_tasks.c port/stm32h5/lwip/plat_net_lwip.c port/stm32h5/lwip/ethernetif.c \
           $(EXT)/lan8742/lan8742.c $(LWIP_SRC) \
           app_demo/app_demo.c port/stm32h5/check/check_main.c \

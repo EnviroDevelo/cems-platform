@@ -74,6 +74,25 @@ device is added later, those move to one shared file that dispatches by handle.
 The SPI FRAM driver (`nvm_fram_spi.c`, `FRAM_CS` label) stays available if the
 product board uses an SPI part.
 
+## 3c. Log flash (optional on the DK)
+
+The logger uses a JEDEC serial NOR flash on plain SPI (16 MB W25Q128JV or similar). The
+DK's own flash sits on OCTOSPI and is not used. Without a NOR chip the event log runs
+from a 32 KB RAM stand-in until power-off, which is enough for bench work.
+
+| CubeMX | Setting |
+|---|---|
+| SPIx | Full-duplex master, 8-bit, mode 0 (CPOL low, CPHA 1 edge), NSS software, up to 50 MHz. It may share the FRAM's SPI bus |
+| GPIO | One output labelled `NOR_CS`, push-pull, initial level high |
+
+In `main.h` (USER CODE section), if the handle isn't `hspi2`:
+
+```c
+#define NOR_SPI_HANDLE hspi1
+```
+
+Add `port/stm32h5/nor_spi.c` to the build. The size is read from the chip's ID.
+
 ## 3b. Ethernet and RNG
 
 | CubeMX | Setting |
@@ -115,9 +134,9 @@ TCP port 502). Change the address from the web page (admin) or, later, the touch
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), and for a first test `app_demo/`, into the project.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, and for a first test `app_demo/`, into the project.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
-3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` *is* needed: it is the RAM stand-in.)
+3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.
 5. In `main.c`:
 

@@ -21,6 +21,8 @@ typedef struct {
 extern bsp_host_t bsp_host;
 extern uint8_t   bsp_host_fram[128u * 1024u];   /* persists across simulated reboots */
 extern nvm_ram_t bsp_host_fram_ram;
+extern uint8_t   bsp_host_nor[256u * 1024u];   /* the data-log flash, persists across simulated reboots */
+extern nor_sim_t bsp_host_nor_sim;
 void bsp_host_reset(void);
 void bsp_host_advance_ms(uint32_t ms);   /* moves ms and cycles together */
 

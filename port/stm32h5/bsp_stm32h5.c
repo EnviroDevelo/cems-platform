@@ -406,6 +406,27 @@ nvm_dev_t *bsp_param_nvm(void) {
 #endif
 }
 
+/* ---------------- data-log flash ---------------- */
+bool nor_spi_open(nor_dev_t *d);         /* nor_spi.c */
+
+nor_dev_t *bsp_log_nor(void) {
+    static nor_dev_t dev;
+    static bool tried, ok;
+    if (!tried) { tried = true; ok = nor_spi_open(&dev); }
+    if (ok) return &dev;
+#if !defined(NOR_CS_Pin)
+    /* No log flash in this hardware configuration (the DK's flash is on OCTOSPI):
+     * a 32 KB RAM stand-in, so the event log works until power-off (LSTAT_VOLATILE). */
+    static uint8_t   mem[32u * 1024u];
+    static nor_sim_t sim;
+    static bool      init;
+    if (!init) { nor_sim_init(&dev, &sim, mem, sizeof mem, false, true); init = true; }
+    return &dev;
+#else
+    return NULL;          /* configured but not answering: logging off, LSTAT shows it */
+#endif
+}
+
 /* ---------------- random numbers ----------------
  * Hardware RNG (CubeMX: RNG activated, handle hrng). Session tokens and password
  * salts depend on it. Without the RNG the fallback below mixes the unique ID, the

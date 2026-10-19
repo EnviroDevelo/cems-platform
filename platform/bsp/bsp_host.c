@@ -46,6 +46,15 @@ nvm_dev_t *bsp_param_nvm(void) {
     return &fram_dev;
 }
 
+uint8_t   bsp_host_nor[256u * 1024u];
+nor_sim_t bsp_host_nor_sim;
+nor_dev_t *bsp_log_nor(void) {
+    static nor_dev_t d;
+    static bool done;
+    if (!done) { nor_sim_init(&d, &bsp_host_nor_sim, bsp_host_nor, sizeof bsp_host_nor, true, true); done = true; }
+    return &d;
+}
+
 void bsp_random(void *buf, uint32_t len) {
     FILE *f = fopen("/dev/urandom", "rb");
     if (!f || fread(buf, 1, len, f) != len) { uint8_t *p = buf; for (uint32_t k = 0; k < len; ++k) p[k] = (uint8_t)(k * 37u + 11u); }

@@ -10,12 +10,14 @@ PLC-style scan and provides the services around it.
 ## Host builds (Linux/macOS/WSL, gcc)
 
 ```
-make test      # unit tests (2,191 checks, with both FRAM memory maps)
+make test      # unit tests (with both FRAM memory maps; includes 400 random power cuts on the log)
 make sim       # PC simulation of the demo application
 make netsim    # the platform on real sockets: Modbus TCP on 1502, web on http://127.0.0.1:8080/
+               # (FRAM and log flash are files: netsim_fram.bin, netsim_nor.bin)
                # (type "remote" / "local" on stdin to act as the touchscreen)
 make rtos      # the real FreeRTOS task layer on the FreeRTOS POSIX port (needs EXT=path with FreeRTOS-Kernel)
 make target    # compile-check for STM32H5 with arm-none-eabi-gcc (needs EXT, see port/stm32h5/check.mk)
+tools/check_target.sh   # compile and link the target in five FRAM/NOR configurations
 ```
 
 Integration tests (with netsim built): `python3 tests/integration/net_test.py` (needs

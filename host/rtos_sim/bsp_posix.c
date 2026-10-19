@@ -32,4 +32,9 @@ static uint8_t   fram[128u * 1024u];
 static nvm_ram_t fram_ram;
 static nvm_dev_t fram_dev;
 nvm_dev_t *bsp_param_nvm(void) { nvm_ram_init(&fram_dev, &fram_ram, fram, sizeof fram, true); return &fram_dev; }
+nor_dev_t *bsp_log_nor(void) {
+    static uint8_t mem[64u * 1024u]; static nor_sim_t s; static nor_dev_t d; static bool done;
+    if (!done) { nor_sim_init(&d, &s, mem, sizeof mem, true, true); done = true; }
+    return &d;
+}
 void bsp_random(void *buf, uint32_t len) { FILE *f = fopen("/dev/urandom", "rb"); if (!f || fread(buf, 1, len, f) != len) abort(); fclose(f); }

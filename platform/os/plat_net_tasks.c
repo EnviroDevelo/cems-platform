@@ -35,7 +35,8 @@ void plat_http_task_body(void) {
     static http_server_t s;
     const plat_app_t *app = plat_app();
     http_cfg_t cfg = { .product = app->ident.product, .fw_version = app->ident.revision, .scan = &plat_scan,
-                       .scratch = http_buf, .scratch_size = sizeof http_buf, .wait = http_wait };
+                       .scratch = http_buf, .scratch_size = sizeof http_buf, .wait = http_wait,
+                       .log_chans = app->log_chans, .n_log_chans = (unsigned)app->n_log_chans };
     http_api_init(&cfg);
     wait_net(PLAT_TASK_HTTP);
     while (http_open(&s, PLAT_HTTP_PORT, http_buf, sizeof http_buf) != 0) { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(1000)); }

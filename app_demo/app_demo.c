@@ -44,6 +44,13 @@ const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_DISCRETE, 1, DEMO_PARAM_VALVE_OUT,   MBF_BIT),
 };
 
+/* Data-log channels: the logic hands one sample per scan to each (plat_log_put). */
+const plat_log_chan_t app_demo_log[] = {
+    { "start_in",  NULL, 2 },      /* fraction of the interval the input was on */
+    { "valve_out", NULL, 2 },
+    { "delay_left", "s", 1 },
+};
+
 /* TimerOnDelay, simplified demo model (the real one lives in the application layer). */
 static void ton(ul_timer_t *t, bool in) {
     if (!in) { t->Current = t->Preset; t->Out = false; return; }
@@ -62,6 +69,9 @@ static void logic(void) {            /* "Function1" */
     if (ValveOut == false && StartDelay.Out) LifetimeCycles++;
     ValveOut = StartDelay.Out;
     if (ValveOut) { run_ms += g_dt_ms; while (run_ms >= 1000) { run_ms -= 1000; RunSeconds++; } }
+    plat_log_put(0, StartIn ? 1.0f : 0.0f, LQ_OK);
+    plat_log_put(1, ValveOut ? 1.0f : 0.0f, LQ_OK);
+    plat_log_put(2, StartIn ? (float)StartDelay.Current / 1000.0f : 0.0f, StartIn ? LQ_OK : LQ_NA);
 }
 
 static void io_out(plat_io_out_t *out) { plat_do_set(out, 0, ValveOut); }
@@ -86,4 +96,5 @@ const plat_app_t app_demo_plat = {
     .modbus_map = app_demo_modbus, .n_modbus_map = sizeof app_demo_modbus / sizeof app_demo_modbus[0],
     .ident = { .vendor = "CEMS", .product = "CEMS Supervisor (demo app)", .revision = "0.3.0-dev",
                .write_level = PLAT_LVL_OPERATOR },
+    .log_chans = app_demo_log, .n_log_chans = sizeof app_demo_log / sizeof app_demo_log[0],
 };

@@ -15,6 +15,10 @@
  *   POST /api/password     level=..&password=..   (needs a session at that level or higher)
  *   GET  /api/backup       parameter backup file (admin)
  *   POST /api/restore      body = backup file (admin; factory part needs factory)
+ *   GET  /api/log/info     logger status and ring fill
+ *   GET  /api/log/events[?n=50]          the newest events, newest first (JSON)
+ *   GET  /api/log/events.csv[?from=&to=] the whole event log (s since 1970, inclusive)
+ *   GET  /api/log/data.csv[?from=&to=]   the whole data log
  *
  * Every POST must carry the header "X-CEMS: 1" (a page from another site cannot
  * add it without the browser asking first), and writes need a session cookie.
@@ -29,6 +33,7 @@
 #include "http_util.h"
 #include "web_auth.h"
 #include "scan_engine.h"
+#include "plat_log.h"
 
 typedef struct {
     char     method[8];
@@ -48,6 +53,8 @@ typedef struct {
     uint8_t    *scratch;           /* backup/restore buffer (one request at a time) */
     uint32_t    scratch_size;
     void      (*wait)(void);       /* called while waiting for the store task (sleep ~10 ms) */
+    const plat_log_chan_t *log_chans;   /* the data-log channels (CSV column names if the */
+    unsigned    n_log_chans;            /* schema record has been overwritten); may be NULL */
 } http_cfg_t;
 
 void http_api_init(const http_cfg_t *cfg);

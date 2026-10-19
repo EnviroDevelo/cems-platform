@@ -1,6 +1,6 @@
 # CEMS Core Platform: firmware structure, scan contract and integration rules
 
-Rev C, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking). Implements the "Firmware architecture and toolchain" section of
+Rev D, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking. Rev D: event log and data logger). Implements the "Firmware architecture and toolchain" section of
 *CEMS Supervisor Design Specification Rev 1.00* (file name: *CEMS Instrument Core
 Platform Design Specification Rev 1.00.pdf*). This is the code that every instrument
 in the family shares. The VM/MUX program translated in `Existing Design/Analysis/stage4`
@@ -25,10 +25,11 @@ runs on top of it.
 | Modbus TCP server (port 502) | `modbus.h/.c` (engine and map), `mbtcp.h`, `platform/net/mbtcp.c` | Done; host-tested, and tested on real sockets with pymodbus |
 | Web interface (port 80): JSON API, logins, sessions, backup/restore, the page | `http_api.h`, `http_server.h`, `web_auth.h`, `platform/net/*`, `web/index.html` | Done; host-tested, on real sockets, and in headless Chromium |
 | Network on the H5: lwIP 2.2.1 + FreeRTOS, Ethernet driver (LAN8742 PHY), bring-up, live address changes | `port/stm32h5/lwip/*`, `platform/os/plat_net_tasks.c` | Compiled and linked with the real lwIP, HAL and PHY driver; not yet run on hardware |
+| Event log and data logger on serial NOR, CSV export, event list on the web page | `plat_log.h/.c`, `nor.h`, `nor_sim.c`, `log_csv.h/.c`, `port/stm32h5/nor_spi.c` | Done; host-tested incl. 400 random power cuts, on real sockets and in Chromium. SPI NOR driver compiled and linked, not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): logger; firmware
-update/bootloader; EVE driver and touch UI.
+Not in this revision (next modules, in the order proposed): firmware
+update/bootloader; EVE driver and touch UI; alarm manager.
 
 ## 2. Tasks and priorities
 
@@ -41,7 +42,7 @@ then networking, and the UI last. Nothing below the scan can delay it.
 | scan | 13 | every 10 ms (`PLAT_SCAN_PERIOD_MS`) | 200 ms | `scan_step()`: the VM/MUX program |
 | supervisor | 12 | every 100 ms | n/a | kicks the IWDG only if every task is alive |
 | FreeRTOS timer service | 11 | on demand | n/a | kernel |
-| store | 10 | event-driven | 2 s | `plat_store_task_body()` (next module) |
+| store | 10 | every 20 ms | 2 s | `plat_store_task_body()`: parameter store and logger (sole owner of the FRAM and the log flash) |
 | lwIP tcpip_thread | 8 | event-driven | via modbus/http | lwIP |
 | modbus | 7 | socket events | 5 s | `plat_modbus_task_body()` |
 | http | 6 | socket events | 5 s | `plat_http_task_body()` |
@@ -185,6 +186,44 @@ ported to native FreeRTOS. The address comes from the parameter table (static
 immediately. The MAC address is derived from the chip's unique ID: locally
 administered, different on every unit, and stable across reboots.
 
+## 5a. Event log and data logger
+
+Fixes the old logger's faults (Analysis `48_Logging.md` L1-L8) as set out in
+`70_Alarms_Logging.md` section 8.
+
+**Two rings on one serial NOR flash.** The event ring (1/8 of the flash, at most 1 MB)
+holds the audit trail: power-up with reset cause and firmware version, every external
+parameter change (old and new value, touchscreen/web/Modbus, login level), mode changes,
+logins and failed logins, password changes, backup restores, clock changes, storage and
+log faults, and (next) alarms and firmware updates. The data ring (the rest) holds one
+record per interval (`log_interval`, parameter 30, default 60 s): the **mean** of each
+channel over the interval and its **quality** (OK, FLAG, BAD, N/A), not a snapshot. The
+application lists its channels in `plat_app_t.log_chans` and calls `plat_log_put(i, value,
+quality)` from the logic; the platform does the averaging, the timing and the writing.
+Changes made by the unit itself are not audit events.
+
+**Never stops, never clears.** When a ring is full the oldest 4 KB sector is erased
+(decision D12): the old program stopped at 256 rows (L1) and erased the log when the
+column set changed (L3). Here a configuration change writes a schema record (channel
+names, units, decimals, interval) and the CSV gets a new header line at that point.
+
+**Power cuts.** Records are 64-byte slots (a data record with up to 32 channels is 4
+slots; the schema up to 17), each with its own CRC-32, written only into erased flash and
+read back to verify. A cut loses at most the record being written. The write position
+is kept in FRAM (two copies, 0x7C00); if it is missing or stale, it is rebuilt by
+reading the first slot of every sector (about 50 ms for 16 MB). A slot that fails
+verification is skipped and the record is written again in the next one
+(`LSTAT_NOR_FAULT`, which the alarm map raises as LOG_STORAGE_FAULT, alarm 3).
+
+**Capacity** (16 MB part, e.g. W25Q128JV): events about 16,000; data with 10 channels
+at 60 s about 45 days, at 300 s about 7 months. A 32 MB part doubles that; the driver
+switches to 4-byte addressing by itself.
+
+**Export.** `GET /api/log/events.csv` and `/api/log/data.csv` (optionally
+`?from=&to=` in seconds since 1970) stream the whole ring; `/api/log/events?n=` returns
+the newest events as JSON, which the web page shows. Without flash fitted (the DK), a 32 KB
+RAM stand-in keeps the event log until power-off and the page says so.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -200,18 +239,19 @@ work before integration.
 7. **Parameter table from the data dictionary.** The 148 SETTING tags become `param_def_t` entries (IDs from 1000), and the other retained tags become `RETAIN()` blocks. `stage2/data_dictionary.csv` has the type, retain flag and power-up value for each, so the table can be generated rather than typed. Ranges must come from the HMI element limits (Stage 5 `hmi_elements.csv`); where a limit isn't known, it is a Rule 0 item, not a guess.
 8. Tags the logic rewrites every scan should not be `PF_PERSIST` or retained unless the original retains them; the store only saves real changes, so this costs nothing either way, but it keeps the image meaningful.
 9. The application must read `param_store_calibration_valid()` and `param_remote_link_lost()` and act on them (block measurement; go to its safe state).
+11. **Logged values.** The old project's LOG columns become `plat_log_chan_t` entries (name up to 16 characters, unit up to 6). Call `plat_log_put()` once per scan per channel with the real reading and its quality (FLAG while in calibration or purge, BAD on a sensor fault, N/A when the channel is not measured); never a last-held value. Alarm 3 (LOG_STORAGE_FAULT) maps to `plat_log_status() & LSTAT_NOR_FAULT`.
 10. **Modbus map from the old slave map.** Generate `mb_map_t` from `stage4/4G/modbus_map.csv`. Strings and buffers the master reads become `PARAM_TEXT`/`PARAM_BYTES` entries; bit arrays become `PARAM_ARRAY_BOOL`; timer presets become `PARAM_UINT` on `.Preset`. **Open item (Rule 0):** the byte order UniLogic uses to pack BUFFER bytes into registers, and the word order of 32-bit values, aren't in the analysis. The map supports both orders (`MBF_BYTE_LO_FIRST`, `MBF_WORD_LO_FIRST`), so this is a single flag per entry once it is known (a UniLogic screenshot of the Modbus slave data map, or one register read from a running unit, settles it).
 
 ## 7. How it was checked
 
 | Check | Result |
 |---|---|
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4 | 2,191 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 7,835 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
-| Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 49 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused, and after a restart: settings and the changed password kept, mode back to LOCAL |
-| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Login, an out-of-range value refused with a plain message, an accepted change shown within a second, the connection-lost banner when the unit stops, no script errors |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror in five configurations (no FRAM, SPI, I2C+DMA, I2C+interrupt, I2C with the 128 KB map), each linked with lwIP 2.2.1, the Ethernet driver and both servers. With the I2C FRAM: 136.5 KB flash (of 2 MB), 250 KB RAM (of 640 KB). `plat_diag` is in the NOLOAD `.noinit` section |
+| Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 60 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer |
+| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM and NOR: 156 KB flash (of 2 MB), 259 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
 ## 8. Decisions (working defaults, change any of them)
@@ -228,6 +268,8 @@ work before integration.
 | D8 | Touchscreen writes in REMOTE mode | Refused, except the mode switch and `PF_ANY_MODE` entries | Stops the local panel and the PLC fighting over a setpoint; the spec only states the remote side |
 | D9 | Default passwords | operator 1111, admin 2222, factory 9999; the page warns while any is unchanged; "restore defaults" also restores these | Change at commissioning. A per-unit factory password (e.g. from the serial) is an option if units leave the factory |
 | D10 | MAC address | Locally administered, from the chip unique ID | Fine for site networks. For production, buy an IEEE OUI block or fit an EUI-48 chip (e.g. 24AA02E48) |
+| D12 | Log full | Overwrite the oldest sector (4 KB); events and data in separate rings | A CEMS log that stops recording is worse than one that loses the oldest days; separate rings keep the audit trail from being pushed out by data |
+| D13 | Log flash | 16 MB SPI NOR (W25Q128JV or equivalent JEDEC part) on its own chip select; the DK's OCTOSPI flash is not used | Cheap, and the logger needs nothing faster than plain SPI. Decide at schematic; any size from 64 KB works |
 | D11 | Web transport | HTTP on port 80 now; HTTPS (mbedTLS) later | The spec allows HTTP on an isolated control network; HTTPS adds about 100 KB flash and 40 KB RAM and can come with the firmware-update work |
 
 ## 9. Repository layout
@@ -237,8 +279,8 @@ platform/include/   public headers (no HAL, no FreeRTOS except plat_port.h on ta
 platform/core/      portable logic: scan engine, queue, monitor, diag
 platform/os/        FreeRTOS binding (tasks, hooks)
 platform/net/       Modbus TCP, HTTP server, web API, logins (socket API: POSIX or lwIP)
-platform/bsp/       simulated board for host builds
-port/stm32h5/       STM32H5 BSP, FRAM drivers, FreeRTOSConfig.h, linker snippet, compile/link check
+platform/bsp/       simulated board, RAM FRAM and RAM NOR (also the target's stand-ins)
+port/stm32h5/       STM32H5 BSP, FRAM and NOR drivers, FreeRTOSConfig.h, linker snippet, compile/link check
 port/stm32h5/lwip/  lwipopts.h, Ethernet driver (from ST, SLA0044), network bring-up
 web/                the web page source (embedded by tools/embed_web.py)
 app_demo/           example application on the scan contract

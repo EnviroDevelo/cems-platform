@@ -36,7 +36,11 @@ async def run(unit):
         await pg.wait_for_timeout(1000)
         shown = await pg.inner_text("#v1001")
         await pg.fill("#filter", "")
-        await pg.wait_for_timeout(800)
+        await pg.wait_for_timeout(5500)                    # the event list refreshes every 5 s
+        events = await pg.inner_text("#events")
+        print("event list:", events.replace("\n", " | ")[:300])
+        ok &= "Setting changed" in events and "start_delay (1001): 2000 → 1500" in events and "Login" in events \
+              and "Power-up" in events
         await pg.screenshot(path=os.path.join(ROOT, "build", "web_operator.png"), full_page=True)
         print("refused value message:", repr(refused)); ok &= refused == "Outside the allowed range"
         print("value shown after change:", repr(shown)); ok &= shown == "1500 ms"
@@ -53,8 +57,9 @@ async def run(unit):
         return ok
 
 def main():
-    fram = os.path.join(tempfile.mkdtemp(), "fram.bin")
-    unit = subprocess.Popen([os.path.join(ROOT, "build", "netsim"), "15095", "18095", fram],
+    tmp = tempfile.mkdtemp()
+    fram, nor = os.path.join(tmp, "fram.bin"), os.path.join(tmp, "nor.bin")
+    unit = subprocess.Popen([os.path.join(ROOT, "build", "netsim"), "15095", "18095", fram, nor],
                             stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     time.sleep(0.8)
     unit.stdin.write("remote\n"); unit.stdin.flush()

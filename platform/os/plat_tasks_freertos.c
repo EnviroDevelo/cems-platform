@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#include <string.h>
 #include "plat_tasks.h"
 #include "plat_config.h"
 #include "plat_diag.h"
@@ -107,6 +108,21 @@ DEF_TASK(net,    PLAT_STACK_NET);
     do { if (xTaskCreateStatic((fn), (name), (stk), (arg), (prio), nm##_stack, &nm##_tcb) == NULL) \
              fatal(PLAT_FAULT_ASSERT, -1, name, __LINE__); } while (0)
 
+/* Event log and data logger: before the tasks start, so the power-up event comes first. */
+static void log_start(const plat_app_t *app, nvm_dev_t *fram) {
+    bsp_rtc_t t;
+    uint32_t unix_now = 0;
+    if (bsp_rtc_read(&t) && t.year >= 2000u) unix_now = plat_unix_from_civil(t.year, t.month, t.day, t.hours, t.minutes, t.seconds);
+    char note[sizeof plat_diag.fault_name + 1] = { 0 };
+    if (plat_diag.last_reset_cause == BSP_RESET_IWDG || plat_diag.last_reset_cause == BSP_RESET_SOFTWARE)
+        memcpy(note, plat_diag.fault_name, sizeof plat_diag.fault_name);
+    plat_log_cfg_t c = { .nor = bsp_log_nor(), .fram = fram, .fram_addr = STORE_META_ADDR,
+                         .chans = app->log_chans, .n_chans = (unsigned)app->n_log_chans,
+                         .fw_version = app->ident.revision, .reset_cause = (uint8_t)plat_diag.last_reset_cause,
+                         .reset_note = note, .unix_now = unix_now };
+    (void)plat_log_init(&c, bsp_ms());     /* without flash it reports LSTAT_* and stays off */
+}
+
 void plat_start(const plat_app_t *app) {
     the_app = app;
     plat_diag_boot(bsp_reset_cause());
@@ -133,11 +149,13 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "param table", param_table_error(), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
-    if (!param_store_init(bsp_param_nvm(), NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
+    nvm_dev_t *fram = bsp_param_nvm();
+    if (!param_store_init(fram, NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "store table", param_store_status(), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
     param_store_boot();
+    log_start(app, fram);
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {

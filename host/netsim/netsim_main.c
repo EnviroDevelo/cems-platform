@@ -2,7 +2,8 @@
  * scan (10 ms), store (20 ms), Modbus TCP and web server, each in its own thread
  * as on the RTOS. The parameter FRAM is a file, so settings survive restarts.
  *
- *   ./build/netsim [modbus_port] [http_port] [fram_file]      (defaults 1502 8080 netsim_fram.bin)
+ *   ./build/netsim [modbus_port] [http_port] [fram_file] [nor_file]
+ *   (defaults 1502 8080 netsim_fram.bin netsim_nor.bin; the NOR file holds the logs)
  *
  * DI0 is driven by a pattern (8 s on, 4 s off) so values change on their own. */
 #define _POSIX_C_SOURCE 200809L
@@ -74,6 +75,36 @@ static int f_write(nvm_dev_t *d, uint32_t a, const void *b, uint32_t n) {
     return w == n ? 0 : -1;
 }
 static nvm_dev_t fram_dev = { f_read, f_write, sizeof fram, true, NULL };
+
+/* NOR flash for the logs: 1 MB, RAM image written through to a file */
+#define NOR_SIZE (1024u * 1024u)
+static const char *nor_path = "netsim_nor.bin";
+static uint8_t nor_mem[NOR_SIZE];
+static int nor_sync(uint32_t a, uint32_t n) {
+    FILE *f = fopen(nor_path, "r+b"); if (!f) f = fopen(nor_path, "w+b");
+    if (!f) return -1;
+    fseek(f, (long)a, SEEK_SET); size_t w = fwrite(nor_mem + a, 1, n, f); fclose(f);
+    return w == n ? 0 : -1;
+}
+static int n_read(nor_dev_t *d, uint32_t a, void *b, uint32_t n) { (void)d; if (a + n > NOR_SIZE) return -1; memcpy(b, nor_mem + a, n); return 0; }
+static int n_prog(nor_dev_t *d, uint32_t a, const void *b, uint32_t n) {
+    (void)d; if (a + n > NOR_SIZE) return -1;
+    for (uint32_t i = 0; i < n; ++i) nor_mem[a + i] &= ((const uint8_t *)b)[i];
+    return nor_sync(a, n);
+}
+static int n_erase(nor_dev_t *d, uint32_t a) {
+    (void)d; a -= a % 4096u; if (a >= NOR_SIZE) return -1;
+    memset(nor_mem + a, 0xFF, 4096u);
+    return nor_sync(a, 4096u);
+}
+static nor_dev_t nor_dev = { n_read, n_prog, n_erase, NOR_SIZE, 4096u, 256u, true, NULL };
+nor_dev_t *bsp_log_nor(void) {
+    memset(nor_mem, 0xFF, sizeof nor_mem);
+    FILE *f = fopen(nor_path, "rb");
+    if (f) { size_t n = fread(nor_mem, 1, sizeof nor_mem, f); fclose(f); fprintf(stderr, "NOR image %s: %zu bytes\n", nor_path, n); }
+    else nor_sync(0, NOR_SIZE);
+    return &nor_dev;
+}
 nvm_dev_t *bsp_param_nvm(void) {
     FILE *f = fopen(fram_path, "rb");
     if (f) { size_t n = fread(fram, 1, sizeof fram, f); fclose(f); fprintf(stderr, "FRAM image %s: %zu bytes\n", fram_path, n); }
@@ -101,7 +132,7 @@ static void *scan_thread(void *a) {
 }
 static void *store_thread(void *a) {
     (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
-    while (running) { sleep_until(&t, 20); param_store_poll(bsp_ms()); }
+    while (running) { sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); }
     return NULL;
 }
 static void *modbus_thread(void *a) { (void)a; while (running) mbtcp_poll(&mbs, 100); return NULL; }
@@ -136,6 +167,7 @@ static void on_signal(int s) { (void)s; running = 0; }
 int main(int argc, char **argv) {
     uint16_t mport = argc > 1 ? (uint16_t)atoi(argv[1]) : 1502, hport = argc > 2 ? (uint16_t)atoi(argv[2]) : 8080;
     if (argc > 3) fram_path = argv[3];
+    if (argc > 4) nor_path = argv[4];
     pthread_mutexattr_t ma; pthread_mutexattr_init(&ma); pthread_mutexattr_settype(&ma, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&crit, &ma);
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -149,13 +181,22 @@ int main(int argc, char **argv) {
     if (param_init(app->params, app->n_params) != PERR_OK) { fprintf(stderr, "param table error at id %u\n", param_table_error()); return 1; }
     if (!param_store_init(bsp_param_nvm(), NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) { fprintf(stderr, "store table error\n"); return 1; }
     param_store_boot();
+    {
+        bsp_rtc_t rt; bsp_rtc_read(&rt);
+        plat_log_cfg_t lc = { .nor = bsp_log_nor(), .fram = &fram_dev, .fram_addr = STORE_META_ADDR,
+                              .chans = app->log_chans, .n_chans = (unsigned)app->n_log_chans,
+                              .fw_version = app->ident.revision, .reset_cause = BSP_RESET_POWER_ON,
+                              .unix_now = plat_unix_from_civil(rt.year, rt.month, rt.day, rt.hours, rt.minutes, rt.seconds) };
+        plat_log_init(&lc, bsp_ms());
+    }
     param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
     auth_init();
     int bad = mb_init(app->modbus_map, app->n_modbus_map, &app->ident);
     if (bad) { fprintf(stderr, "modbus map error at entry %d\n", bad - 1); return 1; }
     http_cfg_t hc = { .product = app->ident.product, .fw_version = app->ident.revision, .scan = &plat_scan,
-                      .scratch = http_buf, .scratch_size = sizeof http_buf, .wait = http_wait };
+                      .scratch = http_buf, .scratch_size = sizeof http_buf, .wait = http_wait,
+                      .log_chans = app->log_chans, .n_log_chans = (unsigned)app->n_log_chans };
     http_api_init(&hc);
     if (mbtcp_open(&mbs, mport) != 0) { perror("modbus listen"); return 1; }
     if (http_open(&hs, hport, http_buf, sizeof http_buf) != 0) { perror("http listen"); return 1; }
@@ -171,6 +212,7 @@ int main(int argc, char **argv) {
     pthread_create(&th[3], NULL, http_thread, NULL);
     for (int k = 0; k < 4; ++k) pthread_join(th[k], NULL);
     param_store_poll(bsp_ms() + 5000); param_store_scan_service(); param_store_poll(bsp_ms() + 5000);   /* last save */
+    plat_log_poll(bsp_ms());
     scan_stats_t ss = scan_stats(&plat_scan);
     fprintf(stderr, "netsim: stopped. scans %u, late %u, max dt %u ms; modbus frames %u; http served %u\n",
             ss.scans, ss.late_starts, ss.max_dt_ms, mbs.frames, hs.served);
