@@ -41,6 +41,7 @@
 #ifndef FW_TRIAL_MS
 #define FW_TRIAL_MS     60000u        /* healthy running time before a new image confirms itself */
 #endif
+extern uint32_t fw_trial_ms;          /* = FW_TRIAL_MS; the PC simulation shortens it */
 #ifndef PLAT_FW_REQUIRE_SIGNED
 #define PLAT_FW_REQUIRE_SIGNED 0
 #endif
@@ -60,11 +61,13 @@ typedef struct {
     uint32_t flags;            /* FW_F_SIGNED */
     uint32_t build_time;       /* s since 1970 */
     uint8_t  sha256[32];       /* of the payload */
-    uint8_t  sig[64];          /* ECDSA P-256 r||s over SHA-256(header bytes 0..111), if signed */
-    uint8_t  rsvd[248 - 176];
+    uint8_t  sig[64];          /* ECDSA P-256 r||s over SHA-256(header bytes 0..83), if signed */
+    uint8_t  rsvd[100];
     uint32_t rsvd2;
     uint32_t hdr_crc;          /* CRC-32 of bytes 0..251 */
 } fw_header_t;
+#define FW_SIGNED_LEN 84u      /* header bytes covered by the signature (up to and including sha256) */
+_Static_assert(sizeof(fw_header_t) == FW_HDR_SIZE, "fw_header_t must be 256 bytes");
 #define FW_F_SIGNED 0x0001u
 
 /* The flash banks, from the port (port/stm32h5/fw_flash_stm32h5.c) or a simulation. */
@@ -134,6 +137,10 @@ const char *fw_err_name(fw_err_t e);
  * product key. The weak default accepts nothing (signed images then fail), so a
  * signing scheme is a strong definition of this function. */
 bool fw_signature_check(const uint8_t hash[32], const uint8_t sig[64]);
+
+/* Called by fw_service just before the swap (the store task flushes the parameter
+ * store and the log through it). May be NULL. */
+extern void (*fw_before_swap)(void);
 
 /* Helpers, also used by the tests and the image tool's self-check. */
 bool     fw_header_ok(const fw_header_t *h);

@@ -37,4 +37,10 @@ nor_dev_t *bsp_log_nor(void) {
     if (!done) { nor_sim_init(&d, &s, mem, sizeof mem, true, true); done = true; }
     return &d;
 }
+#include "fw_flash_sim.h"
+struct fw_flash *bsp_fw_flash(void) {
+    static uint8_t b0[64u * 1024u], b1[64u * 1024u]; static fw_flash_sim_t s; static fw_flash_t f; static bool done;
+    if (!done) { fw_flash_sim_init(&f, &s, b0, b1, sizeof b0); done = true; }
+    return &f;
+}
 void bsp_random(void *buf, uint32_t len) { FILE *f = fopen("/dev/urandom", "rb"); if (!f || fread(buf, 1, len, f) != len) abort(); fclose(f); }

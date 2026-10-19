@@ -10,6 +10,7 @@
 #include "plat_diag.h"
 #include "bsp.h"
 #include "log_csv.h"
+#include "fw_update.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -608,6 +609,73 @@ static void get_log_events(const http_req_t *r, http_out_t *o) {
     out_str(o, "]}");
 }
 
+/* ---------------- firmware update ---------------- */
+static const char *fw_state_name(fw_state_t s) {
+    switch (s) { case FW_ST_PENDING: return "pending"; case FW_ST_TRIAL: return "trial";
+                 case FW_ST_ROLLED_BACK: return "rolled_back"; default: return "idle"; }
+}
+
+static void get_fw(http_out_t *o) {
+    fw_status_t st;
+    fw_status(&st);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"running\":"); json_str(o, st.running_version);
+    out_str(o, ",\"state\":"); json_str(o, fw_state_name(st.state));
+    out_str(o, ",\"trial_left_s\":"); json_uint(o, (st.trial_left_ms + 999u) / 1000u);
+    out_str(o, ",\"staged\":"); if (st.staged) json_str(o, st.staged_version); else out_str(o, "null");
+    out_str(o, ",\"uploading\":"); json_bool(o, st.uploading);
+    out_str(o, ",\"received\":"); json_uint(o, st.upload_bytes);
+    out_str(o, ",\"total\":"); json_uint(o, st.upload_total);
+    out_str(o, ",\"rolled_back\":"); json_bool(o, st.rolled_back);
+    out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error)); out_str(o, "}");
+}
+
+static void post_fw_activate(http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    fw_err_t e = fw_request_activate();
+    if (e != FW_OK) { json_error(o, e == FW_E_NO_IMAGE ? 404 : 409, fw_err_name(e), -1); return; }
+    plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, 0, NAN, NAN, "activate");
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"restarting\":true}");
+}
+
+bool http_wants_stream(const http_req_t *r) {
+    return !strcmp(r->method, "POST") && !strcmp(r->path, "/api/fw/upload");
+}
+
+void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now) {
+    uint8_t lvl = auth_session(r->sid, now, NULL);
+    if (!r->csrf) { json_error(o, 403, "missing X-CEMS header", -1); out_flush(o); return; }
+    if (lvl == 0) { json_error(o, 401, "login", -1); out_flush(o); return; }
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); out_flush(o); return; }
+    fw_err_t e = fw_upload_begin(r->content_length);
+    if (e == FW_OK) e = fw_upload_data(r->body, r->body_len);
+    uint32_t got = r->body_len;
+    while (e == FW_OK && got < r->content_length) {
+        uint32_t want = r->content_length - got;
+        if (want > cfg.scratch_size) want = cfg.scratch_size;
+        int n = (cfg.scratch && want) ? rd(ctx, cfg.scratch, want) : -1;
+        if (n <= 0) { fw_upload_abort(); json_error(o, 400, "upload interrupted", -1); out_flush(o); return; }
+        got += (uint32_t)n;
+        e = fw_upload_data(cfg.scratch, (uint32_t)n);
+    }
+    if (e == FW_OK) e = fw_upload_end();
+    else fw_upload_abort();
+    if (e != FW_OK) {
+        plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, (uint32_t)e, NAN, NAN, "upload refused");
+        json_error(o, e == FW_E_BUSY ? 409 : 400, fw_err_name(e), -1);
+        out_flush(o);
+        return;
+    }
+    auth_touch(r->sid, now);
+    fw_status_t st;
+    fw_status(&st);
+    plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, 0, NAN, NAN, st.staged_version);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"staged\":"); json_str(o, st.staged_version); out_str(o, "}");
+    out_flush(o);
+}
+
 /* ---------------- router ---------------- */
 void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     bool get = !strcmp(r->method, "GET"), post = !strcmp(r->method, "POST");
@@ -625,6 +693,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/values")) get_values(r, o, now);
     else if (get && !strcmp(r->path, "/api/backup")) get_backup(o, lvl);
     else if (get && !strcmp(r->path, "/api/log/info")) get_log_info(o);
+    else if (get && !strcmp(r->path, "/api/fw")) get_fw(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
     else if (get && !strcmp(r->path, "/api/log/data.csv")) get_log_csv(r, o, LOG_RING_DATA);
@@ -639,6 +708,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/write")) post_write(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/password")) post_password(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/restore")) post_restore(r, o, lvl);
+        else if (!strcmp(r->path, "/api/fw/activate")) post_fw_activate(o, lvl);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

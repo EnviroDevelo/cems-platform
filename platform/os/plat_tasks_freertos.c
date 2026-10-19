@@ -10,6 +10,7 @@
 #include "plat_diag.h"
 #include "bsp.h"
 #include "plat_sys.h"
+#include "fw_update.h"
 #include "web_auth.h"
 #include "modbus.h"
 
@@ -156,6 +157,8 @@ void plat_start(const plat_app_t *app) {
     }
     param_store_boot();
     log_start(app, fram);
+    fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
+    fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {

@@ -21,8 +21,11 @@ tools/check_target.sh   # compile and link the target in five FRAM/NOR configura
 ```
 
 Integration tests (with netsim built): `python3 tests/integration/net_test.py` (needs
-pymodbus on PYTHONPATH) and `python3 tests/integration/web_ui_test.py` (needs Python
-Playwright and Chromium).
+pymodbus on PYTHONPATH), `python3 tests/integration/fw_test.py` (firmware update and
+rollback) and `python3 tests/integration/web_ui_test.py` (needs Python Playwright and
+Chromium).
+
+Firmware update files: `tools/mkfwimage.py build.bin cems-x.y.z.cfw --version x.y.z`.
 
 The product build is the STM32CubeIDE project. These host builds are for testing
 outside the IDE.

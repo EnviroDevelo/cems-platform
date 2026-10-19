@@ -19,6 +19,10 @@
  *   GET  /api/log/events[?n=50]          the newest events, newest first (JSON)
  *   GET  /api/log/events.csv[?from=&to=] the whole event log (s since 1970, inclusive)
  *   GET  /api/log/data.csv[?from=&to=]   the whole data log
+ *   GET  /api/fw           firmware status: running and staged versions, trial, upload progress
+ *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (admin)
+ *   POST /api/fw/activate  restart on the staged image (admin); it confirms itself after a
+ *                          healthy trial, or the unit rolls back
  *
  * Every POST must carry the header "X-CEMS: 1" (a page from another site cannot
  * add it without the browser asking first), and writes need a session cookie.
@@ -65,6 +69,13 @@ int  http_parse_head(const char *buf, uint32_t len, http_req_t *r);
 
 /* Handle a complete request; writes the whole response to o. */
 void http_handle(const http_req_t *r, http_out_t *o, uint32_t now_ms);
+
+/* Requests whose body is passed on in pieces rather than buffered (the firmware
+ * upload). The server hands over what it already received in r->body/body_len and a
+ * reader for the rest; rd returns bytes read, <= 0 on timeout or close. */
+typedef int (*http_read_fn)(void *ctx, uint8_t *buf, uint32_t cap);
+bool http_wants_stream(const http_req_t *r);
+void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now_ms);
 
 /* Answer without a request (e.g. 413 body too large, 400 bad request). */
 void http_simple(http_out_t *o, int status, const char *msg);

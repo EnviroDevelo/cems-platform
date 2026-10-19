@@ -17,9 +17,9 @@ INC     = -I$(LW)/src/include -I$(LW)/contrib/ports/freertos/include -Iport/stm3
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-          platform/core/plat_sys.c platform/core/plat_log.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
+          platform/core/plat_sys.c platform/core/plat_log.c platform/core/fw_update.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
-          port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c \
+          port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c port/stm32h5/fw_flash_stm32h5.c \
           platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/http_util.c \
           platform/net/http_api.c platform/net/http_server.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c \
           platform/os/plat_net_tasks.c port/stm32h5/lwip/plat_net_lwip.c port/stm32h5/lwip/ethernetif.c \
@@ -43,7 +43,7 @@ $(OUT):
 
 # Link check: full ELF with startup, system file and the HAL modules the BSP uses,
 # against the ST template linker script patched with noinit_section.ld.
-HALSRC  = $(addprefix $(EXT)/stm32h5xx-hal-driver/Src/stm32h5xx_hal, .c _cortex.c _gpio.c _rcc.c _rcc_ex.c _rtc.c _rtc_ex.c _iwdg.c _pwr.c _pwr_ex.c _spi.c _spi_ex.c _i2c.c _i2c_ex.c _dma.c _dma_ex.c _eth.c _eth_ex.c _rng.c _rng_ex.c)
+HALSRC  = $(addprefix $(EXT)/stm32h5xx-hal-driver/Src/stm32h5xx_hal, .c _cortex.c _gpio.c _rcc.c _rcc_ex.c _rtc.c _rtc_ex.c _iwdg.c _pwr.c _pwr_ex.c _spi.c _spi_ex.c _i2c.c _i2c_ex.c _dma.c _dma_ex.c _eth.c _eth_ex.c _rng.c _rng_ex.c _flash.c _flash_ex.c _icache.c)
 LSRC    = $(EXT)/cmsis-device-h5/Source/Templates/system_stm32h5xx.c $(HALSRC) $(FR)/portable/MemMang/heap_4.c
 LOBJS   = $(OBJS) $(addprefix $(OUT)/,$(notdir $(LSRC:.c=.o))) $(OUT)/startup_stm32h573xx.o
 vpath %.c $(sort $(dir $(LSRC)))

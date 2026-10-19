@@ -100,6 +100,17 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
       <button id="pwbtn">Change password</button>
       <span class="err" id="pwerr"></span>
     </div>
+    <h2 style="margin-top:14px">Firmware</h2>
+    <p id="fwinfo" class="note">-</p>
+    <div class="row">
+      <input type="file" id="fwfile" accept=".cfw">
+      <button id="fwup">Upload</button>
+      <progress id="fwprog" max="1" value="0" style="display:none;width:160px"></progress>
+      <button id="fwact" style="display:none">Restart on new firmware</button>
+      <span class="err" id="fwerr"></span>
+    </div>
+    <p class="note">The new firmware runs on trial after the restart and keeps itself after a minute of normal running.
+      If it fails before that, the unit goes back to the current firmware by itself.</p>
     <p class="note" id="diag"></p>
   </section>
 </main>
@@ -228,6 +239,7 @@ async function refreshInfo() {
     $("who").textContent = i.session.level;
     $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
     $("admin").style.display = level >= 2 ? "block" : "none";
+    if (level >= 2) refreshFw();
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
       `Store status 0x${i.store_status.toString(16)}. Boots ${i.last_fault.boots}` +
       (i.last_fault.code ? `, last fault ${i.last_fault.code} (${i.last_fault.name})` : "") + ".";
@@ -296,6 +308,40 @@ $("pwbtn").onclick = async () => {
   $("pwerr").textContent = "";
   try { await api("/api/password", form({ level: $("pwlvl").value, password: $("newpw").value })); $("newpw").value = ""; $("pwerr").textContent = "Changed"; }
   catch (e) { $("pwerr").textContent = e.message === "access" ? "Your level cannot change that password" : "4-32 characters, no spaces"; }
+};
+async function refreshFw() {
+  try {
+    const f = await api("/api/fw");
+    let t = `Running ${f.running}`;
+    if (f.state === "trial") t += ` (on trial: keeps itself in ${f.trial_left_s} s)`;
+    if (f.rolled_back) t += ". The last update failed its trial and was rolled back";
+    if (f.staged) t += `. Ready in the spare bank: ${f.staged}`;
+    $("fwinfo").textContent = t + ".";
+    $("fwact").style.display = f.staged && f.state !== "trial" ? "" : "none";
+    $("fwact").textContent = `Restart on ${f.staged || "new firmware"}`;
+  } catch (e) { }
+}
+$("fwup").onclick = () => {
+  const f = $("fwfile").files[0]; $("fwerr").textContent = "";
+  if (!f) { $("fwerr").textContent = "Choose a .cfw file first"; return; }
+  const x = new XMLHttpRequest(), p = $("fwprog");
+  x.open("POST", "/api/fw/upload"); x.setRequestHeader("X-CEMS", "1");
+  x.setRequestHeader("Content-Type", "application/octet-stream");
+  p.style.display = ""; p.value = 0;
+  x.upload.onprogress = e => { if (e.lengthComputable) p.value = e.loaded / e.total; };
+  x.onload = () => {
+    p.style.display = "none";
+    let j = {}; try { j = JSON.parse(x.responseText); } catch (e) { }
+    $("fwerr").textContent = x.status === 200 ? `Uploaded ${j.staged}` : (j.error || "Upload failed");
+    refreshFw();
+  };
+  x.onerror = () => { p.style.display = "none"; $("fwerr").textContent = "Upload failed (connection)"; };
+  x.send(f);
+};
+$("fwact").onclick = async () => {
+  if (!confirm("Restart the instrument on the new firmware now? Measurement stops for the restart.")) return;
+  try { await api("/api/fw/activate", ""); $("fwerr").textContent = "Restarting..."; }
+  catch (e) { $("fwerr").textContent = e.message; }
 };
 $("restorebtn").onclick = async () => {
   const f = $("restorefile").files[0]; $("restoreerr").textContent = "";

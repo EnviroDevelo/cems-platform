@@ -55,6 +55,16 @@ nor_dev_t *bsp_log_nor(void) {
     return &d;
 }
 
+#include "fw_flash_sim.h"
+uint8_t bsp_host_bank[2][256u * 1024u];          /* small banks: enough for the tests */
+fw_flash_sim_t bsp_host_fw_sim;
+struct fw_flash *bsp_fw_flash(void) {
+    static fw_flash_t f;
+    static bool done;
+    if (!done) { fw_flash_sim_init(&f, &bsp_host_fw_sim, bsp_host_bank[0], bsp_host_bank[1], sizeof bsp_host_bank[0]); done = true; }
+    return &f;
+}
+
 void bsp_random(void *buf, uint32_t len) {
     FILE *f = fopen("/dev/urandom", "rb");
     if (!f || fread(buf, 1, len, f) != len) { uint8_t *p = buf; for (uint32_t k = 0; k < len; ++k) p[k] = (uint8_t)(k * 37u + 11u); }

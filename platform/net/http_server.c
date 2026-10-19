@@ -7,6 +7,13 @@
 
 typedef struct { int fd; http_server_t *s; } conn_t;
 
+static int recv_fd(void *ctx, uint8_t *buf, uint32_t cap) {
+    conn_t *c = ctx;
+    ssize_t got = recv(c->fd, buf, cap, 0);
+    if (c->s->alive) c->s->alive();
+    return got > 0 ? (int)got : -1;
+}
+
 static int send_fd(void *ctx, const void *p, size_t n) {
     conn_t *c = ctx;
     int fd = c->fd;
@@ -58,6 +65,13 @@ static void serve(http_server_t *s, int fd) {
     }
     if (hl < 0) { s->bad_requests++; http_simple(&o, 400, "bad request"); return; }
     if (!strcmp(r.method, "POST") && !r.has_length) { s->bad_requests++; http_simple(&o, 400, "length required"); return; }
+    if (http_wants_stream(&r)) {                        /* firmware upload: not buffered */
+        r.body = s->buf + hl;
+        r.body_len = n - (uint32_t)hl > r.content_length ? r.content_length : n - (uint32_t)hl;
+        http_handle_stream(&r, recv_fd, &c, &o, bsp_ms());
+        s->served++;
+        return;
+    }
     if (r.content_length > s->cap - (uint32_t)hl) { s->too_large++; http_simple(&o, 413, "too large"); return; }
     while (n < (uint32_t)hl + r.content_length) {       /* body */
         ssize_t got = recv(fd, s->buf + n, (uint32_t)hl + r.content_length - n, 0);

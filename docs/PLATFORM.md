@@ -1,6 +1,6 @@
 # CEMS Core Platform: firmware structure, scan contract and integration rules
 
-Rev D, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking. Rev D: event log and data logger). Implements the "Firmware architecture and toolchain" section of
+Rev D, 19 Oct 2026 (Rev B: parameter table, arbitration, FRAM store. Rev C: blocks in the table, Modbus TCP, web interface, lwIP networking. Rev D: event log and data logger, firmware update over the network). Implements the "Firmware architecture and toolchain" section of
 *CEMS Supervisor Design Specification Rev 1.00* (file name: *CEMS Instrument Core
 Platform Design Specification Rev 1.00.pdf*). This is the code that every instrument
 in the family shares. The VM/MUX program translated in `Existing Design/Analysis/stage4`
@@ -26,10 +26,11 @@ runs on top of it.
 | Web interface (port 80): JSON API, logins, sessions, backup/restore, the page | `http_api.h`, `http_server.h`, `web_auth.h`, `platform/net/*`, `web/index.html` | Done; host-tested, on real sockets, and in headless Chromium |
 | Network on the H5: lwIP 2.2.1 + FreeRTOS, Ethernet driver (LAN8742 PHY), bring-up, live address changes | `port/stm32h5/lwip/*`, `platform/os/plat_net_tasks.c` | Compiled and linked with the real lwIP, HAL and PHY driver; not yet run on hardware |
 | Event log and data logger on serial NOR, CSV export, event list on the web page | `plat_log.h/.c`, `nor.h`, `nor_sim.c`, `log_csv.h/.c`, `port/stm32h5/nor_spi.c` | Done; host-tested incl. 400 random power cuts, on real sockets and in Chromium. SPI NOR driver compiled and linked, not yet run on hardware |
+| Firmware update over the network: streamed upload into the free flash bank, bank swap, trial boot, automatic confirm or rollback; image tool | `fw_update.h/.c`, `fw_flash_sim.c`, `port/stm32h5/fw_flash_stm32h5.c`, `tools/mkfwimage.py` | Done; host-tested, end to end on real sockets (upload, swap, trial, confirm, crash, rollback) and in Chromium. Flash driver compiled and linked, not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
-Not in this revision (next modules, in the order proposed): firmware
-update/bootloader; EVE driver and touch UI; alarm manager.
+Not in this revision (next modules, in the order proposed): EVE driver and touch UI;
+alarm manager; image signing (D14).
 
 ## 2. Tasks and priorities
 
@@ -224,6 +225,35 @@ switches to 4-byte addressing by itself.
 the newest events as JSON, which the web page shows. Without flash fitted (the DK), a 32 KB
 RAM stand-in keeps the event log until power-off and the page says so.
 
+## 5b. Firmware update
+
+The STM32H573 has two 1 MB flash banks; the running image is always mapped at
+0x08000000 and the other bank is free. An admin uploads an image file (`.cfw`, made by
+`tools/mkfwimage.py` from the build's `.bin`) on the web page. It is streamed straight
+into the free bank while the instrument keeps measuring: the header is checked first
+(product, size), the payload is hashed as it arrives, and at the end the flash is read
+back and hashed again. Nothing changes until the admin presses "Restart on x.y.z".
+
+Then the boot record in FRAM is set, the banks are swapped (option bit SWAP_BANK) and the
+unit restarts on the new image, which runs **on trial**. After `fw_trial_ms` (60 s) of
+healthy running (the scan running, every task checking in, which the watchdog
+enforces) it keeps itself and logs `fw_update 0.3.0>0.4.0`. If it resets before
+that (watchdog, fault, or a second power cut; one power cut is tolerated), the next
+boot swaps back to the previous image, which logs `fw_rollback`. The previous image
+is never erased by an update, and an image that went bad in flash after staging is
+never swapped to (checked again just before the swap).
+
+Limits of this foundation, all planned:
+- an image too broken to reach `fw_boot()` (very early in start-up) can't roll itself
+  back. The watchdog keeps resetting it and the debugger or a bootloader is needed. An
+  immutable first-stage bootloader (ST's OEMiRoT, or MCUboot) closes this and comes with
+  secure boot;
+- images are not signed yet (D14): integrity is SHA-256, authority is the admin
+  login. `fw_signature_check()` is the hook for ECDSA P-256;
+- the free bank's physical number for the sector-erase register under SWAP_BANK
+  follows ST's FLASH_SwapBank example; check it on the DK with the debugger attached
+  before the first update.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -249,9 +279,10 @@ work before integration.
 | Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 7,835 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
+| Firmware update end to end (`tests/integration/fw_test.py`): image from `tools/mkfwimage.py`, netsim with file-backed banks; a swap exits the process as a reset | 23 checks: login needed; 300 KB upload; damaged file and other-hardware image refused; activate, restart as the new version on trial, confirmed after the trial, events logged; second update "hangs" in its trial, watchdog reset rolls it back, the old version runs with `rolled_back`, the failed image stays available |
 | Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 60 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer |
-| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM and NOR: 156 KB flash (of 2 MB), 259 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
+| Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Admin firmware upload with progress, "Ready in the spare bank" and the restart button (`docs/web_firmware.png`); login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM and NOR: 163 KB flash (of a 1 MB bank), 260 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
 ## 8. Decisions (working defaults, change any of them)
@@ -270,6 +301,8 @@ work before integration.
 | D10 | MAC address | Locally administered, from the chip unique ID | Fine for site networks. For production, buy an IEEE OUI block or fit an EUI-48 chip (e.g. 24AA02E48) |
 | D12 | Log full | Overwrite the oldest sector (4 KB); events and data in separate rings | A CEMS log that stops recording is worse than one that loses the oldest days; separate rings keep the audit trail from being pushed out by data |
 | D13 | Log flash | 16 MB SPI NOR (W25Q128JV or equivalent JEDEC part) on its own chip select; the DK's OCTOSPI flash is not used | Cheap, and the logger needs nothing faster than plain SPI. Decide at schematic; any size from 64 KB works |
+| D14 | Firmware authenticity | Unsigned images accepted now (SHA-256 integrity, admin login, product ID check); ECDSA P-256 signatures with the public key in the image when the security work is done (`PLAT_FW_REQUIRE_SIGNED 1`) | Anyone with the admin password can load firmware today. Signing needs a key-management decision (who holds the private key) |
+| D15 | Trial length and rollback rule | 60 s healthy running; a watchdog/fault reset or a second power cut during the trial rolls back | Long enough to cover start-up and the first scans and connections, short enough that a field engineer sees the result |
 | D11 | Web transport | HTTP on port 80 now; HTTPS (mbedTLS) later | The spec allows HTTP on an isolated control network; HTTPS adds about 100 KB flash and 40 KB RAM and can come with the firmware-update work |
 
 ## 9. Repository layout

@@ -44,6 +44,27 @@ async def run(unit):
         await pg.screenshot(path=os.path.join(ROOT, "build", "web_operator.png"), full_page=True)
         print("refused value message:", repr(refused)); ok &= refused == "Outside the allowed range"
         print("value shown after change:", repr(shown)); ok &= shown == "1500 ms"
+        # firmware upload as admin
+        img = os.path.join(TMPD, "fw.bin"); open(img, "wb").write(os.urandom(150000))
+        cfw = os.path.join(TMPD, "fw.cfw")
+        subprocess.run([sys.executable, os.path.join(ROOT, "tools", "mkfwimage.py"), img, cfw, "--version", "0.4.0"],
+                       check=True, stdout=subprocess.DEVNULL)
+        await pg.click("#logoutbtn")
+        await pg.wait_for_selector("#loginrow", state="visible")
+        await pg.select_option("#lvl", "admin")
+        await pg.fill("#pw", "2222")
+        await pg.click("#loginbtn")
+        await pg.wait_for_selector("#admin", state="visible")
+        await pg.set_input_files("#fwfile", cfw)
+        await pg.click("#fwup")
+        await pg.wait_for_function("document.getElementById('fwerr').textContent.length > 0", timeout=15000)
+        fwmsg = await pg.inner_text("#fwerr")
+        await pg.wait_for_timeout(2500)
+        fwinfo = await pg.inner_text("#fwinfo")
+        act = await pg.is_visible("#fwact")
+        await pg.locator("#admin").screenshot(path=os.path.join(ROOT, "build", "web_firmware.png"))
+        print("firmware:", repr(fwmsg), "|", repr(fwinfo), "| activate button:", act)
+        ok &= fwmsg == "Uploaded 0.4.0" and "Ready in the spare bank: 0.4.0" in fwinfo and act
         # connection loss: stop the unit, the page must say so and grey out
         unit.send_signal(signal.SIGTERM); unit.wait(timeout=10)
         await pg.wait_for_timeout(2500)
@@ -57,7 +78,8 @@ async def run(unit):
         return ok
 
 def main():
-    tmp = tempfile.mkdtemp()
+    global TMPD
+    tmp = TMPD = tempfile.mkdtemp()
     fram, nor = os.path.join(tmp, "fram.bin"), os.path.join(tmp, "nor.bin")
     unit = subprocess.Popen([os.path.join(ROOT, "build", "netsim"), "15095", "18095", fram, nor],
                             stdin=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)

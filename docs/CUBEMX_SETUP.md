@@ -119,6 +119,22 @@ CubeMX generates `HAL_ETH_MspInit` (the pins). The platform's `ethernetif.c` def
 On first power-up the unit answers on 192.168.1.50 (web: http://192.168.1.50/, Modbus
 TCP port 502). Change the address from the web page (admin) or, later, the touchscreen.
 
+## 3d. Firmware update
+
+Nothing to configure in CubeMX beyond the HAL modules: FLASH and ICACHE (on by default).
+Add `port/stm32h5/fw_flash_stm32h5.c` to the build. To produce update files:
+
+1. Project → Properties → C/C++ Build → Settings → MCU Post build outputs → tick
+   "Convert to binary file (-O binary)".
+2. After a build: `python3 tools/mkfwimage.py Debug/<project>.bin cems-0.4.0.cfw --version 0.4.0`
+   (keep `--version` the same as the version string in `plat_app_t.ident.revision`).
+3. On the web page (admin): Firmware → choose the .cfw → Upload → "Restart on 0.4.0".
+
+The first update on the DK should be done with the debugger attached (see
+`docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to
+return to a plain setup, clear it in STM32CubeProgrammer (Option bytes → User
+configuration → SWAP_BANK).
+
 ## 4. FreeRTOS
 
 1. Help → Manage embedded software packages → STMicroelectronics → install **X-CUBE-FREERTOS** (FreeRTOS V11.x).
@@ -134,7 +150,7 @@ TCP port 502). Change the address from the web page (admin) or, later, the touch
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, and for a first test `app_demo/`, into the project.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, and for a first test `app_demo/`, into the project.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.

@@ -51,6 +51,10 @@ nvm_dev_t *bsp_param_nvm(void);
  * NULL when one is configured but does not answer (logging off, alarm). */
 nor_dev_t *bsp_log_nor(void);
 
+/* The two program-flash banks for firmware updates (fw_update.h); NULL if not available. */
+struct fw_flash;
+struct fw_flash *bsp_fw_flash(void);
+
 /* Random bytes for password salts and web session tokens (hardware RNG on the H5). */
 void bsp_random(void *buf, uint32_t len);
 

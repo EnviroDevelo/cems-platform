@@ -4,6 +4,10 @@
  *
  *   ./build/netsim [modbus_port] [http_port] [fram_file] [nor_file]
  *   (defaults 1502 8080 netsim_fram.bin netsim_nor.bin; the NOR file holds the logs)
+ * The two program-flash banks are netsim_fw.bin (next to the NOR file). A firmware
+ * activation swaps them and exits with status 3 ("reset"); start it again to boot the
+ * "new image". Environment: CEMS_FW_VERSION (the version this run reports),
+ * CEMS_RESET_CAUSE (power, software, iwdg), CEMS_FW_TRIAL_MS (trial length).
  *
  * DI0 is driven by a pattern (8 s on, 4 s off) so values change on their own. */
 #define _POSIX_C_SOURCE 200809L
@@ -26,6 +30,7 @@
 #include "plat_diag.h"
 #include "plat_tasks.h"
 #include "app_demo.h"
+#include "fw_update.h"
 
 /* ---------------- critical sections ---------------- */
 static pthread_mutex_t crit;
@@ -56,7 +61,12 @@ void bsp_io_read(plat_io_in_t *in) { in->di = sim_di; }
 void bsp_io_write(const plat_io_out_t *out) { sim_out = *out; }
 void bsp_io_safe_state(void) { memset(&sim_out, 0, sizeof sim_out); }
 void bsp_wdg_kick(void) { }
-bsp_reset_cause_t bsp_reset_cause(void) { return BSP_RESET_POWER_ON; }
+bsp_reset_cause_t bsp_reset_cause(void) {
+    const char *c = getenv("CEMS_RESET_CAUSE");
+    if (c && !strcmp(c, "software")) return BSP_RESET_SOFTWARE;
+    if (c && !strcmp(c, "iwdg")) return BSP_RESET_IWDG;
+    return BSP_RESET_POWER_ON;
+}
 void bsp_system_reset(void) { fprintf(stderr, "reset requested\n"); exit(3); }
 void bsp_random(void *buf, uint32_t len) {
     FILE *f = fopen("/dev/urandom", "rb");
@@ -98,6 +108,48 @@ static int n_erase(nor_dev_t *d, uint32_t a) {
     return nor_sync(a, 4096u);
 }
 static nor_dev_t nor_dev = { n_read, n_prog, n_erase, NOR_SIZE, 4096u, 256u, true, NULL };
+/* program flash: two 1 MB banks + the swap flag, in a file */
+#include "fw_flash_sim.h"
+#define FW_BANK (1024u * 1024u)
+static char fw_path[512];
+static uint8_t fw_banks[2][FW_BANK];
+static fw_flash_sim_t fw_sim;
+static fw_flash_t fw_dev;
+static void fw_file_save(void) {
+    FILE *f = fopen(fw_path, "wb");
+    if (!f) return;
+    fwrite(fw_banks, 1, sizeof fw_banks, f);
+    uint8_t sw = fw_sim.swapped ? 1 : 0;
+    fwrite(&sw, 1, 1, f);
+    fclose(f);
+}
+static int (*sim_erase)(fw_flash_t *, uint32_t);
+static int (*sim_write)(fw_flash_t *, uint32_t, const void *, uint32_t);
+static int fw_erase_f(fw_flash_t *f, uint32_t off) { int r = sim_erase(f, off); fw_file_save(); return r; }
+static int fw_write_f(fw_flash_t *f, uint32_t off, const void *p, uint32_t n) { int r = sim_write(f, off, p, n); if (n >= 256u || off + n >= FW_BANK - 8192u) fw_file_save(); return r; }
+static void fw_swap_f(fw_flash_t *f) {
+    (void)f;
+    fw_sim.swapped = !fw_sim.swapped;
+    fw_file_save();
+    fprintf(stderr, "netsim: banks swapped, resetting (exit 3)\n");
+    _exit(3);
+}
+struct fw_flash *bsp_fw_flash(void) {
+    fw_flash_sim_init(&fw_dev, &fw_sim, fw_banks[0], fw_banks[1], FW_BANK);
+    FILE *f = fopen(fw_path, "rb");
+    if (f) {
+        size_t n = fread(fw_banks, 1, sizeof fw_banks, f);
+        uint8_t sw = 0;
+        if (n == sizeof fw_banks && fread(&sw, 1, 1, f) == 1) fw_sim.swapped = sw != 0;
+        fclose(f);
+    } else {
+        memset(fw_banks, 0xFF, sizeof fw_banks);
+    }
+    sim_erase = fw_dev.erase; sim_write = fw_dev.write;
+    fw_dev.erase = fw_erase_f; fw_dev.write = fw_write_f; fw_dev.swap_and_reset = fw_swap_f;
+    return &fw_dev;
+}
+
 nor_dev_t *bsp_log_nor(void) {
     memset(nor_mem, 0xFF, sizeof nor_mem);
     FILE *f = fopen(nor_path, "rb");
@@ -132,7 +184,12 @@ static void *scan_thread(void *a) {
 }
 static void *store_thread(void *a) {
     (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
-    while (running) { sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); }
+    uint32_t fw_t = bsp_ms(), fw_scans = 0;
+    while (running) {
+        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms());
+        uint32_t now = bsp_ms();
+        if (now - fw_t >= 1000u) { uint32_t sc = scan_stats(&plat_scan).scans; fw_service(now, sc - fw_scans >= 50u); fw_scans = sc; fw_t = now; }
+    }
     return NULL;
 }
 static void *modbus_thread(void *a) { (void)a; while (running) mbtcp_poll(&mbs, 100); return NULL; }
@@ -168,6 +225,9 @@ int main(int argc, char **argv) {
     uint16_t mport = argc > 1 ? (uint16_t)atoi(argv[1]) : 1502, hport = argc > 2 ? (uint16_t)atoi(argv[2]) : 8080;
     if (argc > 3) fram_path = argv[3];
     if (argc > 4) nor_path = argv[4];
+    snprintf(fw_path, sizeof fw_path, "%.*sfw.bin", (int)(strlen(nor_path) > 7 ? strlen(nor_path) - 7 : 0), nor_path);
+    if (getenv("CEMS_FW_TRIAL_MS")) fw_trial_ms = (uint32_t)atoi(getenv("CEMS_FW_TRIAL_MS"));
+    const char *fwver = getenv("CEMS_FW_VERSION");
     pthread_mutexattr_t ma; pthread_mutexattr_init(&ma); pthread_mutexattr_settype(&ma, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&crit, &ma);
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -185,16 +245,18 @@ int main(int argc, char **argv) {
         bsp_rtc_t rt; bsp_rtc_read(&rt);
         plat_log_cfg_t lc = { .nor = bsp_log_nor(), .fram = &fram_dev, .fram_addr = STORE_META_ADDR,
                               .chans = app->log_chans, .n_chans = (unsigned)app->n_log_chans,
-                              .fw_version = app->ident.revision, .reset_cause = BSP_RESET_POWER_ON,
+                              .fw_version = fwver ? fwver : app->ident.revision, .reset_cause = (uint8_t)plat_diag.last_reset_cause,
                               .unix_now = plat_unix_from_civil(rt.year, rt.month, rt.day, rt.hours, rt.minutes, rt.seconds) };
         plat_log_init(&lc, bsp_ms());
+        fw_init(bsp_fw_flash(), &fram_dev, STORE_META_ADDR + 128u, fwver ? fwver : app->ident.revision);
+        fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* may "reset" (exit 3) to roll back */
     }
     param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
     auth_init();
     int bad = mb_init(app->modbus_map, app->n_modbus_map, &app->ident);
     if (bad) { fprintf(stderr, "modbus map error at entry %d\n", bad - 1); return 1; }
-    http_cfg_t hc = { .product = app->ident.product, .fw_version = app->ident.revision, .scan = &plat_scan,
+    http_cfg_t hc = { .product = app->ident.product, .fw_version = fwver ? fwver : app->ident.revision, .scan = &plat_scan,
                       .scratch = http_buf, .scratch_size = sizeof http_buf, .wait = http_wait,
                       .log_chans = app->log_chans, .n_log_chans = (unsigned)app->n_log_chans };
     http_api_init(&hc);
