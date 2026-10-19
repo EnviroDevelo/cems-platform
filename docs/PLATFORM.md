@@ -20,7 +20,7 @@ runs on top of it.
 | Board support: interface, PC simulation, STM32H5 | `bsp.h`, `platform/bsp/bsp_host.c`, `port/stm32h5/bsp_stm32h5.c` | H5 version compiled and linked, not yet run on the DK |
 | Shared parameter table, local/remote arbitration, remote-link watchdog | `param.h/.c`, `plat_sys.c` | Done, host-tested |
 | Parameter store: FRAM images, dual copies, factory/user split, fail safe, migration, backup/restore | `param_store.h/.c`, `nvm.h`, `nvm_ram.c`, `plat_crc32.c`, `platform/os/plat_store_task.c` | Done, host + RTOS tested |
-| SPI FRAM driver | `port/stm32h5/nvm_fram_spi.c` | Compiled and linked, not yet run on hardware |
+| FRAM drivers: I2C (DMA, interrupt or polling) and SPI | `port/stm32h5/nvm_fram_i2c.c`, `nvm_fram_spi.c` | Compiled and linked in every configuration, not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done |
 
 Not in this revision (next modules, in the order proposed): Modbus TCP and HTTP/JSON
@@ -116,9 +116,23 @@ product's life.
 | Backup and restore with integrity checks | `param_store_export/import`: CRC over the file and each image; structure checked before anything is applied; factory part only at factory level | `t_export_import` |
 | Out-of-range stored value | Ignored, default kept, `PSTAT_REC_SKIPPED` | `t_out_of_range_stored` |
 
-**Memory map (128 KB FRAM).** Factory A/B at 0x00000/0x01000 (4 KB each), user A/B at
-0x02000/0x0C000 (40 KB each, against 10.8 KB used today), 0x16000 to 0x1FFFF free for
-the logger's write pointer and future use.
+**Memory map.** Chosen by `PLAT_FRAM_SIZE` (plat_config.h):
+
+| | 32 KB (default: MB85RC256V, Adafruit 1895) | 128 KB (`PLAT_FRAM_SIZE 131072u`) |
+|---|---|---|
+| Factory A / B | 0x0000 / 0x0400, 1 KB each | 0x00000 / 0x01000, 4 KB each |
+| User A / B | 0x0800 / 0x4200, 14.5 KB each | 0x02000 / 0x0C000, 40 KB each |
+| Reserved (logger write pointer) | 0x7C00-0x7FFF | 0x16000+ |
+
+Sizing against the old project's actual retained set (`data_dictionary.csv`, 342 tags):
+a 12,540-byte user image, which leaves 2,308 bytes (16%) of headroom in the 32 KB map.
+If the real table doesn't fit, the store reports `PSTAT_TABLE_ERROR` and the platform
+stops at start-up with outputs safe; it never truncates. The 2,754 bytes of UTF-16
+strings could be stored as UTF-8 if space ever runs short.
+
+**FRAM drivers.** I2C (`nvm_fram_i2c.c`, DMA by default so a ~110 ms save at 1 MHz uses
+no CPU and doesn't starve the network tasks; polling during the boot load) and SPI
+(`nvm_fram_spi.c`). `bsp_param_nvm()` tries I2C, then SPI, then the RAM stand-in.
 
 **Known limits of this revision.**
 - External writes carry one scalar each. Writing a *string* from the touchscreen or
@@ -148,10 +162,10 @@ work before integration.
 
 | Check | Result |
 |---|---|
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4 | 1,048 checks, 0 failures, gcc -Werror with AddressSanitizer and UBSan |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4 | 1,048 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror, with and without the SPI FRAM driver. ELF: 23 KB flash; 150 KB RAM with FRAM (48 KB heap, 39 KB stacks, 44 KB store staging), 238 KB on the bare DK (adds a 90 KB RAM stand-in for the FRAM). `plat_diag` is in the NOLOAD `.noinit` section |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror in five configurations (no FRAM, SPI, I2C+DMA, I2C+interrupt, I2C with the 128 KB map). With the I2C part: 27.5 KB flash, 122 KB RAM; bare DK 154 KB RAM (adds a 32 KB RAM stand-in). `plat_diag` is in the NOLOAD `.noinit` section |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
 ## 7. Decisions (working defaults, change any of them)
@@ -163,7 +177,7 @@ work before integration.
 | D3 | Network stack | lwIP 2.2.1 from ST's `stm32h5-classic-coremw-apps`, added by hand | CubeMX doesn't offer lwIP for the H5 (ST recommends NetX Duo). The spec says lwIP; NetX Duo is ThreadX-based, and choosing it would mean changing the RTOS |
 | D4 | Hard-fault handling | Record PC/LR in `plat_diag`, then reset | Not written yet; small, belongs in the port |
 | D5 | Factory network default | Static 192.168.1.50/24, gateway 192.168.1.1, DHCP off | Always settable from the touchscreen, so a unit can be recovered locally |
-| D6 | FRAM size | 128 KB (1 Mbit, e.g. Infineon FM25V10 / CY15B104 class, or Fujitsu MB85RS1MT) | Two copies of 10.8 KB plus growth and logger metadata don't fit a 32 KB part comfortably |
+| D6 | FRAM | Development: your 32 KB I2C MB85RC256V (16% headroom with today's data). Product: decide at schematic; a 128 KB part (e.g. MB85RC1MT, I2C, same driver) is one setting away | 32 KB works but is tight once the instrument family adds data |
 | D7 | Modbus writes at first power-up | Enabled; any client IP | Plugs into a DAHS without setup; an admin can make Modbus read-only or limit it to one IP |
 | D8 | Touchscreen writes in REMOTE mode | Refused, except the mode switch and `PF_ANY_MODE` entries | Stops the local panel and the PLC fighting over a setpoint; the spec only states the remote side |
 

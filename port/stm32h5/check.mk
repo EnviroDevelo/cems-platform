@@ -15,7 +15,7 @@ SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/ta
           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
           platform/core/plat_sys.c platform/bsp/nvm_ram.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
-          port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c \
+          port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c \
           app_demo/app_demo.c port/stm32h5/check/check_main.c \
           $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c \
           $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/port.c $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/portasm.c
@@ -33,7 +33,7 @@ $(OUT):
 
 # Link check: full ELF with startup, system file and the HAL modules the BSP uses,
 # against the ST template linker script patched with noinit_section.ld.
-HALSRC  = $(addprefix $(EXT)/stm32h5xx-hal-driver/Src/stm32h5xx_hal, .c _cortex.c _gpio.c _rcc.c _rcc_ex.c _rtc.c _rtc_ex.c _iwdg.c _pwr.c _pwr_ex.c _spi.c _spi_ex.c _dma.c _dma_ex.c)
+HALSRC  = $(addprefix $(EXT)/stm32h5xx-hal-driver/Src/stm32h5xx_hal, .c _cortex.c _gpio.c _rcc.c _rcc_ex.c _rtc.c _rtc_ex.c _iwdg.c _pwr.c _pwr_ex.c _spi.c _spi_ex.c _i2c.c _i2c_ex.c _dma.c _dma_ex.c)
 LSRC    = $(EXT)/cmsis-device-h5/Source/Templates/system_stm32h5xx.c $(HALSRC) $(FR)/portable/MemMang/heap_4.c
 LOBJS   = $(OBJS) $(addprefix $(OUT)/,$(notdir $(LSRC:.c=.o))) $(OUT)/startup_stm32h573xx.o
 vpath %.c $(sort $(dir $(LSRC)))

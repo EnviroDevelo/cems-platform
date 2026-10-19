@@ -67,17 +67,37 @@ typedef struct {
     uint32_t usr_a, usr_b, usr_slot;
 } store_layout_t;
 
-#ifndef STORE_FAC_SLOT
-#define STORE_FAC_SLOT  (4u * 1024u)
-#endif
-#ifndef STORE_USR_SLOT
-#define STORE_USR_SLOT  (40u * 1024u)    /* 10.8 KB retained today, room to grow */
+/* Memory map, chosen by FRAM size.
+ *   32 KB (development part: Adafruit 1895 = MB85RC256V, I2C):
+ *     FAC A 0x0000, FAC B 0x0400 (1 KB each), USR A 0x0800, USR B 0x4200 (14.5 KB each),
+ *     0x7C00-0x7FFF (1 KB) reserved for the logger's write pointer.
+ *     User copies hold the 10.8 KB the old project retains plus ~1.9 KB record
+ *     overhead, leaving ~2 KB headroom (decision D6).
+ *   128 KB (e.g. MB85RC1MT I2C, or an SPI part):
+ *     FAC 0x00000/0x01000 (4 KB), USR 0x02000/0x0C000 (40 KB), 0x16000+ reserved. */
+#include "plat_config.h"
+#if PLAT_FRAM_SIZE >= 131072u
+#define STORE_FAC_SLOT  4096u
+#define STORE_USR_SLOT  40960u
+#define STORE_FAC_A     0x00000u
+#define STORE_FAC_B     0x01000u
+#define STORE_USR_A     0x02000u
+#define STORE_USR_B     0x0C000u
+#define STORE_META_ADDR 0x16000u
+#else
+#define STORE_FAC_SLOT  1024u
+#define STORE_USR_SLOT  14848u
+#define STORE_FAC_A     0x0000u
+#define STORE_FAC_B     0x0400u
+#define STORE_USR_A     0x0800u
+#define STORE_USR_B     0x4200u
+#define STORE_META_ADDR 0x7C00u
 #endif
 #ifndef STORE_SAVE_PERIOD_MS
 #define STORE_SAVE_PERIOD_MS 1000u       /* changes reach FRAM within about 1 s */
 #endif
 #define STORE_HDR_SIZE  32u
-extern const store_layout_t store_layout_default;   /* FAC 0x00000/0x01000, USR 0x02000/0x0C000; 0x16000+ free */
+extern const store_layout_t store_layout_default;   /* the map above */
 
 /* Status bits (also published as parameter PARAM_ID_STORE_STATUS) */
 #define PSTAT_FAC_VALID      0x0001u  /* a valid factory image was loaded */

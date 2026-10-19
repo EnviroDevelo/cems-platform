@@ -12,6 +12,7 @@
 #include "bsp.h"
 #include "plat_io.h"
 #include "nvm.h"
+#include "plat_config.h"
 
 #ifndef DI_01_ACTIVE_LOW
 #define DI_01_ACTIVE_LOW 0
@@ -383,21 +384,24 @@ bsp_reset_cause_t bsp_reset_cause(void) {
 
 void bsp_system_reset(void) { NVIC_SystemReset(); }
 
-/* ---------------- parameter NVM ---------------- */
+/* ---------------- parameter NVM ----------------
+ * I2C FRAM if FRAM_I2C_HANDLE is defined in main.h (the development part),
+ * else SPI FRAM if FRAM_CS is labelled, else (bare DK) a RAM stand-in. */
+bool nvm_fram_i2c_open(nvm_dev_t *d);    /* nvm_fram_i2c.c */
 bool nvm_fram_spi_open(nvm_dev_t *d);    /* nvm_fram_spi.c */
 
 nvm_dev_t *bsp_param_nvm(void) {
     static nvm_dev_t dev;
+    if (nvm_fram_i2c_open(&dev)) return &dev;
     if (nvm_fram_spi_open(&dev)) return &dev;
-#ifndef FRAM_CS_Pin
-    /* No FRAM in this hardware configuration (e.g. the bare STM32H573I-DK): a RAM
-     * stand-in with the default layout, so the store logic runs; nothing survives
-     * power-off and the store reports PSTAT_NVM_VOLATILE. */
-    static uint8_t   mem[0x16000];
+#if !defined(FRAM_CS_Pin) && !defined(FRAM_I2C_HANDLE)
+    /* No FRAM in this hardware configuration: RAM stand-in with the same map, so the
+     * store logic runs; nothing survives power-off (PSTAT_NVM_VOLATILE). */
+    static uint8_t   mem[PLAT_FRAM_SIZE];
     static nvm_ram_t ram;
     nvm_ram_init(&dev, &ram, mem, sizeof mem, false);
     return &dev;
 #else
-    return NULL;          /* FRAM configured but not answering: store runs on defaults, alarm raised */
+    return NULL;          /* FRAM configured but not answering: defaults + calibration alarm */
 #endif
 }

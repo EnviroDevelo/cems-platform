@@ -11,9 +11,15 @@
 #define MAX_ITEMS    (PARAM_MAX + 256)
 
 const store_layout_t store_layout_default = {
-    .fac_a = 0x00000u, .fac_b = 0x01000u, .fac_slot = STORE_FAC_SLOT,
-    .usr_a = 0x02000u, .usr_b = 0x0C000u, .usr_slot = STORE_USR_SLOT,
+    .fac_a = STORE_FAC_A, .fac_b = STORE_FAC_B, .fac_slot = STORE_FAC_SLOT,
+    .usr_a = STORE_USR_A, .usr_b = STORE_USR_B, .usr_slot = STORE_USR_SLOT,
 };
+/* the map must not overlap and must fit the part */
+_Static_assert(STORE_FAC_A + STORE_FAC_SLOT <= STORE_FAC_B, "FAC A overlaps FAC B");
+_Static_assert(STORE_FAC_B + STORE_FAC_SLOT <= STORE_USR_A, "FAC B overlaps USR A");
+_Static_assert(STORE_USR_A + STORE_USR_SLOT <= STORE_USR_B, "USR A overlaps USR B");
+_Static_assert(STORE_USR_B + STORE_USR_SLOT <= STORE_META_ADDR, "USR B overlaps the logger area");
+_Static_assert(STORE_META_ADDR < PLAT_FRAM_SIZE, "map larger than the FRAM");
 
 extern uint32_t param_store_status_word;    /* storage of PARAM_ID_STORE_STATUS (param.c) */
 

@@ -4,7 +4,7 @@
  * CPHA 0), software NSS, plus a GPIO output labelled FRAM_CS (idle high).
  * main.h (USER CODE section) may override:
  *   FRAM_SPI_HANDLE  hspi1     the HAL handle
- *   FRAM_SIZE        131072    bytes (128 KB recommended: 1 Mbit part)
+ *   FRAM_SIZE        PLAT_FRAM_SIZE  bytes
  *   FRAM_ADDR_BYTES  3         2 for parts up to 64 KB, 3 above
  *
  * Commands used: WREN 06h, WRDI 04h, RDSR 05h, WRSR 01h, READ 03h, WRITE 02h.
@@ -13,12 +13,13 @@
  * vendor, unlike RDID). */
 #include "main.h"
 #include "nvm.h"
+#include "plat_config.h"
 
 #ifndef FRAM_SPI_HANDLE
 #define FRAM_SPI_HANDLE hspi1
 #endif
 #ifndef FRAM_SIZE
-#define FRAM_SIZE 131072u
+#define FRAM_SIZE PLAT_FRAM_SIZE
 #endif
 #ifndef FRAM_ADDR_BYTES
 #define FRAM_ADDR_BYTES 3

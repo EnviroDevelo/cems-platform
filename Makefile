@@ -27,8 +27,13 @@ $(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c te
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: $(BUILD)/tests
+test: $(BUILD)/tests $(BUILD)/tests128
 	./$(BUILD)/tests
+	./$(BUILD)/tests128 | tail -1
+
+# the same tests with the 128 KB FRAM memory map
+$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=131072u -Itests $^ -o $@ -lm
 
 sim: $(BUILD)/sim
 	./$(BUILD)/sim

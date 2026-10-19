@@ -42,24 +42,37 @@ add this in `main.h` between `/* USER CODE BEGIN Private defines */` and the mat
 Channel numbers line up with `10_IO_Map.md` (DIG_IN_01 = DI_01, and so on). On the
 real board, all 22 inputs and 20 outputs come from the schematic.
 
-## 3a. Parameter FRAM (optional on the DK)
+## 3a. Parameter FRAM
 
-The bare DK has no FRAM. Without one the platform uses a RAM stand-in and reports
-`PSTAT_NVM_VOLATILE`, which is fine for everything except power-cycle tests. To test
-real persistence, wire an SPI FRAM breakout (any MB85RS / FM25 / CY15B part; 128 KB
-matches the product) to a free SPI on the DK's expansion connector **(check which SPI
-and pins the DK brings out)**:
+Development part: **Adafruit 1895** (Digi-Key 1528-1035-ND), an MB85RC256V I2C FRAM,
+32 KB, address 0x50 with A0..A2 left open, WP pulled down on the board (writes enabled),
+3.3 V or 5 V, up to 1 MHz. The platform's default memory map (`PLAT_FRAM_SIZE`
+32768) is built for it. Wire VCC to 3.3 V, GND, and SCL/SDA to a free I2C on the DK
+**(check which I2C the DK brings out, and whether that bus already has pull-ups)**.
 
 | CubeMX | Setting |
 |---|---|
-| SPIx | Full-duplex master, 8 bit, CPOL low, CPHA 1 edge, NSS software, prescaler for ≤ 20 MHz to start |
-| GPIO | Output push-pull, initial level high, user label **`FRAM_CS`** |
+| I2Cx | I2C mode, Fast mode Plus 1 MHz (or Fast mode 400 kHz), 7-bit addressing |
+| I2Cx NVIC | Event and error interrupts enabled, priority 5 or numerically higher |
+| GPDMA | One channel for I2Cx_TX and one for I2Cx_RX, linked to the I2C handle (the default DMA mode needs them) |
 
-In `main.h` (USER CODE section), if needed: `#define FRAM_SPI_HANDLE hspi2` (default
-`hspi1`); for parts of 64 KB or less, `#define FRAM_SIZE 32768` and
-`#define FRAM_ADDR_BYTES 2`. Also add `nvm_fram_spi.c` to the build. With `FRAM_CS`
-defined but no chip answering, the store runs on defaults and raises the
-calibration-invalid alarm (it never quietly falls back to RAM on the product).
+In `main.h` (USER CODE section):
+
+```c
+#define FRAM_I2C_HANDLE hi2c1     /* the handle CubeMX generated; selects the I2C driver */
+/* optional: #define FRAM_I2C_MODE 1   interrupt mode if you'd rather not set up DMA */
+```
+
+Add `nvm_fram_i2c.c` to the build. Without any FRAM configured, the platform uses a
+RAM stand-in and reports `PSTAT_NVM_VOLATILE`. With `FRAM_I2C_HANDLE` defined but no
+chip answering, it runs on defaults and raises the calibration-invalid alarm (it never
+quietly falls back to RAM).
+
+Note: the driver defines the HAL's global I2C completion callbacks. If another I2C
+device is added later, those move to one shared file that dispatches by handle.
+
+The SPI FRAM driver (`nvm_fram_spi.c`, `FRAM_CS` label) stays available if the
+product board uses an SPI part.
 
 ## 4. FreeRTOS
 
@@ -76,7 +89,7 @@ calibration-invalid alarm (it never quietly falls back to RAM on the product).
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_spi.c`, and for a first test `app_demo/`, into the project.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), and for a first test `app_demo/`, into the project.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` *is* needed: it is the RAM stand-in.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.

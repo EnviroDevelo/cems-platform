@@ -15,6 +15,11 @@
 #define PLAT_CMDQ_DEPTH           32u    /* pending external writes (UI + web + Modbus) */
 #endif
 
+/* ---- parameter FRAM ---- */
+#ifndef PLAT_FRAM_SIZE
+#define PLAT_FRAM_SIZE            32768u /* DECISION D6: 32 KB development part (MB85RC256V); 131072u selects the 128 KB map */
+#endif
+
 /* ---- fast control loops ---- */
 #ifndef PLAT_CTRL_PERIOD_MS
 #define PLAT_CTRL_PERIOD_MS       1u     /* DECISION D2: 1 kHz task tick until the loop list is known */
