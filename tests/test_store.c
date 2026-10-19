@@ -4,6 +4,7 @@
 #include "tst.h"
 #include "param.h"
 #include "param_store.h"
+#include "web_auth.h"
 
 static int16_t  s_i16;
 static float    s_f;
@@ -306,6 +307,32 @@ static void t_export_import(void) {
     CHECK_EQ(s_cal, 600);
 }
 
+/* secrets (password hashes, the mail password) never leave in a backup file, and a
+ * restore never changes them */
+static void t_backup_secrets(void) {
+    fresh(); boot(); auth_init();
+    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "Old-pass1"), AUTH_OK);
+    save_cycle();
+    static uint8_t file[64 * 1024];
+    uint32_t n = param_store_export(file, sizeof file);
+    CHECK(n > 40);
+    bool has900 = false, has901 = false;                 /* look for the auth records */
+    for (uint32_t k = 20; k + 4 <= n; k += 4) {
+        uint16_t id = (uint16_t)(file[k] | file[k + 1] << 8), sz = (uint16_t)(file[k + 2] | file[k + 3] << 8);
+        if (id == 900 && sz == 16) has900 = true;
+        if (id == 901 && sz == 96) has901 = true;
+    }
+    CHECK(!has900 && !has901);
+    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "New-pass2"), AUTH_OK);
+    save_cycle();
+    CHECK_EQ(param_store_import(file, n, PLAT_LVL_FACTORY), 0);       /* the file is still valid */
+    param_store_scan_service();
+    CHECK(auth_check(PLAT_LVL_ADMIN, "New-pass2"));                     /* the restore left the password alone */
+    CHECK(!auth_check(PLAT_LVL_ADMIN, "Old-pass1"));
+    save_cycle(); boot(); auth_init();
+    CHECK(auth_check(PLAT_LVL_ADMIN, "New-pass2"));
+}
+
 static void t_volatile_and_table_errors(void) {
     fresh();
     nvm_ram_init(&dev, &ram, fram, sizeof fram, false);              /* RAM fallback */
@@ -355,5 +382,6 @@ void test_store_all(void) {
     RUN(t_out_of_range_stored);
     RUN(t_restore_defaults_cmd);
     RUN(t_export_import);
+    RUN(t_backup_secrets);
     RUN(t_volatile_and_table_errors);
 }

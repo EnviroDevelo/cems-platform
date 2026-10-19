@@ -86,6 +86,7 @@ typedef enum {
     LOG_EV_LOST,             /* arg = events lost because the RAM queue was full */
     LOG_EV_IP_CONFLICT,      /* arg = the address another device is using; new = 0 when it cleared */
     LOG_EV_TLS_KEY,          /* the unit made a new HTTPS key (first start, or FRAM lost): the fingerprint changed */
+    LOG_EV_MAIL,             /* alarm email: arg = alarm events in it, new = 1 sent / 0 failed, text = result */
     LOG_EV_APP = 100
 } log_event_code_t;
 

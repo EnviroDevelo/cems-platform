@@ -21,7 +21,11 @@
  *   GET  /api/log/data.csv[?from=&to=]   the whole data log
  *   GET  /api/tls/cert     the unit's HTTPS certificate (DER), to trust it on the site's laptops
  *   GET  /api/alarms       alarms shown (active or unacknowledged), most urgent first, and counts
+ *   GET  /api/alarms/config every alarm with its actions (email, Modbus, relays) and the relay set-up
  *   POST /api/alarms/ack   id=<alarm ID>|all  (any login; logged with the login and source)
+ *   GET  /api/mail         alarm email status: queue, last result, the server's certificate fingerprint, the pin
+ *   POST /api/mail/test    send a test email (admin)
+ *   POST /api/mail/trust   trust=1 pins the certificate the mail server last presented, trust=0 unpins (admin)
  *   GET  /api/fw           firmware status: running and staged versions, trial, upload progress
  *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (tech/factory level)
  *   POST /api/fw/activate  restart on the staged image (tech/factory level); it confirms itself after a

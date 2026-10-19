@@ -269,6 +269,54 @@ static void t_text_order(void) {
     CHECK(!strcmp(alarm_sev_name(AL_SEV_FAULT), "fault"));
 }
 
+extern uint8_t plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
+extern bool plat_alarm_relay_inv[4];
+static void t_routes(void) {
+    setup(BSP_RESET_POWER_ON);
+    memset(plat_alarm_route, 0, 256);
+    /* definition defaults: none for these test alarms; the platform's faults email + Modbus */
+    CHECK_EQ(alarm_route(A_DI), 0);
+    CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_EMAIL | AR_MODBUS);
+    /* configure: A_DI -> Modbus + relay 1 (lamp, DO 3); A_FB -> relay 2 (horn, DO 5, fail-safe) */
+    plat_alarm_route[A_DI] = AR_SET | AR_MODBUS | AR_RELAY(0);
+    plat_alarm_route[A_FB] = AR_SET | AR_RELAY(1);
+    plat_alarm_route[ALARM_ID_CAL_INVALID] = AR_SET;                /* "do nothing" overrides the default */
+    CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), 0);
+    plat_alarm_relay_do[0] = 3; plat_alarm_relay_mode[0] = AR_MODE_ACTIVE_OR_UNACKED;
+    plat_alarm_relay_do[1] = 5; plat_alarm_relay_mode[1] = AR_MODE_UNACKED; plat_alarm_relay_inv[1] = true;
+    apply(1101, 0);
+    plat_io_out_t o; memset(&o, 0, sizeof o); alarm_io_out(&o);
+    CHECK_EQ(o.do_bits, 1u << 4);                                  /* fail-safe relay energised when healthy */
+    plat_val_t v;
+    alarm_set(A_DI, true); scan(20);
+    memset(&o, 0, sizeof o); alarm_io_out(&o);
+    CHECK_EQ(o.do_bits, (1u << 2) | (1u << 4));
+    CHECK(param_read(PARAM_ID_ALARM_COMMON, &v));
+    CHECK((v.u & (ACOM_MB_ACTIVE | ACOM_MB_UNACKED | ACOM_RELAY(0))) == (ACOM_MB_ACTIVE | ACOM_MB_UNACKED | ACOM_RELAY(0)));
+    alarm_ack(A_DI, PLAT_SRC_LOCAL, 0); scan(20);
+    CHECK(param_read(PARAM_ID_ALARM_COMMON, &v)); CHECK(!(v.u & ACOM_MB_UNACKED) && (v.u & ACOM_MB_ACTIVE));
+    alarm_set(A_DI, false); scan(20);
+    memset(&o, 0, sizeof o); alarm_io_out(&o);
+    CHECK_EQ(o.do_bits, 1u << 4);                                  /* lamp off once cleared and acknowledged */
+    /* horn: on while unacknowledged, silenced by the acknowledge though the alarm stays */
+    alarm_set(A_FB, true); scan(20);
+    CHECK_EQ(alarm_relays(), 2u);
+    memset(&o, 0, sizeof o); alarm_io_out(&o);
+    CHECK_EQ(o.do_bits, 0u);                                       /* fail-safe: de-energised in alarm */
+    alarm_ack(A_FB, PLAT_SRC_LOCAL, 0); scan(20);
+    CHECK(get(A_FB).active); CHECK_EQ(alarm_relays(), 0u);
+    /* the relay overrides whatever the application put on that output */
+    o.do_bits = 0xFFFFFFFFu; alarm_io_out(&o);
+    CHECK_EQ(o.do_bits & (1u << 2), 0u);
+    /* lamp mode ACTIVE only */
+    plat_alarm_relay_mode[0] = AR_MODE_ACTIVE;
+    alarm_set(A_DI, true); scan(20); alarm_set(A_DI, false); scan(20);
+    CHECK(get(A_DI).unacked); CHECK_EQ(alarm_relays() & 1u, 0u);
+    alarm_ack(ALARM_ACK_ALL, 0, 0);
+    memset(plat_alarm_route, 0, 256); memset(plat_alarm_relay_do, 0, 4); memset(plat_alarm_relay_mode, 0, 4);
+    memset(plat_alarm_relay_inv, 0, 4);
+}
+
 extern uint32_t plat_net_status_word;
 static void t_platform(void) {
     setup(BSP_RESET_IWDG);
@@ -300,5 +348,6 @@ void test_alarm_all(void) {
     RUN(t_suppress);
     RUN(t_range);
     RUN(t_text_order);
+    RUN(t_routes);
     RUN(t_platform);
 }

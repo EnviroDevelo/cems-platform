@@ -81,6 +81,25 @@ async def run(unit):
         await pg.locator("#admin").screenshot(path=os.path.join(ROOT, "build", "web_firmware.png"))
         print("firmware:", repr(fwmsg), "|", repr(fwinfo), "| activate button:", act)
         ok &= fwmsg == "Uploaded 0.4.0" and "Ready in the spare bank: 0.4.0" in fwinfo and act
+        # alarm actions and email set-up (factory login sees the admin sections)
+        await pg.wait_for_function("document.getElementById('actrows').innerText.includes('Demo fault')", timeout=5000)
+        row = pg.locator('#actrows tr:has-text("DEMO_FAULT")')
+        await row.locator("input[type=checkbox]").nth(2).check()            # relay 1
+        await pg.wait_for_timeout(800)
+        await pg.select_option("#relayrows tr:nth-child(1) select >> nth=0", "3")
+        await pg.wait_for_timeout(800)
+        relay_ok = await row.locator("input[type=checkbox]").nth(2).is_checked() and \
+                   await pg.locator('#actrows tr:has-text("DEMO_FAULT") button:has-text("Default")').count() == 1
+        await pg.select_option("#m70", "1"); await pg.fill("#m71", "10.1.2.3"); await pg.fill("#m77", "cems@site")
+        await pg.fill("#m78", "ops@site"); await pg.fill("#m76", "pw-123"); await pg.fill("#m81", "Stack B")
+        await pg.click("#mailsave")
+        await pg.wait_for_function("document.getElementById('mailerr').textContent === 'Saved'", timeout=8000)
+        await pg.wait_for_timeout(600)
+        mail_ok = await pg.input_value("#m71") == "10.1.2.3" and await pg.input_value("#m76") == "" \
+                  and await pg.input_value("#m81") == "Stack B"
+        await pg.locator("#actions").screenshot(path=os.path.join(ROOT, "build", "web_alarm_actions.png"))
+        await pg.locator("#mailsec").screenshot(path=os.path.join(ROOT, "build", "web_mail.png"))
+        print("alarm actions:", relay_ok, "| mail form:", mail_ok); ok &= relay_ok and mail_ok
         # connection loss: stop the unit, the page must say so and grey out
         unit.send_signal(signal.SIGTERM); unit.wait(timeout=10)
         await pg.wait_for_timeout(2500)

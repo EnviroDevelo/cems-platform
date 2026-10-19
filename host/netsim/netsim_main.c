@@ -28,6 +28,7 @@
 #include "mbtcp.h"
 #include "http_api.h"
 #include "http_server.h"
+#include "mail.h"
 #include "web_auth.h"
 #include "plat_diag.h"
 #include "plat_tasks.h"
@@ -198,7 +199,7 @@ static void *store_thread(void *a) {
     return NULL;
 }
 static void *modbus_thread(void *a) { (void)a; while (running) mbtcp_poll(&mbs, 100); return NULL; }
-static void *http_thread(void *a)   { (void)a; while (running) { http_poll(&hs, 50); http_poll(&hr, 50); } return NULL; }
+static void *http_thread(void *a)   { (void)a; while (running) { http_poll(&hs, 50); http_poll(&hr, 50); mail_service(bsp_ms(), NULL); } return NULL; }
 /* stand-in for the touchscreen: "remote", "local", "set <id> <value>" on stdin */
 static void *console_thread(void *a) {
     (void)a;
@@ -231,6 +232,7 @@ int main(int argc, char **argv) {
     if (argc > 3) fram_path = argv[3];
     if (argc > 4) nor_path = argv[4];
     snprintf(fw_path, sizeof fw_path, "%.*sfw.bin", (int)(strlen(nor_path) > 7 ? strlen(nor_path) - 7 : 0), nor_path);
+    if (getenv("CEMS_MAIL_RETRY_MS")) mail_retry_ms = (uint32_t)atoi(getenv("CEMS_MAIL_RETRY_MS"));
     if (getenv("CEMS_FW_TRIAL_MS")) fw_trial_ms = (uint32_t)atoi(getenv("CEMS_FW_TRIAL_MS"));
     const char *fwver = getenv("CEMS_FW_VERSION");
     static uint8_t fwkey[65];                    /* CEMS_FW_PUBKEY: hex public key, as a signed production build */

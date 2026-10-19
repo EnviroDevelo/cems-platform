@@ -52,6 +52,8 @@ typedef enum { PT_BOOL = 0, PT_INT, PT_UINT, PT_FLOAT, PT_BYTES, PT_TEXT, PT_TEX
 #define PF_LOCAL_ONLY  0x0010u  /* only from the touchscreen */
 #define PF_NO_MODBUS   0x0020u  /* never from Modbus (network and security settings) */
 #define PF_CONFIRM     0x0040u  /* the touchscreen asks "are you sure?" before changing it (critical setpoints) */
+#define PF_SECRET      0x0080u  /* write-only: never read back (web, Modbus, touchscreen), never in a backup file
+                                   (e.g. the mail server password); the platform reads it with param_read_secret */
 
 typedef int (*param_interlock_fn)(uint16_t id, plat_val_t v);  /* 0 = allow */
 
@@ -106,6 +108,23 @@ enum {
     PARAM_ID_ALARM_UNACKED    = 42,  /* RO: alarms waiting for an acknowledge */
     PARAM_ID_ALARM_ACTIVE_BITS = 43, /* RO: 16 words, bit (ID % 16) of word (ID / 16) = alarm ID active */
     PARAM_ID_ALARM_UNACK_BITS = 44,  /* RO: same layout, alarm ID unacknowledged */
+    PARAM_ID_ALARM_COMMON     = 45,  /* RO: ACOM_* bits (Modbus common alarm, relay states) */
+    PARAM_ID_ALARM_ROUTE      = 46,  /* 256 bytes, one per alarm ID: AR_* actions (plat_alarm.h) */
+    PARAM_ID_ALARM_RELAY_DO   = 47,  /* 4 bytes: digital output 1..32 for alarm relay 1..4 (0 = not used) */
+    PARAM_ID_ALARM_RELAY_MODE = 48,  /* 4 bytes: AR_MODE_* */
+    PARAM_ID_ALARM_RELAY_INV  = 49,  /* 4 bools: fail-safe (energised when there is no alarm) */
+    PARAM_ID_MAIL_ENABLE      = 70,  /* alarm email on/off (off: the instrument makes no outbound connection) */
+    PARAM_ID_MAIL_SERVER      = 71,  /* mail server (SMTP) IPv4, host order: the site's mail relay */
+    PARAM_ID_MAIL_PORT        = 72,  /* 25, 587 (STARTTLS) or 465 (TLS) */
+    PARAM_ID_MAIL_SECURITY    = 73,  /* MAIL_SEC_*: none, STARTTLS, TLS */
+    PARAM_ID_MAIL_PIN         = 74,  /* 32 bytes: SHA-256 of the server's certificate to insist on (zeros = encrypt only) */
+    PARAM_ID_MAIL_USER        = 75,  /* login (empty = no login) */
+    PARAM_ID_MAIL_PASS        = 76,  /* PF_SECRET */
+    PARAM_ID_MAIL_FROM        = 77,
+    PARAM_ID_MAIL_TO          = 78,  /* up to 4 addresses, separated by commas */
+    PARAM_ID_MAIL_ON_CLEAR    = 79,  /* also email when an alarm clears */
+    PARAM_ID_MAIL_GAP_S       = 80,  /* collect alarms this long before sending, so a burst is one email */
+    PARAM_ID_SITE_NAME        = 81,  /* the unit's name in emails and on the web page */
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
@@ -114,6 +133,7 @@ enum {
 };
 
 enum { PARAM_MODE_LOCAL = 0, PARAM_MODE_REMOTE = 1 };
+enum { MAIL_SEC_NONE = 0, MAIL_SEC_STARTTLS = 1, MAIL_SEC_TLS = 2 };
 
 /* PARAM_ID_NET_STATUS bits */
 #define NETST_LINK      0x0001u  /* Ethernet cable connected */
@@ -223,8 +243,10 @@ typedef struct { uint16_t id, off, len; bool whole; const void *data; } param_bl
 param_err_t param_post_many(const plat_cmd_t *cmds, size_t n);
 param_err_t param_blob_post_many(const param_blob_write_t *w, size_t n, uint8_t src, uint8_t level);
 
-/* Any task: len bytes from offset off, as of the end of the last scan. */
+/* Any task: len bytes from offset off, as of the end of the last scan.
+ * PF_SECRET entries: PERR_ACCESS (param_read_secret reads them, for the platform only). */
 param_err_t param_read_blob(uint16_t id, uint16_t off, void *buf, uint16_t len);
+param_err_t param_read_secret(uint16_t id, void *buf, uint16_t len);
 
 /* Validation helpers (also used by param_store on load). */
 bool param_blob_valid(const param_def_t *d, const uint8_t *data, uint16_t off, uint16_t len);

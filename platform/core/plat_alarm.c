@@ -15,21 +15,23 @@
 __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
 
 static const alarm_def_t core_defs[] = {
-    { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "CAL_INVALID",
+    { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_INVALID",
       .text = "No valid calibration data: measurement blocked" },
-    { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "PARAM_WRITE_FAIL",
+    { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "PARAM_WRITE_FAIL",
       .text = "Settings memory fault: changes may not be kept", .on_delay_ms = 2000 },
-    { .id = ALARM_ID_LOG_STORAGE_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "LOG_STORAGE_FAULT",
+    { .id = ALARM_ID_LOG_STORAGE_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "LOG_STORAGE_FAULT",
       .text = "Log memory fault: records are not being kept" },
-    { .id = ALARM_ID_IP_CONFLICT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "IP_CONFLICT",
+    { .id = ALARM_ID_IP_CONFLICT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IP_CONFLICT",
       .text = "IP address in use by another device: network off" },
-    { .id = ALARM_ID_REMOTE_LINK_LOST, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "REMOTE_LINK_LOST",
+    { .id = ALARM_ID_REMOTE_LINK_LOST, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "REMOTE_LINK_LOST",
       .text = "Remote control: no messages from the control system" },
-    { .id = ALARM_ID_UNEXPECTED_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .name = "UNEXPECTED_RESET",
+    { .id = ALARM_ID_UNEXPECTED_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "UNEXPECTED_RESET",
       .text = "The unit restarted itself (watchdog or supply dip)" },
-    { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .name = "FW_ROLLED_BACK",
+    { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "FW_ROLLED_BACK",
       .text = "Firmware update failed its trial and was undone" },
-    { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .name = "DISPLAY_FAULT",
+    { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
+      .text = "Alarm email could not be sent" },
+    { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "DISPLAY_FAULT",
       .text = "Touchscreen not responding", .on_delay_ms = 5000 },
 };
 #define N_CORE (sizeof core_defs / sizeof core_defs[0])
@@ -51,6 +53,12 @@ static al_state_t st[PLAT_ALARM_MAX];
 /* published through the parameter table (param.c binds them) */
 uint16_t plat_alarm_active_count, plat_alarm_unack_count;
 uint16_t plat_alarm_active_bits[ALARM_BIT_WORDS], plat_alarm_unack_bits[ALARM_BIT_WORDS];
+uint16_t plat_alarm_common;                         /* ACOM_* */
+uint8_t  plat_alarm_route[ALARM_ID_MAX + 1];        /* AR_SET | actions, per ID (persisted) */
+uint8_t  plat_alarm_relay_do[ALARM_RELAYS];         /* digital output 1..32 for relay k (0 = not used) */
+uint8_t  plat_alarm_relay_mode[ALARM_RELAYS];       /* AR_MODE_* */
+bool     plat_alarm_relay_inv[ALARM_RELAYS];        /* fail-safe: energised when healthy */
+static uint8_t relay_on;
 
 void (*alarm_on_change)(const alarm_def_t *d, uint8_t what);
 extern void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
@@ -95,6 +103,7 @@ void alarm_reset_for_test(void) {
     for (size_t i = 0; i < PLAT_ALARM_MAX; ++i) { cond[i] = 0; latch_pulse[i] = 0; st[i].enabled = true; }
     PLAT_CRIT_EXIT();
     plat_alarm_active_count = plat_alarm_unack_count = 0;
+    plat_alarm_common = 0; relay_on = 0;
     memset(plat_alarm_active_bits, 0, sizeof plat_alarm_active_bits);
     memset(plat_alarm_unack_bits, 0, sizeof plat_alarm_unack_bits);
 }
@@ -145,10 +154,21 @@ static uint32_t unix_now(void) {
                                 RTC_Time.Hours, RTC_Time.Minutes, RTC_Time.Seconds);
 }
 
+__attribute__((weak)) void plat_alarm_email(const alarm_def_t *d, uint8_t what, uint32_t t_unix, uint32_t up_s) {
+    (void)d; (void)what; (void)t_unix; (void)up_s;
+}
+
+static uint8_t route_of(size_t i) {
+    uint8_t r = plat_alarm_route[defs[i]->id];
+    return r & AR_SET ? (uint8_t)(r & ~AR_SET) : defs[i]->route;
+}
+uint8_t alarm_route(uint16_t id) { int i = idx(id); return i < 0 ? 0 : route_of((size_t)i); }
+
 static void tell(size_t i, uint8_t what, uint8_t src, uint8_t level) {
     const alarm_def_t *d = defs[i];
     static const uint16_t code[] = { 0, LOG_EV_ALARM_RAISE, LOG_EV_ALARM_CLEAR, LOG_EV_ALARM_ACK };
     plat_log_event(code[what], src, level, d->id, NAN, NAN, d->name);
+    if (what != ALARM_TR_ACK && (route_of(i) & AR_EMAIL)) plat_alarm_email(d, what, unix_now(), st[i].up_raise);
     if ((d->flags & AL_NOTIFY) && alarm_on_change) alarm_on_change(d, what);
 }
 
@@ -166,12 +186,26 @@ static void poll_platform(void) {
 }
 
 static void publish(void) {
-    uint16_t na = 0, nu = 0, ab[ALARM_BIT_WORDS] = { 0 }, ub[ALARM_BIT_WORDS] = { 0 };
+    uint16_t na = 0, nu = 0, ab[ALARM_BIT_WORDS] = { 0 }, ub[ALARM_BIT_WORDS] = { 0 }, com = 0;
+    uint8_t rel = 0;
     for (size_t i = 0; i < n_defs; ++i) {
         uint16_t id = defs[i]->id;
-        if (st[i].active) { na++; ab[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
-        if (st[i].unacked) { nu++; ub[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
+        bool a = st[i].active, u = st[i].unacked;
+        if (a) { na++; ab[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
+        if (u) { nu++; ub[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
+        if (!a && !u) continue;
+        uint8_t r = route_of(i);
+        com |= (uint16_t)((a ? ACOM_ANY_ACTIVE : 0u) | (u ? ACOM_ANY_UNACKED : 0u));
+        if (r & AR_MODBUS) com |= (uint16_t)((a ? ACOM_MB_ACTIVE : 0u) | (u ? ACOM_MB_UNACKED : 0u));
+        for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
+            if (!(r & AR_RELAY(k))) continue;
+            uint8_t m = plat_alarm_relay_mode[k];
+            if (m == AR_MODE_UNACKED ? u : m == AR_MODE_ACTIVE_OR_UNACKED ? (a || u) : a) rel |= (uint8_t)(1u << k);
+        }
     }
+    for (unsigned k = 0; k < ALARM_RELAYS; ++k) if (rel & (1u << k)) com |= ACOM_RELAY(k);
+    relay_on = rel;
+    plat_alarm_common = com;
     plat_alarm_active_count = na; plat_alarm_unack_count = nu;
     memcpy(plat_alarm_active_bits, ab, sizeof ab);
     memcpy(plat_alarm_unack_bits, ub, sizeof ub);
@@ -246,6 +280,15 @@ int alarm_ack(uint16_t id, uint8_t src, uint8_t level) {
     publish();
     return 0;
 }
+
+void alarm_io_out(plat_io_out_t *out) {
+    for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
+        uint8_t ch = plat_alarm_relay_do[k];
+        if (ch < 1 || ch > PLAT_DO_MAX) continue;
+        plat_do_set(out, ch - 1u, ((relay_on >> k) & 1u) != plat_alarm_relay_inv[k]);
+    }
+}
+uint8_t alarm_relays(void) { return relay_on; }
 
 /* ---------------- readers ---------------- */
 static void text_of(const alarm_def_t *d, char *out, size_t cap) {

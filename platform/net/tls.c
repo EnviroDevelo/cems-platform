@@ -27,6 +27,8 @@ static mbedtls_x509_crt crt;
 static mbedtls_ssl_config conf;
 static mbedtls_ssl_context ssl;
 static mbedtls_ssl_ticket_context ticket;
+static mbedtls_ssl_config conf_cli;          /* alarm email: TLS client */
+static bool cli_conf_done, cli_on;
 static uint8_t der[1024];
 static size_t der_len;
 static const uint8_t *der_p;
@@ -239,6 +241,52 @@ void tls_close(void) {
 }
 
 bool tls_resumed(void) { return resumed; }
+
+/* ---------------- client (alarm email) ----------------
+ * The one ssl context is lent to the client: the server's buffers are freed for the
+ * time it is out, so the pool never holds two sessions. Same task as the server. */
+static void server_ssl_back(void) {
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_init(&ssl);
+    if (ready && mbedtls_ssl_setup(&ssl, &conf) == 0) mbedtls_ssl_set_bio(&ssl, NULL, send_cb, recv_cb, NULL);
+    cli_on = false;
+}
+
+int tls_client_open(int fd, uint8_t peer_fp[32]) {
+    if (!ready || cli_on) return -1;
+    if (!cli_conf_done) {
+        mbedtls_ssl_config_init(&conf_cli);
+        int rc = mbedtls_ssl_config_defaults(&conf_cli, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+        if (rc) return rc;
+        mbedtls_ssl_conf_rng(&conf_cli, mbedtls_ctr_drbg_random, &drbg);
+        mbedtls_ssl_conf_min_tls_version(&conf_cli, MBEDTLS_SSL_VERSION_TLS1_2);
+        mbedtls_ssl_conf_max_tls_version(&conf_cli, MBEDTLS_SSL_VERSION_TLS1_2);
+        mbedtls_ssl_conf_authmode(&conf_cli, MBEDTLS_SSL_VERIFY_OPTIONAL);   /* no CA list: trust is the pinned fingerprint */
+        mbedtls_ssl_conf_session_tickets(&conf_cli, MBEDTLS_SSL_SESSION_TICKETS_DISABLED);
+        cli_conf_done = true;
+    }
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_init(&ssl);
+    cli_on = true;
+    int rc = mbedtls_ssl_setup(&ssl, &conf_cli);
+    if (rc) { server_ssl_back(); return rc; }
+    mbedtls_ssl_set_bio(&ssl, NULL, send_cb, recv_cb, NULL);
+    sock = fd;
+    while ((rc = mbedtls_ssl_handshake(&ssl)) != 0) {
+        if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) { sock = -1; server_ssl_back(); return rc; }
+    }
+    const mbedtls_x509_crt *pc = mbedtls_ssl_get_peer_cert(&ssl);
+    if (!pc) { sock = -1; server_ssl_back(); return -1; }
+    mbedtls_sha256(pc->raw.p, pc->raw.len, peer_fp, 0);
+    return 0;
+}
+
+void tls_client_close(void) {
+    if (!cli_on) return;
+    if (sock >= 0) (void)mbedtls_ssl_close_notify(&ssl);
+    sock = -1;
+    server_ssl_back();
+}
 
 tls_stats_t tls_stats(void) {
     size_t peak = 0, blocks = 0;

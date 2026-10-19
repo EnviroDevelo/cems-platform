@@ -51,7 +51,8 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
-    T_ALARMS, T_ACK_ALL,
+    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK,
+    T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
     T_ROW0 = 200            /* .. T_ROW0 + ROWS - 1 */
 };
 
@@ -98,6 +99,7 @@ static struct {
     /* alarms */
     size_t   al_first;
     uint16_t al_ids[ROWS];
+    size_t   cfg_first;
 } U;
 
 /* ---------------- helpers ---------------- */
@@ -403,6 +405,7 @@ static void tap(uint8_t t, uint32_t now) {
         return;
     case T_MODE: mode_tap(now); return;
     case T_ALARMS: U.al_first = 0; goto_scr(UI_ALARMS); return;
+    case T_ACTIONS: U.cfg_first = 0; goto_scr(UI_ALARM_CFG); return;
     default: break;
     }
     switch (U.scr) {
@@ -450,6 +453,22 @@ static void tap(uint8_t t, uint32_t now) {
             param_err_t e = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = id }, PLAT_SRC_LOCAL, U.level);
             if (e != PERR_OK) toast(true, now, "%s", perr_text(e));
             else toast(false, now, t == T_ACK_ALL ? "All alarms acknowledged" : "Acknowledged");
+        }
+        break;
+    case UI_ALARM_CFG:
+        if (t == T_BACK) goto_scr(UI_ALARMS);
+        else if (t == T_PGUP) { U.cfg_first = U.cfg_first >= ROWS ? U.cfg_first - ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { if (U.cfg_first + ROWS < alarm_count()) U.cfg_first += ROWS; U.dirty = true; }
+        else if (t >= T_CFG0 && t < T_CFG0 + ROWS * 6) {
+            unsigned r = (unsigned)(t - T_CFG0) / 6u, b = (unsigned)(t - T_CFG0) % 6u;
+            const alarm_def_t *d = alarm_def_at(U.cfg_first + r);
+            if (!d) break;
+            if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to change alarm actions"); break; }
+            static const uint8_t bit[6] = { AR_EMAIL, AR_MODBUS, AR_RELAY(0), AR_RELAY(1), AR_RELAY(2), AR_RELAY(3) };
+            uint8_t v = (uint8_t)(AR_SET | (alarm_route(d->id) ^ bit[b]));
+            param_err_t e = param_blob_post(PARAM_ID_ALARM_ROUTE, d->id, &v, 1, false, PLAT_SRC_LOCAL, U.level);
+            if (e != PERR_OK) toast(true, now, "%s", perr_text(e));
+            U.dirty = true;
         }
         break;
     case UI_SYSTEM:
@@ -839,9 +858,55 @@ static void draw_alarms(void) {
         }
     }
     if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No alarms"); }
-    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.al_first > 0);
-    button(T_ACK_ALL, 908, BODY_Y + 132, 100, 120, "Ack all", C_WARN, as.unacked > 0);
-    button(T_PGDN, 908, BODY_Y + 264, 100, 128, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
+    button(T_PGUP, 908, BODY_Y, 100, 96, "Up", C_ACCENT, U.al_first > 0);
+    button(T_ACK_ALL, 908, BODY_Y + 104, 100, 96, "Ack all", C_WARN, as.unacked > 0);
+    button(T_PGDN, 908, BODY_Y + 208, 100, 96, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
+    button(T_ACTIONS, 908, BODY_Y + 312, 100, 80, "Actions", 0x5B6577u, true);
+}
+
+/* what each alarm does: email, Modbus, relays 1-4 (admin) */
+static void draw_alarm_cfg(void) {
+    static const char *const lab[6] = { "Email", "Modbus", "R1", "R2", "R3", "R4" };
+    static const uint8_t bit[6] = { AR_EMAIL, AR_MODBUS, AR_RELAY(0), AR_RELAY(1), AR_RELAY(2), AR_RELAY(3) };
+    size_t n = alarm_count();
+    box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
+    bool can = U.level >= PLAT_LVL_ADMIN;
+    for (int r = 0; r < ROWS; ++r) {
+        const alarm_def_t *d = alarm_def_at(U.cfg_first + (size_t)r);
+        if (!d) break;
+        int16_t y = (int16_t)(BODY_Y + 4 + r * ROW_H);
+        if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+        alarm_view_t v;
+        char d7[64]; size_t k = 0;
+        if (alarm_get(d->id, &v))
+            for (const unsigned char *p = (const unsigned char *)v.text; *p && k + 1 < sizeof d7; ++p) {
+                if (*p < 0x80) d7[k++] = (char)*p; else if ((*p & 0xC0) != 0x80) d7[k++] = '?';
+            }
+        d7[k] = 0;
+        if (k > 42) {                                  /* the column holds ~42 characters: cut at a word */
+            size_t c = 39;
+            while (c > 20 && d7[c] != ' ') c--;
+            strcpy(d7 + c, "...");
+        }
+        box(24, (int16_t)(y + 8), 8, ROW_H - 16, sev_colour(d->severity), 2);
+        color(C_INK); text(40, (int16_t)(y + 20), F_SMALL, OPT_CENTERY, d7);
+        color(C_MUTE); text(40, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, d->name);
+        uint8_t rt = alarm_route(d->id);
+        for (int b = 0; b < 6; ++b) {
+            bool on = (rt & bit[b]) != 0;
+            int16_t x = (int16_t)(440 + b * 75);
+            uint8_t tg = (uint8_t)(T_CFG0 + r * 6 + b);
+            eve_tag(E, can ? tg : 0);              /* the state shows either way; only admin can change it */
+            eve_fgcolor(E, U.pressed == tg ? C_PRESS : on ? C_OK : 0xB8C0CCu);
+            color(0xFFFFFFu);
+            eve_button(E, x, (int16_t)(y + 6), 70, ROW_H - 12, F_SMALL, OPT_FLAT, lab[b]);
+            eve_tag(E, 0);
+        }
+    }
+    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.cfg_first > 0);
+    button(T_BACK, 908, BODY_Y + 132, 100, 120, "Back", 0x5B6577u, true);
+    button(T_PGDN, 908, BODY_Y + 264, 100, 128, "Down", C_ACCENT, U.cfg_first + ROWS < n);
+    if (!can) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, "Green = on. Log in as admin to change."); }
 }
 
 static void draw_confirm(void) {
@@ -878,6 +943,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_EVENTS: draw_events(); break;
     case UI_SYSTEM: draw_system(now); break;
     case UI_ALARMS: draw_alarms(); break;
+    case UI_ALARM_CFG: draw_alarm_cfg(); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {

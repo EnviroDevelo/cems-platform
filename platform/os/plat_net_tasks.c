@@ -8,6 +8,7 @@
 #include "mbtcp.h"
 #include "http_api.h"
 #include "http_server.h"
+#include "mail.h"
 #include "param.h"
 #include "param_store.h"
 
@@ -42,6 +43,7 @@ void plat_http_task_body(void) {
                        .scratch = http_buf, .scratch_size = sizeof http_buf, .wait = http_wait,
                        .log_chans = app->log_chans, .n_log_chans = (unsigned)app->n_log_chans };
     http_api_init(&cfg);
+    mail_init(app->ident.product);
     wait_net(PLAT_TASK_HTTP);
     while (http_open(&s, PLAT_HTTPS_PORT, http_buf, sizeof http_buf) != 0) { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(1000)); }
     s.alive = http_alive;
@@ -54,6 +56,7 @@ void plat_http_task_body(void) {
         if (!want80 && r.lfd >= 0) http_close(&r);
         http_poll(&s, 50);
         if (r.lfd >= 0) http_poll(&r, 50);
+        mail_service(bsp_ms(), http_alive);   /* alarm email, between web requests (shares the TLS context) */
         plat_checkin(PLAT_TASK_HTTP);
     }
 }

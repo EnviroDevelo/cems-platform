@@ -24,7 +24,8 @@
 #include "nvm.h"
 
 #ifndef TLS_POOL_SIZE
-#define TLS_POOL_SIZE (36u * 1024u)    /* mbedTLS memory: one session (16 KB in / 4 KB out buffers); peak measured 28 KB */
+#define TLS_POOL_SIZE (44u * 1024u)    /* one session at a time (16 KB in / 4 KB out buffers): measured peaks 28 KB as the
+                                          web server, 32 KB (RSA-2048) / 38 KB (RSA-4096) as the mail client */
 #endif
 
 void tls_crypto_init(void);                 /* the mbedTLS memory pool (once; tls_init does it too) */
@@ -43,6 +44,13 @@ int  tls_read(uint8_t *buf, uint32_t cap);  /* bytes, <= 0 on close/timeout/erro
 int  tls_write(const uint8_t *p, uint32_t n);   /* 0 = all sent */
 void tls_close(void);
 bool tls_resumed(void);                     /* the last handshake resumed a session (ticket) */
+
+/* client, for alarm email (same task as the server, between its connections): TLS 1.2
+ * on a connected socket; peer_fp = SHA-256 of the server's certificate, which the
+ * caller compares with the pinned one. Then tls_read/tls_write; tls_client_close
+ * always (it gives the context back to the server). */
+int  tls_client_open(int fd, uint8_t peer_fp[32]);   /* 0 = ok */
+void tls_client_close(void);
 
 typedef struct { uint32_t handshakes, resumed, failed, pool_peak; } tls_stats_t;
 tls_stats_t tls_stats(void);

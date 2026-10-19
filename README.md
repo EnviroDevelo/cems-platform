@@ -23,7 +23,8 @@ tools/check_target.sh   # compile and link the target in six configurations; upd
 
 Integration tests (with netsim built): `python3 tests/integration/net_test.py` (needs
 pymodbus on PYTHONPATH), `python3 tests/integration/fw_test.py` (firmware update and
-rollback) and `python3 tests/integration/web_ui_test.py` (needs Python Playwright and
+rollback), `python3 tests/integration/mail_test.py` (alarm email against a test mail
+server; needs openssl) and `python3 tests/integration/web_ui_test.py` (needs Python Playwright and
 Chromium).
 
 Firmware update files: `tools/mkfwimage.py build.bin cems-x.y.z.cfw --version x.y.z`

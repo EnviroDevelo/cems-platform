@@ -19,10 +19,11 @@ MODULES = [  # (module, object-name patterns)
     ("Parameter store (FRAM)", r"param_store|plat_crc32|nvm_|plat_store_task"),
     ("Event log / data logger", r"plat_log|nor_|log_csv"),
     ("Alarm manager", r"plat_alarm"),
+    ("Alarm email (SMTP client)", r"^mail\.o"),
     ("Firmware update + signature check", r"fw_update|fw_flash|fw_sig|fw_pubkey"),
     ("Modbus TCP", r"modbus|mbtcp"),
     ("Web server + page + logins", r"http_|web_|plat_sha256|plat_net_tasks"),
-    ("HTTPS (tls.c + mbedTLS)", r"^tls\.o|^(aes|asn1parse|asn1write|bignum|bignum_core|cipher|cipher_wrap|constant_time|ctr_drbg|ecdh|ecdsa|ecp|ecp_curves|entropy|gcm|hmac_drbg|md|memory_buffer_alloc|oid|pk|pk_ecc|pk_wrap|pkparse|pkwrite|platform|platform_util|sha256|ssl_\w+|x509\w*)\.o"),
+    ("HTTPS (tls.c + mbedTLS)", r"^tls\.o|^(aes|asn1parse|asn1write|bignum|bignum_core|cipher|cipher_wrap|constant_time|ctr_drbg|ecdh|ecdsa|ecp|ecp_curves|entropy|gcm|hmac_drbg|md|memory_buffer_alloc|oid|pk|pk_ecc|pk_wrap|pkparse|pkwrite|platform|platform_util|sha256|sha512|rsa|rsa_alt_helpers|base64|ssl_\w+|x509\w*)\.o"),
     ("Touch UI + EVE driver", r"^ui\.o|eve"),
     ("Task layer (FreeRTOS glue)", r"plat_tasks_freertos|plat_ui_task"),
     ("Board support (BSP)", r"bsp_|check_main"),
@@ -140,8 +141,11 @@ module, and before choosing hardware. Last run: {datetime.date.today().isoformat
 """ + "\n".join(rows) + f"""
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
-"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 36 KB pool (inside "HTTPS":
-measured peak 28 KB during a handshake).
+"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
+shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
+(web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
+about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
+11 KB of RAM (the larger pool, the client context and buffers).
 
 ## Still to come (estimates, update when built)
 
@@ -154,7 +158,7 @@ measured peak 28 KB during a handshake).
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC256V, 32 KB) | 32 KB | user image 12.5 KB of 14.5 KB per copy (84 %), factory 1 KB, log pointer + boot record 256 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
+| FRAM (MB85RC256V, 32 KB) | 32 KB | user image: the application's estimated 12.5 KB plus 0.8 KB of platform settings (alarm actions 256 B, relays, mail set-up 0.45 KB) = 13.3 KB of 14.5 KB per copy (92 %), factory 1 KB, log pointer + boot record 256 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |
 """
     open(out, "w").write(doc)

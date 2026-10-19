@@ -94,6 +94,7 @@ void scan_step(scan_engine_t *s) {
     /* 6. outputs: start from all-off so an unmapped channel can never stay on */
     memset(&s->out, 0, sizeof s->out);
     if (app->io_out) app->io_out(&s->out);
+    if (s->sys && s->sys->io_out) s->sys->io_out(&s->out);
     if (s->hw->io_write) s->hw->io_write(&s->out);
 
     /* 7. publish */

@@ -8,26 +8,27 @@ module, and before choosing hardware. Last run: 2026-10-20.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 266.3 KB | 1016.0 KB | 26 % | 749.7 KB |
-| RAM (STM32H573/H563, 640 KB) | 311.8 KB | 640.0 KB | 49 % | 328.2 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 309.6 KB | 1016.0 KB | 30 % | 706.4 KB |
+| RAM (STM32H573/H563, 640 KB) | 322.8 KB | 640.0 KB | 50 % | 317.2 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 10.2 | 0.1 |
-| Parameter table | 5.3 | 24.2 |
-| Parameter store (FRAM) | 4.8 | 28.7 |
-| Event log / data logger | 14.1 | 6.8 |
-| Alarm manager | 3.5 | 2.4 |
+| Scan engine, queue, watchdog, diag | 12.5 | 0.1 |
+| Parameter table | 6.1 | 24.6 |
+| Parameter store (FRAM) | 5.1 | 28.7 |
+| Event log / data logger | 14.2 | 6.8 |
+| Alarm manager | 4.1 | 2.7 |
+| Alarm email (SMTP client) | 6.0 | 2.2 |
 | Firmware update + signature check | 3.5 | 1.3 |
 | Modbus TCP | 6.0 | 17.5 |
-| Web server + page + logins | 24.3 | 40.3 |
-| HTTPS (tls.c + mbedTLS) | 70.0 | 38.8 |
-| Touch UI + EVE driver | 17.5 | 0.9 |
+| Web server + page + logins | 28.2 | 40.3 |
+| HTTPS (tls.c + mbedTLS) | 95.4 | 46.9 |
+| Touch UI + EVE driver | 19.0 | 0.9 |
 | Task layer (FreeRTOS glue) | 2.2 | 51.0 |
 | Board support (BSP) | 0.8 | 0.5 |
-| lwIP + Ethernet driver | 51.1 | 48.5 |
+| lwIP + Ethernet driver | 53.3 | 48.5 |
 | FreeRTOS kernel + heap | 9.1 | 48.8 |
 | ST HAL + startup | 17.7 | 0.0 |
 | Demo application | 1.2 | 0.1 |
@@ -36,8 +37,11 @@ module, and before choosing hardware. Last run: 2026-10-20.
 | Main stack (interrupts, start-up) | 0.0 | 1.0 |
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
-"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 36 KB pool (inside "HTTPS":
-measured peak 28 KB during a handshake).
+"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
+shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
+(web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
+about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
+11 KB of RAM (the larger pool, the client context and buffers).
 
 ## Still to come (estimates, update when built)
 
@@ -50,5 +54,5 @@ measured peak 28 KB during a handshake).
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC256V, 32 KB) | 32 KB | user image 12.5 KB of 14.5 KB per copy (84 %), factory 1 KB, log pointer + boot record 256 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
+| FRAM (MB85RC256V, 32 KB) | 32 KB | user image: the application's estimated 12.5 KB plus 0.8 KB of platform settings (alarm actions 256 B, relays, mail set-up 0.45 KB) = 13.3 KB of 14.5 KB per copy (92 %), factory 1 KB, log pointer + boot record 256 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |

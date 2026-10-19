@@ -39,6 +39,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "plat_io.h"
 
 #ifndef PLAT_ALARM_MAX
 #define PLAT_ALARM_MAX 96u           /* platform + application definitions */
@@ -50,6 +51,25 @@
 
 /* severities: the colour in the lists and the header */
 enum { AL_SEV_STATUS = 0, AL_SEV_WARNING = 1, AL_SEV_ALARM = 2, AL_SEV_FAULT = 3 };
+
+/* Actions (routes), per alarm. Each alarm has a default in its definition; the user
+ * changes it with parameter 46 (one byte per alarm ID): bit 7 set = configured (bits
+ * 0..6 apply), bit 7 clear = use the definition's default. 0x80 = do nothing. */
+#define AR_EMAIL    0x01u   /* send an email (raise; clear too if mail_on_clear) */
+#define AR_MODBUS   0x02u   /* counted in the Modbus common-alarm word (parameter 45) */
+#define AR_RELAY(k) ((uint8_t)(0x04u << (k)))   /* drive alarm relay k (0..3) */
+#define AR_SET      0x80u
+#define ALARM_RELAYS 4u
+/* relay modes (parameter 48) */
+enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
+       AR_MODE_UNACKED = 1,     /* on while any routed alarm waits for an acknowledge (a horn: ack silences it) */
+       AR_MODE_ACTIVE_OR_UNACKED = 2 };  /* on until every routed alarm is both cleared and acknowledged (a lamp) */
+/* parameter 45 bits */
+#define ACOM_MB_ACTIVE   0x0001u  /* a Modbus-routed alarm is active */
+#define ACOM_MB_UNACKED  0x0002u  /* a Modbus-routed alarm waits for an acknowledge */
+#define ACOM_ANY_ACTIVE  0x0004u
+#define ACOM_ANY_UNACKED 0x0008u
+#define ACOM_RELAY(k)    ((uint16_t)(0x0100u << (k)))   /* relay k is in alarm (before inversion) */
 
 /* flags */
 #define AL_LATCH   0x01u   /* stays active until acknowledged, even if the condition goes */
@@ -67,6 +87,7 @@ typedef struct {
     uint16_t    text_param;    /* PT_TEXT / PT_TEXT16 parameter with an editable description (0 = none) */
     uint16_t    enable_param;  /* bool parameter: false suppresses the alarm (0 = always enabled) */
     uint16_t    delay_param;   /* integer parameter, s: replaces on_delay_ms (0 = none) */
+    uint8_t     route;         /* default actions: AR_EMAIL | AR_MODBUS | AR_RELAY(k) (0 = none) */
 } alarm_def_t;
 
 /* ---------------- platform alarms ---------------- */
@@ -79,7 +100,7 @@ enum {
     ALARM_ID_UNEXPECTED_RESET  = 6,   /* the watchdog or a brown-out restarted the unit */
     ALARM_ID_FW_ROLLED_BACK    = 7,   /* a firmware update failed its trial and was undone */
     ALARM_ID_DISPLAY_FAULT     = 8,   /* the touchscreen stopped responding */
-    ALARM_ID_NOTIFY_FAIL       = 10,  /* reserved for the application: a notification could not be sent */
+    ALARM_ID_NOTIFY_FAIL       = 10,  /* an alarm email could not be sent (after retries) */
 };
 
 /* A copy of one alarm, for lists. */
@@ -114,6 +135,12 @@ void alarm_set(uint16_t id, bool cond);
 void alarm_set_range(uint16_t id, float value, float lo, float hi, float deadband);
 
 void alarm_scan(uint32_t now_ms);     /* scan task: platform conditions, delays, states, events */
+void alarm_io_out(plat_io_out_t *out); /* scan task, after the application's outputs: the alarm relays */
+uint8_t alarm_route(uint16_t id);     /* the actions in force for an alarm (AR_* without AR_SET) */
+uint8_t alarm_relays(void);           /* bit k = relay k in alarm (before inversion) */
+
+/* Email (mail.c provides it; weak no-op otherwise): one alarm transition to send. */
+void plat_alarm_email(const alarm_def_t *d, uint8_t what, uint32_t t_unix, uint32_t up_s);
 
 /* Acknowledge one alarm or ALARM_ACK_ALL. 0 done (or nothing to acknowledge),
  * -1 unknown ID. Scan task (via PARAM_ID_ALARM_ACK). */

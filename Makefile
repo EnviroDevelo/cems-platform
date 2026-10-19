@@ -13,7 +13,7 @@ CPPFLAGS = -DPLAT_HOST -Iplatform/include -Iplatform/bsp -Iapp_demo $(MBED_FLAGS
 CORE = platform/core/scan_engine.c platform/core/plat_cmdq.c \
        platform/core/task_monitor.c platform/core/plat_diag.c platform/core/param.c \
        platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/fw_update.c platform/core/fw_pubkey.c \
-       platform/net/mbtcp.c platform/net/http_util.c platform/net/http_api.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/net/tls.c platform/net/fw_sig.c platform/ui/eve.c platform/ui/ui.c \
+       platform/net/mbtcp.c platform/net/http_util.c platform/net/http_api.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/net/tls.c platform/net/mail.c platform/net/fw_sig.c platform/ui/eve.c platform/ui/ui.c \
        platform/bsp/nvm_ram.c platform/bsp/nor_sim.c platform/bsp/fw_flash_sim.c platform/bsp/bsp_host.c
 
 BUILD = build
@@ -22,10 +22,12 @@ BUILD = build
 MBED_SRC = $(wildcard $(MBED_DIR)/library/*.c)
 MBED_OBJ = $(patsubst $(MBED_DIR)/library/%.c,$(BUILD)/mbed/%.o,$(MBED_SRC))
 MBED_LIB = $(BUILD)/libmbedtls_cems.a
+HDRS = $(wildcard platform/include/*.h platform/net/*.h platform/bsp/*.h app_demo/*.h)
 $(BUILD)/mbed/%.o: $(MBED_DIR)/library/%.c platform/net/tls_config.h
 	@mkdir -p $(BUILD)/mbed
 	$(CC) -std=c11 -O2 -g $(MBED_FLAGS) -c $< -o $@
 $(MBED_LIB): $(MBED_OBJ)
+$(MBED_OBJ): platform/net/tls_config.h
 	ar rcs $@ $^
 
 .PHONY: all test sim target rtos netsim clean
@@ -34,8 +36,8 @@ all: test sim
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c host/eve_sim/eve_sim.c $(MBED_LIB) | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests -Ihost/eve_sim $^ -o $@ -lm
+$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c host/eve_sim/eve_sim.c $(MBED_LIB) $(HDRS) | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests -Ihost/eve_sim $(filter-out %.h,$^) -o $@ -lm
 
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c $(MBED_LIB) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
@@ -45,8 +47,8 @@ test: $(BUILD)/tests $(BUILD)/tests128
 	./$(BUILD)/tests128 | tail -1
 
 # the same tests with the 128 KB FRAM memory map
-$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c host/eve_sim/eve_sim.c $(MBED_LIB) | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=131072u -Itests -Ihost/eve_sim $^ -o $@ -lm
+$(BUILD)/tests128: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c host/eve_sim/eve_sim.c $(MBED_LIB) $(HDRS) | $(BUILD)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=131072u -Itests -Ihost/eve_sim $(filter-out %.h,$^) -o $@ -lm
 
 sim: $(BUILD)/sim
 	./$(BUILD)/sim
@@ -62,7 +64,7 @@ EXT ?= $(abspath ../ext)
 FR   = $(EXT)/FreeRTOS-Kernel
 RTOS_SRC = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
            platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-           platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/net/web_auth.c platform/net/tls.c platform/net/fw_sig.c \
+           platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/net/web_auth.c platform/net/tls.c platform/net/mail.c platform/net/fw_sig.c \
            platform/bsp/nvm_ram.c platform/bsp/nor_sim.c platform/bsp/fw_flash_sim.c platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c app_demo/app_demo.c \
            host/rtos_sim/bsp_posix.c host/rtos_sim/rtos_main.c \
            $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c $(FR)/portable/MemMang/heap_3.c \
@@ -77,8 +79,8 @@ rtos: $(BUILD)/rtos_sim
 
 # PC simulation with real sockets and threads (Modbus TCP on 1502, web on 8080)
 NETSIM_SRC = $(filter-out platform/bsp/bsp_host.c,$(CORE)) app_demo/app_demo.c platform/net/http_server.c host/netsim/netsim_main.c $(MBED_LIB)
-$(BUILD)/netsim: $(NETSIM_SRC) | $(BUILD)
+$(BUILD)/netsim: $(NETSIM_SRC) $(HDRS) | $(BUILD)
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
-	  -DPLAT_HOST -DPLAT_HOST_THREADS -Iplatform/include -Iplatform/bsp -Iapp_demo $(MBED_FLAGS) $^ -o $@ -lm -lpthread
+	  -DPLAT_HOST -DPLAT_HOST_THREADS -Iplatform/include -Iplatform/bsp -Iapp_demo $(MBED_FLAGS) $(filter-out %.h,$^) -o $@ -lm -lpthread
 netsim: $(BUILD)/netsim
 	./$(BUILD)/netsim

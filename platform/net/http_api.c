@@ -13,6 +13,7 @@
 #include "fw_update.h"
 #include "tls.h"
 #include "plat_alarm.h"
+#include "mail.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -239,7 +240,7 @@ static void get_params(http_out_t *o) {
         out_str(o, ",\"flags\":["); bool f = false;
         static const struct { uint16_t bit; const char *n; } fl[] = {
             { PF_RO, "ro" }, { PF_PERSIST, "persist" }, { PF_FACTORY, "factory" }, { PF_ANY_MODE, "any_mode" },
-            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" }, { PF_CONFIRM, "confirm" } };
+            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" }, { PF_CONFIRM, "confirm" }, { PF_SECRET, "secret" } };
         for (size_t k = 0; k < sizeof fl / sizeof fl[0]; ++k)
             if (d->flags & fl[k].bit) { if (f) out_str(o, ","); json_str(o, fl[k].n); f = true; }
         out_str(o, "]}");
@@ -707,6 +708,42 @@ static void get_alarms(http_out_t *o) {
     out_str(o, "]}");
 }
 
+/* every defined alarm with its actions, and the relays: the "Alarm actions" form */
+static void get_alarm_config(http_out_t *o) {
+    uint8_t route[256], rdo[ALARM_RELAYS], rmode[ALARM_RELAYS], rinv[ALARM_RELAYS];
+    if (param_read_blob(PARAM_ID_ALARM_ROUTE, 0, route, sizeof route) != PERR_OK ||
+        param_read_blob(PARAM_ID_ALARM_RELAY_DO, 0, rdo, sizeof rdo) != PERR_OK ||
+        param_read_blob(PARAM_ID_ALARM_RELAY_MODE, 0, rmode, sizeof rmode) != PERR_OK ||
+        param_read_blob(PARAM_ID_ALARM_RELAY_INV, 0, rinv, sizeof rinv) != PERR_OK) { json_error(o, 503, "busy", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"alarms\":[");
+    for (size_t i = 0; i < alarm_count(); ++i) {
+        const alarm_def_t *d = alarm_def_at(i);
+        alarm_view_t v;
+        (void)alarm_get(d->id, &v);
+        if (i) out_str(o, ",");
+        out_str(o, "{\"id\":"); json_uint(o, d->id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        out_str(o, ",\"text\":"); json_str(o, v.text);
+        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(d->severity));
+        out_str(o, ",\"route\":"); json_uint(o, alarm_route(d->id));
+        out_str(o, ",\"default\":"); json_uint(o, d->route);
+        out_str(o, ",\"configured\":"); json_bool(o, (route[d->id] & AR_SET) != 0);
+        out_str(o, "}");
+    }
+    out_str(o, "],\"relays\":[");
+    uint8_t on = alarm_relays();
+    for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"do\":"); json_uint(o, rdo[k]);
+        out_str(o, ",\"mode\":"); json_uint(o, rmode[k]);
+        out_str(o, ",\"failsafe\":"); json_bool(o, rinv[k] != 0);
+        out_str(o, ",\"in_alarm\":"); json_bool(o, (on >> k) & 1u);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
 /* id=<n> or id=all. Through the parameter table like the touchscreen and Modbus, so
  * the acknowledge is logged with this login and source. */
 static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
@@ -719,6 +756,60 @@ static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
         if (*e || !v[0] || id > ALARM_ID_MAX || !alarm_get((uint16_t)id, &a)) { json_error(o, 404, "no such alarm", -1); return; }
     }
     param_err_t pe = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = (uint32_t)id }, PLAT_SRC_WEB, lvl);
+    if (pe != PERR_OK) { json_error(o, perr_status(pe), perr_name(pe), -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* ---------------- alarm email ---------------- */
+static void hex32(http_out_t *o, const uint8_t *b) {
+    char h[96];
+    for (int k = 0; k < 32; ++k) snprintf(h + 3 * k, 4, "%02X%s", b[k], k < 31 ? ":" : "");
+    json_str(o, h);
+}
+
+static void get_mail(http_out_t *o) {
+    mail_status_t s;
+    mail_status(&s);
+    uint8_t pin[32] = { 0 };
+    (void)param_read_blob(PARAM_ID_MAIL_PIN, 0, pin, 32);
+    bool pinned = false;
+    for (int k = 0; k < 32; ++k) pinned |= pin[k] != 0;
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"busy\":"); json_bool(o, s.busy);
+    out_str(o, ",\"queued\":"); json_uint(o, s.queued);
+    out_str(o, ",\"tries\":"); json_uint(o, s.tries);
+    out_str(o, ",\"sent\":"); json_uint(o, s.sent);
+    out_str(o, ",\"failed\":"); json_uint(o, s.failed);
+    out_str(o, ",\"dropped\":"); json_uint(o, s.dropped);
+    out_str(o, ",\"last_ok\":"); json_bool(o, s.last == MAIL_OK);
+    out_str(o, ",\"last\":"); json_str(o, s.last_ms ? s.last_text : "");
+    out_str(o, ",\"last_s_ago\":"); if (s.last_ms) json_uint(o, (bsp_ms() - s.last_ms) / 1000u); else out_str(o, "null");
+    out_str(o, ",\"server_fp\":"); if (s.have_fp) hex32(o, s.server_fp); else out_str(o, "null");
+    out_str(o, ",\"pinned\":"); if (pinned) hex32(o, pin); else out_str(o, "null");
+    out_str(o, "}");
+}
+
+static void post_mail_test(http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    if (mail_request_test() != 0) { json_error(o, 409, "mail is off", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* trust=1: pin the certificate the server presented on the last connection; trust=0: unpin */
+static void post_mail_trust(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    char v[4] = "";
+    form_get((const char *)r->body, r->body_len, "trust", v, sizeof v);
+    mail_status_t s;
+    mail_status(&s);
+    uint8_t pin[32] = { 0 };
+    if (!strcmp(v, "1")) {
+        if (!s.have_fp) { json_error(o, 409, "no server certificate seen yet: send a test email first", -1); return; }
+        memcpy(pin, s.server_fp, 32);
+    }
+    param_err_t pe = param_blob_post(PARAM_ID_MAIL_PIN, 0, pin, 32, false, PLAT_SRC_WEB, lvl);
     if (pe != PERR_OK) { json_error(o, perr_status(pe), perr_name(pe), -1); return; }
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true}");
@@ -801,6 +892,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/log/info")) get_log_info(o);
     else if (get && !strcmp(r->path, "/api/fw")) get_fw(o);
     else if (get && !strcmp(r->path, "/api/alarms")) get_alarms(o);
+    else if (get && !strcmp(r->path, "/api/alarms/config")) get_alarm_config(o);
+    else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
@@ -818,6 +911,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/restore")) post_restore(r, o, lvl);
         else if (!strcmp(r->path, "/api/fw/activate")) post_fw_activate(o, lvl);
         else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
+        else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
+        else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

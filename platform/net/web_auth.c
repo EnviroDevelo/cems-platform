@@ -15,8 +15,8 @@ static uint8_t a_hash[LEVELS][32];
 static const char *const defaults[LEVELS] = { "1111", "2222", "9999" };
 
 static const retain_def_t blocks[] = {
-    { .id = 900, .size = sizeof a_salt, .ptr = a_salt, .name = "auth_salt" },
-    { .id = 901, .size = sizeof a_hash, .ptr = a_hash, .name = "auth_hash" },
+    { .id = 900, .size = sizeof a_salt, .ptr = a_salt, .flags = RF_SECRET, .name = "auth_salt" },
+    { .id = 901, .size = sizeof a_hash, .ptr = a_hash, .flags = RF_SECRET, .name = "auth_hash" },
 };
 const retain_def_t *plat_store_blocks(size_t *n) { *n = sizeof blocks / sizeof blocks[0]; return blocks; }
 

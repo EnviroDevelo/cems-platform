@@ -284,7 +284,7 @@ def main():
     raw.close()
     st, info = web.json("/api/info")
     print(f"   TLS: {info['tls']}")
-    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 36864, "TLS statistics")
+    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 44 * 1024, "TLS statistics")
 
     # ---------------- alarms ----------------
     def alarms(w=web):
@@ -307,6 +307,12 @@ def main():
           f"Modbus: alarm counts ({rr.registers if not rr.isError() else rr})")
     check(not rb.isError() and rb.registers[100 // 16] & (1 << (100 % 16)) and ru.registers[100 // 16] & (1 << (100 % 16)),
           "Modbus: active and unacknowledged bits per alarm (K12)")
+    rc = mbc.read_input_registers(2, 1, slave=1)
+    check(not rc.isError() and (rc.registers[0] & 0x5) == 0x5, f"Modbus: common alarm word (Modbus-routed fault active) {rc.registers if not rc.isError() else rc}")
+    web.json("/api/write", [("id", 46), ("o", 1), ("v", 0x80)]); time.sleep(0.3)
+    rc = mbc.read_input_registers(2, 1, slave=1)
+    check(not rc.isError() and (rc.registers[0] & 0x1) == 0 and (rc.registers[0] & 0x4), "Modbus: an alarm switched off for Modbus leaves the common bit")
+    web.json("/api/write", [("id", 46), ("o", 1), ("v", 0)])
     wr = mbc.write_register(20, 100, slave=1); time.sleep(0.3)
     j, a = alarms()
     check(not wr.isError() and 100 not in a, "acknowledged from Modbus: the latched alarm clears")

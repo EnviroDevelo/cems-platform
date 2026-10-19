@@ -52,7 +52,7 @@ const size_t app_demo_n_retain = sizeof app_demo_retain / sizeof app_demo_retain
 
 /* Modbus: holding 0-1 start delay (U32), 2-3 run seconds (U32), 10-15 valve name,
  * 20 alarm acknowledge; coils 0-3 acknowledge bits; discrete inputs 0 start input,
- * 1 valve output; input registers 0 alarms active, 1 alarms unacknowledged,
+ * 1 valve output; input registers 0 alarms active, 1 alarms unacknowledged, 2 common alarm,
  * 10-25 active bits, 30-45 unacknowledged bits (K12: the master sees both). */
 const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_HOLDING,  0, DEMO_PARAM_START_DELAY, MBF_U32),
@@ -64,6 +64,7 @@ const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_HOLDING, 20, PARAM_ID_ALARM_ACK,     MBF_U16),     /* write an alarm ID, or 65535 for all */
     MB_ENTRY(MB_INPUT,    0, PARAM_ID_ALARM_ACTIVE,  MBF_U16),
     MB_ENTRY(MB_INPUT,    1, PARAM_ID_ALARM_UNACKED, MBF_U16),
+    MB_ENTRY(MB_INPUT,    2, PARAM_ID_ALARM_COMMON,  MBF_U16),     /* common alarm: alarms routed to Modbus, relay states */
     MB_ENTRY(MB_INPUT,   10, PARAM_ID_ALARM_ACTIVE_BITS, MBF_ARRAY), /* 16 registers: bit (ID % 16) of register 10 + ID / 16 */
     MB_ENTRY(MB_INPUT,   30, PARAM_ID_ALARM_UNACK_BITS,  MBF_ARRAY),
 };

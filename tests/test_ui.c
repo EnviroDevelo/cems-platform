@@ -331,6 +331,21 @@ static void t_ui(void) {
     CHECK(tap("Ack all"));
     CHECK(shows("2 ALARMS"));
     CHECK(!shows("Acknowledge"));
+    /* alarm actions: shown to everyone, changed by admin only */
+    CHECK(tap("Actions"));
+    CHECK_EQ(ui_screen(), UI_ALARM_CFG);
+    CHECK(shows("CAL_INVALID")); CHECK(shows("Email")); CHECK(shows("R4"));
+    CHECK_EQ(eve_sim_tag_of(&sim, "R1"), 0);                          /* not logged in: not touchable */
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    CHECK_EQ(ui_screen(), UI_ALARM_CFG);
+    CHECK(alarm_route(ALARM_ID_CAL_INVALID) == (AR_EMAIL | AR_MODBUS));
+    CHECK(tap("R1"));                                                  /* first row: CAL_INVALID, relay 1 on */
+    CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_EMAIL | AR_MODBUS | AR_RELAY(0));
+    CHECK(tap("Email"));                                               /* and email off */
+    CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_MODBUS | AR_RELAY(0));
+    dump("alarm_actions");
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(tap("Log out admin"));
     { log_event_t ev = { .code = LOG_EV_IP_CONFLICT, .arg = 0xC0A80132u, .new_v = 1.0, .old_v = NAN };
       char w[32], dt[64]; log_event_text(&ev, w, sizeof w, dt, sizeof dt);
       CHECK(!strcmp(w, "Address conflict")); CHECK(!strcmp(dt, "192.168.1.50 is used by another device")); }

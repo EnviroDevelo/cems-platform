@@ -16,9 +16,11 @@
   #include <errno.h>
   #include <fcntl.h>
   #define closesocket(s) close(s)
+  #define plat_fcntl(s, c, v) fcntl((s), (c), (v))
 #else
   #include "lwip/sockets.h"
   #include "lwip/inet.h"
+  #define plat_fcntl(s, c, v) lwip_fcntl((s), (c), (v))
 #endif
 
 #endif

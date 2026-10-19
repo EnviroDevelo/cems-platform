@@ -19,4 +19,5 @@ static void sys_pre_logic(uint32_t now_ms) {
     alarm_scan(now_ms);                /* delays and states; conditions set by last scan's logic */
 }
 
-const scan_sys_t plat_sys = { .apply = sys_apply, .pre_logic = sys_pre_logic, .publish = param_publish };
+const scan_sys_t plat_sys = { .apply = sys_apply, .pre_logic = sys_pre_logic, .publish = param_publish,
+                               .io_out = alarm_io_out };

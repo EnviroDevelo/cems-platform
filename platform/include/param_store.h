@@ -43,11 +43,12 @@
 #include "param.h"
 
 #define RF_FACTORY 0x01u
+#define RF_SECRET  0x02u   /* never in a backup file, never restored from one (password hashes) */
 
 typedef struct {
     uint16_t    id;        /* shares the parameter ID space, >= PARAM_ID_APP_FIRST */
     uint16_t    size;      /* bytes */
-    uint8_t     flags;     /* RF_FACTORY */
+    uint8_t     flags;     /* RF_FACTORY, RF_SECRET */
     void       *ptr;
     const void *dflt;      /* power-up / restore-defaults content; NULL = all zero */
     const char *name;

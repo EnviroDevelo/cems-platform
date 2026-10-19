@@ -36,11 +36,18 @@
 #define MBEDTLS_MD_C
 #define MBEDTLS_SHA256_C
 #define MBEDTLS_SHA224_C                        /* (mbedTLS builds SHA-224 with SHA-256) */
+#define MBEDTLS_SHA384_C                        /* mail servers' certificates are often signed with SHA-384 */
+#define MBEDTLS_SHA512_C
+#define MBEDTLS_BASE64_C                        /* SMTP AUTH */
 
 /* public key */
 #define MBEDTLS_BIGNUM_C
 #define MBEDTLS_ECP_C
 #define MBEDTLS_ECP_DP_SECP256R1_ENABLED
+#define MBEDTLS_ECP_DP_SECP384R1_ENABLED        /* a mail server with a P-384 key */
+#define MBEDTLS_RSA_C                           /* most mail servers have RSA keys (client only) */
+#define MBEDTLS_PKCS1_V15
+#define MBEDTLS_PKCS1_V21
 #define MBEDTLS_ECP_NIST_OPTIM
 #define MBEDTLS_ECDH_C
 #define MBEDTLS_ECDSA_C
@@ -61,12 +68,17 @@
 /* TLS */
 #define MBEDTLS_SSL_TLS_C
 #define MBEDTLS_SSL_SRV_C
+#define MBEDTLS_SSL_CLI_C                       /* alarm email (mail.c) */
+#define MBEDTLS_SSL_KEEP_PEER_CERTIFICATE       /* its fingerprint is what the unit pins */
+#define MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
+#define MBEDTLS_SSL_SERVER_NAME_INDICATION
 #define MBEDTLS_SSL_PROTO_TLS1_2
 #define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
 #define MBEDTLS_SSL_EXTENDED_MASTER_SECRET
 #define MBEDTLS_SSL_SESSION_TICKETS
 #define MBEDTLS_SSL_TICKET_C
-#define MBEDTLS_SSL_CIPHERSUITES MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+#define MBEDTLS_SSL_CIPHERSUITES MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, \
+                                 MBEDTLS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
 #define MBEDTLS_SSL_IN_CONTENT_LEN  16384       /* a browser may send full 16 KB records (uploads) */
 #define MBEDTLS_SSL_OUT_CONTENT_LEN 4096
 #define MBEDTLS_SSL_MAX_FRAGMENT_LENGTH

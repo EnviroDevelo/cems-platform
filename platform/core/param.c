@@ -32,8 +32,17 @@ uint32_t        plat_log_status_word;     /* written by plat_log */
 
 #define NET (PF_PERSIST | PF_ANY_MODE | PF_NO_MODBUS)
 static uint16_t  p_alarm_ack;
+static bool      p_mail_en, p_mail_on_clear;
+static uint32_t  p_mail_ip;
+static uint16_t  p_mail_port, p_mail_gap;
+static uint8_t   p_mail_sec;
+static uint8_t   p_mail_pin[32];
+static char      p_mail_user[48], p_mail_pass[48], p_mail_from[64], p_mail_to[160], p_site[32];
+#define MAILF (PF_PERSIST | PF_ANY_MODE | PF_NO_MODBUS)
 extern uint16_t plat_alarm_active_count, plat_alarm_unack_count;            /* plat_alarm.c */
-extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16];
+extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alarm_common;
+extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
+extern bool     plat_alarm_relay_inv[4];
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 
 static const param_def_t plat_defs[] = {
@@ -62,6 +71,23 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_ALARM_UNACKED, "alarm_unacked", plat_alarm_unack_count, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_ACTIVE_BITS, "alarm_active_bits", plat_alarm_active_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_ALARM_COMMON, "alarm_common", plat_alarm_common, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_ROUTE, "alarm_route", plat_alarm_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, 32, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_MODE, "alarm_relay_mode", plat_alarm_relay_mode, CT_U8, 0, 2, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_BOOL(PARAM_ID_ALARM_RELAY_INV, "alarm_relay_inv", plat_alarm_relay_inv, PLAT_LVL_ADMIN, NET),
+    PARAM_BIT (PARAM_ID_MAIL_ENABLE, "mail_enable", p_mail_en, PLAT_LVL_ADMIN, MAILF),
+    PARAM_UINT(PARAM_ID_MAIL_SERVER, "mail_server_ip", p_mail_ip, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_ADMIN, MAILF, NULL),
+    PARAM_UINT(PARAM_ID_MAIL_PORT, "mail_port", p_mail_port, CT_U16, 1, 65535, 587, PLAT_LVL_ADMIN, MAILF, NULL),
+    PARAM_UINT(PARAM_ID_MAIL_SECURITY, "mail_security", p_mail_sec, CT_U8, 0, 2, MAIL_SEC_STARTTLS, PLAT_LVL_ADMIN, MAILF, NULL),
+    PARAM_BYTES(PARAM_ID_MAIL_PIN, "mail_cert_pin", p_mail_pin, PLAT_LVL_ADMIN, MAILF),
+    PARAM_TEXT(PARAM_ID_MAIL_USER, "mail_user", p_mail_user, NULL, PLAT_LVL_ADMIN, MAILF),
+    PARAM_TEXT(PARAM_ID_MAIL_PASS, "mail_password", p_mail_pass, NULL, PLAT_LVL_ADMIN, MAILF | PF_SECRET),
+    PARAM_TEXT(PARAM_ID_MAIL_FROM, "mail_from", p_mail_from, NULL, PLAT_LVL_ADMIN, MAILF),
+    PARAM_TEXT(PARAM_ID_MAIL_TO, "mail_to", p_mail_to, NULL, PLAT_LVL_ADMIN, MAILF),
+    PARAM_BIT_D(PARAM_ID_MAIL_ON_CLEAR, "mail_on_clear", p_mail_on_clear, true, PLAT_LVL_ADMIN, MAILF),
+    PARAM_UINT(PARAM_ID_MAIL_GAP_S, "mail_gap", p_mail_gap, CT_U16, 0, 3600, 10, PLAT_LVL_ADMIN, MAILF, "s"),
+    PARAM_TEXT(PARAM_ID_SITE_NAME, "site_name", p_site, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
     PARAM_UINT(PARAM_ID_LOG_INTERVAL_S, "log_interval", plat_log_interval_s, CT_U16, 0, 3600, 60,
                PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE, "s"),
     PARAM_UINT(PARAM_ID_LOG_STATUS, "log_status", plat_log_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
@@ -536,12 +562,15 @@ void param_blob_drain(void) {
     }
 }
 
-param_err_t param_read_blob(uint16_t id, uint16_t off, void *buf, uint16_t len) {
+static param_err_t read_blob(uint16_t id, uint16_t off, void *buf, uint16_t len, bool secret_ok) {
     long i = find_index(id);
     if (i < 0) return PERR_NO_ID;
+    if ((tab[i]->flags & PF_SECRET) && !secret_ok) return PERR_ACCESS;
     if (!PARAM_IS_BLOB(tab[i])) return PERR_TYPE;
     if ((uint32_t)off + len > tab[i]->size) return PERR_RANGE;
     const uint8_t *src = blob_shadow + blob_off[i] + off;
     if (!bound_lock) { memcpy(buf, src, len); return PERR_OK; }
     return plat_seq_read(bound_lock, buf, src, len, 8) ? PERR_OK : PERR_BUSY;
 }
+param_err_t param_read_blob(uint16_t id, uint16_t off, void *buf, uint16_t len) { return read_blob(id, off, buf, len, false); }
+param_err_t param_read_secret(uint16_t id, void *buf, uint16_t len) { return read_blob(id, 0, buf, len, true); }

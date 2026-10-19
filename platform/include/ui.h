@@ -6,7 +6,8 @@
  * text keyboard), Log in (operator/admin/factory, same passwords as the web),
  * Events (the event log, paged), System (firmware and update, network, unit,
  * storage, brightness), Alarms (reached from the alarm pill in the header: the
- * list, most urgent first, acknowledge one or all; acknowledging needs no login).
+ * list, most urgent first, acknowledge one or all; acknowledging needs no login),
+ * Alarm actions (from the Alarms screen: email / Modbus / relay 1-4 per alarm; admin).
  * A header shows the mode and the alarm count; a bar of five buttons along the
  * bottom changes screen.
  *
@@ -32,7 +33,7 @@ typedef struct {
     unsigned        n_home;
 } ui_cfg_t;
 
-enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS };
+enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG };
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

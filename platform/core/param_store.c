@@ -185,6 +185,12 @@ static bool param_bytes_ok(const param_def_t *d, const uint8_t *data) {
 
 /* Apply records to tags. Returns false if the payload is malformed (nothing is
  * applied in that case: a first pass checks the structure). */
+static bool item_secret(const item_t *it) {
+    return it && ((it->pdef && (it->pdef->flags & PF_SECRET)) || (it->rdef && (it->rdef->flags & RF_SECRET)));
+}
+
+static bool importing;          /* apply_payload is restoring a backup file: secrets are not taken from it */
+
 static bool apply_payload(uint8_t region, const uint8_t *p, uint32_t len, uint16_t version, bool dry_run) {
     /* pass 1: structure */
     for (uint32_t n = 0; n < len;) {
@@ -210,6 +216,7 @@ static bool apply_payload(uint8_t region, const uint8_t *p, uint32_t len, uint16
             data = rec;
         }
         const item_t *it = find_item(id);
+        if (importing && item_secret(it)) continue;      /* an older backup that still carried them */
         if (!it || it->region != region || it->size != sz ||
             (it->pdef && !param_bytes_ok(it->pdef, data))) {
             S.st.skipped_records++; set_status(PSTAT_REC_SKIPPED);
@@ -330,8 +337,10 @@ void param_store_scan_service(void) {
         for (uint8_t g = 0; g < 2; ++g)
             S.rg[g].payload_len = build_payload(g, S.rg[g].img + STORE_HDR_SIZE, S.rg[g].slot - STORE_HDR_SIZE);
     } else if (req == REQ_IMPORT) {
+        importing = true;
         for (uint8_t g = 0; g < 2; ++g)
             if (S.imp_buf[g]) (void)apply_payload(g, S.imp_buf[g], S.imp_len[g], S.imp_ver[g], false);
+        importing = false;
         S.imp_buf[0] = S.imp_buf[1] = NULL;
     }
     PLAT_DMB();
@@ -428,6 +437,20 @@ uint32_t param_store_export(uint8_t *buf, uint32_t cap) {
         if (n + total > cap) return 0;
         if (S.dev->read(S.dev, r->addr[r->active], buf + n, total) != 0) return 0;
         if (plat_crc32(0, buf + n + STORE_HDR_SIZE, x.len) != x.crc) return 0;
+        /* drop the secrets (passwords, password hashes) from the copy, and re-seal it */
+        uint8_t *pl = buf + n + STORE_HDR_SIZE;
+        uint32_t w = 0;
+        for (uint32_t k = 0; k < x.len;) {
+            uint16_t id = get16(pl + k), sz = get16(pl + k + 2);
+            uint32_t rec = 4u + (((uint32_t)sz + 3u) & ~3u);
+            if (rec > x.len - k) return 0;
+            if (!item_secret(find_item(id))) { memmove(pl + w, pl + k, rec); w += rec; }
+            k += rec;
+        }
+        x.len = w;
+        x.crc = plat_crc32(0, pl, w);
+        hdr_write(buf + n, &x);
+        total = STORE_HDR_SIZE + w;
         len[g] = total; n += total;
     }
     if (len[0] + len[1] == 0 || cap < 20) return 0;

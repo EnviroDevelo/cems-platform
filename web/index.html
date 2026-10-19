@@ -35,6 +35,9 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
 tr.unacked td{font-weight:600}
 .warnbox{background:#fdecd2;color:var(--warn);border-radius:6px;padding:8px;margin-bottom:8px;display:none}
 #filter{min-width:220px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
+.grid label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:2px}
+td.c{text-align:center}
 @media (max-width:640px){td.lim,th.lim{display:none}}
 </style>
 </head>
@@ -127,6 +130,54 @@ tr.unacked td{font-weight:600}
       If it fails before that, the unit goes back to the current firmware by itself.</p>
     <p class="note" id="diag"></p>
   </section>
+
+  <section id="actions" style="display:none">
+    <h2>Alarm actions</h2>
+    <p class="note">What each alarm does when it is raised. <b>Email</b>: sends an email (set up below).
+      <b>Modbus</b>: counts in the common-alarm register for the control system (every alarm's own state is
+      always readable over Modbus). <b>Relay</b>: switches an alarm relay output. No tick: shown here, on the
+      touchscreen and in the event log only. Changes need an admin login.</p>
+    <table>
+      <thead><tr><th>Alarm</th><th>Email</th><th>Modbus</th><th>Relay 1</th><th>Relay 2</th><th>Relay 3</th><th>Relay 4</th><th></th></tr></thead>
+      <tbody id="actrows"></tbody>
+    </table>
+    <h2 style="margin-top:14px">Alarm relays</h2>
+    <table>
+      <thead><tr><th>Relay</th><th>Digital output</th><th>Switches on</th><th>Fail-safe</th><th>Now</th></tr></thead>
+      <tbody id="relayrows"></tbody>
+    </table>
+    <p class="note">Fail-safe: the output is energised while there is no alarm, so a power cut or a fault also
+      signals. A relay output overrides anything the application drives on the same output.</p>
+    <span class="err" id="acterr"></span>
+  </section>
+
+  <section id="mailsec" style="display:none">
+    <h2>Alarm email</h2>
+    <p class="note">Emails go to the site's mail server, addressed by IP. With email off the instrument makes no
+      outbound connections.</p>
+    <div class="grid" id="mailform">
+      <label>Email alarms <select id="m70"><option value="0">Off</option><option value="1">On</option></select></label>
+      <label>Unit name (subject) <input id="m81" maxlength="31"></label>
+      <label>Mail server IP <input id="m71" placeholder="192.168.1.20"></label>
+      <label>Port <input id="m72" type="number" min="1" max="65535"></label>
+      <label>Security <select id="m73"><option value="1">STARTTLS (587)</option><option value="2">TLS (465)</option><option value="0">None (25, no login)</option></select></label>
+      <label>Login <input id="m75" maxlength="47" autocomplete="off"></label>
+      <label>Password <input id="m76" type="password" maxlength="47" placeholder="unchanged" autocomplete="new-password"></label>
+      <label>From <input id="m77" maxlength="63"></label>
+      <label>To (up to 4, commas) <input id="m78" maxlength="159"></label>
+      <label>Email when cleared <select id="m79"><option value="1">Yes</option><option value="0">No</option></select></label>
+      <label>Collect for (s) <input id="m80" type="number" min="0" max="3600"></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="mailsave">Save</button>
+      <button class="ghost" id="mailtest">Send test email</button>
+      <span class="err" id="mailerr"></span>
+    </div>
+    <p class="note" id="mailstat"></p>
+    <p class="note" id="mailfp"></p>
+    <div class="row"><button class="ghost" id="mailtrust" style="display:none">Trust this server</button>
+      <button class="ghost" id="mailuntrust" style="display:none">Stop checking the certificate</button></div>
+  </section>
   <p class="note" style="text-align:center">HTTPS certificate fingerprint (SHA-256): <span id="tlsfp">-</span>.
     Compare it with the one on the touchscreen (System) before logging in.
     <a href="/api/tls/cert">Download the certificate</a> to trust this unit on this computer.</p>
@@ -148,10 +199,11 @@ async function api(path, body, raw) {
 const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 
 function fmt(d, v) {
+  if (d.flags.includes("secret")) return "(hidden)";
   if (v === null || v === undefined) return "-";
   if (Array.isArray(v)) return v.map(x => typeof x === "boolean" ? (x ? 1 : 0) : x).join(", ");
   if (typeof v === "boolean") return v ? "on" : "off";
-  if (d.name.startsWith("net_") && d.type === "uint" && d.name !== "net_dhcp")
+  if ((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint" && d.name !== "net_dhcp")
     return [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".");
   return String(v) + (d.unit ? " " + d.unit : "");
 }
@@ -256,6 +308,10 @@ async function refreshInfo() {
     $("who").textContent = i.session.level;
     $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
     $("admin").style.display = level >= 2 ? "block" : "none";
+    const adm = level >= 2;
+    if (adm && $("actions").style.display === "none") { loadActions(); loadMail(); }
+    $("actions").style.display = adm ? "block" : "none";
+    $("mailsec").style.display = adm ? "block" : "none";
     if (level >= 2) refreshFw();
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
@@ -313,13 +369,120 @@ async function ackAlarm(id) {
   catch (e) { $("alarmerr").textContent = e.message === "login" ? "Log in to acknowledge" : explain(e); }
 }
 $("ackall").onclick = () => ackAlarm("all");
+/* ---- alarm actions, relays, email (admin) ---- */
+const AR = { email: 1, modbus: 2, relay: k => 4 << k, set: 0x80 };
+const RMODE = ["while active", "until acknowledged (horn)", "until cleared and acknowledged (lamp)"];
+async function loadActions() {
+  try {
+    const c = await api("/api/alarms/config");
+    const tb = $("actrows"); tb.textContent = "";
+    for (const a of c.alarms) {
+      const tr = document.createElement("tr");
+      const name = document.createElement("td");
+      const dot = document.createElement("span"); dot.className = "sev sev-" + a.severity;
+      name.append(dot, a.text + " "); const sm = document.createElement("span"); sm.className = "note";
+      sm.textContent = `${a.name} (${a.id})`; name.appendChild(sm); tr.appendChild(name);
+      const bits = [AR.email, AR.modbus, AR.relay(0), AR.relay(1), AR.relay(2), AR.relay(3)];
+      const boxes = bits.map(b => {
+        const td = document.createElement("td"); td.className = "c";
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = (a.route & b) !== 0;
+        cb.onchange = async () => {
+          const v = AR.set | boxes.reduce((s, x, i) => s | (x.checked ? bits[i] : 0), 0);
+          await writeAct([["id", 46], ["o", a.id], ["v", v]]);
+        };
+        td.appendChild(cb); tr.appendChild(td); return cb;
+      });
+      const td = document.createElement("td");
+      if (a.configured) {
+        const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Default";
+        b.title = "Back to this alarm's built-in actions";
+        b.onclick = () => writeAct([["id", 46], ["o", a.id], ["v", 0]]);
+        td.appendChild(b);
+      }
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    }
+    const rb = $("relayrows"); rb.textContent = "";
+    c.relays.forEach((r, k) => {
+      const tr = document.createElement("tr");
+      const cell = el => { const td = document.createElement("td"); td.append(el); tr.appendChild(td); return el; };
+      cell(`Relay ${k + 1}`);
+      const out = cell(document.createElement("select"));
+      for (let n = 0; n <= 32; n++) out.add(new Option(n ? `DO ${n}` : "not used", n));
+      out.value = r.do; out.onchange = () => writeAct([["id", 47], ["o", k], ["v", out.value]]);
+      const md = cell(document.createElement("select"));
+      RMODE.forEach((t, i) => md.add(new Option(t, i))); md.value = r.mode;
+      md.onchange = () => writeAct([["id", 48], ["o", k], ["v", md.value]]);
+      const fs = cell(document.createElement("input")); fs.type = "checkbox"; fs.checked = r.failsafe;
+      fs.onchange = () => writeAct([["id", 49], ["o", k], ["v", fs.checked ? 1 : 0]]);
+      cell(r.do ? (r.in_alarm ? "IN ALARM" : "normal") : "-");
+      rb.appendChild(tr);
+    });
+  } catch (e) { $("acterr").textContent = explain(e); }
+}
+async function writeAct(pairs) {
+  $("acterr").textContent = "";
+  try { await api("/api/write", pairs.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&")); }
+  catch (e) { $("acterr").textContent = explain(e); }
+  setTimeout(loadActions, 300);
+}
+const MAILF = [70, 81, 71, 72, 73, 75, 77, 78, 79, 80];
+async function loadMail() {
+  try {
+    const j = await api("/api/values?ids=" + MAILF.join(","));
+    for (const id of MAILF) {
+      let v = j.v[id];
+      if (id === 71) v = v ? [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".") : "";
+      if (typeof v === "boolean") v = v ? 1 : 0;
+      $("m" + id).value = v;
+    }
+  } catch (e) { }
+  refreshMail();
+}
+async function refreshMail() {
+  try {
+    const s = await api("/api/mail");
+    $("mailstat").textContent = (s.last ? `Last attempt ${s.last_s_ago} s ago: ${s.last}. ` : "No email sent yet. ") +
+      `Sent ${s.sent}, failed attempts ${s.failed}` + (s.dropped ? `, alarm events not emailed ${s.dropped}` : "") +
+      (s.queued ? `. Waiting: ${s.queued}` + (s.tries ? ` (try ${s.tries + 1} of 3)` : "") : "") + ".";
+    $("mailfp").textContent = (s.server_fp ? `The mail server's certificate (SHA-256): ${s.server_fp}. ` : "") +
+      (s.pinned ? (s.pinned === s.server_fp || !s.server_fp ? "Trusted: only this certificate is accepted."
+                                                             : `Trusted certificate is ${s.pinned}: the server's has CHANGED.`)
+                : "The server's certificate is not checked (encrypted, but the server is not verified).");
+    $("mailtrust").style.display = s.server_fp && s.pinned !== s.server_fp ? "" : "none";
+    $("mailuntrust").style.display = s.pinned ? "" : "none";
+    if (s.busy) setTimeout(refreshMail, 1000);
+  } catch (e) { }
+}
+$("mailsave").onclick = async () => {
+  $("mailerr").textContent = "";
+  const pairs = [];
+  for (const id of MAILF) pairs.push(["id", id], ["v", $("m" + id).value === "" && id === 71 ? "0" : $("m" + id).value]);
+  if ($("m76").value) pairs.push(["id", 76], ["v", $("m76").value]);
+  try {
+    for (let i = 0; i < pairs.length; i += 2) {        /* one at a time: text fields may be empty */
+      const id = pairs[i][1], v = pairs[i + 1][1];
+      await api("/api/write", form({ id, v }));
+    }
+    $("m76").value = ""; $("mailerr").textContent = "Saved";
+  } catch (e) { $("mailerr").textContent = explain(e) + (e.info && e.info.id ? ` (${e.info.id})` : ""); }
+  loadMail();
+};
+$("mailtest").onclick = async () => {
+  $("mailerr").textContent = "";
+  try { await api("/api/mail/test", ""); $("mailerr").textContent = "Sending..."; setTimeout(refreshMail, 1000); }
+  catch (e) { $("mailerr").textContent = e.message === "mail is off" ? "Turn email on and save first" : explain(e); }
+};
+$("mailtrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 1 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
+$("mailuntrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 0 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
+
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 
 const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", restore_defaults: "Defaults restored",
   time_set: "Clock set", login: "Login", login_fail: "Login failed", logout: "Logout", password: "Password changed",
   restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
   fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
-  events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key" };
+  events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key", mail: "Alarm email" };
 const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
 const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
 function evDetail(e) {
