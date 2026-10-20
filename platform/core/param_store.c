@@ -191,6 +191,10 @@ static bool item_secret(const item_t *it) {
 
 static bool importing;          /* apply_payload is restoring a backup file: secrets are not taken from it */
 
+/* kept in the backup for reference but never restored from one: the serial (a backup
+ * loaded into another unit must not give it this unit's identity) */
+static bool item_dev(const item_t *it) { return it && it->pdef && (it->pdef->flags & PF_DEV); }
+
 static bool apply_payload(uint8_t region, const uint8_t *p, uint32_t len, uint16_t version, bool dry_run) {
     /* pass 1: structure */
     for (uint32_t n = 0; n < len;) {
@@ -216,7 +220,7 @@ static bool apply_payload(uint8_t region, const uint8_t *p, uint32_t len, uint16
             data = rec;
         }
         const item_t *it = find_item(id);
-        if (importing && item_secret(it)) continue;      /* an older backup that still carried them */
+        if (importing && (item_secret(it) || item_dev(it))) continue;      /* an older backup that still carried them */
         if (!it || it->region != region || it->size != sz ||
             (it->pdef && !param_bytes_ok(it->pdef, data))) {
             S.st.skipped_records++; set_status(PSTAT_REC_SKIPPED);

@@ -16,6 +16,7 @@
 #include "mail.h"
 #include "plat_clock.h"
 #include "plat_health.h"
+#include "plat_serial.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -267,7 +268,8 @@ static void get_params(http_out_t *o) {
         out_str(o, ",\"flags\":["); bool f = false;
         static const struct { uint16_t bit; const char *n; } fl[] = {
             { PF_RO, "ro" }, { PF_PERSIST, "persist" }, { PF_FACTORY, "factory" }, { PF_ANY_MODE, "any_mode" },
-            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" }, { PF_CONFIRM, "confirm" }, { PF_SECRET, "secret" } };
+            { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" }, { PF_CONFIRM, "confirm" }, { PF_SECRET, "secret" },
+            { PF_DEV, "ro" }, { PF_DEV, "dev" } };
         for (size_t k = 0; k < sizeof fl / sizeof fl[0]; ++k)
             if (d->flags & fl[k].bit) { if (f) out_str(o, ","); json_str(o, fl[k].n); f = true; }
         out_str(o, "]}");
@@ -635,6 +637,15 @@ static void get_log_csv(const http_req_t *r, http_out_t *o, uint8_t ring) {
     }
 }
 
+/* an event's old/new value: whole numbers exactly (a 32-bit serial or IP), others to 7 digits */
+static void ev_num(http_out_t *o, double v) {
+    if (isfinite(v) && v == floor(v) && fabs(v) <= 4294967295.0) {
+        char b[16];
+        snprintf(b, sizeof b, "%s%lu", v < 0 ? "-" : "", (unsigned long)fabs(v));
+        out_str(o, b);
+    } else json_float(o, (float)v);
+}
+
 static void get_log_events(const http_req_t *r, http_out_t *o) {
     log_ring_info_t inf;
     uint32_t n = query_u32(r, "n", 50);
@@ -664,8 +675,8 @@ static void get_log_events(const http_req_t *r, http_out_t *o) {
         out_str(o, ",\"level\":"); json_str(o, log_level_name(e.level));
         out_str(o, ",\"arg\":"); json_uint(o, e.arg);
         out_str(o, ",\"detail\":"); json_str(o, e.text);
-        out_str(o, ",\"old\":"); json_float(o, (float)e.old_v);
-        out_str(o, ",\"new\":"); json_float(o, (float)e.new_v);
+        out_str(o, ",\"old\":"); ev_num(o, e.old_v);
+        out_str(o, ",\"new\":"); ev_num(o, e.new_v);
         out_str(o, "}");
     }
     out_str(o, "]}");
@@ -834,6 +845,50 @@ static void post_time(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- serial number (developer authority, D25) ---------------- */
+static bool parse_u32(const char *v, uint32_t *out) {
+    char *e;
+    unsigned long n = strtoul(v, &e, 10);
+    if (!v[0] || *e || v[0] == '-' || n > 0xFFFFFFFFul) return false;
+    *out = (uint32_t)n;
+    return true;
+}
+
+/* ?new=<serial>: also the exact text the developer signs for that change */
+static void get_serial(const http_req_t *r, http_out_t *o) {
+    char uid[25], v[16], msg[SERIAL_MSG_MAX];
+    plat_serial_uid_hex(uid);
+    uint32_t want = 0;
+    bool asked = form_get(r->query, strlen(r->query), "new", v, sizeof v) && parse_u32(v, &want);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"serial\":"); json_uint(o, plat_serial());
+    out_str(o, ",\"uid\":"); json_str(o, uid);
+    out_str(o, ",\"key\":"); json_bool(o, plat_serial_key_present());
+    if (asked && plat_serial_message(want, msg, sizeof msg)) {
+        out_str(o, ",\"new\":"); json_uint(o, want);
+        out_str(o, ",\"message\":"); json_str(o, msg);
+    }
+    out_str(o, "}");
+}
+
+/* serial=<new>&sig=<128 hex digits: r||s>; factory login and a developer token */
+static void post_serial(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char v[16] = "", sh[160] = "";
+    uint8_t sig[64];
+    uint32_t want;
+    if (!form_get((const char *)r->body, r->body_len, "serial", v, sizeof v) || !parse_u32(v, &want)) { json_error(o, 400, "serial", -1); return; }
+    if (!form_get((const char *)r->body, r->body_len, "sig", sh, sizeof sh) || strlen(sh) != 128 || hex_decode(sh, sig, sizeof sig) != 64) {
+        json_error(o, 400, "token", -1); return;
+    }
+    int rc = plat_serial_assign(want, sig, PLAT_SRC_WEB, lvl);
+    if (rc != SER_OK) {
+        int st = rc == SER_E_LEVEL ? 403 : rc == SER_E_SIG ? 403 : rc == SER_E_BUSY ? 503 : 409;
+        json_error(o, st, plat_serial_err(rc), PARAM_ID_SERIAL); return;
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"serial\":"); json_uint(o, want); out_str(o, "}");
+}
+
 /* ---------------- alarm email ---------------- */
 static void hex32(http_out_t *o, const uint8_t *b) {
     char h[96];
@@ -978,6 +1033,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/alarms/config")) get_alarm_config(o);
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
+    else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
@@ -997,6 +1053,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
         else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
+        else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }

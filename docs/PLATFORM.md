@@ -30,6 +30,7 @@ runs on top of it.
 | EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
 | Firmware image signing (D14): ECDSA P-256 signature over the image header (which holds the payload's SHA-256); key tool | `platform/net/fw_sig.c`, `platform/core/fw_pubkey.c` (generated), `tools/fwkey.py`, `tools/mkfwimage.py --key` | Done; host-tested (keys made in the test: product key accepted; unsigned, other-key, edited-header and edited-payload images refused) and end to end through netsim with a key made by `fwkey.py`. Compiled and linked for the H5 |
 | HTTPS (D11): own key and certificate, TLS 1.2 server, session tickets, port-80 redirect | `tls.h`, `platform/net/tls.c`, `tls_config.h`, `third_party/mbedtls` | Done; host-tested, handshakes against Python's TLS client (resumption, certificate trust by IP, redirect) and Chromium. Compiled and linked for the H5 |
+| Serial number with developer authority (D25): no ordinary write at any level or from any route, not restored from backups; changed only with a token signed by a separate developer key, bound to the chip's unique ID and the current serial; every change and refusal logged | `plat_serial.h`, `platform/core/plat_serial.c`, `platform/core/dev_pubkey.c` (generated), `tools/serial_token.py`, `tools/fwkey.py devpubkey`; web Administration → Serial number | Done; host-tested (every source and level refused, wrong key / chip / serial / tampered token refused, replay refused, kept over a power cut, a factory-level backup restore leaves it alone) and end to end with tokens from the tool (`tests/integration/serial_test.py`). Needs the developer key made and `dev_pubkey.c` committed |
 | Health: heap and every task's stack margin sampled every 5 s (web, System screen), alarm 11 RESOURCE_LOW; soak test | `plat_health.h`, `plat_tasks_freertos.c` (sampling), `tests/integration/soak_test.py` | Done; host-tested; soak run for 15 min on the PC build (no failures, sockets and memory flat) |
 | Own touchscreen fonts (D24): DejaVu Sans at the ROM font sizes with ° ² ³ µ ± and 26 more symbols, kept compressed in the firmware, inflated into the display's RAM at start-up and CRC-checked; UTF-8 text encoded for them; ROM fonts if loading fails | `tools/mkfont.py`, `platform/ui/eve_fonts.c` (generated), `eve.h` (`eve_fonts_load`, `eve_font_encode`), `ui.c`; simulator: `host/eve_sim/zinflate.c` | Done; host-tested against the simulated BT817 (inflate, CRC read back from the FIFO, a fault while loading, a damaged stream) and glyph sheets checked by eye. Not yet run on the display |
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
@@ -524,6 +525,31 @@ socket count stays flat, memory stops growing after the first third and the addr
 sanitizer reports no leak at exit. The spec's 72-hour soak is the same script with
 4320 minutes; on the DK the figures to watch are `health` on `/api/info`.
 
+## 5i. Serial number (D25)
+
+The serial (parameter 50) names the unit on the web page and touchscreen, in alarm
+emails, in backup and CSV file names and in its HTTPS certificate. Changing it needs
+developer authority, which no login gives on its own:
+
+- The parameter carries `PF_DEV`: the touchscreen, the web parameter write and Modbus are
+  refused at every level, factory included ("read only" / "developer"), and a parameter
+  backup restore never sets it (the file still records it), so a backup loaded into a
+  second unit cannot clone the first unit's identity.
+- The one way in is `/api/serial` with a factory login **and** a token: an ECDSA P-256
+  signature, by the developer key, over
+  `CEMS-SERIAL v1 uid=<chip unique ID, 24 hex> old=<serial now> new=<serial wanted>`.
+  The developer key is separate from the technicians' firmware key (D14) and stays with the
+  developer; the firmware holds only its public half (`dev_pubkey.c`). Because the text
+  names the chip and the current serial, a token works on one unit, once: after the change
+  "old" no longer matches, and on another chip the ID differs.
+- `tools/serial_token.py` makes the token off the unit; the web page shows the exact text
+  and the command line. Firmware built without a developer key cannot change the serial at
+  all (there is deliberately no development fallback).
+- Every change is logged (old → new, who, from where), and so is every refused token.
+
+The HTTPS certificate takes the new serial at the next restart. The chip ID comes from
+the H5's 96-bit unique ID (`bsp_chip_uid`), the same one the MAC address is derived from.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -590,6 +616,7 @@ work before integration.
 | D22 | Clock | Local standard time, no daylight saving; UTC offset as a setting; set from the touchscreen and web (admin), the PLC (parameter 85) or SNTP from the site's time server; every change logged once with its source | CEMS records must not jump twice a year; sites seldom have internet, so the time source is the operator, the DAHS or a site server |
 | D23 | Firmware restart gates | The application's safe-state check (always on), touchscreen confirmation of web-requested restarts (setting, off by default), minimum version (setting, factory) | The spec's three conditions; confirmation is off by default so a site without anyone at the panel can still be updated |
 | D24 | Display assets | Own fonts (DejaVu, L4) compressed in the firmware, inflated into RAM_G at start-up and CRC-checked; nothing in the module's flash yet; link stays single SPI | Versioned with the firmware with no extra step; the units the instrument shows need ° ² ³ µ; the module's flash is kept for big images if ever needed |
+| D25 | Serial number authority | **Gary, 20 Oct: developer level authority to change it at all.** No login level can write it; only a token signed by a separate developer key, bound to the chip's unique ID and the current serial (single use, single unit); not restored from backups; every change and refusal logged; no key built in = cannot be changed | The serial is the unit's identity for the customer, certificates and records; a tech login or a copied backup must not be able to change or clone it |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout

@@ -128,6 +128,21 @@ td.c{text-align:center}
     </div>
     <p class="note">The new firmware runs on trial after the restart and keeps itself after a minute of normal running.
       If it fails before that, the unit goes back to the current firmware by itself.</p>
+    <h2 style="margin-top:14px">Serial number</h2>
+    <p id="serinfo" class="note">-</p>
+    <div class="row" id="serctl" style="display:none">
+      <input id="sernew" type="number" min="0" max="4294967295" placeholder="New serial">
+      <button class="ghost" id="sermsg">Show text to sign</button>
+    </div>
+    <p class="note" id="sersign" style="display:none;word-break:break-all"></p>
+    <div class="row" id="serapply" style="display:none">
+      <input id="sertok" placeholder="Developer token (128 hex digits)" style="flex:1;min-width:280px" autocomplete="off">
+      <button id="serbtn">Change serial</button>
+    </div>
+    <span class="err" id="sererr"></span>
+    <p class="note">The serial number can only be changed with a token from the developer, made for this unit's chip ID
+      and its current serial (so it works once, on this unit), plus a factory login. A parameter backup never changes it.
+      Every change is in the event log.</p>
     <p class="note" id="diag"></p>
   </section>
 
@@ -336,7 +351,7 @@ async function refreshInfo() {
     $("clocksec").style.display = adm ? "block" : "none";
     $("actions").style.display = adm ? "block" : "none";
     $("mailsec").style.display = adm ? "block" : "none";
-    if (level >= 2) refreshFw();
+    if (level >= 2) { refreshFw(); if (changed) refreshSerial(); }
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
@@ -500,6 +515,41 @@ $("mailtest").onclick = async () => {
 $("mailtrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 1 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
 $("mailuntrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 0 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
 
+/* ---- serial number (developer token) ---- */
+let serKey = false, serNow = 0;
+async function refreshSerial() {
+  try {
+    const j = await api("/api/serial");
+    serKey = j.key; serNow = j.serial;
+    $("serinfo").textContent = `Serial ${j.serial || "not set"}, chip ID ${j.uid}.` +
+      (j.key ? "" : " This firmware has no developer key: the serial cannot be changed.");
+    $("serctl").style.display = level >= 3 && j.key ? "flex" : "none";
+  } catch (e) { }
+}
+$("sermsg").onclick = async () => {
+  $("sererr").textContent = "";
+  const n = $("sernew").value.trim();
+  if (!/^\d+$/.test(n)) { $("sererr").textContent = "Enter the new serial"; return; }
+  try {
+    const j = await api("/api/serial?new=" + n);
+    $("sersign").textContent = `Send the developer this unit's details, or sign it yourself: ` +
+      `tools/serial_token.py --key cems-dev-key.pem --uid ${j.uid} --old ${j.serial} --new ${j.new}` +
+      `  (the token signs: "${j.message}")`;
+    $("sersign").style.display = "block"; $("serapply").style.display = "flex";
+  } catch (e) { $("sererr").textContent = explain(e); }
+};
+$("serbtn").onclick = async () => {
+  $("sererr").textContent = "";
+  const sig = $("sertok").value.trim().toLowerCase();
+  if (!/^[0-9a-f]{128}$/.test(sig)) { $("sererr").textContent = "The token is 128 hex digits"; return; }
+  try {
+    await api("/api/serial", form({ serial: $("sernew").value.trim(), sig }));
+    $("sererr").textContent = "Changed"; $("sertok").value = "";
+    $("sersign").style.display = "none"; $("serapply").style.display = "none";
+    setTimeout(refreshSerial, 600);
+  } catch (e) { $("sererr").textContent = e.message; }
+};
+
 /* ---- clock ---- */
 const pad = n => String(n).padStart(2, "0");
 async function refreshClock() {
@@ -559,7 +609,8 @@ const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", rest
   time_set: "Clock set", login: "Login", login_fail: "Login failed", logout: "Logout", password: "Password changed",
   restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
   fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
-  events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key", mail: "Alarm email" };
+  events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key", mail: "Alarm email",
+  serial: "Serial number" };
 const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
 const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
 function evDetail(e) {
@@ -568,6 +619,7 @@ function evDetail(e) {
   case "param": return `${name} (${e.arg}): ${num(e.old)} → ${num(e.new)}`;
   case "mode": return `${e.old ? "REMOTE" : "LOCAL"} → ${e.new ? "REMOTE" : "LOCAL"}`;
   case "power_up": return `${RESET[e.arg] || "reset " + e.arg}, ${e.detail}`;
+  case "serial": return e.new === null ? `${num(e.old)}: ${e.detail}` : `${num(e.old)} → ${num(e.new)}: ${e.detail}`;
   case "time_set": return e.old === null ? "clock set" : `stepped ${num(e.new - e.old)} s`;
   case "password": return LV[e.arg] || "";
   default: return [e.detail, e.arg ? "#" + e.arg : ""].filter(Boolean).join(" ");

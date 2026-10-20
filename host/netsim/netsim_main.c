@@ -36,6 +36,7 @@
 #include "plat_tasks.h"
 #include "app_demo.h"
 #include "fw_update.h"
+#include "plat_serial.h"
 #include "tls.h"
 #include <math.h>
 
@@ -260,6 +261,12 @@ int main(int argc, char **argv) {
         for (int k = 0; k < 65; ++k) { unsigned v; sscanf(kx + 2 * k, "%2x", &v); fwkey[k] = (uint8_t)v; }
         fw_pubkey_override_for_test(fwkey);
     }
+    static uint8_t devkey[65];                   /* CEMS_DEV_PUBKEY: hex developer key (serial tokens, D25) */
+    const char *dx = getenv("CEMS_DEV_PUBKEY");
+    if (dx && strlen(dx) == 130) {
+        for (int k = 0; k < 65; ++k) { unsigned v; sscanf(dx + 2 * k, "%2x", &v); devkey[k] = (uint8_t)v; }
+        plat_serial_key_override_for_test(devkey);
+    }
     pthread_mutexattr_t ma; pthread_mutexattr_init(&ma); pthread_mutexattr_settype(&ma, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&crit, &ma);
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -327,4 +334,14 @@ int main(int argc, char **argv) {
             ss.scans, ss.late_starts, ss.max_dt_ms, mbs.frames, hs.served);
     mbtcp_close_all(&mbs); http_close(&hs); http_close(&hr);
     return 0;
+}
+
+/* the chip's unique ID: CEMS_UID (24 hex digits) or a fixed stand-in */
+void bsp_chip_uid(uint8_t uid[12]) {
+    static const uint8_t dflt[12] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb };
+    const char *e = getenv("CEMS_UID");
+    for (int k = 0; k < 12; ++k) {
+        unsigned b;
+        uid[k] = e && strlen(e) == 24 && sscanf(e + 2 * k, "%2x", &b) == 1 ? (uint8_t)b : dflt[k];
+    }
 }

@@ -54,6 +54,8 @@ typedef enum { PT_BOOL = 0, PT_INT, PT_UINT, PT_FLOAT, PT_BYTES, PT_TEXT, PT_TEX
 #define PF_CONFIRM     0x0040u  /* the touchscreen asks "are you sure?" before changing it (critical setpoints) */
 #define PF_SECRET      0x0080u  /* write-only: never read back (web, Modbus, touchscreen), never in a backup file
                                    (e.g. the mail server password); the platform reads it with param_read_secret */
+#define PF_DEV         0x0100u  /* developer authority: no ordinary write at any level, not restored from a backup;
+                                   changed only through plat_serial_assign with a signed token (D25) */
 
 typedef int (*param_interlock_fn)(uint16_t id, plat_val_t v);  /* 0 = allow */
 
@@ -101,7 +103,7 @@ enum {
     PARAM_ID_NET_GW           = 13,
     PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
-    PARAM_ID_SERIAL           = 50,  /* factory */
+    PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */
     PARAM_ID_ALARM_ACK        = 40,  /* write an alarm ID (or 65535 = all) to acknowledge it; any mode, no login */
     PARAM_ID_ALARM_ACTIVE     = 41,  /* RO: alarms active */

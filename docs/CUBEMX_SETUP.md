@@ -174,6 +174,18 @@ Check a file with `python3 tools/mkfwimage.py cems-0.4.0.cfw --check --pub $(pyt
 Back the key up somewhere safe: lose it and units in the field can't be updated except
 with the debugger; leak it and anyone with a tech login can install their own firmware.
 
+Serial numbers (D25): a second, separate key, kept by the developer only (not on the
+technicians' machine):
+
+    python3 tools/fwkey.py new ~/cems-dev/cems-dev-key.pem
+    python3 tools/fwkey.py devpubkey ~/cems-dev/cems-dev-key.pem > platform/core/dev_pubkey.c
+
+Commit `dev_pubkey.c`. Until then no build can change a serial number. To give a unit its
+serial: web page (factory login) → Administration → Serial number → enter it → "Show text
+to sign" gives the command line; run it on the developer's PC
+(`python3 tools/serial_token.py --key ~/cems-dev/cems-dev-key.pem --uid <chip ID> --old <now> --new <serial>`)
+and paste the token back. The token only works on that chip, once.
+
 The first update on the DK should be done with the debugger attached (see
 `docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to
 return to a plain setup, clear it in STM32CubeProgrammer (Option bytes → User

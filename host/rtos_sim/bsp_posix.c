@@ -1,5 +1,6 @@
 /* bsp_posix.c - BSP for the FreeRTOS POSIX run: real time from the FreeRTOS tick,
  * simulated I/O, and a reset that ends the process with a report. */
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "FreeRTOS.h"
@@ -50,3 +51,13 @@ void bsp_random(void *buf, uint32_t len) { FILE *f = fopen("/dev/urandom", "rb")
 /* heap_3 (malloc) has no free-space figures: the health sample reports 0 here */
 size_t xPortGetFreeHeapSize(void) { return 0; }
 size_t xPortGetMinimumEverFreeHeapSize(void) { return 0; }
+
+/* the chip's unique ID: CEMS_UID (24 hex digits) or a fixed stand-in */
+void bsp_chip_uid(uint8_t uid[12]) {
+    static const uint8_t dflt[12] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb };
+    const char *e = getenv("CEMS_UID");
+    for (int k = 0; k < 12; ++k) {
+        unsigned b;
+        uid[k] = e && strlen(e) == 24 && sscanf(e + 2 * k, "%2x", &b) == 1 ? (uint8_t)b : dflt[k];
+    }
+}

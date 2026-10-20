@@ -477,3 +477,8 @@ void bsp_random(void *buf, uint32_t len) {
         p += n; len -= n;
     }
 }
+
+/* the 96-bit unique device ID (RM0481 "Unique device ID register") */
+void bsp_chip_uid(uint8_t uid[12]) {
+    for (unsigned k = 0; k < 12u; ++k) uid[k] = *((const volatile uint8_t *)UID_BASE + k);
+}

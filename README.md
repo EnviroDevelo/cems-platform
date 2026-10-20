@@ -24,7 +24,7 @@ tools/check_target.sh   # compile and link the target in six configurations; upd
 Integration tests (with netsim built): `python3 tests/integration/net_test.py` (needs
 pymodbus on PYTHONPATH), `python3 tests/integration/fw_test.py` (firmware update and
 rollback), `python3 tests/integration/mail_test.py` (alarm email against a test mail
-server; needs openssl), `python3 tests/integration/clock_test.py` (clock and SNTP),
+server; needs openssl), `python3 tests/integration/clock_test.py` (clock and SNTP), `python3 tests/integration/serial_test.py` (serial number tokens; needs Python cryptography),
 `python3 tests/integration/soak_test.py [minutes]` (soak with memory and socket watch; needs pymodbus) and `python3 tests/integration/web_ui_test.py` (needs Python Playwright and
 Chromium).
 

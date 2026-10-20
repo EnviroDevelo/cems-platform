@@ -1,7 +1,8 @@
-/* fw_sig.c - ECDSA P-256 check of firmware images (fw_update.h, decision D14). */
+/* fw_sig.c - ECDSA P-256 checks: firmware images (fw_update.h, D14) and serial tokens (plat_serial.h, D25). */
 #include <string.h>
 #include "fw_update.h"
 #include "tls.h"
+#include "plat_serial.h"
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/bignum.h"
@@ -14,7 +15,11 @@ bool fw_signing_required(void) { return override_q != NULL || fw_pubkey_present;
 
 bool fw_signature_check(const uint8_t hash[32], const uint8_t sig[64]) {
     const uint8_t *q = override_q ? override_q : fw_pubkey_present ? fw_pubkey : NULL;
-    if (!q) return false;
+    return q && plat_p256_verify(q, hash, sig);
+}
+
+/* also used for the developer's serial-number tokens (plat_serial.c) */
+bool plat_p256_verify(const uint8_t q[65], const uint8_t hash[32], const uint8_t sig[64]) {
     tls_crypto_init();                         /* mbedTLS memory pool */
     mbedtls_ecp_group grp;
     mbedtls_ecp_point pt;

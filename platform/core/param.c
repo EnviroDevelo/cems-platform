@@ -70,7 +70,7 @@ static const param_def_t plat_defs[] = {
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_BIT (PARAM_ID_RESTORE_DEFAULTS, "restore_defaults", p_restore, PLAT_LVL_ADMIN, PF_ANY_MODE | PF_NO_MODBUS),
     PARAM_UINT(PARAM_ID_SERIAL, "serial", p_serial, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_FACTORY,
-               PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
+               PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS | PF_DEV, NULL),
     PARAM_UINT(PARAM_ID_HW_REV, "hw_rev", p_hw_rev, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_FACTORY,
                PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_ALARM_ACK, "alarm_ack", p_alarm_ack, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_ANY_MODE, NULL),
@@ -334,6 +334,7 @@ static param_err_t access_ok(const param_def_t *d, uint8_t src, uint8_t level) {
     if (!d) return PERR_NO_ID;
     if (d->flags & PF_RO) return PERR_READONLY;
     if (src == PLAT_SRC_INTERNAL) return PERR_OK;
+    if (d->flags & PF_DEV) return PERR_READONLY;        /* only plat_serial_assign (signed token) */
     if (level < d->level) return PERR_ACCESS;
     if (src == PLAT_SRC_MODBUS && ((d->flags & PF_NO_MODBUS) || !p_modbus_write_en)) return PERR_ACCESS;
     if ((d->flags & PF_LOCAL_ONLY) && src != PLAT_SRC_LOCAL) return PERR_MODE;

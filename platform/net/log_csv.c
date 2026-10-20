@@ -98,7 +98,7 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         [LOG_EV_ALARM_ACK] = "Alarm acknowledged", [LOG_EV_FW_UPDATE] = "Firmware", [LOG_EV_FW_ROLLBACK] = "Firmware rolled back",
         [LOG_EV_LOG_FAULT] = "Log fault", [LOG_EV_STORE_FAULT] = "Storage fault", [LOG_EV_LOST] = "Events lost",
         [LOG_EV_IP_CONFLICT] = "Address conflict", [LOG_EV_TLS_KEY] = "New HTTPS key",
-        [LOG_EV_MAIL] = "Alarm email" };
+        [LOG_EV_MAIL] = "Alarm email", [LOG_EV_SERIAL] = "Serial number" };
     static const char *const reset[] = { "", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out" };
     const char *w = e->code < sizeof nm / sizeof nm[0] && nm[e->code] ? nm[e->code] : (e->code >= LOG_EV_APP ? "Application" : "Event");
     snprintf(what, wcap, "%s", w);
@@ -119,6 +119,10 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         snprintf(detail, dcap, "%u.%u.%u.%u %s", (unsigned)(e->arg >> 24), (unsigned)((e->arg >> 16) & 255u),
                  (unsigned)((e->arg >> 8) & 255u), (unsigned)(e->arg & 255u),
                  e->new_v != 0.0 ? "is used by another device" : "is free again");
+        break;
+    case LOG_EV_SERIAL:
+        if (isfinite(e->new_v)) snprintf(detail, dcap, "%s -> %s: %s", a, b, e->text);
+        else snprintf(detail, dcap, "%s: %s", a, e->text);
         break;
     case LOG_EV_MAIL:
         snprintf(detail, dcap, "%s, %lu alarm event%s", e->text, (unsigned long)e->arg, e->arg == 1 ? "" : "s");

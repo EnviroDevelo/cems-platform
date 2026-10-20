@@ -19,7 +19,7 @@ INC     = -DMBEDTLS_CONFIG_FILE='"tls_config.h"' -Iplatform/net -I$(MBED)/includ
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-          platform/core/plat_sys.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
+          platform/core/plat_sys.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
           port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c port/stm32h5/fw_flash_stm32h5.c \
           platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/http_util.c \

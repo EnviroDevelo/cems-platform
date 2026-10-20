@@ -222,6 +222,7 @@ static const char *perr_text(param_err_t e) {
 /* why a row can't be changed from here, or NULL if it can */
 static const char *why_not(const param_def_t *d) {
     if (d->flags & PF_RO) return "Read only";
+    if (d->flags & PF_DEV) return "Changed only with a developer token (web page)";
     if (d->ptype == PT_BYTES || d->ptype == PT_ARRAY) return "Change this one on the web page";
     param_err_t e;
     if (PARAM_IS_BLOB(d)) {                      /* text: may this level write it in this mode? */
@@ -671,7 +672,7 @@ static void draw_params(void) {
         if (strlen(b) > 22) strcpy(b + 19, "...");
         text(440, (int16_t)(y + ROW_H / 2), F_TEXT, OPT_CENTERY, b);
         color(can ? C_ACCENT : C_GREY);
-        text(880, (int16_t)(y + ROW_H / 2), F_SMALL, OPT_CENTERY | OPT_RIGHTX, can ? "Change >" : (d->flags & PF_RO) ? "read only" : lvl_name(d->level));
+        text(880, (int16_t)(y + ROW_H / 2), F_SMALL, OPT_CENTERY | OPT_RIGHTX, can ? "Change >" : (d->flags & PF_RO) ? "read only" : (d->flags & PF_DEV) ? "developer" : lvl_name(d->level));
         eve_tag(E, 0);
         if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
     }
