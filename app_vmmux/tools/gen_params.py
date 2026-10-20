@@ -25,6 +25,8 @@ Not in the table (replaced by platform parameters): Password (logins), SN (seria
 param 50), ToEmail1..3 (mail recipients, param 78), Brigthness (touchscreen, platform UI).
 """
 import csv, os, re, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from decisions import PROMOTE_TO_SETTING, FACTORY
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -97,7 +99,8 @@ def main():
         tmap[n] = c
         return c
 
-    settings = sorted((r for r in dd.values() if r["role"] == "SETTING"), key=lambda r: r["name"])
+    settings = sorted((r for r in dd.values() if r["role"] == "SETTING" or r["name"] in PROMOTE_TO_SETTING),
+                      key=lambda r: r["name"])
     for r in settings:
         n, t = r["name"], r["type"]
         if n in REPLACED:
@@ -110,21 +113,22 @@ def main():
         lvl = "PLAT_LVL_OPERATOR" if es and all(OPERATOR_SCREENS.match(e["screen"]) for e in es) else "PLAT_LVL_ADMIN"
         key = cname_key(n)
         pu = r["power_up"]
+        PFL = "PF_PERSIST | PF_FACTORY" if n in FACTORY else "PF_PERSIST"
         src, lo, hi, il = "", None, None, None
         if t == "BIT":
             src = "CHECKBOX"
             if r["dims"]:
-                params.append(f'PARAM_ARRAY_BOOL({macro_id(n)}, "{key}", {var}, {lvl}, PF_PERSIST)')
+                params.append(f'PARAM_ARRAY_BOOL({macro_id(n)}, "{key}", {var}, {lvl}, {PFL})')
             else:
                 d = "true" if pu not in ("", "0") else "false"
-                params.append(f'PARAM_BIT_D({macro_id(n)}, "{key}", {var}, {d}, {lvl}, PF_PERSIST)')
+                params.append(f'PARAM_BIT_D({macro_id(n)}, "{key}", {var}, {d}, {lvl}, {PFL})')
         elif t in ("STRING-ASCII", "STRING-UTF-16"):
             src = "TEXT"
             m = "PARAM_TEXT" if t == "STRING-ASCII" else "PARAM_TEXT16"
             dflt = "NULL"
             if pu:                                  # default = the power-up text (shadow copy, see below)
                 shadows.append((n, var)); dflt = f"sh_{cname_key(n)}"
-            params.append(f'{m}({macro_id(n)}, "{key}", {var}, {dflt}, {lvl}, PF_PERSIST)')
+            params.append(f'{m}({macro_id(n)}, "{key}", {var}, {dflt}, {lvl}, {PFL})')
         else:
             tlo, thi = type_range(t)
             nb = [e for e in es if e["type"] == "Numeric Box"]
@@ -153,18 +157,18 @@ def main():
             if t == "TIMER":
                 var = f"{var}.Preset"
                 dflt = int(re.search(r"\.Preset=(\d+)", r["element_power_up"]).group(1)) if "Preset=" in r["element_power_up"] else 0
-                params.append(f'PARAM_UINT({macro_id(n)}, "{key}", {var}, CT_U32, {lo}u, {hi}u, {dflt}u, {lvl}, PF_PERSIST, "ms")')
+                params.append(f'PARAM_UINT({macro_id(n)}, "{key}", {var}, CT_U32, {lo}u, {hi}u, {dflt}u, {lvl}, {PFL}, "ms")')
             elif t == "REAL":
                 if r["dims"]:
-                    params.append(f'PARAM_ARRAY_REAL({macro_id(n)}, "{key}", {var}, {lo:g}f, {hi:g}f, {lvl}, PF_PERSIST)')
+                    params.append(f'PARAM_ARRAY_REAL({macro_id(n)}, "{key}", {var}, {lo:g}f, {hi:g}f, {lvl}, {PFL})')
                 else:
                     d = float(pu) if pu else 0.0
-                    params.append(f'PARAM_REAL({macro_id(n)}, "{key}", {var}, {lo:g}f, {hi:g}f, {d:g}f, NULL, {lvl}, PF_PERSIST)')
+                    params.append(f'PARAM_REAL({macro_id(n)}, "{key}", {var}, {lo:g}f, {hi:g}f, {d:g}f, NULL, {lvl}, {PFL})')
             else:
                 signed = t in ("INT16", "INT8")
                 if r["dims"]:
                     m = "PARAM_ARRAY_INT" if signed else "PARAM_ARRAY_UINT"
-                    params.append(f'{m}({macro_id(n)}, "{key}", {var}, {ct(t)}, {lo}, {hi}, {lvl}, PF_PERSIST)')
+                    params.append(f'{m}({macro_id(n)}, "{key}", {var}, {ct(t)}, {lo}, {hi}, {lvl}, {PFL})')
                 else:
                     d = int(pu) if pu else 0
                     if d < lo or d > hi:
@@ -180,7 +184,7 @@ def main():
                               il[1] if il[1] else (f"#{phi}" if phi != hi else None))
                     m = "PARAM_INT" if signed else "PARAM_UINT"
                     sfx = "" if signed else "u"
-                    params.append(f'{m}({macro_id(n)}, "{key}", {var}, {ct(t)}, {lo}{sfx}, {hi}{sfx}, {d}{sfx}, {lvl}, PF_PERSIST, NULL)')
+                    params.append(f'{m}({macro_id(n)}, "{key}", {var}, {ct(t)}, {lo}{sfx}, {hi}{sfx}, {d}{sfx}, {lvl}, {PFL}, NULL)')
             if il:
                 if t not in ("INT16", "INT8", "UINT8") or r["dims"]: sys.exit(f"gen_params: {n}: interlock on an unexpected type")
                 fn = "il_" + cname_key(n)
@@ -193,10 +197,12 @@ def main():
                 signed = t in ("INT16", "INT8")
                 fld = "i" if signed else "u"
                 pt = "PT_INT" if signed else "PT_UINT"
-                params[-1] = (f"{{ .id = {macro_id(n)}, .ctype = {ct(t)}, .ptype = {pt}, .flags = PF_PERSIST, .level = {lvl}, "
+                params[-1] = (f"{{ .id = {macro_id(n)}, .ctype = {ct(t)}, .ptype = {pt}, .flags = {PFL}, .level = {lvl}, "
                               f".ptr = &({var}), .vmin.{fld} = {lo}, .vmax.{fld} = {hi}, .vdef.{fld} = {d}, "
                               f'.name = "{key}", .unit = NULL, .interlock = {fn} }}')
-        report.append([n, pid, t, src, lo if lo is not None else "", hi if hi is not None else "", lvl])
+        note = lvl + ("; retained by decision " + PROMOTE_TO_SETTING[n] if n in PROMOTE_TO_SETTING else "") \
+                   + ("; factory class by decision " + FACTORY[n] if n in FACTORY else "")
+        report.append([n, pid, t, src, lo if lo is not None else "", hi if hi is not None else "", note])
 
     # ---- tags the old Modbus map exposes need a definition even if nothing else uses them ----
     if len(sys.argv) > 3:

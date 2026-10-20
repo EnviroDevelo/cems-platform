@@ -342,8 +342,64 @@ static void t_modbus(void)
     vmx_Alarm0_Description[0] = 'A'; vmx_Alarm0_Description[1] = 'B'; scans(1);
     const uint8_t rb[] = { 3, 0x03, 0xCD, 0, 2 };
     CHECK_EQ(mb(rb, sizeof rb, r), 6);
-    CHECK_EQ(r[2], 'A'); CHECK_EQ(r[3], 0); CHECK_EQ(r[4], 'B');   /* UTF-16LE bytes, high half first (defaults) */
+    CHECK_EQ(r[2], 'A'); CHECK_EQ(r[3], 'B'); CHECK_EQ(r[4], 0);   /* Q3: UTF-8, first byte in the high half */
     c.v.u = PARAM_MODE_LOCAL; plat_cmdq_post(&q, &c); scans(1);
+}
+
+/* ---------------- owner decisions of 20 Oct ---------------- */
+
+static void set_mode(uint32_t m)
+{
+    plat_cmd_t c = { .id = PARAM_ID_CTRL_MODE, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_OPERATOR,
+                     .kind = PLAT_VAL_U32, .v.u = m };
+    plat_cmdq_post(&q, &c); scans(1);
+}
+
+static void t_q1_link_loss(void)
+{
+    /* VM run started over Modbus ends after vm_link_close_min of link loss; MUX carries on */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    vm_link_close_min = 1;
+    set_mode(PARAM_MODE_REMOTE);                 /* no Modbus or web traffic from here on */
+    StartModbus = true; StartModbusMUX = true;
+    scans(1100);                                 /* just over 10 s: the platform comms timeout */
+    CHECK(param_remote_link_lost());
+    CHECK(StartModbus);                          /* not yet: 1 minute of loss */
+    scans(6000);
+    CHECK(!StartModbus);                         /* VM run ended: its valves close */
+    CHECK_EQ(SelectedFirstInlet, 0); CHECK_EQ(SelectedFirstOutlet, 0);
+    CHECK(StartModbusMUX);                       /* the MUX loop is untouched */
+    StartModbusMUX = false; vm_link_close_min = 30;
+    set_mode(PARAM_MODE_LOCAL);
+}
+
+static void t_q5_q6_retained(void)
+{
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    AnalogEnable[0] = true; AnalogAlarmEnabled[0] = true; RangeMin[0] = 1.5f; RangeMax[0] = 9.5f;
+    TemperatureEnable[1] = true; TemperatureAlarmEnabled[1] = true; MaxTemperatureRange[1] = 850;
+    vm_rtd_hyst[1] = 5.0f;
+    FirstCalibPoint[0] = 4.0f; SecondCalibPoint[0] = 20.0f;
+    scans(200);
+    memset(AnalogEnable, 0, sizeof AnalogEnable); memset(RangeMin, 0, sizeof RangeMin);
+    MaxTemperatureRange[1] = 0; vm_rtd_hyst[1] = 0; FirstCalibPoint[0] = 0;
+    power_up();
+    CHECK(AnalogEnable[0]); CHECK(AnalogAlarmEnabled[0]);       /* Q5: kept through power-off */
+    CHECK(RangeMin[0] == 1.5f); CHECK(RangeMax[0] == 9.5f);
+    CHECK(TemperatureEnable[1]); CHECK_EQ(MaxTemperatureRange[1], 850);
+    CHECK(vm_rtd_hyst[1] == 5.0f);
+    CHECK(FirstCalibPoint[0] == 4.0f);
+    /* Q6: "restore defaults" resets user settings but never the calibration points */
+    plat_cmd_t c = { .id = PARAM_ID_RESTORE_DEFAULTS, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_ADMIN,
+                     .kind = PLAT_VAL_U32, .v.u = 1 };
+    CHECK_EQ(param_check(c.id, c.kind, c.v, c.src, c.level), PERR_OK);
+    plat_cmdq_post(&q, &c); scans(2);
+    CHECK(!AnalogEnable[0]);                     /* user setting back to its default */
+    CHECK(FirstCalibPoint[0] == 4.0f); CHECK(SecondCalibPoint[0] == 20.0f);
 }
 
 int main(void)
@@ -361,6 +417,8 @@ int main(void)
     RUN(t_power_up_defaults);
     RUN(t_alarms);
     RUN(t_modbus);
+    RUN(t_q1_link_loss);
+    RUN(t_q5_q6_retained);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

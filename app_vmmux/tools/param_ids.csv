@@ -140,7 +140,20 @@ id,dictionary_name
 1138,SingularInlet7
 1139,SingularInlet8
 1140,SingularInlet9
+1141,AnalogAlarmEnabled
+1142,AnalogEnable
+1143,MaxTemperatureRange
+1144,MinTemperatureRange
+1145,RangeMax
+1146,RangeMin
+1147,TemperatureAlarmEnabled
+1148,TemperatureEnable
 2900,(new) valve_fb_settle_s
+2901,(new) vm_link_close_min
+2902,(new) rtd1_alarm_delay_s
+2903,(new) rtd2_alarm_delay_s
+2904,(new) rtd1_alarm_hyst
+2905,(new) rtd2_alarm_hyst
 3000,Alarm0 DescriptionBuf
 3001,Alarm0 DescriptionMUXBuf
 3002,Alarm1 DescriptionBuf

@@ -9,6 +9,25 @@
 #include "vm_alarms.h"
 #include "plat_alarm.h"
 
+/* UTF-16 text (NUL-terminated within n units) -> UTF-8 bytes, NUL padded to cap. A character
+ * that does not fit whole is left out; surrogate pairs are copied as U+FFFD. */
+static void utf16_to_utf8(uint8_t *dst, size_t cap, const uint16_t *src, size_t n)
+{
+    size_t o = 0;
+    for (size_t i = 0; i < n && src[i] != 0; i++) {
+        uint32_t c = src[i];
+        if (c >= 0xD800u && c <= 0xDFFFu) c = 0xFFFDu;
+        uint8_t b[3]; size_t k;
+        if (c < 0x80u)       { b[0] = (uint8_t)c; k = 1; }
+        else if (c < 0x800u) { b[0] = (uint8_t)(0xC0u | (c >> 6)); b[1] = (uint8_t)(0x80u | (c & 0x3Fu)); k = 2; }
+        else { b[0] = (uint8_t)(0xE0u | (c >> 12)); b[1] = (uint8_t)(0x80u | ((c >> 6) & 0x3Fu));
+               b[2] = (uint8_t)(0x80u | (c & 0x3Fu)); k = 3; }
+        if (o + k > cap) break;
+        memcpy(dst + o, b, k); o += k;
+    }
+    memset(dst + o, 0, cap - o);
+}
+
 #if !VM_OLD_EMAIL
 /* Email rung 20: coil 91 "Acknowledge Bit" acknowledged every alarm (and cleared the source
  * arrays, which DI_Control rebuilds every scan anyway). Now: acknowledge all platform alarms. */
@@ -42,13 +61,12 @@ void vm_compat_scan(void)
     AcknowledgeCSVReserv = false;
     AckowledgeLoadError = false;
 #endif
-    /* The description buffers the master reads (registers 973 on, 49 N2): the old panel copied
-     * each text into its buffer when it was entered (TagToBuffer, modelled only as a call count
-     * in Stage 4C). Copied here every scan from the description parameters: the UTF-16 code
-     * units in memory order (little-endian, as the old ARM panel held them), the first 30
-     * characters (60 bytes). ASSUMPTION: TagToBuffer of a UTF-16 string copies its code units
-     * this way; the register byte order on top of it is the open BUFFER question. */
-#define DESC(BUF, TXT) memcpy(BUF, TXT, sizeof BUF < sizeof TXT ? sizeof BUF : sizeof TXT)
+    /* The description buffers the master reads (registers 973 on, 49 N2). The old panel copied
+     * each text into its buffer when it was entered (TagToBuffer). Q3 (Gary 20 Oct: "forget what
+     * UniLogic did, recommend"): text on Modbus is UTF-8, NUL padded, two bytes per register,
+     * first byte in the high half (the platform default, as Modbus device identification and
+     * most PLC string blocks do). Copied here every scan from the description parameters. */
+#define DESC(BUF, TXT) utf16_to_utf8(BUF, sizeof BUF, TXT, sizeof TXT / sizeof TXT[0])
 #include "vm_compat_desc.inc"
 #undef DESC
 }

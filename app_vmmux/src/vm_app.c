@@ -26,8 +26,11 @@ static void vm_init(void)
     vm_params_snapshot();
 }
 
+static void remote_link_pre_logic(void);
+
 static void vm_logic(void)
 {
+    remote_link_pre_logic();   /* Q1: may end a VM Modbus run before Function1 sees it */
     Function1();          /* VM top level; calls MUX at rung 36 */
     vm_after_logic();
 }
@@ -57,18 +60,35 @@ static void log_channels(void)
     plat_log_put(3, (float)TemperatureSensor[1] / 10.0f, chan_quality(vm_chan_rtd_status[1], TemperatureEnable[1]));
 }
 
-/* Remote-link watchdog (APP_INTEGRATION.md section 4, PLATFORM.md section 4): the
- * application must go to its safe state. WHAT that safe state is for the valve
- * manager / multiplexor is not in the design spec or the analysis: open question Q1 in
- * INTEGRATION.md (Rule 0). Until it is answered this only records the event. */
-static void remote_link_watch(void)
+/* Remote-link watchdog (APP_INTEGRATION.md section 4; decision Q1, Gary 20 Oct).
+ * The platform reports the link lost when, in REMOTE mode, no Modbus or web request has
+ * arrived for comms_timeout (parameter 3). Then:
+ *   - Valve Manager: a run started over Modbus (VM ModbusMode, StartModbus) is a one-off
+ *     calibration-type run. If the link stays lost for vm_link_close_min minutes (default 30,
+ *     0 = never) the run is ended and every valve it opened closes.
+ *   - Multiplexor: carries on. It is the automated loop.
+ * Ending the run uses the original's own path: StartModbus going FALSE is ModbusMode rung 6's
+ * falling edge, which clears the four selections and StartModbusCoil, so Route / DO_Assign
+ * drop the valves in the same scan (as when the master or the timer ends a run). */
+uint16_t vm_link_close_min = 30;
+static uint32_t lost_ms;
+
+static void remote_link_pre_logic(void)
 {
-    static bool was_lost;
     bool lost = param_remote_link_lost();
+    static bool was_lost;
     if (lost != was_lost) {
         plat_log_event(lost ? VM_EV_REMOTE_LINK_LOST : VM_EV_REMOTE_LINK_BACK, PLAT_SRC_INTERNAL,
                        PLAT_LVL_VIEW, 0, 0.0, 0.0, lost ? "remote link lost" : "remote link back");
         was_lost = lost;
+    }
+    if (!lost) { lost_ms = 0; return; }
+    if (lost_ms < 0xF0000000u) lost_ms += g_dt_ms;
+    if (vm_link_close_min != 0 && StartModbus && lost_ms >= (uint32_t)vm_link_close_min * 60000u) {
+        StartModbus = false;
+        ModbusModeState = 0;
+        plat_log_event(VM_EV_LINK_VM_STOPPED, PLAT_SRC_INTERNAL, PLAT_LVL_VIEW, vm_link_close_min, 0.0, 0.0,
+                       "remote link lost: Valve Manager Modbus run ended, valves closed");
     }
 }
 
@@ -77,7 +97,6 @@ void vm_after_logic(void)
     vm_alarms_scan();
     vm_compat_scan();
     log_channels();
-    remote_link_watch();
 }
 
 /* ---------------- firmware restart gate ---------------- */

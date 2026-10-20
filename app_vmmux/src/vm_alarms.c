@@ -8,8 +8,10 @@
  *   130..149  VALVE_FB_01..20   FBAlarmsMUX[i], delay = valve_fb_settle_s (D19, default 5 s)
  *   160/162   AI1/AI2_RANGE     AnalogSensor outside RangeMin..RangeMax, 10 s on and off (panel
  *                               alarms 24-25), only while AnalogAlarmEnabled (the old suppression)
- *   164/166   RTD1/RTD2_RANGE   TemperatureSensor (0.1 degree) outside Min..MaxTemperatureRange,
- *                               no delay (panel alarms 29-30, finding K5 kept: see Q5)
+ *   164/166   RTD1/RTD2_RANGE   TemperatureSensor (0.1 degree) outside Min..MaxTemperatureRange
+ *                               (panel alarms 29-30). Q5: delay rtd<n>_alarm_delay_s (default 10 s)
+ *                               and hysteresis rtd<n>_alarm_hyst (default 0), against K5 chatter.
+ *   Q5: the enables and limits are retained settings now (K4: they were RAM).
  *   161..167 odd  *_FAULT       sensor fault of an enabled channel (70 section 8, new)
  *   170       FLOW_VALIDATION   FlowValidationTimer.Out, latched until acknowledged (alarms 81+82, K6)
  *   171       DIGITAL_STOP      StopSeqBit, status alarm (no acknowledge, as alarm 79)
@@ -27,6 +29,8 @@
 #include "vm_alarms.h"
 
 uint16_t vm_fb_settle_s = 5;
+uint16_t vm_rtd_delay_s[2] = { 10, 10 };
+float    vm_rtd_hyst[2];
 
 #define DI(n, i) { .id = (uint16_t)(VM_AL_DI_FIRST + (i)), .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, \
     .name = "DI_ALARM_" n, .text = "Digital input " n " alarm", .text_param = VMP_ALARM##i##_DESCRIPTION, \
@@ -87,11 +91,11 @@ static const alarm_def_t defs[] = {
     { .id = VM_AL_AI2_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "AI2_FAULT",
       .text = "Analog input 2 sensor fault", .route = AR_MODBUS },
     { .id = VM_AL_RTD1_RANGE, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "RTD1_RANGE",
-      .text = "Temperature 1 out of range", .route = AR_MODBUS },
+      .text = "Temperature 1 out of range", .delay_param = VM_PARAM_RTD1_DELAY_S, .route = AR_MODBUS },
     { .id = VM_AL_RTD1_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "RTD1_FAULT",
       .text = "Temperature 1 sensor fault", .route = AR_MODBUS },
     { .id = VM_AL_RTD2_RANGE, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "RTD2_RANGE",
-      .text = "Temperature 2 out of range", .route = AR_MODBUS },
+      .text = "Temperature 2 out of range", .delay_param = VM_PARAM_RTD2_DELAY_S, .route = AR_MODBUS },
     { .id = VM_AL_RTD2_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "RTD2_FAULT",
       .text = "Temperature 2 sensor fault", .route = AR_MODBUS },
     { .id = VM_AL_FLOW_VALIDATION, .severity = AL_SEV_ALARM, .flags = AL_LATCH | AL_NOTIFY, .name = "FLOW_VALIDATION",
@@ -109,11 +113,11 @@ const size_t vm_n_alarms = sizeof defs / sizeof defs[0];
 /* ---- producers: once per scan, after Function1 ---- */
 
 static void range(uint16_t id, uint16_t fault_id, bool enabled, bool alarm_en, uint8_t st,
-                  float v, float lo, float hi)
+                  float v, float lo, float hi, float hyst)
 {
     alarm_set(fault_id, enabled && st != PLAT_AIN_OK);
     if (!alarm_en || !enabled) { alarm_set(id, false); return; }       /* the old suppression bit */
-    alarm_set_range(id, st == PLAT_AIN_OK ? v : NAN, lo, hi, 0.0f);    /* NaN: keep, while the sensor is bad */
+    alarm_set_range(id, st == PLAT_AIN_OK ? v : NAN, lo, hi, hyst);    /* NaN: keep, while the sensor is bad */
 }
 
 void vm_alarms_scan(void)
@@ -121,13 +125,13 @@ void vm_alarms_scan(void)
     for (unsigned i = 0; i < 22; i++) alarm_set((uint16_t)(VM_AL_DI_FIRST + i), AlarmsVM[i] || AlarmsMUX[i]);
     for (unsigned i = 0; i < 20; i++) alarm_set((uint16_t)(VM_AL_FB_FIRST + i), FBAlarmsMUX[i]);
     range(VM_AL_AI1_RANGE, VM_AL_AI1_FAULT, AnalogEnable[0], AnalogAlarmEnabled[0], vm_chan_ai_status[0],
-          AnalogSensor[0], RangeMin[0], RangeMax[0]);
+          AnalogSensor[0], RangeMin[0], RangeMax[0], 0.0f);
     range(VM_AL_AI2_RANGE, VM_AL_AI2_FAULT, AnalogEnable[1], AnalogAlarmEnabled[1], vm_chan_ai_status[1],
-          AnalogSensor[1], RangeMin[1], RangeMax[1]);
+          AnalogSensor[1], RangeMin[1], RangeMax[1], 0.0f);
     range(VM_AL_RTD1_RANGE, VM_AL_RTD1_FAULT, TemperatureEnable[0], TemperatureAlarmEnabled[0], vm_chan_rtd_status[0],
-          (float)TemperatureSensor[0], (float)MinTemperatureRange[0], (float)MaxTemperatureRange[0]);
+          (float)TemperatureSensor[0], (float)MinTemperatureRange[0], (float)MaxTemperatureRange[0], vm_rtd_hyst[0]);
     range(VM_AL_RTD2_RANGE, VM_AL_RTD2_FAULT, TemperatureEnable[1], TemperatureAlarmEnabled[1], vm_chan_rtd_status[1],
-          (float)TemperatureSensor[1], (float)MinTemperatureRange[1], (float)MaxTemperatureRange[1]);
+          (float)TemperatureSensor[1], (float)MinTemperatureRange[1], (float)MaxTemperatureRange[1], vm_rtd_hyst[1]);
     alarm_set(VM_AL_FLOW_VALIDATION, FlowValidationTimer.Out);
     alarm_set(VM_AL_DIGITAL_STOP, StopSeqBit);
     alarm_set(VM_AL_ANALYSER_NOT_OK, AnalyzerOkBitAlarm);

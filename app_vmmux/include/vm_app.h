@@ -40,12 +40,13 @@ extern uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];   /* plat_ain_status
 enum {
     VM_EV_REMOTE_LINK_LOST = 100,   /* remote mode and no remote traffic for the timeout */
     VM_EV_REMOTE_LINK_BACK = 101,
+    VM_EV_LINK_VM_STOPPED  = 102,   /* Q1: VM Modbus run ended after vm_link_close_min of link loss */
 };
 
 /* ---- after-logic hooks (vm_app.c) ---- */
 void vm_after_logic(void);        /* alarms, data log, link watchdog: once per scan after Function1 */
 bool vm_fw_safe(char *why, size_t cap);
-bool vm_busy(char *why, size_t cap);
-void vm_compat_scan(void);       /* old Modbus coils and buffers kept meaningful (vm_compat.c) */   /* a sequence, manual run or purge is active */
+bool vm_busy(char *why, size_t cap);   /* a sequence, manual run or purge is active */
+void vm_compat_scan(void);       /* old Modbus coils and buffers kept meaningful (vm_compat.c) */
 
 #endif

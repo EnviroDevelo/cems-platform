@@ -146,6 +146,14 @@ enum {
     VMP_SINGULARINLET7                           = 1138,   /* SingularInlet7 */
     VMP_SINGULARINLET8                           = 1139,   /* SingularInlet8 */
     VMP_SINGULARINLET9                           = 1140,   /* SingularInlet9 */
+    VMP_ANALOGALARMENABLED                       = 1141,   /* AnalogAlarmEnabled */
+    VMP_ANALOGENABLE                             = 1142,   /* AnalogEnable */
+    VMP_MAXTEMPERATURERANGE                      = 1143,   /* MaxTemperatureRange */
+    VMP_MINTEMPERATURERANGE                      = 1144,   /* MinTemperatureRange */
+    VMP_RANGEMAX                                 = 1145,   /* RangeMax */
+    VMP_RANGEMIN                                 = 1146,   /* RangeMin */
+    VMP_TEMPERATUREALARMENABLED                  = 1147,   /* TemperatureAlarmEnabled */
+    VMP_TEMPERATUREENABLE                        = 1148,   /* TemperatureEnable */
     VMP_ALARM0_DESCRIPTIONBUF                    = 3000,   /* Alarm0 DescriptionBuf */
     VMP_ALARM0_DESCRIPTIONMUXBUF                 = 3001,   /* Alarm0 DescriptionMUXBuf */
     VMP_ALARM1_DESCRIPTIONBUF                    = 3002,   /* Alarm1 DescriptionBuf */

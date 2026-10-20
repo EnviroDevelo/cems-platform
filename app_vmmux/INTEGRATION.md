@@ -1,6 +1,6 @@
 # app_vmmux: the Valve Manager / Multiplexor on the CEMS core platform
 
-Rev A, 20 Oct 2026. Branch `app/vmmux` of `cems-platform`. Built against platform commit `a986362`
+Rev B, 20 Oct 2026 (Rev B: owner decisions Q1-Q7). Branch `app/vmmux` of `cems-platform`. Built against platform commit `a986362`
 (APP_INTEGRATION.md handover). Nothing under `platform/` is changed.
 
 ## 1. What this is
@@ -29,7 +29,7 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID |
 
 Build and test (repository root): `make -f app_vmmux/app.mk vm-test` (12 Stage 4 suites, 110,000+ checks,
-and 157 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
+and 181 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
 runs the platform's networked simulation with this application (Modbus TCP 1502, HTTPS 8443).
 Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Existing Design/Analysis"`.
 
@@ -38,9 +38,9 @@ Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Exis
 | | |
 |---|---|
 | Tags | 450 definitions covering 768 dictionary tags, + 117 UI/Modbus-only tags |
-| Parameters | 337 of 512 (141 settings, 1 new, 195 Modbus-only) |
+| Parameters | 350 of 512 (149 settings, 6 new, 195 Modbus-only) |
 | Retained blocks | 194 |
-| **FRAM user image** | **13,296 bytes**; 14,848 per copy on the 32 KB part (**89.5 %**) |
+| **FRAM user image** | **13,392 bytes**; 14,848 per copy on the 32 KB part (90.2 %); 128 KB part chosen (Q7) |
 | Alarms | 57 (IDs 100-173) |
 | Modbus | 201 old entries + 6 platform alarm entries |
 
@@ -71,7 +71,7 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_FIX_DI_REAL_INPUTS` | 1 | Open item 8: DISABLED rungs 9-10 of DI_Assigning run, so DIG_IN_01..20 reach the logic |
 | `VM_FIX_AI_SCALING` | 1 | Open item 9: Low point at raw 0, High point at full scale |
 | `ENABLE_DISABLED_RUNGS` | off | every other DISABLED IN ORIGINAL rung, kept in full, off |
-| `VM_MB_BYTE_FLAGS` / `VM_MB_WORD_FLAGS` | 0 | Modbus BUFFER byte order / 32-bit word order (Q3) |
+| `VM_MB_BYTE_FLAGS` / `VM_MB_WORD_FLAGS` | 0 | Modbus byte / word order: Modbus convention (Q3) |
 
 Other replacements: password screens -> platform logins; SN -> platform serial (param 50); ToEmail1..3 ->
 platform mail recipients; brightness -> platform UI; Modify Alarm Property texts -> `text_param` of
@@ -86,17 +86,17 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | F3 | A DI alarm is raised on the third scan after the input changes (DI_Control runs before DI_Assigning copies the inputs, as in the original; the platform evaluates on the next scan). 30 ms. |
 | F4 | With every analog/RTD channel `NOT_FITTED` on the bench, an *enabled* channel raises its sensor-fault alarm, as the handover asks; disabled channels are quiet. |
 
-## 6. Questions for Gary (Rule 0: not guessed)
+## 6. Owner decisions (Gary, 20 Oct) and how they are built
 
-| # | Question | Where it is parked |
+| # | Decision | Built as |
 |---|---|---|
-| Q1 | **Safe state on remote-link loss.** The platform says when REMOTE mode loses its master; what should the VM/MUX do: stop a Modbus-mode run? close all valves? carry on? | `vm_app.c` logs the event only |
-| Q2 | **Limits where the old panel had none**: `FirstCalibPoint[4]`, `SecondCalibPoint[4]` and the presets of `FlowValidationTimer`, `Manual Timer`, `Manual Timer2`, `Manual TimerMUX`. They take the type's full range today, as the original did. | `tools/out/params_report.csv` (NO_LIMIT) |
-| Q3 | **Modbus byte / word order** UniLogic used for BUFFERs and 32-bit values (handover section 7). One register read from a running unit settles it. | `VM_MB_*_FLAGS` |
-| Q4 | **DI alarm texts**: VM and MUX inputs are merged into one alarm per input; it shows the VM text "Alarm<i> Description". Keep, or show the MUX text when the MUX function is set? | `vm_alarms.c` |
-| Q5 | **Range alarms**: the enables and limits are RAM in the original (K4: no range alarms after a power-up) and the RTD alarms have no delay or deadband (K5: chatter). Make them retained settings and give the RTD alarms a delay? | `vm_alarms.c` |
-| Q6 | **Calibration class**: should `FirstCalibPoint` / `SecondCalibPoint` be factory (calibration) parameters, kept through "restore defaults" and gated by `calibration_valid`? | `gen_params.py` |
-| Q7 | **FRAM part**: 13,296 bytes of 14,848 (89.5 %) leaves 1.5 KB for growth. Recommend the 128 KB part. | (also R4) |
+| Q1 | On loss of the Modbus link: a Valve Manager run started over Modbus closes all its valves after 30 min; the Multiplexor (the automated loop) carries on | `vm_app.c`: platform `remote_link_lost` (REMOTE mode, no Modbus/web request for `comms_timeout`, 10 s) for `vm_link_close_min` (new parameter 2901, default 30, 0 = never) ends the VM run through the original's own end-of-run path (ModbusMode rung 6). Events 100-102 in the event log. Test `t_q1_link_loss` |
+| Q2 | No limits needed where the old panel had none | the type's range stays (`params_report.csv` NO_LIMIT) |
+| Q3 | Choose the Modbus byte / word order | Modbus convention = platform default: 16-bit big-endian; 32-bit and floats high word first (ABCD); text UTF-8, two bytes per register, first byte in the high half, NUL padded. The 44 description buffers are now UTF-8. `VM_MB_*_FLAGS` remain for a master that needs the other order |
+| Q4 | DI alarm text (VM or MUX): not needed now | VM text, as built |
+| Q5 | Range-alarm enables and limits retained; temperature alarm delay and hysteresis | `tools/decisions.py`: AnalogEnable, TemperatureEnable, AnalogAlarmEnabled, TemperatureAlarmEnabled, RangeMin/Max, Min/MaxTemperatureRange are retained settings (K4). New parameters `rtd1/2_alarm_delay_s` (default 10 s, the old temperature-email delay) and `rtd1/2_alarm_hyst` (0.1 degree, default 0). Test `t_q5_q6_retained` |
+| Q6 | Calibration values retained | `FirstCalibPoint` / `SecondCalibPoint` are factory class: separate FRAM image, never cleared by "restore defaults". Note: a new unit shows the platform's CALIBRATION INVALID alarm until a calibration value has been saved once |
+| Q7 | 128 KB FRAM | passed to the core thread (R4) |
 
 ## 7. Requests to the core-platform thread
 
@@ -105,5 +105,5 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | R1 | A way to choose the application in `host/netsim` (and `host/sim_main.c`) without the `-Dapp_demo_plat=(*vmmux_app())` define in `app.mk`. |
 | R2 | The application-screen API (handover section 9). The Stage 5 screen list goes with it. |
 | R3 | A UI-activity flag for the old screen-saver logic (`Touched_Bit`), low priority. |
-| R4 | FRAM size: the application's user image is **13,296 bytes** (D6). |
+| R4 | FRAM size (D6): the application's user image is **13,392 bytes**; Gary chose the **128 KB** part (20 Oct). |
 | R5 | `make target` was not run here (no ARM toolchain in this workspace); please include `app_vmmux` in the target compile check, or run it on the PC with `ext/`. |
