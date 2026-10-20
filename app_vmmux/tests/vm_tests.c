@@ -15,6 +15,9 @@
 #include "vm_tags.h"
 #include "vm_params.h"
 #include "param_store.h"
+#include "vm_alarms.h"
+#include "plat_alarm.h"
+#include "modbus.h"
 
 int tst_fail, tst_pass;
 
@@ -25,11 +28,12 @@ static void power_up(void)
     const plat_app_t *a = vmmux_app();
     bsp_host_reset();
     plat_cmdq_init(&q);
+    param_bind(&q, NULL);                         /* Modbus / web writes go to this scan's queue */
     scan_init(&s, a->scan, &scan_hw_bsp, &q, &lock, 10);
     CHECK_EQ(param_init(a->params, a->n_params), PERR_OK);
     param_store_init(bsp_param_nvm(), NULL, a->retain, a->n_retain, a->layout_version, a->migrate);
     param_store_boot();
-    alarm_init(a->alarms, a->n_alarms, BSP_RESET_POWER_ON);
+    CHECK_EQ(alarm_init(a->alarms, a->n_alarms, BSP_RESET_POWER_ON), 0);
     scan_set_sys(&s, &plat_sys);
     bsp_host.rtc_valid = true;
     bsp_host.rtc = (bsp_rtc_t){ .year = 2026, .month = 10, .day = 20, .hours = 9, .minutes = 0, .seconds = 0, .dow_iso = 2 };   /* Tuesday 20 Oct 2026 */
@@ -235,6 +239,113 @@ static void t_power_up_defaults(void)
     CHECK_EQ(LoggingIndex, 1);
 }
 
+/* ---------------- alarms ---------------- */
+
+static void t_alarms(void)
+{
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    /* DI 4 configured as an alarm on TRUE (VM DI_Control) -> DI_ALARM_04 */
+    Di_FunctionVM[3] = 1; AlarmEnableVM[3] = true; AlarmConditionVM[3] = 1;
+    bsp_host.in.di = 1u << 3;
+    /* DI_Control runs before DI_Assigning copies the inputs (original order), and the platform
+     * evaluates conditions at the start of the next scan: raised on the third scan (30 ms) */
+    scans(3);
+    CHECK(AlarmsVM[3]);
+    CHECK(alarm_active(VM_AL_DI_FIRST + 3));
+    bsp_host.in.di = 0; scans(3);
+    CHECK(!AlarmsVM[3]);
+    CHECK(!alarm_active(VM_AL_DI_FIRST + 3));           /* not latched: clears with its condition */
+    alarm_view_t av; CHECK(alarm_get(VM_AL_DI_FIRST + 3, &av)); CHECK(av.unacked);   /* waits for an ack */
+    Di_FunctionVM[3] = 0; AlarmEnableVM[3] = false;
+
+    /* enabled analog channel with no sensor: fault alarm; disabled: none (bench: NOT_FITTED) */
+    CHECK(!alarm_active(VM_AL_AI1_FAULT));
+    AnalogEnable[0] = true; scans(2);
+    CHECK(alarm_active(VM_AL_AI1_FAULT));
+    AnalogEnable[0] = false; scans(2);
+
+    /* flow validation: latched by the platform; the old FlowValidationAlarm bit follows it */
+    FlowValidationTimer.Out = true;  /* the MUX rung-18 timer output, forced here */
+    vm_alarms_scan();
+    FlowValidationAlarm = true;      /* what MUX rung 18 does on the rising edge */
+    scans(3);
+    CHECK(!FlowValidationTimer.Out);                    /* the condition has gone ... */
+    CHECK(alarm_active(VM_AL_FLOW_VALIDATION));         /* ... the alarm stays (AL_LATCH) */
+    CHECK(FlowValidationAlarm);                         /* and so does the old bit */
+    plat_cmd_t c = { .id = PARAM_ID_ALARM_ACK, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_VIEW,
+                     .kind = PLAT_VAL_U32, .v.u = VM_AL_FLOW_VALIDATION };
+    CHECK_EQ(param_check(c.id, c.kind, c.v, c.src, c.level), PERR_OK);   /* no login needed (D19) */
+    plat_cmdq_post(&q, &c);
+    scans(3);
+    CHECK(!alarm_active(VM_AL_FLOW_VALIDATION));
+    CHECK(!FlowValidationAlarm);                        /* old Email rung 20 behaviour, via the platform ack */
+}
+
+/* ---------------- Modbus: the old slave map at its old addresses ---------------- */
+
+static uint16_t mb(const uint8_t *req, uint16_t len, uint8_t *resp)
+{
+    return mb_pdu(req, len, resp, 256);
+}
+
+static void t_modbus(void)
+{
+    const plat_app_t *a = vmmux_app();
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    CHECK_EQ(mb_init(a->modbus_map, a->n_modbus_map, &a->ident), 0);
+    scans(2);
+    uint8_t r[256];
+
+    /* holding 0 = CurrentMode, 1 = NumInterconnections (FC3) */
+    NumInterconnections = 2; scans(1);
+    const uint8_t rd[] = { 3, 0, 0, 0, 2 };
+    CHECK_EQ(mb(rd, sizeof rd, r), 6);
+    CHECK_EQ(r[0], 3); CHECK_EQ(((r[2] << 8) | r[3]), 0); CHECK_EQ(((r[4] << 8) | r[5]), 2);   /* fc, byte count, data */
+
+    /* coils 13..34 = AlarmsVM[0..21] */
+    AlarmsVM[2] = true; Di_FunctionVM[2] = 1; AlarmEnableVM[2] = true; AlarmConditionVM[2] = 0;  /* alarm on FALSE */
+    scans(3);
+    const uint8_t rc[] = { 1, 0, 13, 0, 22 };
+    CHECK_EQ(mb(rc, sizeof rc, r), 5);
+    CHECK_EQ((r[2] & 0x04), 0x04);
+    Di_FunctionVM[2] = 0; AlarmEnableVM[2] = false;
+
+    /* a master write in LOCAL mode is refused (04); in REMOTE it reaches the tag */
+    const uint8_t wc[] = { 5, 0, 7, 0xFF, 0 };   /* coil 7 StartModbusCoilMUX */
+    CHECK_EQ(mb(wc, sizeof wc, r), 2); CHECK_EQ(r[0], 0x85); CHECK_EQ(r[1], 4);
+    plat_cmd_t c = { .id = PARAM_ID_CTRL_MODE, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_OPERATOR,
+                     .kind = PLAT_VAL_U32, .v.u = PARAM_MODE_REMOTE };
+    plat_cmdq_post(&q, &c); scans(1);
+    const uint8_t wr[] = { 6, 0x02, 0xFA, 0, 3 };   /* holding 762 SelectedValveMbMUX = 3 */
+    CHECK_EQ(mb(wr, sizeof wr, r), 5); CHECK_EQ(r[0], 6);
+    scans(1);
+    CHECK_EQ(SelectedValveMbMUX, 3);
+
+    /* a register the master only reads is refused for writing (02) */
+    const uint8_t wro[] = { 6, 0, 0, 0, 1 };
+    CHECK_EQ(mb(wro, sizeof wro, r), 2); CHECK_EQ(r[1], 2);
+
+    /* coil 91 "Acknowledge Bit" acknowledges every alarm (old Email rung 20) */
+    AnalogEnable[0] = true; scans(3);            /* AI1 not fitted: sensor-fault alarm */
+    alarm_view_t av; CHECK(alarm_get(VM_AL_AI1_FAULT, &av)); CHECK(av.unacked);
+    const uint8_t ack[] = { 5, 0, 91, 0xFF, 0 };
+    CHECK_EQ(mb(ack, sizeof ack, r), 5);
+    scans(2);
+    CHECK(alarm_get(VM_AL_AI1_FAULT, &av)); CHECK(!av.unacked);
+    CHECK(!AcknowledgeBit);
+    AnalogEnable[0] = false;
+
+    /* description buffer of DI alarm 1 (registers 973..1002), first character */
+    vmx_Alarm0_Description[0] = 'A'; vmx_Alarm0_Description[1] = 'B'; scans(1);
+    const uint8_t rb[] = { 3, 0x03, 0xCD, 0, 2 };
+    CHECK_EQ(mb(rb, sizeof rb, r), 6);
+    CHECK_EQ(r[2], 'A'); CHECK_EQ(r[3], 0); CHECK_EQ(r[4], 'B');   /* UTF-16LE bytes, high half first (defaults) */
+    c.v.u = PARAM_MODE_LOCAL; plat_cmdq_post(&q, &c); scans(1);
+}
+
 int main(void)
 {
     RUN(t_ai_conversion);
@@ -248,6 +359,8 @@ int main(void)
     RUN(t_fw_safe_modes);
     RUN(t_store_fits_and_keeps);
     RUN(t_power_up_defaults);
+    RUN(t_alarms);
+    RUN(t_modbus);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

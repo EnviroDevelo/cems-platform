@@ -5,6 +5,7 @@
 #include "vm_app.h"
 #include "vm_tags.h"
 #include "vm_params.h"
+#include "vm_alarms.h"   /* new parameters (vm_params_new.inc) */
 
 /* ---- tags no chunk declares (UI, Modbus), power-up values from the dictionary ---- */
 uint16_t vmx_Alarm0_Description[31];                             /* Alarm0 Description */
@@ -51,60 +52,16 @@ uint16_t vmx_Alarm8_Description[31];                             /* Alarm8 Descr
 uint16_t vmx_Alarm8_DescriptionMUX[31];                          /* Alarm8 DescriptionMUX */
 uint16_t vmx_Alarm9_Description[31];                             /* Alarm9 Description */
 uint16_t vmx_Alarm9_DescriptionMUX[31];                          /* Alarm9 DescriptionMUX */
-uint8_t vmx_Alarm0_DescriptionBuf[60];                           /* Alarm0 DescriptionBuf */
-uint8_t vmx_Alarm0_DescriptionMUXBuf[60];                        /* Alarm0 DescriptionMUXBuf */
-uint8_t vmx_Alarm1_DescriptionBuf[60];                           /* Alarm1 DescriptionBuf */
-uint8_t vmx_Alarm1_DescriptionMUXBuf[60];                        /* Alarm1 DescriptionMUXBuf */
-uint8_t vmx_Alarm10_DescriptionBuf[60];                          /* Alarm10 DescriptionBuf */
-uint8_t vmx_Alarm10_DescriptionMUXBuf[60];                       /* Alarm10 DescriptionMUXBuf */
-uint8_t vmx_Alarm11_DescriptionBuf[60];                          /* Alarm11 DescriptionBuf */
-uint8_t vmx_Alarm11_DescriptionMUXBuf[60];                       /* Alarm11 DescriptionMUXBuf */
-uint8_t vmx_Alarm12_DescriptionBuf[60];                          /* Alarm12 DescriptionBuf */
-uint8_t vmx_Alarm12_DescriptionMUXBuf[60];                       /* Alarm12 DescriptionMUXBuf */
-uint8_t vmx_Alarm13_DescriptionBuf[60];                          /* Alarm13 DescriptionBuf */
-uint8_t vmx_Alarm13_DescriptionMUXBuf[60];                       /* Alarm13 DescriptionMUXBuf */
-uint8_t vmx_Alarm14_DescriptionBuf[60];                          /* Alarm14 DescriptionBuf */
-uint8_t vmx_Alarm14_DescriptionMUXBuf[60];                       /* Alarm14 DescriptionMUXBuf */
-uint8_t vmx_Alarm15_DescriptionBuf[60];                          /* Alarm15 DescriptionBuf */
-uint8_t vmx_Alarm15_DescriptionMUXBuf[60];                       /* Alarm15 DescriptionMUXBuf */
-uint8_t vmx_Alarm16_DescriptionBuf[60];                          /* Alarm16 DescriptionBuf */
-uint8_t vmx_Alarm16_DescriptionMUXBuf[60];                       /* Alarm16 DescriptionMUXBuf */
-uint8_t vmx_Alarm17_DescriptionBuf[60];                          /* Alarm17 DescriptionBuf */
-uint8_t vmx_Alarm17_DescriptionMUXBuf[60];                       /* Alarm17 DescriptionMUXBuf */
-uint8_t vmx_Alarm18_DescriptionBuf[60];                          /* Alarm18 DescriptionBuf */
-uint8_t vmx_Alarm18_DescriptionMUXBuf[60];                       /* Alarm18 DescriptionMUXBuf */
-uint8_t vmx_Alarm19_DescriptionBuf[60];                          /* Alarm19 DescriptionBuf */
-uint8_t vmx_Alarm19_DescriptionMUXBuf[60];                       /* Alarm19 DescriptionMUXBuf */
-uint8_t vmx_Alarm2_DescriptionBuf[60];                           /* Alarm2 DescriptionBuf */
-uint8_t vmx_Alarm2_DescriptionMUXBuf[60];                        /* Alarm2 DescriptionMUXBuf */
-uint8_t vmx_Alarm20_DescriptionBuf[60];                          /* Alarm20 DescriptionBuf */
-uint8_t vmx_Alarm20_DescriptionMUXBuf[60];                       /* Alarm20 DescriptionMUXBuf */
-uint8_t vmx_Alarm21_DescriptionBuf[60];                          /* Alarm21 DescriptionBuf */
-uint8_t vmx_Alarm21_DescriptionMUXBuf[60];                       /* Alarm21 DescriptionMUXBuf */
-uint8_t vmx_Alarm3_DescriptionBuf[60];                           /* Alarm3 DescriptionBuf */
-uint8_t vmx_Alarm3_DescriptionMUXBuf[60];                        /* Alarm3 DescriptionMUXBuf */
-uint8_t vmx_Alarm4_DescriptionBuf[60];                           /* Alarm4 DescriptionBuf */
-uint8_t vmx_Alarm4_DescriptionMUXBuf[60];                        /* Alarm4 DescriptionMUXBuf */
-uint8_t vmx_Alarm5_DescriptionBuf[60];                           /* Alarm5 DescriptionBuf */
-uint8_t vmx_Alarm5_DescriptionMUXBuf[60];                        /* Alarm5 DescriptionMUXBuf */
-uint8_t vmx_Alarm6_DescriptionBuf[60];                           /* Alarm6 DescriptionBuf */
-uint8_t vmx_Alarm6_DescriptionMUXBuf[60];                        /* Alarm6 DescriptionMUXBuf */
-uint8_t vmx_Alarm7_DescriptionBuf[60];                           /* Alarm7 DescriptionBuf */
-uint8_t vmx_Alarm7_DescriptionMUXBuf[60];                        /* Alarm7 DescriptionMUXBuf */
-uint8_t vmx_Alarm8_DescriptionBuf[60];                           /* Alarm8 DescriptionBuf */
-uint8_t vmx_Alarm8_DescriptionMUXBuf[60];                        /* Alarm8 DescriptionMUXBuf */
-uint8_t vmx_Alarm9_DescriptionBuf[60];                           /* Alarm9 DescriptionBuf */
-uint8_t vmx_Alarm9_DescriptionMUXBuf[60];                        /* Alarm9 DescriptionMUXBuf */
-uint8_t vmx_Analog_Alarm0_DescriptionBuf[60];                    /* Analog Alarm0 DescriptionBuf */
-uint8_t vmx_Analog_Alarm1_DescriptionBuf[60];                    /* Analog Alarm1 DescriptionBuf */
-uint8_t vmx_DefaultModeOnPowerupMUX;                             /* DefaultModeOnPowerupMUX */
-uint8_t vmx_FlushValveMUX20[20];                                 /* FlushValveMUX20 */
-char vmx_ModbusParam0[19];                                       /* ModbusParam0 */
-bool vmx_ModbusValueEnabled[16];                                 /* ModbusValueEnabled */
-bool vmx_SNentered;                                              /* SNentered */
-uint8_t vmx_Temperature0AlarmDescriptionBuf[60];                 /* Temperature0AlarmDescriptionBuf */
-uint8_t vmx_Temperature1AlarmDescriptionBuf[60];                 /* Temperature1AlarmDescriptionBuf */
+bool vmx_Ackbit2;                                                /* Ackbit2 */
 uint8_t vmx_ValveNameMUX1[20];                                   /* ValveNameMUX1 */
+uint8_t vmx_ValveNameMUX2[20];                                   /* ValveNameMUX2 */
+uint8_t vmx_ValveNameMUX3[20];                                   /* ValveNameMUX3 */
+uint8_t vmx_ValveNameMUX4[20];                                   /* ValveNameMUX4 */
+uint8_t vmx_ValveNameMUX5[20];                                   /* ValveNameMUX5 */
+uint8_t vmx_ValveNameMUX6[20];                                   /* ValveNameMUX6 */
+uint8_t vmx_ValveNameMUX7[20];                                   /* ValveNameMUX7 */
+uint8_t vmx_ValveNameMUX8[8];                                    /* ValveNameMUX8 */
+uint8_t vmx_ValveNameMUX9[20];                                   /* ValveNameMUX9 */
 uint8_t vmx_ValveNameMUX10[20];                                  /* ValveNameMUX10 */
 uint8_t vmx_ValveNameMUX11[20];                                  /* ValveNameMUX11 */
 uint8_t vmx_ValveNameMUX12[20];                                  /* ValveNameMUX12 */
@@ -115,14 +72,59 @@ uint8_t vmx_ValveNameMUX16[20];                                  /* ValveNameMUX
 uint8_t vmx_ValveNameMUX17[20];                                  /* ValveNameMUX17 */
 uint8_t vmx_ValveNameMUX18[20];                                  /* ValveNameMUX18 */
 uint8_t vmx_ValveNameMUX19[20];                                  /* ValveNameMUX19 */
-uint8_t vmx_ValveNameMUX2[20];                                   /* ValveNameMUX2 */
-uint8_t vmx_ValveNameMUX3[20];                                   /* ValveNameMUX3 */
-uint8_t vmx_ValveNameMUX4[20];                                   /* ValveNameMUX4 */
-uint8_t vmx_ValveNameMUX5[20];                                   /* ValveNameMUX5 */
-uint8_t vmx_ValveNameMUX6[20];                                   /* ValveNameMUX6 */
-uint8_t vmx_ValveNameMUX7[20];                                   /* ValveNameMUX7 */
-uint8_t vmx_ValveNameMUX8[8];                                    /* ValveNameMUX8 */
-uint8_t vmx_ValveNameMUX9[20];                                   /* ValveNameMUX9 */
+uint8_t vmx_FlushValveMUX20[20];                                 /* FlushValveMUX20 */
+uint8_t vmx_Alarm0_DescriptionBuf[60];                           /* Alarm0 DescriptionBuf */
+uint8_t vmx_Alarm1_DescriptionBuf[60];                           /* Alarm1 DescriptionBuf */
+uint8_t vmx_Alarm2_DescriptionBuf[60];                           /* Alarm2 DescriptionBuf */
+uint8_t vmx_Alarm3_DescriptionBuf[60];                           /* Alarm3 DescriptionBuf */
+uint8_t vmx_Alarm4_DescriptionBuf[60];                           /* Alarm4 DescriptionBuf */
+uint8_t vmx_Alarm5_DescriptionBuf[60];                           /* Alarm5 DescriptionBuf */
+uint8_t vmx_Alarm6_DescriptionBuf[60];                           /* Alarm6 DescriptionBuf */
+uint8_t vmx_Alarm7_DescriptionBuf[60];                           /* Alarm7 DescriptionBuf */
+uint8_t vmx_Alarm8_DescriptionBuf[60];                           /* Alarm8 DescriptionBuf */
+uint8_t vmx_Alarm9_DescriptionBuf[60];                           /* Alarm9 DescriptionBuf */
+uint8_t vmx_Alarm10_DescriptionBuf[60];                          /* Alarm10 DescriptionBuf */
+uint8_t vmx_Alarm11_DescriptionBuf[60];                          /* Alarm11 DescriptionBuf */
+uint8_t vmx_Alarm12_DescriptionBuf[60];                          /* Alarm12 DescriptionBuf */
+uint8_t vmx_Alarm13_DescriptionBuf[60];                          /* Alarm13 DescriptionBuf */
+uint8_t vmx_Alarm14_DescriptionBuf[60];                          /* Alarm14 DescriptionBuf */
+uint8_t vmx_Alarm15_DescriptionBuf[60];                          /* Alarm15 DescriptionBuf */
+uint8_t vmx_Alarm16_DescriptionBuf[60];                          /* Alarm16 DescriptionBuf */
+uint8_t vmx_Alarm17_DescriptionBuf[60];                          /* Alarm17 DescriptionBuf */
+uint8_t vmx_Alarm18_DescriptionBuf[60];                          /* Alarm18 DescriptionBuf */
+uint8_t vmx_Alarm19_DescriptionBuf[60];                          /* Alarm19 DescriptionBuf */
+uint8_t vmx_Alarm20_DescriptionBuf[60];                          /* Alarm20 DescriptionBuf */
+uint8_t vmx_Alarm21_DescriptionBuf[60];                          /* Alarm21 DescriptionBuf */
+uint8_t vmx_Alarm0_DescriptionMUXBuf[60];                        /* Alarm0 DescriptionMUXBuf */
+uint8_t vmx_Alarm1_DescriptionMUXBuf[60];                        /* Alarm1 DescriptionMUXBuf */
+uint8_t vmx_Alarm2_DescriptionMUXBuf[60];                        /* Alarm2 DescriptionMUXBuf */
+uint8_t vmx_Alarm3_DescriptionMUXBuf[60];                        /* Alarm3 DescriptionMUXBuf */
+uint8_t vmx_Alarm4_DescriptionMUXBuf[60];                        /* Alarm4 DescriptionMUXBuf */
+uint8_t vmx_Alarm5_DescriptionMUXBuf[60];                        /* Alarm5 DescriptionMUXBuf */
+uint8_t vmx_Alarm6_DescriptionMUXBuf[60];                        /* Alarm6 DescriptionMUXBuf */
+uint8_t vmx_Alarm7_DescriptionMUXBuf[60];                        /* Alarm7 DescriptionMUXBuf */
+uint8_t vmx_Alarm8_DescriptionMUXBuf[60];                        /* Alarm8 DescriptionMUXBuf */
+uint8_t vmx_Alarm9_DescriptionMUXBuf[60];                        /* Alarm9 DescriptionMUXBuf */
+uint8_t vmx_Alarm10_DescriptionMUXBuf[60];                       /* Alarm10 DescriptionMUXBuf */
+uint8_t vmx_Alarm11_DescriptionMUXBuf[60];                       /* Alarm11 DescriptionMUXBuf */
+uint8_t vmx_Alarm12_DescriptionMUXBuf[60];                       /* Alarm12 DescriptionMUXBuf */
+uint8_t vmx_Alarm13_DescriptionMUXBuf[60];                       /* Alarm13 DescriptionMUXBuf */
+uint8_t vmx_Alarm14_DescriptionMUXBuf[60];                       /* Alarm14 DescriptionMUXBuf */
+uint8_t vmx_Alarm15_DescriptionMUXBuf[60];                       /* Alarm15 DescriptionMUXBuf */
+uint8_t vmx_Alarm16_DescriptionMUXBuf[60];                       /* Alarm16 DescriptionMUXBuf */
+uint8_t vmx_Alarm17_DescriptionMUXBuf[60];                       /* Alarm17 DescriptionMUXBuf */
+uint8_t vmx_Alarm18_DescriptionMUXBuf[60];                       /* Alarm18 DescriptionMUXBuf */
+uint8_t vmx_Alarm19_DescriptionMUXBuf[60];                       /* Alarm19 DescriptionMUXBuf */
+uint8_t vmx_Alarm20_DescriptionMUXBuf[60];                       /* Alarm20 DescriptionMUXBuf */
+uint8_t vmx_Alarm21_DescriptionMUXBuf[60];                       /* Alarm21 DescriptionMUXBuf */
+uint8_t vmx_Analog_Alarm0_DescriptionBuf[60];                    /* Analog Alarm0 DescriptionBuf */
+uint8_t vmx_Analog_Alarm1_DescriptionBuf[60];                    /* Analog Alarm1 DescriptionBuf */
+uint8_t vmx_Temperature0AlarmDescriptionBuf[60];                 /* Temperature0AlarmDescriptionBuf */
+uint8_t vmx_Temperature1AlarmDescriptionBuf[60];                 /* Temperature1AlarmDescriptionBuf */
+uint8_t vmx_DefaultModeOnPowerupMUX;                             /* DefaultModeOnPowerupMUX */
+char vmx_ModbusParam0[19];                                       /* ModbusParam0 */
+bool vmx_ModbusValueEnabled[16];                                 /* ModbusValueEnabled */
+bool vmx_SNentered;                                              /* SNentered */
 
 /* ---- interlocks: limits the old panel took from another tag (HMI_TAG) ---- */
 static int il_FirstInlets(uint16_t id, plat_val_t v) { (void)id; return (v.i < 1 || v.i > (int32_t)MaxValveDOnumber) ? 1 : 0; }   /* FirstInlets: #1..MaxValveDOnumber */
@@ -683,6 +685,10 @@ static const param_def_t defs[] = {
     PARAM_TEXT(VMP_SINGULARINLET7, "SingularInlet7", SingularInlet[7], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_TEXT(VMP_SINGULARINLET8, "SingularInlet8", SingularInlet[8], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_TEXT(VMP_SINGULARINLET9, "SingularInlet9", SingularInlet[9], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
+    /* parameters the original did not have (hand-written, IDs 2900+; tools/param_ids.csv) */
+#include "vm_params_new.inc"
+    /* tags the old Modbus map exposes that are not settings (tools/gen_modbus.py) */
+#include "vm_params_modbus.inc"
 };
 const param_def_t *const vm_params = defs;
 const size_t vm_n_params = sizeof defs / sizeof defs[0];

@@ -140,6 +140,7 @@ id,dictionary_name
 1138,SingularInlet7
 1139,SingularInlet8
 1140,SingularInlet9
+2900,(new) valve_fb_settle_s
 3000,Alarm0 DescriptionBuf
 3001,Alarm0 DescriptionMUXBuf
 3002,Alarm1 DescriptionBuf
@@ -335,3 +336,198 @@ id,dictionary_name
 3192,ValveNameMUX8
 3193,ValveNameMUX9
 3194,prevLogging
+4000,(modbus) CurrentMode
+4001,(modbus) ValveSelectionErrorModbus
+4002,(modbus) StartModbusCoil
+4003,(modbus) SelectedFirstInletMb
+4004,(modbus) SelectedFirstOutletMb
+4005,(modbus) SelectedSecondInletMb
+4006,(modbus) SelectedSecondOutletMb
+4007,(modbus) ResetMbError
+4008,(modbus) StartModbus
+4009,(modbus) BackFlushValveAvailable
+4010,(modbus) FlushValveBitModbus
+4011,(modbus) ModbusModeNotActive
+4012,(modbus) StartModbusCoilMUX
+4013,(modbus) StartModbusMUX
+4014,(modbus) ValveSelectionErrorModbusMUX
+4015,(modbus) ResetMbErrorMUX
+4016,(modbus) PurgeInletActivateModbus
+4017,(modbus) ModbusNotActiveMUX
+4018,(modbus) AlarmsVM
+4019,(modbus) AlarmsMUX
+4020,(modbus) FBAlarmsMUX
+4021,(modbus) AnalogTimer0.Out
+4022,(modbus) AnalogTimer1.Out
+4023,(modbus) AnalogTimer2.Out
+4024,(modbus) AnalogTimer3.Out
+4025,(modbus) TempTimer0.Out
+4026,(modbus) TempTimer1.Out
+4027,(modbus) TempTimer2.Out
+4028,(modbus) TempTimer3.Out
+4029,(modbus) EmailCantbeSent
+4030,(modbus) ContactManufacturer1
+4031,(modbus) StopSeqBit
+4032,(modbus) AnalyzerOkBitAlarm
+4033,(modbus) FlowValidationAlarm
+4034,(modbus) AcknEmailSentError
+4035,(modbus) Acknowledge Bit
+4036,(modbus) Ackbit1
+4037,(modbus) ContactManufacturer2
+4038,(modbus) Ackbit2
+4039,(modbus) SaveDataFailedReserv
+4040,(modbus) AcknowledgeCSVReserv
+4041,(modbus) AlarmLoadingTable
+4042,(modbus) AckowledgeLoadError
+4043,(modbus) ModbusTimer.Preset
+4044,(modbus) ModbusTimer2.Preset
+4045,(modbus) ProcessTimer.Preset
+4046,(modbus) ProcessTimer2.Preset
+4047,(modbus) FirstInterconInletName1
+4048,(modbus) FirstInterconInletName2
+4049,(modbus) FirstInterconInletName3
+4050,(modbus) FirstInterconInletName4
+4051,(modbus) FirstInterconInletName5
+4052,(modbus) FirstInterconInletName6
+4053,(modbus) FirstInterconInletName7
+4054,(modbus) FirstInterconInletName8
+4055,(modbus) FirstInterconInletName9
+4056,(modbus) FirstInterconInletName10
+4057,(modbus) FirstInterconInletName11
+4058,(modbus) FirstInterconInletName12
+4059,(modbus) FirstInterconInletName13
+4060,(modbus) FirstInterconInletName14
+4061,(modbus) FirstInterconInletName15
+4062,(modbus) FirstInterconInletName16
+4063,(modbus) FirstInterconInletName17
+4064,(modbus) FirstInterconInletName18
+4065,(modbus) FirstInterconInletName19
+4066,(modbus) FirstInterconOutletName1
+4067,(modbus) FirstInterconOutletName2
+4068,(modbus) FirstInterconOutletName3
+4069,(modbus) FirstInterconOutletName4
+4070,(modbus) FirstInterconOutletName5
+4071,(modbus) FirstInterconOutletName6
+4072,(modbus) FirstInterconOutletName7
+4073,(modbus) FirstInterconOutletName8
+4074,(modbus) FirstInterconOutletName9
+4075,(modbus) FirstInterconOutletName10
+4076,(modbus) FirstInterconOutletName11
+4077,(modbus) FirstInterconOutletName12
+4078,(modbus) FirstInterconOutletName13
+4079,(modbus) FirstInterconOutletName14
+4080,(modbus) FirstInterconOutletName15
+4081,(modbus) FirstInterconOutletName16
+4082,(modbus) FirstInterconOutletName17
+4083,(modbus) FirstInterconOutletName18
+4084,(modbus) FirstInterconOutletName19
+4085,(modbus) SecondInterconInletName1
+4086,(modbus) SecondInterconInletName2
+4087,(modbus) SecondInterconInletName3
+4088,(modbus) SecondInterconInletName4
+4089,(modbus) SecondInterconInletName5
+4090,(modbus) SecondInterconInletName6
+4091,(modbus) SecondInterconInletName7
+4092,(modbus) SecondInterconInletName8
+4093,(modbus) SecondInterconInletName9
+4094,(modbus) SecondInterconInletName10
+4095,(modbus) SecondInterconInletName11
+4096,(modbus) SecondInterconInletName12
+4097,(modbus) SecondInterconInletName13
+4098,(modbus) SecondInterconInletName14
+4099,(modbus) SecondInterconInletName15
+4100,(modbus) SecondInterconInletName16
+4101,(modbus) SecondInterconInletName17
+4102,(modbus) SecondInterconInletName18
+4103,(modbus) SecondInterconOutletName1
+4104,(modbus) SecondInterconOutletName2
+4105,(modbus) SecondInterconOutletName3
+4106,(modbus) SecondInterconOutletName4
+4107,(modbus) SecondInterconOutletName5
+4108,(modbus) SecondInterconOutletName6
+4109,(modbus) SecondInterconOutletName7
+4110,(modbus) SecondInterconOutletName8
+4111,(modbus) SecondInterconOutletName9
+4112,(modbus) SecondInterconOutletName10
+4113,(modbus) SecondInterconOutletName11
+4114,(modbus) SecondInterconOutletName12
+4115,(modbus) SecondInterconOutletName13
+4116,(modbus) SecondInterconOutletName14
+4117,(modbus) SecondInterconOutletName15
+4118,(modbus) SecondInterconOutletName16
+4119,(modbus) SecondInterconOutletName17
+4120,(modbus) SecondInterconOutletName18
+4121,(modbus) CurrentModeMUX
+4122,(modbus) SelectedValveMbMUX
+4123,(modbus) ModbusTimerMUX.Preset
+4124,(modbus) ProcessTimerMUX.Preset
+4125,(modbus) ValveNameMUX1
+4126,(modbus) ValveNameMUX2
+4127,(modbus) ValveNameMUX3
+4128,(modbus) ValveNameMUX4
+4129,(modbus) ValveNameMUX5
+4130,(modbus) ValveNameMUX6
+4131,(modbus) ValveNameMUX7
+4132,(modbus) ValveNameMUX8
+4133,(modbus) ValveNameMUX9
+4134,(modbus) ValveNameMUX10
+4135,(modbus) ValveNameMUX11
+4136,(modbus) ValveNameMUX12
+4137,(modbus) ValveNameMUX13
+4138,(modbus) ValveNameMUX14
+4139,(modbus) ValveNameMUX15
+4140,(modbus) ValveNameMUX16
+4141,(modbus) ValveNameMUX17
+4142,(modbus) ValveNameMUX18
+4143,(modbus) ValveNameMUX19
+4144,(modbus) FlushValveMUX20
+4145,(modbus) AnalogSensor
+4146,(modbus) TemperatureSensor
+4147,(modbus) Alarm0 DescriptionBuf
+4148,(modbus) Alarm1 DescriptionBuf
+4149,(modbus) Alarm2 DescriptionBuf
+4150,(modbus) Alarm3 DescriptionBuf
+4151,(modbus) Alarm4 DescriptionBuf
+4152,(modbus) Alarm5 DescriptionBuf
+4153,(modbus) Alarm6 DescriptionBuf
+4154,(modbus) Alarm7 DescriptionBuf
+4155,(modbus) Alarm8 DescriptionBuf
+4156,(modbus) Alarm9 DescriptionBuf
+4157,(modbus) Alarm10 DescriptionBuf
+4158,(modbus) Alarm11 DescriptionBuf
+4159,(modbus) Alarm12 DescriptionBuf
+4160,(modbus) Alarm13 DescriptionBuf
+4161,(modbus) Alarm14 DescriptionBuf
+4162,(modbus) Alarm15 DescriptionBuf
+4163,(modbus) Alarm16 DescriptionBuf
+4164,(modbus) Alarm17 DescriptionBuf
+4165,(modbus) Alarm18 DescriptionBuf
+4166,(modbus) Alarm19 DescriptionBuf
+4167,(modbus) Alarm20 DescriptionBuf
+4168,(modbus) Alarm21 DescriptionBuf
+4169,(modbus) Alarm0 DescriptionMUXBuf
+4170,(modbus) Alarm1 DescriptionMUXBuf
+4171,(modbus) Alarm2 DescriptionMUXBuf
+4172,(modbus) Alarm3 DescriptionMUXBuf
+4173,(modbus) Alarm4 DescriptionMUXBuf
+4174,(modbus) Alarm5 DescriptionMUXBuf
+4175,(modbus) Alarm6 DescriptionMUXBuf
+4176,(modbus) Alarm7 DescriptionMUXBuf
+4177,(modbus) Alarm8 DescriptionMUXBuf
+4178,(modbus) Alarm9 DescriptionMUXBuf
+4179,(modbus) Alarm10 DescriptionMUXBuf
+4180,(modbus) Alarm11 DescriptionMUXBuf
+4181,(modbus) Alarm12 DescriptionMUXBuf
+4182,(modbus) Alarm13 DescriptionMUXBuf
+4183,(modbus) Alarm14 DescriptionMUXBuf
+4184,(modbus) Alarm15 DescriptionMUXBuf
+4185,(modbus) Alarm16 DescriptionMUXBuf
+4186,(modbus) Alarm17 DescriptionMUXBuf
+4187,(modbus) Alarm18 DescriptionMUXBuf
+4188,(modbus) Alarm19 DescriptionMUXBuf
+4189,(modbus) Alarm20 DescriptionMUXBuf
+4190,(modbus) Alarm21 DescriptionMUXBuf
+4191,(modbus) Analog Alarm0 DescriptionBuf
+4192,(modbus) Analog Alarm1 DescriptionBuf
+4193,(modbus) Temperature0AlarmDescriptionBuf
+4194,(modbus) Temperature1AlarmDescriptionBuf

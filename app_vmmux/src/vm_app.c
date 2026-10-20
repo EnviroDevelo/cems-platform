@@ -11,6 +11,7 @@
 #include "vm_tags.h"
 #include "param_store.h"
 #include "vm_params.h"
+#include "vm_alarms.h"
 
 uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];
 
@@ -73,6 +74,8 @@ static void remote_link_watch(void)
 
 void vm_after_logic(void)
 {
+    vm_alarms_scan();
+    vm_compat_scan();
     log_channels();
     remote_link_watch();
 }

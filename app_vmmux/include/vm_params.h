@@ -389,60 +389,16 @@ extern uint16_t vmx_Alarm8_Description[31];              /* Alarm8 Description *
 extern uint16_t vmx_Alarm8_DescriptionMUX[31];           /* Alarm8 DescriptionMUX */
 extern uint16_t vmx_Alarm9_Description[31];              /* Alarm9 Description */
 extern uint16_t vmx_Alarm9_DescriptionMUX[31];           /* Alarm9 DescriptionMUX */
-extern uint8_t vmx_Alarm0_DescriptionBuf[60];            /* Alarm0 DescriptionBuf */
-extern uint8_t vmx_Alarm0_DescriptionMUXBuf[60];         /* Alarm0 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm1_DescriptionBuf[60];            /* Alarm1 DescriptionBuf */
-extern uint8_t vmx_Alarm1_DescriptionMUXBuf[60];         /* Alarm1 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm10_DescriptionBuf[60];           /* Alarm10 DescriptionBuf */
-extern uint8_t vmx_Alarm10_DescriptionMUXBuf[60];        /* Alarm10 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm11_DescriptionBuf[60];           /* Alarm11 DescriptionBuf */
-extern uint8_t vmx_Alarm11_DescriptionMUXBuf[60];        /* Alarm11 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm12_DescriptionBuf[60];           /* Alarm12 DescriptionBuf */
-extern uint8_t vmx_Alarm12_DescriptionMUXBuf[60];        /* Alarm12 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm13_DescriptionBuf[60];           /* Alarm13 DescriptionBuf */
-extern uint8_t vmx_Alarm13_DescriptionMUXBuf[60];        /* Alarm13 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm14_DescriptionBuf[60];           /* Alarm14 DescriptionBuf */
-extern uint8_t vmx_Alarm14_DescriptionMUXBuf[60];        /* Alarm14 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm15_DescriptionBuf[60];           /* Alarm15 DescriptionBuf */
-extern uint8_t vmx_Alarm15_DescriptionMUXBuf[60];        /* Alarm15 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm16_DescriptionBuf[60];           /* Alarm16 DescriptionBuf */
-extern uint8_t vmx_Alarm16_DescriptionMUXBuf[60];        /* Alarm16 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm17_DescriptionBuf[60];           /* Alarm17 DescriptionBuf */
-extern uint8_t vmx_Alarm17_DescriptionMUXBuf[60];        /* Alarm17 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm18_DescriptionBuf[60];           /* Alarm18 DescriptionBuf */
-extern uint8_t vmx_Alarm18_DescriptionMUXBuf[60];        /* Alarm18 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm19_DescriptionBuf[60];           /* Alarm19 DescriptionBuf */
-extern uint8_t vmx_Alarm19_DescriptionMUXBuf[60];        /* Alarm19 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm2_DescriptionBuf[60];            /* Alarm2 DescriptionBuf */
-extern uint8_t vmx_Alarm2_DescriptionMUXBuf[60];         /* Alarm2 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm20_DescriptionBuf[60];           /* Alarm20 DescriptionBuf */
-extern uint8_t vmx_Alarm20_DescriptionMUXBuf[60];        /* Alarm20 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm21_DescriptionBuf[60];           /* Alarm21 DescriptionBuf */
-extern uint8_t vmx_Alarm21_DescriptionMUXBuf[60];        /* Alarm21 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm3_DescriptionBuf[60];            /* Alarm3 DescriptionBuf */
-extern uint8_t vmx_Alarm3_DescriptionMUXBuf[60];         /* Alarm3 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm4_DescriptionBuf[60];            /* Alarm4 DescriptionBuf */
-extern uint8_t vmx_Alarm4_DescriptionMUXBuf[60];         /* Alarm4 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm5_DescriptionBuf[60];            /* Alarm5 DescriptionBuf */
-extern uint8_t vmx_Alarm5_DescriptionMUXBuf[60];         /* Alarm5 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm6_DescriptionBuf[60];            /* Alarm6 DescriptionBuf */
-extern uint8_t vmx_Alarm6_DescriptionMUXBuf[60];         /* Alarm6 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm7_DescriptionBuf[60];            /* Alarm7 DescriptionBuf */
-extern uint8_t vmx_Alarm7_DescriptionMUXBuf[60];         /* Alarm7 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm8_DescriptionBuf[60];            /* Alarm8 DescriptionBuf */
-extern uint8_t vmx_Alarm8_DescriptionMUXBuf[60];         /* Alarm8 DescriptionMUXBuf */
-extern uint8_t vmx_Alarm9_DescriptionBuf[60];            /* Alarm9 DescriptionBuf */
-extern uint8_t vmx_Alarm9_DescriptionMUXBuf[60];         /* Alarm9 DescriptionMUXBuf */
-extern uint8_t vmx_Analog_Alarm0_DescriptionBuf[60];     /* Analog Alarm0 DescriptionBuf */
-extern uint8_t vmx_Analog_Alarm1_DescriptionBuf[60];     /* Analog Alarm1 DescriptionBuf */
-extern uint8_t vmx_DefaultModeOnPowerupMUX;              /* DefaultModeOnPowerupMUX */
-extern uint8_t vmx_FlushValveMUX20[20];                  /* FlushValveMUX20 */
-extern char vmx_ModbusParam0[19];                        /* ModbusParam0 */
-extern bool vmx_ModbusValueEnabled[16];                  /* ModbusValueEnabled */
-extern bool vmx_SNentered;                               /* SNentered */
-extern uint8_t vmx_Temperature0AlarmDescriptionBuf[60];  /* Temperature0AlarmDescriptionBuf */
-extern uint8_t vmx_Temperature1AlarmDescriptionBuf[60];  /* Temperature1AlarmDescriptionBuf */
+extern bool vmx_Ackbit2;                                 /* Ackbit2 */
 extern uint8_t vmx_ValveNameMUX1[20];                    /* ValveNameMUX1 */
+extern uint8_t vmx_ValveNameMUX2[20];                    /* ValveNameMUX2 */
+extern uint8_t vmx_ValveNameMUX3[20];                    /* ValveNameMUX3 */
+extern uint8_t vmx_ValveNameMUX4[20];                    /* ValveNameMUX4 */
+extern uint8_t vmx_ValveNameMUX5[20];                    /* ValveNameMUX5 */
+extern uint8_t vmx_ValveNameMUX6[20];                    /* ValveNameMUX6 */
+extern uint8_t vmx_ValveNameMUX7[20];                    /* ValveNameMUX7 */
+extern uint8_t vmx_ValveNameMUX8[8];                     /* ValveNameMUX8 */
+extern uint8_t vmx_ValveNameMUX9[20];                    /* ValveNameMUX9 */
 extern uint8_t vmx_ValveNameMUX10[20];                   /* ValveNameMUX10 */
 extern uint8_t vmx_ValveNameMUX11[20];                   /* ValveNameMUX11 */
 extern uint8_t vmx_ValveNameMUX12[20];                   /* ValveNameMUX12 */
@@ -453,13 +409,58 @@ extern uint8_t vmx_ValveNameMUX16[20];                   /* ValveNameMUX16 */
 extern uint8_t vmx_ValveNameMUX17[20];                   /* ValveNameMUX17 */
 extern uint8_t vmx_ValveNameMUX18[20];                   /* ValveNameMUX18 */
 extern uint8_t vmx_ValveNameMUX19[20];                   /* ValveNameMUX19 */
-extern uint8_t vmx_ValveNameMUX2[20];                    /* ValveNameMUX2 */
-extern uint8_t vmx_ValveNameMUX3[20];                    /* ValveNameMUX3 */
-extern uint8_t vmx_ValveNameMUX4[20];                    /* ValveNameMUX4 */
-extern uint8_t vmx_ValveNameMUX5[20];                    /* ValveNameMUX5 */
-extern uint8_t vmx_ValveNameMUX6[20];                    /* ValveNameMUX6 */
-extern uint8_t vmx_ValveNameMUX7[20];                    /* ValveNameMUX7 */
-extern uint8_t vmx_ValveNameMUX8[8];                     /* ValveNameMUX8 */
-extern uint8_t vmx_ValveNameMUX9[20];                    /* ValveNameMUX9 */
+extern uint8_t vmx_FlushValveMUX20[20];                  /* FlushValveMUX20 */
+extern uint8_t vmx_Alarm0_DescriptionBuf[60];            /* Alarm0 DescriptionBuf */
+extern uint8_t vmx_Alarm1_DescriptionBuf[60];            /* Alarm1 DescriptionBuf */
+extern uint8_t vmx_Alarm2_DescriptionBuf[60];            /* Alarm2 DescriptionBuf */
+extern uint8_t vmx_Alarm3_DescriptionBuf[60];            /* Alarm3 DescriptionBuf */
+extern uint8_t vmx_Alarm4_DescriptionBuf[60];            /* Alarm4 DescriptionBuf */
+extern uint8_t vmx_Alarm5_DescriptionBuf[60];            /* Alarm5 DescriptionBuf */
+extern uint8_t vmx_Alarm6_DescriptionBuf[60];            /* Alarm6 DescriptionBuf */
+extern uint8_t vmx_Alarm7_DescriptionBuf[60];            /* Alarm7 DescriptionBuf */
+extern uint8_t vmx_Alarm8_DescriptionBuf[60];            /* Alarm8 DescriptionBuf */
+extern uint8_t vmx_Alarm9_DescriptionBuf[60];            /* Alarm9 DescriptionBuf */
+extern uint8_t vmx_Alarm10_DescriptionBuf[60];           /* Alarm10 DescriptionBuf */
+extern uint8_t vmx_Alarm11_DescriptionBuf[60];           /* Alarm11 DescriptionBuf */
+extern uint8_t vmx_Alarm12_DescriptionBuf[60];           /* Alarm12 DescriptionBuf */
+extern uint8_t vmx_Alarm13_DescriptionBuf[60];           /* Alarm13 DescriptionBuf */
+extern uint8_t vmx_Alarm14_DescriptionBuf[60];           /* Alarm14 DescriptionBuf */
+extern uint8_t vmx_Alarm15_DescriptionBuf[60];           /* Alarm15 DescriptionBuf */
+extern uint8_t vmx_Alarm16_DescriptionBuf[60];           /* Alarm16 DescriptionBuf */
+extern uint8_t vmx_Alarm17_DescriptionBuf[60];           /* Alarm17 DescriptionBuf */
+extern uint8_t vmx_Alarm18_DescriptionBuf[60];           /* Alarm18 DescriptionBuf */
+extern uint8_t vmx_Alarm19_DescriptionBuf[60];           /* Alarm19 DescriptionBuf */
+extern uint8_t vmx_Alarm20_DescriptionBuf[60];           /* Alarm20 DescriptionBuf */
+extern uint8_t vmx_Alarm21_DescriptionBuf[60];           /* Alarm21 DescriptionBuf */
+extern uint8_t vmx_Alarm0_DescriptionMUXBuf[60];         /* Alarm0 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm1_DescriptionMUXBuf[60];         /* Alarm1 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm2_DescriptionMUXBuf[60];         /* Alarm2 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm3_DescriptionMUXBuf[60];         /* Alarm3 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm4_DescriptionMUXBuf[60];         /* Alarm4 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm5_DescriptionMUXBuf[60];         /* Alarm5 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm6_DescriptionMUXBuf[60];         /* Alarm6 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm7_DescriptionMUXBuf[60];         /* Alarm7 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm8_DescriptionMUXBuf[60];         /* Alarm8 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm9_DescriptionMUXBuf[60];         /* Alarm9 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm10_DescriptionMUXBuf[60];        /* Alarm10 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm11_DescriptionMUXBuf[60];        /* Alarm11 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm12_DescriptionMUXBuf[60];        /* Alarm12 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm13_DescriptionMUXBuf[60];        /* Alarm13 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm14_DescriptionMUXBuf[60];        /* Alarm14 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm15_DescriptionMUXBuf[60];        /* Alarm15 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm16_DescriptionMUXBuf[60];        /* Alarm16 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm17_DescriptionMUXBuf[60];        /* Alarm17 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm18_DescriptionMUXBuf[60];        /* Alarm18 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm19_DescriptionMUXBuf[60];        /* Alarm19 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm20_DescriptionMUXBuf[60];        /* Alarm20 DescriptionMUXBuf */
+extern uint8_t vmx_Alarm21_DescriptionMUXBuf[60];        /* Alarm21 DescriptionMUXBuf */
+extern uint8_t vmx_Analog_Alarm0_DescriptionBuf[60];     /* Analog Alarm0 DescriptionBuf */
+extern uint8_t vmx_Analog_Alarm1_DescriptionBuf[60];     /* Analog Alarm1 DescriptionBuf */
+extern uint8_t vmx_Temperature0AlarmDescriptionBuf[60];  /* Temperature0AlarmDescriptionBuf */
+extern uint8_t vmx_Temperature1AlarmDescriptionBuf[60];  /* Temperature1AlarmDescriptionBuf */
+extern uint8_t vmx_DefaultModeOnPowerupMUX;              /* DefaultModeOnPowerupMUX */
+extern char vmx_ModbusParam0[19];                        /* ModbusParam0 */
+extern bool vmx_ModbusValueEnabled[16];                  /* ModbusValueEnabled */
+extern bool vmx_SNentered;                               /* SNentered */
 
 #endif

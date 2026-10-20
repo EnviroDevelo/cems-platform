@@ -45,6 +45,7 @@ enum {
 /* ---- after-logic hooks (vm_app.c) ---- */
 void vm_after_logic(void);        /* alarms, data log, link watchdog: once per scan after Function1 */
 bool vm_fw_safe(char *why, size_t cap);
-bool vm_busy(char *why, size_t cap);   /* a sequence, manual run or purge is active */
+bool vm_busy(char *why, size_t cap);
+void vm_compat_scan(void);       /* old Modbus coils and buffers kept meaningful (vm_compat.c) */   /* a sequence, manual run or purge is active */
 
 #endif
