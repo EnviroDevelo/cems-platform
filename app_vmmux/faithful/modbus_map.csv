@@ -1,0 +1,202 @@
+space,address,length,access,fc,name,tag,member,type,dims
+register,0,1,master reads,3,Register1,CurrentMode,,INT16,
+register,1,1,master reads,3,Register2,NumInterconnections,,INT16,
+register,2,1,master reads,3,Register3,FirstInlets,,INT16,
+register,3,1,master reads,3,Register4,FirstOutlets,,INT16,
+register,4,1,master reads,3,Register5,SecondInlets,,INT16,
+register,5,1,master reads,3,Register6,SecondOutlets,,INT16,
+coil,0,1,master reads,1,Coil1,ValveSelectionErrorModbus,,BIT,
+coil,1,1,master writes,15,Coil2,StartModbusCoil,,BIT,
+register,6,1,master writes,16,Register7,SelectedFirstInletMb,,INT16,
+register,7,1,master writes,16,Register8,SelectedFirstOutletMb,,INT16,
+register,8,1,master writes,16,Register9,SelectedSecondInletMb,,INT16,
+register,9,1,master writes,16,Register10,SelectedSecondOutletMb,,INT16,
+coil,2,1,master writes,15,Coil3,ResetMbError,,BIT,
+coil,3,1,master reads,1,Coil4,StartModbus,,BIT,
+coil,4,1,master reads,1,Coil5,BackFlushValveAvailable,,BIT,
+coil,5,1,master writes,15,Coil6,FlushValveBitModbus,,BIT,
+coil,6,1,master reads,1,Coil7,ModbusModeNotActive,,BIT,
+coil,7,1,master writes,15,Coil8,StartModbusCoilMUX,,BIT,
+coil,8,1,master reads,1,Coil9,StartModbusMUX,,BIT,
+coil,9,1,master reads,1,Coil10,ValveSelectionErrorModbusMUX,,BIT,
+coil,10,1,master writes,15,Coil11,ResetMbErrorMUX,,BIT,
+coil,11,1,master writes,15,Coil12,PurgeInletActivateModbus,,BIT,
+coil,12,1,master reads,1,Coil13,ModbusNotActiveMUX,,BIT,
+coil,13,22,master reads,1,Coil14,AlarmsVM,,BIT,22
+coil,35,22,master reads,1,Coil15,AlarmsMUX,,BIT,22
+coil,57,20,master reads,1,Coil16,FBAlarmsMUX,,BIT,20
+coil,77,1,master reads,1,Coil17,AnalogTimer0,Out,TIMER,
+coil,78,1,master reads,1,Coil18,AnalogTimer1,Out,TIMER,
+coil,79,1,master reads,1,Coil19,AnalogTimer2,Out,TIMER,
+coil,80,1,master reads,1,Coil20,AnalogTimer3,Out,TIMER,
+coil,81,1,master reads,1,Coil21,TempTimer0,Out,TIMER,
+coil,82,1,master reads,1,Coil22,TempTimer1,Out,TIMER,
+coil,83,1,master reads,1,Coil23,TempTimer2,Out,TIMER,
+coil,84,1,master reads,1,Coil24,TempTimer3,Out,TIMER,
+coil,85,1,master reads,1,Coil25,EmailCantbeSent,,BIT,
+coil,86,1,master reads,1,Coil26,ContactManufacturer1,,BIT,
+coil,87,1,master reads,1,Coil27,StopSeqBit,,BIT,
+coil,88,1,master reads,1,Coil28,AnalyzerOkBitAlarm,,BIT,
+coil,89,1,master reads,1,Coil29,FlowValidationAlarm,,BIT,
+coil,90,1,master writes,15,Coil30,AcknEmailSentError,,BIT,
+coil,91,1,master writes,15,Coil31,Acknowledge Bit,,BIT,
+coil,92,1,master writes,15,Coil32,Ackbit1,,BIT,
+coil,93,1,master reads,1,Coil33,ContactManufacturer2,,BIT,
+coil,94,1,master writes,15,Coil34,Ackbit2,,BIT,
+coil,95,1,master reads,1,Coil35,SaveDataFailedReserv,,BIT,
+coil,96,1,master writes,15,Coil36,AcknowledgeCSVReserv,,BIT,
+coil,97,1,master reads,1,Coil37,AlarmLoadingTable,,BIT,
+coil,98,1,master writes,15,Coil38,AckowledgeLoadError,,BIT,
+register,10,2,master writes,16,Register11,ModbusTimer,Preset,TIMER,
+register,12,2,master writes,16,Register12,ModbusTimer2,Preset,TIMER,
+register,14,2,master reads,3,Register13,ProcessTimer,Preset,TIMER,
+register,18,2,master reads,3,Register15,ProcessTimer2,Preset,TIMER,
+register,20,10,master reads,3,Register16,FirstInterconInletName1,,BUFFER,20
+register,30,10,master reads,3,Register17,FirstInterconInletName2,,BUFFER,20
+register,40,10,master reads,3,Register18,FirstInterconInletName3,,BUFFER,20
+register,50,10,master reads,3,Register19,FirstInterconInletName4,,BUFFER,20
+register,60,10,master reads,3,Register20,FirstInterconInletName5,,BUFFER,20
+register,70,10,master reads,3,Register21,FirstInterconInletName6,,BUFFER,20
+register,80,10,master reads,3,Register22,FirstInterconInletName7,,BUFFER,20
+register,90,10,master reads,3,Register23,FirstInterconInletName8,,BUFFER,20
+register,100,10,master reads,3,Register24,FirstInterconInletName9,,BUFFER,20
+register,110,10,master reads,3,Register25,FirstInterconInletName10,,BUFFER,20
+register,120,10,master reads,3,Register26,FirstInterconInletName11,,BUFFER,20
+register,130,10,master reads,3,Register27,FirstInterconInletName12,,BUFFER,20
+register,140,10,master reads,3,Register28,FirstInterconInletName13,,BUFFER,20
+register,150,10,master reads,3,Register29,FirstInterconInletName14,,BUFFER,20
+register,160,10,master reads,3,Register30,FirstInterconInletName15,,BUFFER,20
+register,170,10,master reads,3,Register31,FirstInterconInletName16,,BUFFER,20
+register,180,10,master reads,3,Register32,FirstInterconInletName17,,BUFFER,20
+register,190,10,master reads,3,Register33,FirstInterconInletName18,,BUFFER,20
+register,200,10,master reads,3,Register34,FirstInterconInletName19,,BUFFER,20
+register,210,10,master reads,3,Register35,FirstInterconOutletName1,,BUFFER,20
+register,220,10,master reads,3,Register36,FirstInterconOutletName2,,BUFFER,20
+register,230,10,master reads,3,Register37,FirstInterconOutletName3,,BUFFER,20
+register,240,10,master reads,3,Register38,FirstInterconOutletName4,,BUFFER,20
+register,250,10,master reads,3,Register39,FirstInterconOutletName5,,BUFFER,20
+register,260,10,master reads,3,Register40,FirstInterconOutletName6,,BUFFER,20
+register,270,10,master reads,3,Register41,FirstInterconOutletName7,,BUFFER,20
+register,280,10,master reads,3,Register42,FirstInterconOutletName8,,BUFFER,20
+register,290,10,master reads,3,Register43,FirstInterconOutletName9,,BUFFER,20
+register,300,10,master reads,3,Register44,FirstInterconOutletName10,,BUFFER,20
+register,310,10,master reads,3,Register45,FirstInterconOutletName11,,BUFFER,20
+register,320,10,master reads,3,Register46,FirstInterconOutletName12,,BUFFER,20
+register,330,10,master reads,3,Register47,FirstInterconOutletName13,,BUFFER,20
+register,340,10,master reads,3,Register48,FirstInterconOutletName14,,BUFFER,20
+register,350,10,master reads,3,Register49,FirstInterconOutletName15,,BUFFER,20
+register,360,10,master reads,3,Register50,FirstInterconOutletName16,,BUFFER,20
+register,370,10,master reads,3,Register51,FirstInterconOutletName17,,BUFFER,20
+register,380,10,master reads,3,Register52,FirstInterconOutletName18,,BUFFER,20
+register,390,10,master reads,3,Register53,FirstInterconOutletName19,,BUFFER,20
+register,400,10,master reads,3,Register54,SecondInterconInletName1,,BUFFER,20
+register,410,10,master reads,3,Register55,SecondInterconInletName2,,BUFFER,20
+register,420,10,master reads,3,Register56,SecondInterconInletName3,,BUFFER,20
+register,430,10,master reads,3,Register57,SecondInterconInletName4,,BUFFER,20
+register,440,10,master reads,3,Register58,SecondInterconInletName5,,BUFFER,20
+register,450,10,master reads,3,Register59,SecondInterconInletName6,,BUFFER,20
+register,460,10,master reads,3,Register60,SecondInterconInletName7,,BUFFER,20
+register,470,10,master reads,3,Register61,SecondInterconInletName8,,BUFFER,20
+register,480,10,master reads,3,Register62,SecondInterconInletName9,,BUFFER,20
+register,490,10,master reads,3,Register63,SecondInterconInletName10,,BUFFER,20
+register,500,10,master reads,3,Register64,SecondInterconInletName11,,BUFFER,20
+register,510,10,master reads,3,Register65,SecondInterconInletName12,,BUFFER,20
+register,520,10,master reads,3,Register66,SecondInterconInletName13,,BUFFER,20
+register,530,10,master reads,3,Register67,SecondInterconInletName14,,BUFFER,20
+register,540,10,master reads,3,Register68,SecondInterconInletName15,,BUFFER,20
+register,550,10,master reads,3,Register69,SecondInterconInletName16,,BUFFER,20
+register,560,10,master reads,3,Register70,SecondInterconInletName17,,BUFFER,20
+register,570,10,master reads,3,Register71,SecondInterconInletName18,,BUFFER,20
+register,580,10,master reads,3,Register72,SecondInterconOutletName1,,BUFFER,20
+register,590,10,master reads,3,Register73,SecondInterconOutletName2,,BUFFER,20
+register,600,10,master reads,3,Register74,SecondInterconOutletName3,,BUFFER,20
+register,610,10,master reads,3,Register75,SecondInterconOutletName4,,BUFFER,20
+register,620,10,master reads,3,Register76,SecondInterconOutletName5,,BUFFER,20
+register,630,10,master reads,3,Register77,SecondInterconOutletName6,,BUFFER,20
+register,640,10,master reads,3,Register78,SecondInterconOutletName7,,BUFFER,20
+register,650,10,master reads,3,Register79,SecondInterconOutletName8,,BUFFER,20
+register,660,10,master reads,3,Register80,SecondInterconOutletName9,,BUFFER,20
+register,670,10,master reads,3,Register81,SecondInterconOutletName10,,BUFFER,20
+register,680,10,master reads,3,Register82,SecondInterconOutletName11,,BUFFER,20
+register,690,10,master reads,3,Register83,SecondInterconOutletName12,,BUFFER,20
+register,700,10,master reads,3,Register84,SecondInterconOutletName13,,BUFFER,20
+register,710,10,master reads,3,Register85,SecondInterconOutletName14,,BUFFER,20
+register,720,10,master reads,3,Register86,SecondInterconOutletName15,,BUFFER,20
+register,730,10,master reads,3,Register87,SecondInterconOutletName16,,BUFFER,20
+register,740,10,master reads,3,Register88,SecondInterconOutletName17,,BUFFER,20
+register,750,10,master reads,3,Register89,SecondInterconOutletName18,,BUFFER,20
+register,760,1,master reads,3,Register90,CurrentModeMUX,,INT16,
+register,761,1,master reads,3,Register91,NumberOfMUXValves,,INT16,
+register,762,1,master writes,16,Register92,SelectedValveMbMUX,,INT16,
+register,763,2,master writes,16,Register93,ModbusTimerMUX,Preset,TIMER,
+register,765,2,master reads,3,Register94,ProcessTimerMUX,Preset,TIMER,
+register,767,10,master reads,3,Register95,ValveNameMUX1,,BUFFER,20
+register,777,10,master reads,3,Register96,ValveNameMUX2,,BUFFER,20
+register,787,10,master reads,3,Register97,ValveNameMUX3,,BUFFER,20
+register,797,10,master reads,3,Register98,ValveNameMUX4,,BUFFER,20
+register,807,10,master reads,3,Register99,ValveNameMUX5,,BUFFER,20
+register,817,10,master reads,3,Register100,ValveNameMUX6,,BUFFER,20
+register,827,10,master reads,3,Register101,ValveNameMUX7,,BUFFER,20
+register,837,4,master reads,3,Register102,ValveNameMUX8,,BUFFER,8
+register,841,10,master reads,3,Register103,ValveNameMUX9,,BUFFER,20
+register,851,10,master reads,3,Register104,ValveNameMUX10,,BUFFER,20
+register,861,10,master reads,3,Register105,ValveNameMUX11,,BUFFER,20
+register,871,10,master reads,3,Register106,ValveNameMUX12,,BUFFER,20
+register,881,10,master reads,3,Register107,ValveNameMUX13,,BUFFER,20
+register,891,10,master reads,3,Register108,ValveNameMUX14,,BUFFER,20
+register,901,10,master reads,3,Register109,ValveNameMUX15,,BUFFER,20
+register,911,10,master reads,3,Register110,ValveNameMUX16,,BUFFER,20
+register,921,10,master reads,3,Register111,ValveNameMUX17,,BUFFER,20
+register,931,10,master reads,3,Register112,ValveNameMUX18,,BUFFER,20
+register,941,10,master reads,3,Register113,ValveNameMUX19,,BUFFER,20
+register,951,10,master reads,3,Register114,FlushValveMUX20,,BUFFER,20
+register,961,8,master reads,3,Register115,AnalogSensor,,REAL,4
+register,969,4,master reads,3,Register116,TemperatureSensor,,INT16,4
+register,973,30,master reads,3,Register117,Alarm0 DescriptionBuf,,BUFFER,60
+register,1003,30,master reads,3,Register118,Alarm1 DescriptionBuf,,BUFFER,60
+register,1033,30,master reads,3,Register119,Alarm2 DescriptionBuf,,BUFFER,60
+register,1063,30,master reads,3,Register120,Alarm3 DescriptionBuf,,BUFFER,60
+register,1093,30,master reads,3,Register121,Alarm4 DescriptionBuf,,BUFFER,60
+register,1123,30,master reads,3,Register122,Alarm5 DescriptionBuf,,BUFFER,60
+register,1153,30,master reads,3,Register123,Alarm6 DescriptionBuf,,BUFFER,60
+register,1183,30,master reads,3,Register124,Alarm7 DescriptionBuf,,BUFFER,60
+register,1213,30,master reads,3,Register125,Alarm8 DescriptionBuf,,BUFFER,60
+register,1243,30,master reads,3,Register126,Alarm9 DescriptionBuf,,BUFFER,60
+register,1273,30,master reads,3,Register127,Alarm10 DescriptionBuf,,BUFFER,60
+register,1303,30,master reads,3,Register128,Alarm11 DescriptionBuf,,BUFFER,60
+register,1333,30,master reads,3,Register129,Alarm12 DescriptionBuf,,BUFFER,60
+register,1363,30,master reads,3,Register130,Alarm13 DescriptionBuf,,BUFFER,60
+register,1393,30,master reads,3,Register131,Alarm14 DescriptionBuf,,BUFFER,60
+register,1423,30,master reads,3,Register132,Alarm15 DescriptionBuf,,BUFFER,60
+register,1453,30,master reads,3,Register133,Alarm16 DescriptionBuf,,BUFFER,60
+register,1483,30,master reads,3,Register134,Alarm17 DescriptionBuf,,BUFFER,60
+register,1513,30,master reads,3,Register135,Alarm18 DescriptionBuf,,BUFFER,60
+register,1543,30,master reads,3,Register136,Alarm19 DescriptionBuf,,BUFFER,60
+register,1573,30,master reads,3,Register137,Alarm20 DescriptionBuf,,BUFFER,60
+register,1603,30,master reads,3,Register138,Alarm21 DescriptionBuf,,BUFFER,60
+register,1633,30,master reads,3,Register139,Alarm0 DescriptionMUXBuf,,BUFFER,60
+register,1663,30,master reads,3,Register140,Alarm1 DescriptionMUXBuf,,BUFFER,60
+register,1693,30,master reads,3,Register141,Alarm2 DescriptionMUXBuf,,BUFFER,60
+register,1723,30,master reads,3,Register142,Alarm3 DescriptionMUXBuf,,BUFFER,60
+register,1753,30,master reads,3,Register143,Alarm4 DescriptionMUXBuf,,BUFFER,60
+register,1783,30,master reads,3,Register144,Alarm5 DescriptionMUXBuf,,BUFFER,60
+register,1813,30,master reads,3,Register145,Alarm6 DescriptionMUXBuf,,BUFFER,60
+register,1843,30,master reads,3,Register146,Alarm7 DescriptionMUXBuf,,BUFFER,60
+register,1873,30,master reads,3,Register147,Alarm8 DescriptionMUXBuf,,BUFFER,60
+register,1903,30,master reads,3,Register148,Alarm9 DescriptionMUXBuf,,BUFFER,60
+register,1933,30,master reads,3,Register149,Alarm10 DescriptionMUXBuf,,BUFFER,60
+register,1963,30,master reads,3,Register150,Alarm11 DescriptionMUXBuf,,BUFFER,60
+register,1993,30,master reads,3,Register151,Alarm12 DescriptionMUXBuf,,BUFFER,60
+register,2023,30,master reads,3,Register152,Alarm13 DescriptionMUXBuf,,BUFFER,60
+register,2053,30,master reads,3,Register153,Alarm14 DescriptionMUXBuf,,BUFFER,60
+register,2083,30,master reads,3,Register154,Alarm15 DescriptionMUXBuf,,BUFFER,60
+register,2113,30,master reads,3,Register155,Alarm16 DescriptionMUXBuf,,BUFFER,60
+register,2143,30,master reads,3,Register156,Alarm17 DescriptionMUXBuf,,BUFFER,60
+register,2173,30,master reads,3,Register157,Alarm18 DescriptionMUXBuf,,BUFFER,60
+register,2203,30,master reads,3,Register158,Alarm19 DescriptionMUXBuf,,BUFFER,60
+register,2233,30,master reads,3,Register159,Alarm20 DescriptionMUXBuf,,BUFFER,60
+register,2263,30,master reads,3,Register160,Alarm21 DescriptionMUXBuf,,BUFFER,60
+register,2293,30,master reads,3,Register161,Analog Alarm0 DescriptionBuf,,BUFFER,60
+register,2323,30,master reads,3,Register162,Analog Alarm1 DescriptionBuf,,BUFFER,60
+register,2353,30,master reads,3,Register163,Temperature0AlarmDescriptionBuf,,BUFFER,60
+register,2383,30,master reads,3,Register164,Temperature1AlarmDescriptionBuf,,BUFFER,60
