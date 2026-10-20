@@ -3,8 +3,7 @@
 # Each test links the same chunk files as in Stage 4; 4G/4H/4I also link src/vm_tags.c,
 # because their tags are now defined there (with the data dictionary's power-up values).
 # Every vm_config.h switch is set to the original behaviour (old email and logging
-# called, no owner fixes), which
-# is what these tests check.
+# called, no owner fixes), which is what these tests check.
 # Usage (from the repository root): sh app_vmmux/stage4_tests/run.sh [outdir]
 set -e
 A=app_vmmux; O=${1:-build/stage4}; mkdir -p "$O"
