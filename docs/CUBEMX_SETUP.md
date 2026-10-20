@@ -19,7 +19,7 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 |---|---|
 | SYS | Timebase source: **TIM6** (FreeRTOS needs SysTick) |
 | RCC | Clocks as the board default gives (250 MHz SYSCLK). Enable LSE for the RTC **(check that the DK fits a 32.768 kHz crystal)** |
-| RTC | Activate clock source and calendar. Hour format 24, binary data format. Clock source LSE. The product board needs a VBAT supply (coin cell or supercap) so the clock survives a power cut; without one every power-up starts "clock not set" until someone, the PLC or the time server sets it |
+| RTC | Activate clock source and calendar. Hour format 24, binary data format. Clock source LSE. The product board has a VBAT supply (coin cell or supercap; `docs/HARDWARE.md` H1) so the clock survives a power cut; without one every power-up starts "clock not set" until someone, the PLC or the time server sets it |
 | IWDG | Prescaler 32, reload 999: about 1 s at the nominal 32 kHz LSI. The supervisor kicks it every 100 ms |
 | CORTEX_M33 | MPU off for now. Instruction cache (ICACHE) on |
 

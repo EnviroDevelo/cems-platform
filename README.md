@@ -40,4 +40,4 @@ Pillow). Current screens: `docs/ui/`.
 
 The product build is the STM32CubeIDE project. These host builds are for testing
 outside the IDE.
-Third-party licences: `docs/THIRD_PARTY.md`.
+Third-party licences: `docs/THIRD_PARTY.md`. Schematic list and bring-up checks: `docs/HARDWARE.md`.
