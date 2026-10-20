@@ -2,6 +2,7 @@
 #include "app_demo.h"
 #include "plat_tasks.h"
 #include <stdio.h>
+#include <stddef.h>
 
 /* ---- application tags ---- */
 static bool       StartIn;          /* mapped from DI0 */
@@ -21,6 +22,26 @@ static bool       DemoRunning;      /* stands in for "a calibration or sequence 
 
 demo_snapshot_t demo_snapshot;
 
+/* A record, as the VM/MUX sequences are: a whole structure, edited on the touchscreen
+ * or the web page and checked by the application before it replaces the old one. */
+typedef struct {
+    char     Name[4][13];
+    uint32_t TimeMs[4];
+    uint8_t  Output[4];               /* digital output 1..4 */
+    uint8_t  Steps;                   /* steps in use */
+} demo_steps_t;
+static demo_steps_t DemoSteps;
+static int check_steps(uint16_t id, const void *img, char *why, size_t cap) {
+    (void)id;
+    const demo_steps_t *s = img;
+    if (s->Steps > 4) { snprintf(why, cap, "At most 4 steps"); return 1; }
+    for (unsigned k = 0; k < s->Steps; ++k) {
+        if (s->TimeMs[k] == 0) { snprintf(why, cap, "Step %u: no time set", k + 1u); return 1; }
+        if (s->Output[k] < 1 || s->Output[k] > 4) { snprintf(why, cap, "Step %u: output %u does not exist", k + 1u, s->Output[k]); return 1; }
+    }
+    return 0;
+}
+
 const param_def_t app_demo_params[] = {
     PARAM_UINT(DEMO_PARAM_START_DELAY, "start_delay", StartDelay.Preset, CT_U32, 100, 60000, 2000,
                PLAT_LVL_OPERATOR, PF_PERSIST, "ms"),
@@ -35,7 +56,31 @@ const param_def_t app_demo_params[] = {
     PARAM_BIT_D(DEMO_PARAM_LEVEL_AL_EN, "demo_level_alarm", DemoLevelAlarmEn, true, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
     PARAM_BIT (DEMO_PARAM_RUNNING, "demo_running", DemoRunning, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_TEXT16(DEMO_PARAM_LEVEL_TEXT, "demo_level_text", DemoLevelText, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
+    PARAM_RECORD(DEMO_PARAM_STEPS, "demo_steps", DemoSteps, check_steps, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
 };
+
+/* The application's own screen (ui_app.h): what is on it, by parameter ID. */
+static const ui_field_t demo_step_fields[] = {
+    { .label = "Name", .kind = RF_TEXT, .off = offsetof(demo_steps_t, Name), .stride = 13, .size = 13 },
+    { .label = "Time", .kind = RF_MS_AS_S, .off = offsetof(demo_steps_t, TimeMs), .stride = 4, .min = 0, .max = 600000 },
+    { .label = "Output", .kind = RF_UINT, .ctype = CT_U8, .off = offsetof(demo_steps_t, Output), .stride = 1, .min = 1, .max = 4 },
+};
+static const ui_record_t demo_records[] = {
+    { .param_id = DEMO_PARAM_STEPS, .title = "Demo steps", .rows = 4, .rows_off = offsetof(demo_steps_t, Steps), .rows_ctype = CT_U8,
+      .fields = demo_step_fields, .n_fields = 3 },
+};
+static const ui_widget_t demo_widgets[] = {
+    { .kind = UW_SECTION, .label = "Demo" },
+    { .kind = UW_VALUE, .label = "Level", .value_id = DEMO_PARAM_LEVEL, .index = UW_NO_INDEX },
+    { .kind = UW_VALUE, .label = "Start delay", .value_id = DEMO_PARAM_START_DELAY, .index = UW_NO_INDEX },
+    { .kind = UW_BUTTON, .label = "Sequence on", .cmd_id = DEMO_PARAM_RUNNING, .state_id = DEMO_PARAM_RUNNING },
+    { .kind = UW_BUTTON, .label = "Sequence off", .cmd_id = DEMO_PARAM_RUNNING, .cmd_value = UW_WRITE_ZERO },
+    { .kind = UW_BUTTON, .label = "Raise fault", .cmd_id = DEMO_PARAM_FAULT, .state_id = DEMO_PARAM_FAULT },
+    { .kind = UW_BUTTON, .label = "Clear fault", .cmd_id = DEMO_PARAM_FAULT, .cmd_value = UW_WRITE_ZERO },
+    { .kind = UW_RECORD, .label = "Edit steps", .record_id = DEMO_PARAM_STEPS },
+};
+static const ui_screen_t demo_screens[] = { { "Demo", demo_widgets, sizeof demo_widgets / sizeof demo_widgets[0] } };
+static const ui_app_t demo_ui = { .screens = demo_screens, .n_screens = 1, .records = demo_records, .n_records = 1 };
 
 /* Alarms (IDs 100+). The logic reports conditions; the platform does the rest. */
 static const alarm_def_t app_demo_alarms[] = {
@@ -128,6 +173,8 @@ static bool fw_safe(char *why, size_t cap) {
     return false;
 }
 
+const plat_app_t *app_select(void);
+
 /* everything the platform needs, for plat_start() */
 const plat_app_t app_demo_plat = {
     .scan = &app_demo,
@@ -141,4 +188,7 @@ const plat_app_t app_demo_plat = {
     .ui_home_ids = app_demo_home, .n_ui_home = sizeof app_demo_home / sizeof app_demo_home[0],
     .fw_safe = fw_safe,
     .alarms = app_demo_alarms, .n_alarms = sizeof app_demo_alarms / sizeof app_demo_alarms[0],
+    .ui = &demo_ui,
 };
+
+const plat_app_t *app_select(void) { return &app_demo_plat; }

@@ -33,7 +33,9 @@ typedef struct {
     unsigned        n_home;
 } ui_cfg_t;
 
-enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG, UI_CLOCK };
+enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG, UI_CLOCK,
+       UI_APP,      /* the application's screens (ui_app.h), as tabs */
+       UI_REC };    /* a record editor (sequence, schedule) */
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */
@@ -42,6 +44,8 @@ void    ui_draw(eve_t *e, uint32_t now_ms);          /* build and send one frame
 uint8_t ui_brightness(uint32_t now_ms);              /* backlight %, dimmed when idle */
 
 /* state, for tests */
+int     ui_app_screen(void);                         /* the application tab shown */
+bool    ui_record_open(uint16_t param_id);           /* open a record's editor (as from its button) */
 int     ui_screen(void);
 uint8_t ui_level(void);
 const char *ui_toast(void);

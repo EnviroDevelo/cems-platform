@@ -25,6 +25,7 @@
 #include "modbus.h"
 #include "plat_log.h"
 #include "plat_alarm.h"
+#include "ui_app.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -45,6 +46,7 @@ typedef struct plat_app_s {
     const alarm_def_t  *alarms;          /* its alarms (IDs 100..255; may be NULL); the logic calls alarm_set() */
     bool (*fw_safe)(char *why, size_t cap);   /* safe to restart for a firmware update? false + reason refuses it (NULL = always) */
     size_t              n_alarms;
+    const ui_app_t     *ui;              /* its own screens and record editors (ui_app.h; may be NULL) */
 } plat_app_t;
 
 typedef enum {
@@ -61,6 +63,10 @@ typedef enum {
 /* Start-up order: diag record, BSP, safe outputs, app->init, parameter table,
  * load FRAM (defaults first, then stored values), tasks, scheduler. */
 void plat_start(const plat_app_t *app);   /* never returns */
+/* The application this build runs: every application defines it (app_demo.c,
+ * app_vmmux ...), so main(), the networked simulation and the target check take
+ * whichever application is linked in (request R1). */
+const plat_app_t *app_select(void);
 const plat_app_t *plat_app(void);          /* the application passed to plat_start */
 
 /* Shared platform objects, for the service modules. */

@@ -34,7 +34,6 @@
 #include "web_auth.h"
 #include "plat_diag.h"
 #include "plat_tasks.h"
-#include "app_demo.h"
 #include "fw_update.h"
 #include "plat_serial.h"
 #include "tls.h"
@@ -273,11 +272,13 @@ int main(int argc, char **argv) {
     signal(SIGINT, on_signal); signal(SIGTERM, on_signal); signal(SIGPIPE, SIG_IGN);
 
     /* the same start-up order as plat_start() */
-    const plat_app_t *app = &app_demo_plat;
+    const plat_app_t *app = app_select();     /* whichever application is linked in (make netsim APP=...) */
     plat_diag_boot(bsp_reset_cause());
     plat_cmdq_init(&plat_cmdq);
     scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, 10);
     if (param_init(app->params, app->n_params) != PERR_OK) { fprintf(stderr, "param table error at id %u\n", param_table_error()); return 1; }
+    { uint16_t ub = ui_app_check(app->ui); if (ub) { fprintf(stderr, "screen/record description error at id %u\n", ub); return 1; } }
+    ui_app_set(app->ui);
     if (!param_store_init(bsp_param_nvm(), NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) { fprintf(stderr, "store table error\n"); return 1; }
     param_store_boot();
     {

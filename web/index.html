@@ -38,6 +38,18 @@ tr.unacked td{font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
 .grid label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:2px}
 td.c{text-align:center}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.tabs button{background:#5b6577;border-color:#5b6577}.tabs button.cur{background:#14213d;border-color:#14213d}
+.wrow{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.tile{border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-width:150px;cursor:default}
+.tile .k{font-size:12px;color:var(--mute)}.tile .v{font-size:18px;font-variant-numeric:tabular-nums}
+.tile.can{cursor:pointer;border-color:var(--accent)}
+button.lit{background:var(--ok);border-color:var(--ok)}
+button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
+.gitem{min-width:46px}
+.dlg{border:2px solid var(--warn);background:#fdecd2;border-radius:8px;padding:10px;margin:8px 0}
+.wsec{font-weight:600;color:var(--mute);border-bottom:1px solid var(--line);margin:10px 0 4px;padding-bottom:2px}
+#recbox input[type=number]{width:90px}#recbox input.t{width:140px}
 @media (max-width:640px){td.lim,th.lim{display:none}}
 </style>
 </head>
@@ -64,6 +76,13 @@ td.c{text-align:center}
       <span>Logged in as <b id="who"></b>. Changes allowed for <span id="left"></span> more without activity.</span>
       <button class="ghost" id="logoutbtn">Log out</button>
     </div>
+  </section>
+
+  <section id="appsec" style="display:none">
+    <div class="tabs" id="apptabs"></div>
+    <div id="appbody"></div>
+    <span class="err" id="apperr"></span>
+    <div id="recbox" style="display:none;margin-top:10px"></div>
   </section>
 
   <section id="alarms">
@@ -317,11 +336,207 @@ function explain(e) {
   return m[e.message] || ("Refused: " + e.message);
 }
 
+/* ---- the application's screens and record editors (/api/ui, D26) ---- */
+let UI = { screens: [], records: [] }, appScr = 0;
+const n01 = v => typeof v === "boolean" ? (v ? 1 : 0) : (typeof v === "number" ? v : 0);
+function pv(id, idx) {
+  if (!id) return 0;
+  const v = lastValues[id];
+  if (Array.isArray(v)) return n01(v[idx === undefined ? 0 : idx]);
+  return n01(v);
+}
+const isArr = id => !!id && Array.isArray(lastValues[id]);
+const shown = w => !w.show || (w.kind === "grid" && isArr(w.show)) || pv(w.show) >= (w.show_min || 1);
+function itemLabel(w, i) {
+  if (w.names && byId[w.names + i - 1]) { const t = lastValues[w.names + i - 1]; if (typeof t === "string" && t) return t; }
+  return String(i);
+}
+async function appWrite(id, v, label) {
+  const d = byId[id];
+  if (d && d.flags.includes("confirm") && !confirm((label || d.name) + "?")) return;
+  $("apperr").textContent = "";
+  try { await api("/api/write", form({ id, v })); setTimeout(pollValues, 150); }
+  catch (e) { $("apperr").textContent = explain(e); }
+}
+function renderApp() {
+  if (!UI.screens.length) return;
+  $("appsec").style.display = "block";
+  const tabs = $("apptabs");
+  if (tabs.childElementCount !== UI.screens.length) {
+    tabs.textContent = "";
+    UI.screens.forEach((s, k) => { const b = document.createElement("button"); b.textContent = s.title; b.onclick = () => { appScr = k; renderApp(); }; tabs.appendChild(b); });
+  }
+  [...tabs.children].forEach((b, k) => b.className = k === appScr ? "cur" : "");
+  const sc = UI.screens[appScr], body = $("appbody");
+  body.textContent = "";
+  let row = null;
+  const newRow = () => { row = document.createElement("div"); row.className = "wrow"; body.appendChild(row); };
+  for (const w of sc.widgets) {
+    if (!shown(w)) continue;
+    if (w.kind === "dialog") {
+      const d = document.createElement("div"); d.className = "dlg";
+      d.append(w.label + " ");
+      const y = document.createElement("button"); y.textContent = w.cmd2 ? "Yes" : "OK"; y.onclick = () => appWrite(w.cmd, w.cmd_value, w.cmd2 ? "Yes" : "OK");
+      d.appendChild(y);
+      if (w.cmd2) { const n = document.createElement("button"); n.className = "ghost"; n.textContent = "No"; n.onclick = () => appWrite(w.cmd2, 1, "No"); d.append(" ", n); }
+      body.prepend(d);
+      continue;
+    }
+    if (w.kind === "section") { const h = document.createElement("div"); h.className = "wsec"; h.textContent = w.label; body.appendChild(h); row = null; continue; }
+    if (w.kind === "grid") {
+      const h = document.createElement("div"); h.className = "note"; h.textContent = w.label; body.appendChild(h); newRow();
+      const n = w.count ? Math.min(32, pv(w.count)) : (isArr(w.show) ? lastValues[w.show].length : 0);
+      for (let i = 1; i <= n; ++i) {
+        if (isArr(w.show) && !pv(w.show, i - 1)) continue;
+        const b = document.createElement("button"); b.className = "gitem"; b.textContent = itemLabel(w, i);
+        const lit = w.state && (isArr(w.state) ? pv(w.state, i - 1) : pv(w.state) === i);
+        if (lit) b.classList.add("lit");
+        b.disabled = !!w.enable && !(isArr(w.enable) ? pv(w.enable, i - 1) : pv(w.enable));
+        b.onclick = () => appWrite(w.cmd, i, itemLabel(w, i));
+        row.appendChild(b);
+      }
+      row = null;
+      continue;
+    }
+    if (!row) newRow();
+    if (w.kind === "value") {
+      const d = byId[w.value], t = document.createElement("div"); t.className = "tile";
+      let v = lastValues[w.value];
+      if (Array.isArray(v) && w.index !== undefined) v = v[w.index];
+      t.innerHTML = '<div class="k"></div><div class="v val"></div>';
+      t.children[0].textContent = w.label || (d ? d.name : w.value);
+      t.children[1].textContent = d ? fmt(d, v) : "-";
+      if (d && w.index === undefined && writable(d)) {
+        t.classList.add("can"); t.title = "Change in Parameters";
+        t.onclick = () => { $("filter").value = String(d.id); build(); $("filter").scrollIntoView({ behavior: "smooth" }); };
+      }
+      row.appendChild(t);
+    } else if (w.kind === "button" || w.kind === "record") {
+      const b = document.createElement("button"); b.textContent = w.label;
+      if (w.kind === "record") { b.className = "ghost"; b.onclick = () => recOpen(w.record); }
+      else {
+        if (w.state && pv(w.state)) b.classList.add("lit");
+        b.disabled = !!w.enable && !pv(w.enable);
+        b.onclick = () => appWrite(w.cmd, w.cmd_value, w.label);
+      }
+      row.appendChild(b);
+    }
+  }
+}
+
+/* record editor: reads and writes the image with the layout /api/ui describes */
+let REC = null;
+const hexTo = h => Uint8Array.from(h.match(/../g) || [], x => parseInt(x, 16));
+const toHex = b => [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+const at = (f, row, el) => f.off + row * f.row_stride + el * f.elem_stride;
+function rdInt(b, a, n, sgn) { let v = 0; for (let k = n - 1; k >= 0; --k) v = v * 256 + b[a + k]; if (sgn && v >= 2 ** (8 * n - 1)) v -= 2 ** (8 * n); return v; }
+function wrInt(b, a, n, v) { v = Math.round(v); if (v < 0) v += 2 ** (8 * n); for (let k = 0; k < n; ++k) { b[a + k] = v % 256; v = Math.floor(v / 256); } }
+function fieldGet(f, b, row, el) {
+  const a = at(f, row, el);
+  switch (f.kind) {
+  case "text": { let s = ""; for (let k = 0; k < f.esize && b[a + k]; ++k) s += String.fromCharCode(b[a + k]); return s; }
+  case "bool": return b[a] ? 1 : 0;
+  case "ms_as_s": return rdInt(b, a, 4, false) / 1000;
+  case "hms": return [b[a + 2], b[a + 1], b[a]].map(x => String(x).padStart(2, "0")).join(":");
+  default: return rdInt(b, a, f.esize, f.signed);
+  }
+}
+function fieldSet(f, b, row, el, v) {
+  const a = at(f, row, el);
+  switch (f.kind) {
+  case "text": {
+    if (v.length > f.esize - 1 || /[^\x20-\x7e]/.test(v)) throw new Error(`${f.label}: up to ${f.esize - 1} plain characters`);
+    for (let k = 0; k < f.esize; ++k) b[a + k] = k < v.length ? v.charCodeAt(k) : 0; return;
+  }
+  case "bool": b[a] = v ? 1 : 0; return;
+  case "hms": {
+    const m = /^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/.exec(v);
+    if (!m || +m[1] > 23 || +m[2] > 59 || +(m[3] || 0) > 59) throw new Error(`${f.label}: enter hh:mm:ss`);
+    b[a] = +(m[3] || 0); b[a + 1] = +m[2]; b[a + 2] = +m[1]; return;
+  }
+  case "ms_as_s": v = Number(v) * 1000; break;
+  default: v = Number(v);
+  }
+  if (!Number.isFinite(v) || v < f.min || v > f.max) throw new Error(`${f.label}: ${f.kind === "ms_as_s" ? f.min / 1000 + " .. " + f.max / 1000 + " s" : f.min + " .. " + f.max}`);
+  wrInt(b, a, f.kind === "ms_as_s" ? 4 : f.esize, v);
+}
+function inputFor(f, v, on) {
+  let e;
+  if (f.kind === "bool") { e = document.createElement("input"); e.type = "checkbox"; e.checked = !!v; }
+  else if (f.kind === "enum") { e = document.createElement("select"); (f.items || []).forEach((it, k) => { const o = document.createElement("option"); o.value = f.min + k; o.textContent = it; e.appendChild(o); }); e.value = v; }
+  else { e = document.createElement("input"); if (f.kind === "text") e.className = "t"; else if (f.kind !== "hms") { e.type = "number"; e.step = "any"; } e.value = v; }
+  e.disabled = !on || !REC.writable;
+  return e;
+}
+const eVal = e => e.type === "checkbox" ? e.checked : e.value;
+async function recOpen(id) {
+  const r = UI.records.find(x => x.id === id);
+  if (!r) return;
+  try { const j = await api("/api/record?id=" + id); REC = { r, b: hexTo(j.data), writable: j.writable, why: j.why }; }
+  catch (e) { $("apperr").textContent = explain(e); return; }
+  recDraw();
+}
+function recUsed() { const r = REC.r; return r.rows_off === undefined ? r.rows : Math.min(r.rows, rdInt(REC.b, r.rows_off, r.rows_size, false)); }
+function recDraw() {
+  const box = $("recbox"), r = REC.r; box.style.display = "block"; box.textContent = "";
+  const h = document.createElement("h2"); h.textContent = r.title; box.appendChild(h);
+  if (!REC.writable) { const n = document.createElement("p"); n.className = "note"; n.textContent = "Read only for this login" + (REC.why ? ` (${REC.why})` : "") + "."; box.appendChild(n); }
+  REC.inputs = [];
+  if (r.rows) {
+    const used = recUsed();
+    if (r.rows_off !== undefined) {
+      const p = document.createElement("div"); p.className = "row"; p.append("In use: ");
+      const u = document.createElement("input"); u.type = "number"; u.min = 0; u.max = r.rows; u.value = used; u.disabled = !REC.writable;
+      u.onchange = () => { recRead(); wrInt(REC.b, r.rows_off, r.rows_size, Math.max(0, Math.min(r.rows, Number(u.value) || 0))); recDraw(); };
+      p.appendChild(u); box.appendChild(p);
+    }
+    const t = document.createElement("table"), hr = document.createElement("tr");
+    hr.innerHTML = "<th>#</th>"; r.fields.forEach(f => { const th = document.createElement("th"); th.textContent = f.label + (f.unit ? ` (${f.unit})` : f.kind === "ms_as_s" ? " (s)" : ""); hr.appendChild(th); });
+    t.appendChild(hr);
+    for (let row = 0; row < r.rows; ++row) {
+      const tr = document.createElement("tr"), on = row < used;
+      if (!on && row > used) continue;                         /* one spare row is shown greyed */
+      tr.innerHTML = `<td>${row + 1}</td>`;
+      r.fields.forEach(f => { const td = document.createElement("td"), e = inputFor(f, fieldGet(f, REC.b, row, 0), on); td.appendChild(e); tr.appendChild(td); if (on) REC.inputs.push([f, row, 0, e]); });
+      t.appendChild(tr);
+    }
+    box.appendChild(t);
+  } else {
+    const g = document.createElement("table");
+    r.fields.forEach(f => {
+      const tr = document.createElement("tr"), th = document.createElement("td"), td = document.createElement("td");
+      th.textContent = f.label; tr.append(th, td);
+      for (let el = 0; el < f.count; ++el) {
+        const e = inputFor(f, fieldGet(f, REC.b, 0, el), true);
+        if (f.count > 1) { const l = document.createElement("label"); l.style.marginRight = "6px"; l.append(e, " " + (f.items && f.items[el] ? f.items[el] : el + 1)); td.appendChild(l); }
+        else td.appendChild(e);
+        REC.inputs.push([f, 0, el, e]);
+      }
+      g.appendChild(tr);
+    });
+    box.appendChild(g);
+  }
+  const bar = document.createElement("div"); bar.className = "row"; bar.style.marginTop = "8px";
+  const sv = document.createElement("button"); sv.textContent = "Save"; sv.disabled = !REC.writable;
+  const cl = document.createElement("button"); cl.className = "ghost"; cl.textContent = "Close";
+  const err = document.createElement("span"); err.className = "err"; err.id = "recerr";
+  sv.onclick = recSave; cl.onclick = () => { REC = null; box.style.display = "none"; };
+  bar.append(sv, cl, err); box.appendChild(bar);
+}
+function recRead() { for (const [f, row, el, e] of REC.inputs) fieldSet(f, REC.b, row, el, f.kind === "bool" ? e.checked : eVal(e)); }
+async function recSave() {
+  const err = $("recerr"); err.textContent = "";
+  try { recRead(); } catch (e) { err.textContent = e.message; return; }
+  try { await api("/api/record", form({ id: REC.r.id, data: toHex(REC.b) })); err.textContent = "Saved"; err.className = "note"; }
+  catch (e) { err.className = "err"; err.textContent = e.info && e.info.why ? e.info.why : explain(e); }
+}
+
 let lastValues = {};
 async function pollValues() {
   try {
     const j = await api("/api/values");
     lastValues = j.v; lastOk = Date.now();
+    renderApp();
     for (const d of defs) { const c = $("v" + d.id); if (c) c.textContent = fmt(d, j.v[d.id]); }
     document.body.classList.remove("stale");
     $("conn").textContent = "live"; $("conn").className = "badge b-ok";
@@ -740,6 +955,7 @@ $("restorebtn").onclick = async () => {
     catch (e) { document.body.classList.add("stale"); await new Promise(r => setTimeout(r, 2000)); }
   }
   defs.forEach(d => byId[d.id] = d);
+  try { UI = await api("/api/ui"); } catch (e) { UI = { screens: [], records: [] }; }
   build(); pollValues(); pollInfo(); pollEvents(); pollAlarms();
 })();
 </script>

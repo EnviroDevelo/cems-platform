@@ -17,7 +17,8 @@
 
 /* ---- parameter FRAM ---- */
 #ifndef PLAT_FRAM_SIZE
-#define PLAT_FRAM_SIZE            32768u /* DECISION D6: 32 KB development part (MB85RC256V); 131072u selects the 128 KB map */
+#define PLAT_FRAM_SIZE            131072u /* DECISION D6 (Gary, 20 Oct): 128 KB product part (MB85RC1MT); 32768u for the
+                                            32 KB development breakout (MB85RC256V) */
 #endif
 
 /* ---- fast control loops ---- */

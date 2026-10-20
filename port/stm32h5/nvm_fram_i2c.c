@@ -18,7 +18,14 @@
  *
  * Writes need no page handling or erase: one memory-write of any length.
  * Parts above 64 KB put address bit 16 in the device address (MB85RC1MT):
- * handled by FRAM_SIZE > 65536. */
+ * handled by FRAM_SIZE > 65536.
+ *
+ * The build's memory map is PLAT_FRAM_SIZE (128 KB by default, the product part).
+ * At open the part's Device ID is read (MB85RC: 3 bytes from reserved address 0xF8;
+ * density = byte 1 & 0x0F, size = 1 KB << density: 256V 32 KB, 512T 64 KB, 1MT 128 KB).
+ * A part smaller than the map is refused rather than written past its end (addresses
+ * would wrap onto the factory data): build with PLAT_FRAM_SIZE=32768u for the 32 KB
+ * breakout. A part that does not answer the ID read is used as configured. */
 #include "main.h"
 #include "nvm.h"
 #include "plat_config.h"
@@ -122,8 +129,17 @@ static int fram_write(nvm_dev_t *d, uint32_t addr, const void *buf, uint32_t len
     return fram_rw(d, true, addr, (uint8_t *)(uintptr_t)buf, len);   /* the HAL API is not const */
 }
 
+uint32_t nvm_fram_i2c_found_size;            /* from the Device ID; 0 = not read (diagnostics) */
+
 bool nvm_fram_i2c_open(nvm_dev_t *d) {
     if (HAL_I2C_IsDeviceReady(&FRAM_I2C_HANDLE, (uint16_t)(FRAM_I2C_ADDR << 1), 3, 10) != HAL_OK) return false;
+    uint8_t id[3] = { 0 };
+    nvm_fram_i2c_found_size = 0;
+    if (HAL_I2C_Mem_Read(&FRAM_I2C_HANDLE, 0xF8u, (uint16_t)(FRAM_I2C_ADDR << 1), I2C_MEMADD_SIZE_8BIT, id, 3, 10) == HAL_OK &&
+        id[0] == 0x00u && (id[1] & 0xF0u) == 0xA0u) {                       /* Fujitsu (manufacturer 0x00A) */
+        nvm_fram_i2c_found_size = 1024u << (id[1] & 0x0Fu);
+        if (nvm_fram_i2c_found_size < FRAM_SIZE) return false;              /* smaller than the map: never wrap */
+    }
     d->read = fram_read; d->write = fram_write; d->size = FRAM_SIZE; d->persistent = true; d->ctx = NULL;
     return true;
 }
