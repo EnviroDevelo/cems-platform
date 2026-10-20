@@ -55,6 +55,23 @@
  * the calendar window (ScheduleMUX): once started it runs the sequence (channel = period,
  * time = dwell + sample) and starts it again at once, until the Scheduler button, the digital
  * stop input, a pause or the analyser lock stops it. 0: the original daily start window. */
+/* MUX findings S7 and S8 (45c): in the original the 20 rows write SingularInletActivate in turn
+ * and the last write wins, so an inlet used in two periods is off in the earlier one (S7), and
+ * the unused rows (inlet 0) switch the first inlet off every scan, so it can never be scheduled
+ * unless all 20 periods are used (S8). With X channels looping (Q8) both matter. 1: the rows of
+ * the sequence are ORed per inlet and unused rows are ignored. 0: as the original. */
+#ifndef VM_FIX_MUX_VALVE_ASSIGN
+#define VM_FIX_MUX_VALVE_ASSIGN 1
+#endif
+
+/* VM finding V7 (46d): ScheduleMode rung 11 compares period 9 of interconnection 2 with 8, so a
+ * tube-2 sequence of 9 or more periods stalls at period 9 with that route left open until the
+ * schedule is stopped. The record check would otherwise have to refuse such sequences.
+ * 1: period 9 compares with 9 like every other period. 0: as the original. */
+#ifndef VM_FIX_V7
+#define VM_FIX_V7 1
+#endif
+
 #ifndef VM_MUX_CONTINUOUS
 #define VM_MUX_CONTINUOUS 1
 #endif

@@ -51,7 +51,11 @@ static void chain(bool *Periods, Sequences_t *S, ul_timer_t T[20], bool Stop[19]
 /* compare values: period k compares NumberArray[k-1] with k, except interconnection 2 period 9, which compares
  * NumberArray[8] with 8 (finding V7; rung 11, wire w59). */
 static const uint8_t CMP1[20] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
+#if VM_FIX_V7
+static const uint8_t CMP2[20] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};   /* V7 fixed (vm_config.h) */
+#else
 static const uint8_t CMP2[20] = {1,2,3,4,5,6,7,8,8,10,11,12,13,14,15,16,17,18,19,20};
+#endif
 
 /* ================= ScheduleMode (ladder, 28 rungs; Function1 rung 22, every scan) ================= */
 void ScheduleMode(void) {

@@ -81,13 +81,28 @@ parameter 30, U2), `vm_link_close_min` 2901.
   `VMP_MIN/MAXTEMPERATURERANGE` 1144/1143, `VMP_TEMPERATUREALARMENABLED` 1147,
   `rtd1/2_alarm_delay_s` 2902/2903, `rtd1/2_alarm_hyst` 2904/2905.
 
-### 2.7 Schedule and sequence editors (not built yet)
-The old editors work on copies (`ScheduleHMI`, `HMISequences`, `HMISequenceMUX`) through 7 visible
-rows, scroll bits and Save bits (45e, 46f). They need block writes of a whole sequence or schedule,
-which is the next application step (it depends on how the API passes structured data). Proposed:
-one block parameter per sequence (`Sequence1`, `Sequence2`, `SequenceMUX`) and per schedule
-(`Schedule1`, `Schedule2`, `ScheduleMUX`), validated by an application check before it is applied,
-instead of the old row-by-row editor bits.
+### 2.7 Sequence and schedule editors (records, core design 20 Oct)
+Six record parameters, same IDs as the retained blocks they replace (`src/vm_params.c` switches
+from `RETAIN` to `PARAM_RECORD` automatically once the platform defines the macro):
+
+| ID | Record | Kind | Rows / fields |
+|---|---|---|---|
+| 3164 | `Sequence1` (VM interconnection 1) | table | rows = `NumberOfPeriods` (0..20): No., Name (12), Time (ms as s), Inlet 1..`FirstInlets` (1064), Outlet 1..`FirstOutlets` (1065) |
+| 3165 | `Sequence2` (VM interconnection 2) | table | as 3164 with `SecondInlets` (1120) / `SecondOutlets` (1121) |
+| 3166 | `SequenceMUX` (MUX channels) | table | rows = channels: No., Inlet (0-based index, shown 1..fitted), Dwell and Sample (ms as s; channel time = dwell + sample), Pre-pump, Pump lead |
+| 3123 / 3124 / 3125 | `Schedule1` / `Schedule2` / `ScheduleMUX` | form | years, Month[12], Day_Of_Month[31], Day_Of_Week[7] (index 0 = Sunday), Start and End as h:m:s (stored s, min, h) |
+
+- Field offsets, sizes, kinds and live maxima: `vm_records[]` in `src/vm_records.c` (application
+  types until `ui_record_t` lands; one-to-one with the core design).
+- Check: `vm_check_record(id, image, why, cap)`; messages such as "Period 2: inlet 4 is not fitted
+  (interconnection 1 has 3)". The editor writes the row numbers itself (1..n, 0 after) and zeroes
+  rows past n; the check refuses anything else (a wrong row number stalls the original's chains).
+- `ScheduleMUX` is not used while the MUX loops continuously (Q8); the form can be hidden then.
+- Modbus: the masters of the old system never had sequence registers (stage4/4G/modbus_map.csv),
+  so no mapped view is needed.
+- The old editor copies (`ScheduleHMI`, `HMISequences`, `HMISequenceMUX`) and the scroll/Save bits
+  are read only by the old editor functions, which stay in the faithful code but do nothing
+  without their screen bits. The new editors do not use them.
 
 ### 2.8 Not carried over
 Settings/password popups (platform login), email settings (platform mail), the Modbus client test

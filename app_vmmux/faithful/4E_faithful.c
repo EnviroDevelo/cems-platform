@@ -128,16 +128,41 @@ void ScheduleTimersAndPump(void) {
 }
 
 /* ================= ScheduleModeSTValveAssignMUX (ST, 239 lines) ================= */
+#if VM_FIX_MUX_VALVE_ASSIGN
+/* S7/S8 fixed (app_vmmux): the rows' terms are ORed per inlet, and only the rows of the sequence
+ * (row < NumberOfPeriods) take part, so an inlet used in two periods is on in both (S7) and the
+ * unused rows (inlet 0) no longer switch the first inlet off (S8). Inlets not in the sequence are
+ * not touched, as before. mux_flush() writes the result. */
+static bool mux_on[19], mux_used[19];
+static void set_inlet(int period_row, bool v) {
+    if (period_row >= SequenceMUX.NumberOfPeriods) return;
+    int i = SequenceMUX.SingulValves[period_row];
+    if (i < 0 || i >= 19) { g_oob++; return; }
+    mux_used[i] = true; mux_on[i] = mux_on[i] || v;
+}
+static void mux_flush(void) {
+    for (int i = 0; i < 19; i++) if (mux_used[i]) SingularInletActivate[i] = mux_on[i];
+    memset(mux_on, 0, sizeof mux_on); memset(mux_used, 0, sizeof mux_used);
+}
+#else
 static void set_inlet(int period_row, bool v) {   /* SingularInletActivate[SequenceMUX.SingulValves[row]] := v */
     WR(SingularInletActivate, 19, SequenceMUX.SingulValves[period_row], v);
 }
+#endif
 void ScheduleModeSTValveAssignMUX(void) {
     if (!StartScheduleMUX) return;                                                                   /* 1 */
     set_inlet(0, (!StartPeriodsMUX && PumpCmd) || (StartPeriodsMUX && (!DwellT[0].Out || !SampleT[0].Out)));  /* 3-5 */
+#if VM_FIX_MUX_VALVE_ASSIGN
+    if (!StartPeriodsMUX) { mux_flush(); return; }
+#else
     if (!StartPeriodsMUX) return;                                                                    /* 7 */
+#endif
     for (int k = 2; k <= 20; k++)                                                                    /* 9-101 */
         set_inlet(k - 1, (DwellT[k - 2].Out && !SampleT[k - 2].Out && PumpCmd)
                       || (SampleT[k - 2].Out && (!DwellT[k - 1].Out || !SampleT[k - 1].Out)));
+#if VM_FIX_MUX_VALVE_ASSIGN
+    mux_flush();
+#endif
     /* 103-236: IF/ELSIF chain over the 40 steps. DwellSampleStep is NOT written in the arms for
      * Dwell7, Sample7, Dwell18 and Sample18 (finding S9). */
     if (!DwellT[0].Out) { ProcessTimerMUX.Preset = DwellT[0].Current; DwellSampleStep = 0; return; }

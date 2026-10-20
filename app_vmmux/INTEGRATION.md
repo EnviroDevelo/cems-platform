@@ -25,13 +25,14 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `src/vm_alarms.c` | alarm table and producers (70_alarm_map) |
 | `src/vm_compat.c` | keeps old Modbus coils and buffers meaningful where the platform took over |
 | `src/vm_hmi.c` | the old screens' button actions as command parameters (5000+), their status (5100+), and the EntryOK "...Entered" bits |
+| `src/vm_records.c` | the six sequence/schedule records: `vm_check_record` and the editors' field descriptions (core design, 20 Oct) |
 | `docs/SCREENS.md` | the application screens for the core thread's screen API (R2), by parameter ID |
 | `stage4_tests/` | the Stage 4 tests, run against the integrated code with every switch at the original behaviour |
 | `tests/vm_tests.c` | application tests on the real scan engine, parameter store, alarm manager and Modbus engine |
 | `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID |
 
 Build and test (repository root): `make -f app_vmmux/app.mk vm-test` (12 Stage 4 suites, 110,000+ checks,
-and 270 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
+and 355 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
 runs the platform's networked simulation with this application (Modbus TCP 1502, HTTPS 8443).
 Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Existing Design/Analysis"`.
 
@@ -72,6 +73,8 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_OLD_LOGGING` | 0 | Platform data logger replaces the data table / SD file (70 section 8). Channels AI1, AI2, RTD1, RTD2, one sample per scan with quality OK/FLAG/BAD/N/A |
 | `VM_FIX_DI_REAL_INPUTS` | 1 | Open item 8: DISABLED rungs 9-10 of DI_Assigning run, so DIG_IN_01..20 reach the logic |
 | `VM_FIX_AI_SCALING` | 1 | Open item 9: Low point at raw 0, High point at full scale |
+| `VM_FIX_MUX_VALVE_ASSIGN` | 1 | MUX S7/S8: an inlet used twice is on in both channels, and inlet 1 can be scheduled (needed for X looping channels) |
+| `VM_FIX_V7` | 1 | VM V7: a tube-2 sequence of 9+ periods no longer stalls at period 9 |
 | `VM_MUX_CONTINUOUS` | 1 | Q8: the MUX loops its sequence until stopped (no calendar window) |
 | `VM_FIX_MUX_RESTART` | 1 | Finding F5: reset the MUX period timers when a run ends, so a restart in the window begins at period 1 (Gary: the MUX is the automated loop) |
 | `ENABLE_DISABLED_RUNGS` | off | every other DISABLED IN ORIGINAL rung, kept in full, off |

@@ -19,6 +19,7 @@
 #include "plat_alarm.h"
 #include "modbus.h"
 #include "vm_hmi.h"
+#include "vm_records.h"
 
 int tst_fail, tst_pass;
 
@@ -601,6 +602,130 @@ static void t_mux_master_enable(void)
     CHECK(ManualModeEnableMUX);
 }
 
+/* ---------------- sequence and schedule records (vm_records.c) ---------------- */
+
+static void t_record_checks(void)
+{
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 1), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 3), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    scans(3);
+    char why[96];
+
+    Sequences_t v; memset(&v, 0, sizeof v);
+    v.NumberOfPeriods = 2; v.NumberArray[0] = 1; v.NumberArray[1] = 2;
+    v.Inlets[0] = 1; v.Inlets[1] = 3; v.Outlets[0] = 1; v.Outlets[1] = 2; v.Timers[0] = v.Timers[1] = 60000;
+    strcpy(v.Name[0], "Zero air"); strcpy(v.Name[1], "Span");
+    CHECK_EQ(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why), 0);
+    v.Inlets[1] = 4;
+    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);
+    CHECK(strcmp(why, "Period 2: inlet 4 is not fitted (interconnection 1 has 3)") == 0);
+    v.Inlets[1] = 3; v.NumberArray[1] = 5;
+    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);   /* S10: a wrong row number stalls the run */
+    v.NumberArray[1] = 2; v.Outlets[5] = 1;
+    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);   /* rung 1 checks every row */
+    v.Outlets[5] = 0; memset(v.Name[0], 'x', 13);
+    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);   /* unterminated name */
+    strcpy(v.Name[0], "Zero air");
+    CHECK(vm_check_record(VMP_SEQUENCE2, &v, why, sizeof why) != 0);   /* interconnection 2 has no valves */
+    memset(&v, 0, sizeof v);
+    CHECK_EQ(vm_check_record(VMP_SEQUENCE2, &v, why, sizeof why), 0);  /* an empty sequence is allowed */
+
+    ScheduleMUX_t m; memset(&m, 0, sizeof m);
+    m.NumberOfPeriods = 3; m.NumberArray[0] = 1; m.NumberArray[1] = 2; m.NumberArray[2] = 3;
+    m.SingulValves[0] = 0; m.SingulValves[1] = 1; m.SingulValves[2] = 0;   /* inlet 1, 2, 1 (S7, S8 fixed) */
+    CHECK_EQ(vm_check_record(VMP_SEQUENCEMUX, &m, why, sizeof why), 0);
+    m.SingulValves[2] = 3;                                               /* inlet 4: not shown with 4 valves */
+    CHECK(vm_check_record(VMP_SEQUENCEMUX, &m, why, sizeof why) != 0);
+    CHECK(strncmp(why, "Channel 3: inlet 4 is not fitted", 32) == 0);
+    m.SingulValves[2] = 0; ((uint8_t *)m.FastLoopPump)[0] = 7;
+    CHECK(vm_check_record(VMP_SEQUENCEMUX, &m, why, sizeof why) != 0);   /* not a bool */
+
+    Schedule_t c; memset(&c, 0, sizeof c);
+    c.From_Hour[2] = 6; c.To_Hour[2] = 6; c.To_Hour[1] = 5;              /* 06:00:00 .. 06:05:00 */
+    CHECK_EQ(vm_check_record(VMP_SCHEDULE1, &c, why, sizeof why), 0);
+    c.To_Hour[1] = 0;
+    CHECK(vm_check_record(VMP_SCHEDULE1, &c, why, sizeof why) != 0);     /* end not after start */
+    c.To_Hour[1] = 5; c.From_Hour[2] = 24;
+    CHECK(vm_check_record(VMP_SCHEDULEMUX, &c, why, sizeof why) != 0);
+    c.From_Hour[2] = 6; c.From_Year = 2027; c.To_Year = 2026;
+    CHECK(vm_check_record(VMP_SCHEDULE2, &c, why, sizeof why) != 0);
+    CHECK(vm_check_record(9999, &c, why, sizeof why) != 0);
+
+    /* the descriptions cover each record exactly */
+    CHECK_EQ(vm_n_records, 6);
+    for (size_t r = 0; r < vm_n_records; r++)
+        for (unsigned f = 0; f < vm_records[r].n_fields; f++)
+            CHECK(vm_records[r].fields[f].offset + vm_records[r].fields[f].size <= vm_records[r].size);
+}
+
+static void t_mux_repeated_inlet(void)
+{
+    /* S7/S8 fixed: channels inlet 1, inlet 2, inlet 1 - inlet 1 opens in channels 1 and 3 */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    const int16_t map[3] = { 5, 6, 7 };
+    write_i16_array(VMP_DOSINGULARINLET, map, 3);
+    memset(&SequenceMUX, 0, sizeof SequenceMUX);
+    SequenceMUX.NumberOfPeriods = 3;
+    for (int k = 0; k < 3; k++) { SequenceMUX.NumberArray[k] = (uint8_t)(k + 1); SequenceMUX.DwellTimer[k] = 1000; SequenceMUX.SampleTimer[k] = 1000; }
+    SequenceMUX.SingulValves[0] = 0; SequenceMUX.SingulValves[1] = 1; SequenceMUX.SingulValves[2] = 0;
+    char why[96]; CHECK_EQ(vm_check_record(VMP_SEQUENCEMUX, &SequenceMUX, why, sizeof why), 0);
+    scans(2);
+    CHECK_EQ(press(VMC_MUX_SCHEDULE, 1), PERR_OK);
+    uint32_t at[3]; scans(100); at[0] = bsp_host.out.do_bits; scans(200); at[1] = bsp_host.out.do_bits; scans(200); at[2] = bsp_host.out.do_bits;
+#if VM_FIX_MUX_VALVE_ASSIGN
+    CHECK_EQ(at[0], 1u << 4);    /* channel 1: inlet 1 (DO5) */
+    CHECK_EQ(at[1], 1u << 5);    /* channel 2: inlet 2 (DO6) */
+    CHECK_EQ(at[2], 1u << 4);    /* channel 3: inlet 1 again */
+#else
+    CHECK_EQ(at[0], 0u);         /* S8: unused rows switch inlet 1 off */
+#endif
+    press(VMC_MUX_SCHEDULE, 1); scans(3);
+}
+
+static void t_vm_v7_long_tube2_sequence(void)
+{
+    /* V7 fixed: a 10-period sequence on interconnection 2 runs past period 9 and ends */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 20), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 2), PERR_OK);  CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_SECONDINLETS, 2), PERR_OK); CHECK_EQ(write_i(VMP_SECONDOUTLETS, 2), PERR_OK);
+    scans(3);
+    char why[96];
+    memset(&Sequence1, 0, sizeof Sequence1); memset(&Sequence2, 0, sizeof Sequence2);
+    Sequence1.NumberOfPeriods = 1; Sequence1.NumberArray[0] = 1; Sequence1.Inlets[0] = 1; Sequence1.Outlets[0] = 1; Sequence1.Timers[0] = 1000;
+    Sequence2.NumberOfPeriods = 10;
+    for (int k = 0; k < 10; k++) { Sequence2.NumberArray[k] = (uint8_t)(k + 1); Sequence2.Inlets[k] = 1; Sequence2.Outlets[k] = 2; Sequence2.Timers[k] = 1000; }
+    CHECK_EQ(vm_check_record(VMP_SEQUENCE1, &Sequence1, why, sizeof why), 0);
+    CHECK_EQ(vm_check_record(VMP_SEQUENCE2, &Sequence2, why, sizeof why), 0);
+    memset(&Schedule1, 0, sizeof Schedule1); memset(&Schedule2, 0, sizeof Schedule2);
+    Schedule1.To_Hour[2] = 23; Schedule2.To_Hour[2] = 23;              /* 00:00 .. 23:00 */
+    scans(2);
+    CHECK_EQ(press(VMC_VM_SCHEDULE, 1), PERR_OK);
+    scans(5);
+    CHECK(StartInterconnection2Periods);
+    bool ended = false;
+    for (int t = 0; t < 1300 && !ended; t++) { scans(1); if (!StartInterconnection2Periods) ended = true; }
+#if VM_FIX_V7
+    CHECK(ended);                                                       /* ~10 s, past period 9 */
+#else
+    CHECK(!ended);                                                      /* V7: stalls at period 9 */
+#endif
+    press(VMC_VM_SCHEDULE, 1); scans(3);
+}
+
 int main(void)
 {
     RUN(t_ai_conversion);
@@ -622,6 +747,9 @@ int main(void)
     RUN(t_vm_modbus_run_and_link_loss);
     RUN(t_mux_schedule_run);
     RUN(t_mux_master_enable);
+    RUN(t_record_checks);
+    RUN(t_mux_repeated_inlet);
+    RUN(t_vm_v7_long_tube2_sequence);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

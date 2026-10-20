@@ -6,6 +6,7 @@
 #include "vm_tags.h"
 #include "vm_params.h"
 #include "vm_alarms.h"   /* new parameters (vm_params_new.inc) */
+#include "vm_records.h"  /* vm_check_record (PARAM_RECORD entries) */
 
 /* ---- tags no chunk declares (UI, Modbus), power-up values from the dictionary ---- */
 uint16_t vmx_Alarm0_Description[31];                             /* Alarm0 Description */
@@ -693,6 +694,25 @@ static const param_def_t defs[] = {
     PARAM_TEXT(VMP_SINGULARINLET9, "SingularInlet9", SingularInlet[9], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_ARRAY_BOOL(VMP_TEMPERATUREALARMENABLED, "TemperatureAlarmEnabled", TemperatureAlarmEnabled, PLAT_LVL_ADMIN, PF_PERSIST),
     PARAM_ARRAY_BOOL(VMP_TEMPERATUREENABLE, "TemperatureEnable", TemperatureEnable, PLAT_LVL_ADMIN, PF_PERSIST),
+    /* sequences and schedules as record parameters (vm_records.c) */
+#ifdef PARAM_RECORD
+    PARAM_RECORD(VMP_SCHEDULE1, "Schedule1", Schedule1, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),
+#endif
+#ifdef PARAM_RECORD
+    PARAM_RECORD(VMP_SCHEDULE2, "Schedule2", Schedule2, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),
+#endif
+#ifdef PARAM_RECORD
+    PARAM_RECORD(VMP_SCHEDULEMUX, "ScheduleMUX", ScheduleMUX, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),
+#endif
+#ifdef PARAM_RECORD
+    PARAM_RECORD(VMP_SEQUENCE1, "Sequence1", Sequence1, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),
+#endif
+#ifdef PARAM_RECORD
+    PARAM_RECORD(VMP_SEQUENCE2, "Sequence2", Sequence2, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),
+#endif
+#ifdef PARAM_RECORD
+    PARAM_RECORD(VMP_SEQUENCEMUX, "SequenceMUX", SequenceMUX, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),
+#endif
     /* parameters the original did not have (hand-written, IDs 2900+; tools/param_ids.csv) */
 #include "vm_params_new.inc"
     /* tags the old Modbus map exposes that are not settings (tools/gen_modbus.py) */
@@ -824,9 +844,15 @@ static const retain_def_t blocks[] = {
     RETAIN(VMP_PARAMETERNAME9, "ParameterName9", ParamColName[9], 0, sh_ParameterName9),
     RETAIN(VMP_SNENTERED, "SNentered", vmx_SNentered, 0, sh_SNentered),
     RETAIN(VMP_SAVEDATAFAILEDRESERV, "SaveDataFailedReserv", SaveDataFailedReserv, 0, sh_SaveDataFailedReserv),
+#ifndef PARAM_RECORD
     RETAIN(VMP_SCHEDULE1, "Schedule1", Schedule1, 0, sh_Schedule1),
+#endif
+#ifndef PARAM_RECORD
     RETAIN(VMP_SCHEDULE2, "Schedule2", Schedule2, 0, sh_Schedule2),
+#endif
+#ifndef PARAM_RECORD
     RETAIN(VMP_SCHEDULEMUX, "ScheduleMUX", ScheduleMUX, 0, sh_ScheduleMUX),
+#endif
     RETAIN(VMP_SECONDINTERCONINLETNAME1, "SecondInterconInletName1", SecondInterconInletName[0], 0, sh_SecondInterconInletName1),
     RETAIN(VMP_SECONDINTERCONINLETNAME10, "SecondInterconInletName10", SecondInterconInletName[9], 0, sh_SecondInterconInletName10),
     RETAIN(VMP_SECONDINTERCONINLETNAME11, "SecondInterconInletName11", SecondInterconInletName[10], 0, sh_SecondInterconInletName11),
@@ -865,9 +891,15 @@ static const retain_def_t blocks[] = {
     RETAIN(VMP_SECONDINTERCONOUTLETNAME9, "SecondInterconOutletName9", SecondInterconOutletName[8], 0, sh_SecondInterconOutletName9),
     RETAIN(VMP_SELECTALLDAYSSEQ1, "SelectAllDaysSeq1", SelectAllDaysSeq1, 0, sh_SelectAllDaysSeq1),
     RETAIN(VMP_SELECTALLDAYSSEQ2, "SelectAllDaysSeq2", SelectAllDaysSeq2, 0, sh_SelectAllDaysSeq2),
+#ifndef PARAM_RECORD
     RETAIN(VMP_SEQUENCE1, "Sequence1", Sequence1, 0, sh_Sequence1),
+#endif
+#ifndef PARAM_RECORD
     RETAIN(VMP_SEQUENCE2, "Sequence2", Sequence2, 0, sh_Sequence2),
+#endif
+#ifndef PARAM_RECORD
     RETAIN(VMP_SEQUENCEMUX, "SequenceMUX", SequenceMUX, 0, sh_SequenceMUX),
+#endif
     RETAIN(VMP_SINGULARINLETVISIB, "SingularInletVisib", SingularInletVisib, 0, sh_SingularInletVisib),
     RETAIN(VMP_SINGULARINLETVISIB1, "SingularInletVisib1", SingularInletVisib1, 0, sh_SingularInletVisib1),
     RETAIN(VMP_SINGULARINLETVISIB2, "SingularInletVisib2", SingularInletVisib2, 0, sh_SingularInletVisib2),
