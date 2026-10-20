@@ -97,7 +97,7 @@ int http_parse_head(const char *buf, uint32_t len, http_req_t *r) {
 /* ---------------- responses ---------------- */
 static const char *reason(int st) {
     switch (st) {
-    case 200: return "OK"; case 400: return "Bad Request"; case 401: return "Unauthorized";
+    case 200: return "OK"; case 202: return "Accepted"; case 400: return "Bad Request"; case 401: return "Unauthorized";
     case 403: return "Forbidden"; case 404: return "Not Found"; case 405: return "Method Not Allowed";
     case 409: return "Conflict"; case 413: return "Payload Too Large"; case 429: return "Too Many Requests";
     case 500: return "Internal Server Error"; case 503: return "Service Unavailable"; default: return "Error";
@@ -686,6 +686,10 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"total\":"); json_uint(o, st.upload_total);
     out_str(o, ",\"rolled_back\":"); json_bool(o, st.rolled_back);
     out_str(o, ",\"signing_required\":"); json_bool(o, st.signing_required);
+    out_str(o, ",\"waiting_local\":"); json_bool(o, st.wait_local);
+    out_str(o, ",\"waiting_left_s\":"); json_uint(o, (st.wait_left_ms + 999u) / 1000u);
+    out_str(o, ",\"not_safe\":"); json_str(o, st.not_safe);
+    { plat_val_t v; out_str(o, ",\"min_version\":"); json_uint(o, param_read(PARAM_ID_FW_MIN_VERSION, &v) ? v.u : 0); }
     out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error)); out_str(o, "}");
 }
 
@@ -869,9 +873,19 @@ static void post_mail_trust(const http_req_t *r, http_out_t *o, uint8_t lvl) {
 
 static void post_fw_activate(http_out_t *o, uint8_t lvl) {
     if (lvl < PLAT_LVL_FACTORY) { json_error(o, 403, "access", -1); return; }
-    fw_err_t e = fw_request_activate();
+    fw_err_t e = fw_request_activate_from(PLAT_SRC_WEB, lvl);
+    if (e == FW_E_WAIT_LOCAL) {
+        head(o, 202, "application/json", NULL);
+        out_str(o, "{\"ok\":true,\"restarting\":false,\"waiting_local\":true}");
+        return;
+    }
+    if (e == FW_E_NOT_SAFE) {
+        fw_status_t st; fw_status(&st);
+        head(o, 409, "application/json", NULL);
+        out_str(o, "{\"ok\":false,\"error\":\"not safe\",\"why\":"); json_str(o, st.not_safe); out_str(o, "}");
+        return;
+    }
     if (e != FW_OK) { json_error(o, e == FW_E_NO_IMAGE ? 404 : 409, fw_err_name(e), -1); return; }
-    plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, 0, NAN, NAN, "activate");
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true,\"restarting\":true}");
 }

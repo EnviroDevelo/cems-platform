@@ -623,6 +623,8 @@ async function refreshFw() {
     if (f.rolled_back) t += ". The last update failed its trial and was rolled back";
     if (f.staged) t += `. Ready in the spare bank: ${f.staged}`;
     if (!f.signing_required) t += ". Development build: unsigned firmware is accepted";
+    if (f.waiting_local) t += `. Waiting for someone at the instrument to confirm the restart (${f.waiting_left_s} s left)`;
+    if (f.not_safe) t += `. Last restart refused: ${f.not_safe}`;
     $("fwinfo").textContent = t + ".";
     $("fwact").style.display = f.staged && f.state !== "trial" && level >= 3 ? "" : "none";
     $("fwact").textContent = `Restart on ${f.staged || "new firmware"}`;
@@ -647,8 +649,11 @@ $("fwup").onclick = () => {
 };
 $("fwact").onclick = async () => {
   if (!confirm("Restart the instrument on the new firmware now? Measurement stops for the restart.")) return;
-  try { await api("/api/fw/activate", ""); $("fwerr").textContent = "Restarting..."; }
-  catch (e) { $("fwerr").textContent = e.message; }
+  try {
+    const j = await api("/api/fw/activate", "");
+    $("fwerr").textContent = j.waiting_local ? "Asked: someone at the instrument must confirm on the touchscreen" : "Restarting...";
+    refreshFw();
+  } catch (e) { $("fwerr").textContent = e.message === "not safe" ? `Not now: ${e.info.why}` : e.message; }
 };
 $("restorebtn").onclick = async () => {
   const f = $("restorefile").files[0]; $("restoreerr").textContent = "";

@@ -276,6 +276,20 @@ static void t_ui(void) {
     CHECK(shows("Running")); CHECK(shows("0.5.0")); CHECK(shows("Restart on 0.6.0")); CHECK(shows("192.168.1.50") || shows("10.0.0.5"));
     dump("system");
     uint32_t swaps = fs.swaps;
+    /* a restart asked from the web, held for the touchscreen (parameter 87): the question pops up, "No" refuses it */
+    { plat_cmd_t c = { .id = PARAM_ID_FW_LOCAL_CONFIRM, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_BOOL, .v.b = true };
+      CHECK_EQ(param_apply(&c), PERR_OK); param_publish(); }
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_WEB, PLAT_LVL_FACTORY), FW_E_WAIT_LOCAL);
+    frame();
+    CHECK(shows("Restart on firmware 0.6.0? Asked from the"));
+    dump("fw_confirm");
+    CHECK(tap("No"));
+    CHECK(!strcmp(ui_toast(), "Firmware restart refused"));
+    { fw_status_t fst; fw_status(&fst); CHECK(!fst.wait_local); }
+    fw_service(now, true);
+    CHECK_EQ(fs.swaps, swaps);
+    { plat_cmd_t c = { .id = PARAM_ID_FW_LOCAL_CONFIRM, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_BOOL, .v.b = false };
+      CHECK_EQ(param_apply(&c), PERR_OK); param_publish(); }
     CHECK_EQ(eve_sim_tag_of(&sim, "Restart on 0.6.0"), 0);          /* disabled for admin */
     CHECK(tap("Log out admin"));
     CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));

@@ -43,6 +43,7 @@ typedef struct plat_app_s {
     const uint16_t     *ui_home_ids;     /* parameters shown as tiles on the touchscreen's home screen (up to 6) */
     size_t              n_ui_home;
     const alarm_def_t  *alarms;          /* its alarms (IDs 100..255; may be NULL); the logic calls alarm_set() */
+    bool (*fw_safe)(char *why, size_t cap);   /* safe to restart for a firmware update? false + reason refuses it (NULL = always) */
     size_t              n_alarms;
 } plat_app_t;
 

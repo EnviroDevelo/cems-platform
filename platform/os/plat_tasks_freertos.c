@@ -171,6 +171,7 @@ void plat_start(const plat_app_t *app) {
     log_start(app, fram);
     fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
     fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
+    fw_safe_check = app->fw_safe;
     tls_start(fram);
     if (alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause) != 0) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "alarm table", 0, bsp_ms());

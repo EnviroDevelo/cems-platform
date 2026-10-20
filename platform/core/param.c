@@ -33,6 +33,8 @@ uint32_t        plat_log_status_word;     /* written by plat_log */
 
 #define NET (PF_PERSIST | PF_ANY_MODE | PF_NO_MODBUS)
 static uint16_t  p_alarm_ack;
+static bool      p_fw_local;
+static uint32_t  p_fw_min;
 static int16_t   p_utc_off;
 static uint32_t  p_sntp_ip, p_clock_set;
 static uint16_t  p_sntp_min;
@@ -98,6 +100,8 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_SNTP_INTERVAL, "sntp_interval", p_sntp_min, CT_U16, 1, 1440, 60, PLAT_LVL_ADMIN, NET, "min"),
     PARAM_UINT(PARAM_ID_CLOCK_SET, "clock_set", p_clock_set, CT_U32, 0, PLAT_CLOCK_MAX_UNIX, 0, PLAT_LVL_OPERATOR, 0, "s"),
     PARAM_UINT(PARAM_ID_CLOCK_UNIX, "clock_unix", plat_clock_unix, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_BIT (PARAM_ID_FW_LOCAL_CONFIRM, "fw_local_confirm", p_fw_local, PLAT_LVL_ADMIN, NET),
+    PARAM_UINT(PARAM_ID_FW_MIN_VERSION, "fw_min_version", p_fw_min, CT_U32, 0, 0xFFFFFFu, 0, PLAT_LVL_FACTORY, NET, NULL),
     PARAM_UINT(PARAM_ID_LOG_INTERVAL_S, "log_interval", plat_log_interval_s, CT_U16, 0, 3600, 60,
                PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE, "s"),
     PARAM_UINT(PARAM_ID_LOG_STATUS, "log_status", plat_log_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,

@@ -10,6 +10,7 @@
  * "new image". Environment: CEMS_FW_VERSION (the version this run reports),
  * CEMS_RESET_CAUSE (power, software, iwdg), CEMS_FW_TRIAL_MS (trial length),
  * CEMS_FW_PUBKEY (hex P-256 public key: acts as a signed production build).
+ * Console (the touchscreen's stand-in): remote, local, set <id> <v>, fwyes / fwno (answer a held firmware restart).
  *
  * DI0 is driven by a pattern (8 s on, 4 s off) so values change on their own. */
 #define _POSIX_C_SOURCE 200809L
@@ -232,6 +233,8 @@ static void *console_thread(void *a) {
         param_err_t e = PERR_OK;
         plat_val_t val;
         if (!strncmp(line, "remote", 6)) { val.u = 1; e = param_post(PARAM_ID_CTRL_MODE, PLAT_VAL_U32, val, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR); }
+        else if (!strncmp(line, "fwyes", 5)) { fw_local_answer(true, 0); continue; }   /* the touchscreen's answer */
+        else if (!strncmp(line, "fwno", 4)) { fw_local_answer(false, 0); continue; }
         else if (!strncmp(line, "local", 5)) { val.u = 0; e = param_post(PARAM_ID_CTRL_MODE, PLAT_VAL_U32, val, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR); }
         else if (sscanf(line, "set %u %ld", &id, &v) == 2) { val.i = (int32_t)v; e = param_post((uint16_t)id, PLAT_VAL_I32, val, PLAT_SRC_LOCAL, PLAT_LVL_FACTORY); }
         else continue;
@@ -279,6 +282,7 @@ int main(int argc, char **argv) {
         plat_log_init(&lc, bsp_ms());
         fw_init(bsp_fw_flash(), &fram_dev, STORE_META_ADDR + 128u, fwver ? fwver : app->ident.revision);
         fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* may "reset" (exit 3) to roll back */
+        fw_safe_check = app->fw_safe;
     }
     { int ae = alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause);
       if (ae) { fprintf(stderr, "alarm table error at id %d\n", ae); return 1; } }

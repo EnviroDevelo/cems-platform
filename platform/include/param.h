@@ -130,6 +130,8 @@ enum {
     PARAM_ID_SNTP_INTERVAL    = 84,  /* minutes between SNTP queries */
     PARAM_ID_CLOCK_SET        = 85,  /* write local seconds since 1970 to set the clock (logged; 0 = nothing) */
     PARAM_ID_CLOCK_UNIX       = 86,  /* RO: the clock, local seconds since 1970 (0 = never set) */
+    PARAM_ID_FW_LOCAL_CONFIRM = 87,  /* a firmware restart asked from the web must be confirmed on the touchscreen */
+    PARAM_ID_FW_MIN_VERSION   = 88,  /* factory: images older than this (major<<16|minor<<8|patch) are refused */
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */

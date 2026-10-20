@@ -39,6 +39,7 @@
 #define FW_UPDATE_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "nvm.h"
 
 #define FW_MAGIC        0x31574643u   /* "CFW1" */
@@ -94,7 +95,10 @@ typedef enum {
     FW_E_FLASH,         /* erase/write/read-back failed */
     FW_E_HASH,          /* SHA-256 mismatch (damaged in transfer or in flash) */
     FW_E_SIGNATURE,     /* signature missing or wrong */
-    FW_E_NO_IMAGE       /* activate: nothing staged */
+    FW_E_NO_IMAGE,      /* activate: nothing staged */
+    FW_E_NOT_SAFE,      /* activate: the application is not in a safe state to restart (fw_safe_check) */
+    FW_E_OLD,           /* older than the minimum version allowed (parameter 88, anti-rollback) */
+    FW_E_WAIT_LOCAL     /* activate from the web/PLC: now waiting for confirmation on the touchscreen */
 } fw_err_t;
 
 typedef enum {          /* boot record state (FRAM) */
@@ -115,6 +119,10 @@ typedef struct {
     fw_err_t   last_error;
     bool       rolled_back;                  /* this boot came back from a failed trial */
     bool       signing_required;             /* false = development build: unsigned images accepted */
+    bool       wait_local;                   /* an activation asked from afar waits for the touchscreen */
+    uint8_t    wait_src, wait_level;         /* ... who asked */
+    uint32_t   wait_left_ms;
+    char       not_safe[48];                 /* why the last activation was refused as not safe ("" = it wasn't) */
 } fw_status_t;
 
 /* Set up. fram_addr: 64 bytes for the boot record (STORE_META_ADDR + 128).
@@ -131,7 +139,18 @@ fw_err_t fw_upload_data(const uint8_t *p, uint32_t n);
 fw_err_t fw_upload_end(void);     /* checks hash and signature, stages the image */
 void     fw_upload_abort(void);
 
-fw_err_t fw_request_activate(void);           /* any task; the store task swaps */
+fw_err_t fw_request_activate(void);           /* any task; the store task swaps (as from the touchscreen) */
+/* The same, saying who asks (plat_src_t, plat_level_t). Checks, in order: an image is
+ * staged and allowed (minimum version), the application says it is safe to restart
+ * (fw_safe_check), and, when parameter 87 fw_local_confirm is on and the request is
+ * not from the touchscreen, holds it for 5 minutes for the touchscreen to confirm
+ * (FW_E_WAIT_LOCAL). Every outcome is in the event log. */
+fw_err_t fw_request_activate_from(uint8_t src, uint8_t level);
+void     fw_local_answer(bool yes, uint8_t level);   /* the touchscreen's answer to a held activation */
+/* The application's safe-state check (plat_app_t.fw_safe; NULL = always safe): false
+ * and a reason (e.g. "a calibration is running") refuses an activation. Called from
+ * the requesting task and again by the store task just before the swap. */
+extern bool (*fw_safe_check)(char *why, size_t cap);
 void     fw_service(uint32_t now_ms, bool healthy);   /* store task */
 void     fw_status(fw_status_t *out);
 const char *fw_err_name(fw_err_t e);

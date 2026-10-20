@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "tst.h"
 #include "fw_update.h"
 #include "fw_flash_sim.h"
@@ -281,6 +282,66 @@ static void t_signed(void) {
     mbedtls_ctr_drbg_free(&rng); mbedtls_entropy_free(&ent);
 }
 
+/* ---------------- gates: minimum version, safe state, local confirmation ---------------- */
+static bool safe_now = true;
+static bool safe_cb(char *why, size_t cap) { if (!safe_now) snprintf(why, cap, "a calibration is running"); return safe_now; }
+static void setp(uint16_t id, uint32_t v) {
+    plat_cmd_t c = { .id = id, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_U32, .v.u = v };
+    CHECK_EQ(param_apply(&c), PERR_OK);
+    param_publish();
+}
+
+static void t_gates(void) {
+    CHECK_EQ(param_init(NULL, 0), PERR_OK);
+    param_bind(NULL, NULL);
+    param_set_defaults(PARAM_ALL);
+    param_publish();
+    fw_status_t st;
+    memset(fr_mem, 0, sizeof fr_mem);                             /* a fresh boot record */
+    power_up("0.9.0", BSP_RESET_POWER_ON);
+    /* anti-rollback: nothing older than 0.8.0 */
+    setp(PARAM_ID_FW_MIN_VERSION, 0x000800u);
+    uint32_t len = make_image(20000, "0.7.9", PLAT_FW_PRODUCT, 41);
+    CHECK_EQ(upload(len, 4096), FW_E_OLD);
+    len = make_image(20000, "0.8.0", PLAT_FW_PRODUCT, 42);
+    CHECK_EQ(upload(len, 4096), FW_OK);
+    setp(PARAM_ID_FW_MIN_VERSION, 0x000801u);                    /* raised after the upload */
+    CHECK_EQ(fw_request_activate(), FW_E_OLD);
+    setp(PARAM_ID_FW_MIN_VERSION, 0);
+    /* the application's safe state */
+    fw_safe_check = safe_cb;
+    safe_now = false;
+    uint32_t swaps = fs.swaps;
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_WEB, PLAT_LVL_FACTORY), FW_E_NOT_SAFE);
+    fw_status(&st); CHECK(!strcmp(st.not_safe, "a calibration is running"));
+    safe_now = true;
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_WEB, PLAT_LVL_FACTORY), FW_OK);
+    safe_now = false;                                            /* a calibration started meanwhile */
+    fw_service(bsp_host.ms, true);
+    CHECK_EQ(fs.swaps, swaps);                                   /* checked again before the swap */
+    fw_status(&st); CHECK_EQ(st.last_error, FW_E_NOT_SAFE);
+    safe_now = true;
+    /* local confirmation: a web request waits for the touchscreen */
+    setp(PARAM_ID_FW_LOCAL_CONFIRM, 1);
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_WEB, PLAT_LVL_FACTORY), FW_E_WAIT_LOCAL);
+    fw_service(bsp_host.ms, true);
+    fw_status(&st); CHECK(st.wait_local); CHECK_EQ(st.wait_src, PLAT_SRC_WEB); CHECK(st.wait_left_ms > 290000u);
+    CHECK_EQ(fs.swaps, swaps);
+    fw_local_answer(false, 0);                                   /* "No" on the touchscreen */
+    fw_service(bsp_host.ms, true);
+    fw_status(&st); CHECK(!st.wait_local); CHECK_EQ(fs.swaps, swaps);
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_WEB, PLAT_LVL_FACTORY), FW_E_WAIT_LOCAL);
+    fw_service(bsp_host.ms, true);
+    fw_service(bsp_host.ms + 5u * 60u * 1000u, true);            /* nobody answered in 5 minutes */
+    fw_status(&st); CHECK(!st.wait_local);
+    fw_local_answer(true, 0);                                    /* too late: nothing happens */
+    fw_service(bsp_host.ms, true); CHECK_EQ(fs.swaps, swaps);
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_LOCAL, 0), FW_OK);   /* on the touchscreen itself: no extra question */
+    fw_service(bsp_host.ms, true); CHECK_EQ(fs.swaps, swaps + 1);
+    setp(PARAM_ID_FW_LOCAL_CONFIRM, 0);
+    fw_safe_check = NULL;
+}
+
 /* ---------------- over HTTP ---------------- */
 static char out[8192]; static size_t outn;
 static int cap(void *ctx, const void *p, size_t n) { (void)ctx; if (outn + n >= sizeof out) return -1; memcpy(out + outn, p, n); outn += n; out[outn] = 0; return 0; }
@@ -364,6 +425,7 @@ void test_fw_all(void) {
     RUN(t_rollback);
     RUN(t_signed);
     RUN(t_http);
+    RUN(t_gates);
     fw_reset_for_test();
     fw_trial_ms = FW_TRIAL_MS;
 }

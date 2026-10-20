@@ -58,7 +58,7 @@ enum {
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
-typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW } act_t;
+typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL } act_t;
 
 static struct {
     const ui_cfg_t *cfg;
@@ -82,7 +82,7 @@ static struct {
     char     entry[48];
     /* confirm dialog */
     bool     confirm;
-    char     confirm_msg[96];
+    char     confirm_msg[160];
     act_t    act;
     plat_cmd_t pend;
     uint8_t  pend_blob[64];
@@ -255,8 +255,17 @@ static void do_action(uint32_t now) {
     } else if (U.act == ACT_BLOB) {
         e = param_blob_post(U.pend.id, 0, U.pend_blob, U.pend_len, true, PLAT_SRC_LOCAL, U.pend.level);
     } else if (U.act == ACT_FW) {
-        fw_err_t f = fw_request_activate();
-        if (f != FW_OK) toast(true, now, "Cannot restart: %s", fw_err_name(f));
+        fw_err_t f = fw_request_activate_from(PLAT_SRC_LOCAL, U.level);
+        fw_status_t st; fw_status(&st);
+        if (f == FW_E_NOT_SAFE) toast(true, now, "Not now: %s", st.not_safe);
+        else if (f != FW_OK) toast(true, now, "Cannot restart: %s", fw_err_name(f));
+        else toast(false, now, "Restarting on the new firmware...");
+        U.act = ACT_NONE;
+        return;
+    } else if (U.act == ACT_FW_LOCAL) {
+        fw_local_answer(true, U.level);
+        fw_status_t st; fw_status(&st);
+        if (st.not_safe[0]) toast(true, now, "Not now: %s", st.not_safe);
         else toast(false, now, "Restarting on the new firmware...");
         U.act = ACT_NONE;
         return;
@@ -389,7 +398,10 @@ static size_t n_params(void) { return param_count(); }
 static void tap(uint8_t t, uint32_t now) {
     if (U.confirm) {
         if (t == T_YES) { U.confirm = false; do_action(now); }
-        else if (t == T_NO) { U.confirm = false; U.act = ACT_NONE; }
+        else if (t == T_NO) {
+            if (U.act == ACT_FW_LOCAL) { fw_local_answer(false, U.level); toast(false, now, "Firmware restart refused"); }
+            U.confirm = false; U.act = ACT_NONE;
+        }
         U.dirty = true;
         return;
     }
@@ -980,8 +992,25 @@ static void draw_confirm(void) {
     button(T_NO, 532, 350, 290, 70, "No", 0x5B6577u, true);
 }
 
+/* a firmware restart asked from the web, held for someone here to agree (parameter 87) */
+static void fw_hold_check(void) {
+    fw_status_t st;
+    fw_status(&st);
+    if (!st.wait_local || (U.confirm && U.act == ACT_FW_LOCAL)) {
+        if (!st.wait_local && U.confirm && U.act == ACT_FW_LOCAL) { U.confirm = false; U.act = ACT_NONE; U.dirty = true; }
+        return;
+    }
+    if (U.confirm) return;                    /* let the other question be answered first */
+    char m[160];
+    snprintf(m, sizeof m, "Restart on firmware %s? Asked from the %s (%s). Measurement stops during the restart.",
+             st.staged_version, st.wait_src == PLAT_SRC_WEB ? "web page" : "network", lvl_name(st.wait_level));
+    ask(ACT_FW_LOCAL, m);
+    U.activity = U.last_draw;                 /* light the screen */
+}
+
 void ui_draw(eve_t *e, uint32_t now) {
     E = e;
+    fw_hold_check();
     events_poll(now);
     eve_frame_begin(e, 0xF4, 0xF5, 0xF7);
     eve_tag(e, 0);

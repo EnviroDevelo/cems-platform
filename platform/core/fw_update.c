@@ -8,6 +8,10 @@
 #include "plat_port.h"
 #include "plat_cmdq.h"
 #include "bsp.h"
+#include "param.h"
+
+bool (*fw_safe_check)(char *why, size_t cap);
+#define LOCAL_WAIT_MS (5u * 60u * 1000u)
 
 #define REC_MAGIC 0x52425746u      /* "FWBR" */
 #define WBUF 256u
@@ -42,6 +46,11 @@ static struct {
     uint32_t    trial_left;
     bool        rolled_back;
     volatile bool activate_req;
+    volatile bool wait_local;
+    uint8_t  wait_src, wait_level;
+    uint32_t wait_until;
+    bool     wait_started;
+    char     not_safe[48];
     fw_err_t    last_err;
 } F;
 
@@ -49,9 +58,28 @@ void (*fw_before_swap)(void);
 uint32_t fw_trial_ms = FW_TRIAL_MS;       /* the store task flushes the parameter store and the log */
 
 
+static uint32_t min_version(void) {
+    plat_val_t v;
+    return param_read(PARAM_ID_FW_MIN_VERSION, &v) ? v.u : 0u;
+}
+
+static bool safe(void) {
+    F.not_safe[0] = 0;
+    if (!fw_safe_check) return true;
+    char why[48] = "";
+    if (fw_safe_check(why, sizeof why)) return true;
+    const char *w = why[0] ? why : "the application is busy";
+    size_t k = 0;
+    for (; w[k] && k + 1 < sizeof F.not_safe; ++k) F.not_safe[k] = w[k];
+    F.not_safe[k] = 0;
+    return false;
+}
+
 const char *fw_err_name(fw_err_t e) {
     static const char *const n[] = { "ok", "busy", "state", "not a firmware image", "wrong product", "size",
-                                     "flash error", "checksum mismatch", "signature not valid", "no image" };
+                                     "flash error", "checksum mismatch", "signature not valid", "no image",
+                                     "not safe to restart now", "older than the minimum version allowed",
+                                     "waiting for confirmation on the touchscreen" };
     return (unsigned)e < sizeof n / sizeof n[0] ? n[e] : "error";
 }
 
@@ -220,6 +248,7 @@ fw_err_t fw_upload_data(const uint8_t *p, uint32_t n) {
                 memcpy(&F.hdr, F.hdr_raw, sizeof F.hdr);
                 if (!fw_header_ok(&F.hdr)) return fail(FW_E_HEADER);
                 if (F.hdr.product != PLAT_FW_PRODUCT) return fail(FW_E_PRODUCT);
+                if (F.hdr.version < min_version()) return fail(FW_E_OLD);
                 if (F.hdr.image_size != F.total - FW_HDR_SIZE || F.hdr.image_size > trailer_off()) return fail(FW_E_SIZE);
                 F.hdr_ok = true;
             }
@@ -260,17 +289,57 @@ fw_err_t fw_upload_end(void) {
 void fw_upload_abort(void) { if (F.uploading) (void)fail(FW_E_STATE); }
 
 /* ---------------- activation and trial ---------------- */
-fw_err_t fw_request_activate(void) {
+fw_err_t fw_request_activate(void) { return fw_request_activate_from(PLAT_SRC_LOCAL, PLAT_LVL_FACTORY); }
+
+fw_err_t fw_request_activate_from(uint8_t src, uint8_t level) {
     if (F.uploading) return FW_E_BUSY;
     if (F.rec.state == FW_ST_TRIAL) return FW_E_STATE;       /* confirm or roll back first */
     if (!F.staged) return FW_E_NO_IMAGE;
+    if (F.staged_hdr.version < min_version()) return FW_E_OLD;
+    if (!safe()) {
+        plat_log_event(LOG_EV_FW_UPDATE, src, level, 0, NAN, NAN, "refused: not safe");
+        return FW_E_NOT_SAFE;
+    }
+    plat_val_t v;
+    bool need_local = param_read(PARAM_ID_FW_LOCAL_CONFIRM, &v) && v.b;
+    if (need_local && src != PLAT_SRC_LOCAL) {
+        F.wait_src = src; F.wait_level = level;
+        F.wait_started = false;                             /* fw_service starts the 5 minutes */
+        F.wait_local = true;
+        plat_log_event(LOG_EV_FW_UPDATE, src, level, 0, NAN, NAN, "activate: ask local");
+        return FW_E_WAIT_LOCAL;
+    }
+    F.wait_local = false;
+    plat_log_event(LOG_EV_FW_UPDATE, src, level, 0, NAN, NAN, "activate");
     F.activate_req = true;
     return FW_OK;
 }
 
+void fw_local_answer(bool yes, uint8_t level) {
+    if (!F.wait_local) return;
+    F.wait_local = false;
+    if (!yes) { plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_LOCAL, level, 0, NAN, NAN, "refused on touchscreen"); return; }
+    if (!F.staged || F.uploading || F.rec.state == FW_ST_TRIAL) return;
+    if (!safe()) { plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_LOCAL, level, 0, NAN, NAN, "refused: not safe"); return; }
+    plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_LOCAL, level, 0, NAN, NAN, "confirmed on touch");
+    F.activate_req = true;
+}
+
 void fw_service(uint32_t now_ms, bool healthy) {
+    if (F.wait_local) {
+        if (!F.wait_started) { F.wait_started = true; F.wait_until = now_ms + LOCAL_WAIT_MS; }
+        else if ((int32_t)(now_ms - F.wait_until) >= 0) {
+            F.wait_local = false;
+            plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, "not confirmed: dropped");
+        }
+    }
     if (F.activate_req) {
         F.activate_req = false;
+        if (!safe()) {                                       /* things changed since the request */
+            plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, "refused: not safe");
+            F.last_err = FW_E_NOT_SAFE;
+            return;
+        }
         fw_header_t h;
         if (!read_trailer(&h) || !bank_hash_ok(&h)) {        /* never swap to a damaged bank */
             F.staged = false;
@@ -318,6 +387,10 @@ void fw_status(fw_status_t *o) {
     o->last_error = F.last_err;
     o->rolled_back = F.rolled_back;
     o->signing_required = fw_signing_required();
+    o->wait_local = F.wait_local;
+    o->wait_src = F.wait_src; o->wait_level = F.wait_level;
+    o->wait_left_ms = F.wait_local && F.wait_started ? F.wait_until - bsp_ms() : (F.wait_local ? LOCAL_WAIT_MS : 0);
+    memcpy(o->not_safe, F.not_safe, sizeof o->not_safe);
 }
 
-void fw_reset_for_test(void) { memset(&F, 0, sizeof F); fw_before_swap = NULL; }
+void fw_reset_for_test(void) { memset(&F, 0, sizeof F); fw_before_swap = NULL; fw_safe_check = NULL; }

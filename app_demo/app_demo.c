@@ -1,6 +1,7 @@
 /* app_demo.c - see app_demo.h. Tags are plain globals, as in the Stage 4 code. */
 #include "app_demo.h"
 #include "plat_tasks.h"
+#include <stdio.h>
 
 /* ---- application tags ---- */
 static bool       StartIn;          /* mapped from DI0 */
@@ -15,7 +16,8 @@ static const char valve_name_default[11] = "Valve 1";
 static bool       DemoFault;        /* stands in for a fault input: raises a latching alarm */
 static float      DemoLevel = 50.0f;/* stands in for a measured value with a range alarm */
 static bool       DemoLevelAlarmEn = true;
-static uint16_t   DemoLevelText[24];/* editable alarm description (UTF-16, as the old panel's) */
+static uint16_t   DemoLevelText[24];
+static bool       DemoRunning;      /* stands in for "a calibration or sequence is running": no firmware restart then *//* editable alarm description (UTF-16, as the old panel's) */
 
 demo_snapshot_t demo_snapshot;
 
@@ -31,6 +33,7 @@ const param_def_t app_demo_params[] = {
     PARAM_BIT (DEMO_PARAM_FAULT, "demo_fault", DemoFault, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_REAL(DEMO_PARAM_LEVEL, "demo_level", DemoLevel, 0.0f, 100.0f, 50.0f, "%", PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_BIT_D(DEMO_PARAM_LEVEL_AL_EN, "demo_level_alarm", DemoLevelAlarmEn, true, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
+    PARAM_BIT (DEMO_PARAM_RUNNING, "demo_running", DemoRunning, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_TEXT16(DEMO_PARAM_LEVEL_TEXT, "demo_level_text", DemoLevelText, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
 };
 
@@ -118,6 +121,13 @@ static void publish(void) {
 
 const scan_app_t app_demo = { .init = init, .io_in = io_in, .logic = logic, .io_out = io_out, .publish = publish };
 
+/* firmware restarts only when nothing is running (design spec: "updates accepted only in a safe idle state") */
+static bool fw_safe(char *why, size_t cap) {
+    if (!DemoRunning) return true;
+    snprintf(why, cap, "a measurement sequence is running");
+    return false;
+}
+
 /* everything the platform needs, for plat_start() */
 const plat_app_t app_demo_plat = {
     .scan = &app_demo,
@@ -129,5 +139,6 @@ const plat_app_t app_demo_plat = {
                .write_level = PLAT_LVL_OPERATOR },
     .log_chans = app_demo_log, .n_log_chans = sizeof app_demo_log / sizeof app_demo_log[0],
     .ui_home_ids = app_demo_home, .n_ui_home = sizeof app_demo_home / sizeof app_demo_home[0],
+    .fw_safe = fw_safe,
     .alarms = app_demo_alarms, .n_alarms = sizeof app_demo_alarms / sizeof app_demo_alarms[0],
 };

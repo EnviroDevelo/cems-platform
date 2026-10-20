@@ -23,6 +23,7 @@
 #define DEMO_PARAM_LEVEL       1008u
 #define DEMO_PARAM_LEVEL_AL_EN 1009u
 #define DEMO_PARAM_LEVEL_TEXT  1010u
+#define DEMO_PARAM_RUNNING     1011u
 #define DEMO_BLOCK_CYCLES      1100u
 #define DEMO_ALARM_FAULT       100u
 #define DEMO_ALARM_LEVEL       101u

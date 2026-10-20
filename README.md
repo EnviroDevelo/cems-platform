@@ -27,6 +27,9 @@ rollback), `python3 tests/integration/mail_test.py` (alarm email against a test 
 server; needs openssl), `python3 tests/integration/clock_test.py` (clock and SNTP) and `python3 tests/integration/web_ui_test.py` (needs Python Playwright and
 Chromium).
 
+The application contract (`plat_app_t`) now includes `fw_safe` (may a firmware restart
+happen now?) and `alarms`; see `app_demo/`.
+
 Firmware update files: `tools/mkfwimage.py build.bin cems-x.y.z.cfw --version x.y.z`
 (add `--key <pem>` to sign; key set-up in `docs/CUBEMX_SETUP.md` 3d).
 
