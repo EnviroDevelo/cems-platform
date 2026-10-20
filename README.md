@@ -4,6 +4,7 @@ Shared firmware platform for the CEMS Supervisor instrument family (STM32H5, Fre
 lwIP, Riverdi EVE4). It runs the translated Valve Manager / Multiplexor program as a
 PLC-style scan and provides the services around it.
 
+- `docs/APP_INTEGRATION.md`: handover for the VM/MUX application build (what to supply, rules, open items)
 - `docs/PLATFORM.md`: structure, task priorities, the scan contract, integration rules, decisions needed
 - `docs/CUBEMX_SETUP.md`: bringing it up on the STM32H573I-DK in STM32CubeIDE
 - `docs/MEMORY.md`: flash and RAM used by each module against the chip's limits (kept current)
