@@ -163,12 +163,21 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 - Never log a last-held value. Averaging over the log interval (parameter 30) is done by the platform.
 - Application events: `plat_log_event(code >= 100, ...)`.
 
-## 9. Touchscreen (current state, and an open item)
+## 9. Touchscreen and web screens (`ui_app.h`, D26; PLATFORM.md section 5j)
 
 - The platform UI is generic: home tiles (`ui_home_ids`), settings list and edit from the parameter table, alarms, events, clock, system. It renders `PARAM_TEXT16` and units with ° ² ³ µ.
-- **Open item for the core thread:** the old program's application-specific screens (sequence editor, schedules, manual mode, valve and tube overview, column occupancy) have no equivalent yet. There is no hook yet for the application to add its own screens.
-  - When Stage 5 has the screen list, send it to the core thread. Include each screen's purpose, its fields, and the actions or visibility rules it holds.
-  - The core thread will add an application-screen API rather than the app drawing on the display directly.
+- **Application screens:** describe them in `plat_app_t.ui` (`ui_app_t`), entirely by parameter ID. The platform draws them on the touchscreen (as tabs) and on the web page.
+  - Widgets: `UW_SECTION`, `UW_VALUE` (scalar or array element), `UW_BUTTON` (command / state / enable), `UW_GRID` (numbered items: count, visible, enable and lit arrays, names), `UW_DIALOG` (shown while a status parameter is set; Yes/No or OK commands) and `UW_RECORD`.
+  - Any widget can carry `show_id` and `show_min`.
+  - A button writes `cmd_value`, which defaults to 1; use `UW_WRITE_ZERO` to write 0.
+- **Sequences and schedules are records:** `PARAM_RECORD(id, name, Var, check_fn, level, flags)` replaces the `RETAIN()` block, keeping the same ID.
+  - They are written only whole and applied in one scan after `check_fn` accepts the complete new image. The reason the check gives is shown to the operator.
+  - Describe the fields in a `ui_record_t` on `ui_app_t.records`:
+    - table records: rows, plus the offset of the "in use" count;
+    - form records: fields, with tick-box arrays.
+  - The editors work on a copy and Save it whole.
+  - Not reachable over Modbus.
+- **Worked example:** `app_demo/app_demo.c` (the demo steps record and the Demo screen) and `tests/test_ui_app.c`, which uses a VM-shaped sequence and schedule.
 
 ## 10. Decisions already made that affect the application
 
@@ -183,8 +192,19 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 | D22 | Clock is local standard time (no daylight saving); `RTC_Date`/`RTC_Time` are that time |
 | D23 | Firmware restarts need `fw_safe()`; optional touchscreen confirmation; minimum version |
 | D25 | Serial number is changed only with a developer-signed token |
+| D26 | Application screens and record editors are described by parameter ID; sequences and schedules are whole records with an application check |
 
 Full list: PLATFORM.md section 8.
+
+## 10a. Linking the application into the platform's builds (R1, R5)
+
+- Every application defines `const plat_app_t *app_select(void)`, declared in `plat_tasks.h`.
+- `app_vmmux/app_vars.mk` sets `APP_SRC`, `APP_INC` and `APP_HDRS`.
+- With those in place:
+  - `make netsim APP=app_vmmux` builds `build/netsim-app_vmmux`. The `-Dapp_demo_plat` define is no longer needed.
+  - `make target APP=app_vmmux` compiles the application for the target.
+  - `tools/check_target.sh` links it and adds its totals to `docs/MEMORY.md` automatically.
+- The FRAM map is 128 KB by default (D6). Build with `PLAT_FRAM_SIZE=32768u` for the 32 KB breakout.
 
 ## 11. Suggested order of work
 

@@ -8,52 +8,65 @@ module, and before choosing hardware. Last run: 2026-10-20.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 350.6 KB | 1016.0 KB | 35 % | 665.4 KB |
-| RAM (STM32H573/H563, 640 KB) | 324.3 KB | 640.0 KB | 51 % | 315.7 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 373.7 KB | 1016.0 KB | 37 % | 642.3 KB |
+| RAM (STM32H573/H563, 640 KB) | 388.0 KB | 640.0 KB | 61 % | 252.0 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 15.5 | 0.1 |
-| Parameter table | 6.7 | 24.6 |
-| Parameter store (FRAM) | 5.1 | 28.7 |
+| Scan engine, queue, watchdog, diag | 16.4 | 0.1 |
+| Parameter table | 7.6 | 25.7 |
+| Parameter store (FRAM) | 5.3 | 57.2 |
 | Event log / data logger | 14.5 | 6.8 |
 | Alarm manager | 4.5 | 2.9 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 1.7 | 0.1 |
 | Firmware update, signatures, serial | 6.0 | 1.6 |
 | Modbus TCP | 6.0 | 17.5 |
-| Web server + page + logins | 35.0 | 40.4 |
+| Web server + page + logins | 40.6 | 72.9 |
 | HTTPS (tls.c + mbedTLS) | 96.5 | 46.9 |
-| Touch UI + EVE driver | 41.3 | 1.0 |
-| Task layer (FreeRTOS glue) | 2.4 | 51.7 |
+| Touch UI + EVE driver | 51.0 | 2.5 |
+| Task layer (FreeRTOS glue) | 2.5 | 51.7 |
 | Board support (BSP) | 0.9 | 0.5 |
 | lwIP + Ethernet driver | 53.4 | 48.5 |
 | FreeRTOS kernel + heap | 9.8 | 48.8 |
 | ST HAL + startup | 18.5 | 0.0 |
-| Demo application | 1.4 | 0.1 |
-| C library | 25.1 | 0.8 |
-| Other | 0.2 | 0.0 |
+| Application | 2.1 | 0.2 |
+| C library | 27.6 | 0.8 |
+| Other | 2.5 | 0.0 |
 | Main stack (interrupts, start-up) | 0.0 | 1.0 |
+
+## With the VM/MUX application (app_vmmux)
+
+The same build with the real application linked in (`make target APP=...`).
+
+| Resource | Used | Limit | Used % | Free |
+|---|---|---|---|---|
+| Flash | 454.5 KB | 1016.0 KB | 45 % | 561.5 KB |
+| RAM | 435.4 KB | 640.0 KB | 68 % | 204.6 KB |
+
+The application itself: 72.8 KB of flash, 47.1 KB of RAM (its tags, timers and tables).
+
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
 "FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
 shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
 (web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
 about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
-11 KB of RAM (the larger pool, the client context and buffers).
+11 KB of RAM (the larger pool, the client context and buffers). The 128 KB FRAM map (D6)
+added about 60 KB of RAM: the store's working copy of a 40 KB settings slot and the web
+server's buffer, which holds a whole backup file for restore.
 
 ## Still to come (estimates, update when built)
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
 | Application alarm table (the ~50 alarms of 70_alarm_map) | ~2.5 | 0 | 24 bytes of constants each; RAM per alarm is already reserved (96 slots) |
-| Translated VM/MUX application | **unknown** | **unknown** | retained data alone is 12.5 KB; size it as soon as the Stage 4 code compiles together |
 
 ## Other non-volatile memory
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC256V, 32 KB) | 32 KB | user image: the application's estimated 12.5 KB plus 0.8 KB of platform settings (alarm actions 256 B, relays, mail set-up 0.45 KB) = 13.3 KB of 14.5 KB per copy (92 %), factory 1 KB, log pointer, boot record, HTTPS key record and firmware update history 848 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
+| FRAM (MB85RC1MT, 128 KB; D6, Gary 20 Oct) | 128 KB | user image: the VM/MUX application's 13.4 KB including the platform settings, of 40 KB per copy (34 %); factory 4 KB; log pointer, boot record, HTTPS key record and firmware update history 848 B | the 32 KB breakout (MB85RC256V) still fits the application (90 % per copy) with PLAT_FRAM_SIZE=32768u; the driver refuses a part smaller than the build's map |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |

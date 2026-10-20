@@ -8,7 +8,7 @@ Keep it current; tick items off at schematic review.
 | # | Item | Why the firmware needs it | Status |
 |---|---|---|---|
 | H1 | **RTC backup supply on VBAT** (coin cell, e.g. CR2032 with a holder, or a supercap sized for the longest expected outage) and a **32.768 kHz LSE crystal** with load capacitors per ST AN2867 | The clock (D22) must survive power cuts: CEMS records, alarms and the event log are time-stamped. Without VBAT every power-up starts "clock not set" until someone, the PLC or the time server sets it | **Added (Gary, 20 Oct)** |
-| H2 | FRAM for settings and calibration, I2C (or SPI), on its own bus or with pull-ups checked | Parameter store (D6). Size to be chosen once the translated application's data is known; the firmware supports 32 KB and 128 KB parts by one setting. Prototype: the existing 32 KB MB85RC256V breakout | **Open: size decided later (Gary, 20 Oct)** |
+| H2 | FRAM for settings and calibration, I2C (or SPI), on its own bus or with pull-ups checked | Parameter store (D6). 128 KB MB85RC1MT (the application's settings are 13.4 KB per copy; firmware default). Prototype: the existing 32 KB MB85RC256V breakout, with `PLAT_FRAM_SIZE=32768u` | **128 KB chosen (Gary, 20 Oct)** |
 | H3 | 16 MB (or larger) JEDEC SPI NOR flash on its own chip select | Event log and data logger (D12, D13) | |
 | H4 | Riverdi RVT70HSBNWC00-B on the 20-pin RiBUS FFC: SPI (SCK, MOSI, MISO, CS) + PD_N + INT; 3.3 V supply sized for the display (235 mA plus backlight peak) | Touchscreen (D16, D24). Single-lane SPI is enough (QSPI not needed, D24) | |
 | H5 | Ethernet: RMII PHY (LAN8742A as on the DK), magnetics, RJ45 with LEDs | Modbus TCP, HTTPS, email, SNTP | |
