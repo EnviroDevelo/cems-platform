@@ -29,6 +29,7 @@
 #include "http_api.h"
 #include "http_server.h"
 #include "mail.h"
+#include "plat_clock.h"
 #include "web_auth.h"
 #include "plat_diag.h"
 #include "plat_tasks.h"
@@ -56,10 +57,18 @@ uint32_t bsp_ms(void) {
 }
 uint32_t bsp_cycles(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint32_t)(t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec); }
 uint32_t bsp_cycles_per_us(void) { return 1000; }                      /* "cycles" are ns */
+static long rtc_offset_s;                     /* set clock: an offset on the PC's local time */
 bool bsp_rtc_read(bsp_rtc_t *r) {
-    time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+    time_t now = time(NULL) + rtc_offset_s; struct tm tm; localtime_r(&now, &tm);
     *r = (bsp_rtc_t){ (uint16_t)(tm.tm_year + 1900), (uint8_t)(tm.tm_mon + 1), (uint8_t)tm.tm_mday,
                       (uint8_t)tm.tm_hour, (uint8_t)tm.tm_min, (uint8_t)tm.tm_sec, (uint8_t)(tm.tm_wday == 0 ? 7 : tm.tm_wday) };
+    return true;
+}
+bool bsp_rtc_write(const bsp_rtc_t *t) {
+    time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+    uint32_t pc = plat_unix_from_civil((unsigned)tm.tm_year + 1900u, (unsigned)tm.tm_mon + 1u, (unsigned)tm.tm_mday,
+                                       (unsigned)tm.tm_hour, (unsigned)tm.tm_min, (unsigned)tm.tm_sec);
+    rtc_offset_s = (long)plat_unix_from_civil(t->year, t->month, t->day, t->hours, t->minutes, t->seconds) - (long)pc;
     return true;
 }
 void bsp_io_read(plat_io_in_t *in) { in->di = sim_di; }
@@ -199,6 +208,11 @@ static void *store_thread(void *a) {
     return NULL;
 }
 static void *modbus_thread(void *a) { (void)a; while (running) mbtcp_poll(&mbs, 100); return NULL; }
+static void *sntp_thread(void *a) {
+    (void)a;
+    while (running) { struct timespec t = { 0, 200000000L }; nanosleep(&t, NULL); sntp_service(bsp_ms()); }
+    return NULL;
+}
 static void release_web(void) { http_drop_kept(&hs); }
 static void *http_thread(void *a)   { (void)a; while (running) { http_poll(&hs, 50); http_poll(&hr, 50); mail_service(bsp_ms(), NULL, release_web); } return NULL; }
 /* stand-in for the touchscreen: "remote", "local", "set <id> <value>" on stdin */
@@ -233,6 +247,7 @@ int main(int argc, char **argv) {
     if (argc > 3) fram_path = argv[3];
     if (argc > 4) nor_path = argv[4];
     snprintf(fw_path, sizeof fw_path, "%.*sfw.bin", (int)(strlen(nor_path) > 7 ? strlen(nor_path) - 7 : 0), nor_path);
+    if (getenv("CEMS_NTP_PORT")) sntp_port = (uint16_t)atoi(getenv("CEMS_NTP_PORT"));
     if (getenv("CEMS_MAIL_RETRY_MS")) mail_retry_ms = (uint32_t)atoi(getenv("CEMS_MAIL_RETRY_MS"));
     if (getenv("CEMS_FW_TRIAL_MS")) fw_trial_ms = (uint32_t)atoi(getenv("CEMS_FW_TRIAL_MS"));
     const char *fwver = getenv("CEMS_FW_VERSION");
@@ -291,14 +306,16 @@ int main(int argc, char **argv) {
     fprintf(stderr, "netsim: Modbus TCP on %u, web on https://127.0.0.1:%u/ (http on the next port redirects), store status 0x%04x\n",
             mport, hport, param_store_status());
 
-    pthread_t th[5];
+    pthread_t th[6];
     pthread_create(&th[4], NULL, console_thread, NULL);
     pthread_detach(th[4]);
     pthread_create(&th[0], NULL, scan_thread, NULL);
     pthread_create(&th[1], NULL, store_thread, NULL);
     pthread_create(&th[2], NULL, modbus_thread, NULL);
     pthread_create(&th[3], NULL, http_thread, NULL);
+    pthread_create(&th[5], NULL, sntp_thread, NULL);
     for (int k = 0; k < 4; ++k) pthread_join(th[k], NULL);
+    pthread_join(th[5], NULL);
     param_store_poll(bsp_ms() + 5000); param_store_scan_service(); param_store_poll(bsp_ms() + 5000);   /* last save */
     plat_log_poll(bsp_ms());
     scan_stats_t ss = scan_stats(&plat_scan);

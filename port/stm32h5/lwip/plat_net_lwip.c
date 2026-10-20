@@ -14,6 +14,7 @@
  *    every 30 s and on cable reconnect. After that, a device that later claims our
  *    address is detected too: the address is defended, kept, and the alarm raised.
  *    DHCP leases get the same check inside lwIP's DHCP client (declined if in use). */
+#include "plat_clock.h"
 #include <math.h>
 #include "lwip/tcpip.h"
 #include "lwip/netifapi.h"
@@ -171,6 +172,7 @@ void plat_net_task_body(void) {
         if (conflict && bound && t - seen_t >= 60000u) conflict = false;   /* in use and no claim for 60 s: clear */
         link_was = link;
         publish_status(cfg.dhcp, &was);
+        if (link && (bound || cfg.dhcp)) sntp_service(bsp_ms());   /* site time server, if one is set */
         vTaskDelay(pdMS_TO_TICKS(250));
     }
 }

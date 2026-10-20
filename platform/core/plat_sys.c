@@ -4,6 +4,7 @@
 #include "param_store.h"
 #include "plat_log.h"
 #include "plat_alarm.h"
+#include "plat_clock.h"
 
 static int sys_apply(const plat_cmd_t *c) {
     param_err_t e = param_apply(c);
@@ -15,6 +16,7 @@ static void sys_pre_logic(uint32_t now_ms) {
     param_blob_drain();                /* queued block writes (text, buffers, arrays) */
     param_scan_service(now_ms);        /* remote-link watchdog: the logic sees it this scan */
     param_store_scan_service();        /* snapshot for the store task, or apply an import */
+    plat_clock_scan();                 /* a requested clock setting (read at the next scan) */
     plat_log_scan(now_ms);             /* data-log intervals, clock-change events */
     alarm_scan(now_ms);                /* delays and states; conditions set by last scan's logic */
 }

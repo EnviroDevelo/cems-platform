@@ -35,6 +35,7 @@ uint32_t bsp_ms(void);                   /* free-running ms, wraps at 2^32   */
 uint32_t bsp_cycles(void);               /* free-running CPU cycle count, wraps; differences only */
 uint32_t bsp_cycles_per_us(void);        /* e.g. 250 at 250 MHz */
 bool     bsp_rtc_read(bsp_rtc_t *t);     /* false if the RTC is not set/valid */
+bool     bsp_rtc_write(const bsp_rtc_t *t);   /* set the calendar (scan task only, via plat_clock); false on failure */
 void     bsp_io_read(plat_io_in_t *in);
 void     bsp_io_write(const plat_io_out_t *out);
 void     bsp_io_safe_state(void);        /* all outputs to their defined safe state */

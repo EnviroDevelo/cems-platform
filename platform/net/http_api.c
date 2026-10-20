@@ -14,6 +14,7 @@
 #include "tls.h"
 #include "plat_alarm.h"
 #include "mail.h"
+#include "plat_clock.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -770,6 +771,48 @@ static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- clock ---------------- */
+static void get_time(http_out_t *o) {
+    uint32_t t;
+    bool set = plat_clock_now(&t);
+    char b[32];
+    log_fmt_time(b, sizeof b, t, true);
+    sntp_status_t s;
+    sntp_status(&s);
+    plat_val_t v;
+    uint32_t ip = param_read(PARAM_ID_SNTP_SERVER, &v) ? v.u : 0;
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"set\":"); json_bool(o, set);
+    out_str(o, ",\"unix\":"); json_uint(o, t);
+    out_str(o, ",\"text\":"); json_str(o, set ? b : "");
+    out_str(o, ",\"utc_offset_min\":"); json_int(o, plat_clock_utc_offset_s() / 60);
+    out_str(o, ",\"sntp\":{\"on\":"); json_bool(o, ip != 0);
+    out_str(o, ",\"last_ok_s_ago\":"); if (s.last_ok_ms) json_uint(o, (bsp_ms() - s.last_ok_ms) / 1000u); else out_str(o, "null");
+    out_str(o, ",\"diff_s\":"); json_int(o, s.last_diff_s);
+    out_str(o, ",\"stratum\":"); json_uint(o, s.stratum);
+    out_str(o, ",\"steps\":"); json_uint(o, s.steps);
+    out_str(o, ",\"tries\":"); json_uint(o, s.tries);
+    out_str(o, ",\"error\":"); json_str(o, s.error);
+    out_str(o, "}}");
+}
+
+/* t=<local seconds since 1970> sets the clock (admin); sync=1 asks the time server now */
+static void post_time(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    char v[16] = "";
+    if (form_get((const char *)r->body, r->body_len, "sync", v, sizeof v)) {
+        plat_val_t pv;
+        if (!param_read(PARAM_ID_SNTP_SERVER, &pv) || !pv.u) { json_error(o, 409, "no time server set", -1); return; }
+        sntp_request_now();
+    } else {
+        if (!form_get((const char *)r->body, r->body_len, "t", v, sizeof v)) { json_error(o, 400, "t", -1); return; }
+        char *e; unsigned long t = strtoul(v, &e, 10);
+        if (*e || !v[0] || plat_clock_request((uint32_t)t, PLAT_SRC_WEB, lvl, "web") != 0) { json_error(o, 400, "range", -1); return; }
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 /* ---------------- alarm email ---------------- */
 static void hex32(http_out_t *o, const uint8_t *b) {
     char h[96];
@@ -903,6 +946,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/alarms")) get_alarms(o);
     else if (get && !strcmp(r->path, "/api/alarms/config")) get_alarm_config(o);
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
+    else if (get && !strcmp(r->path, "/api/time")) get_time(o);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
@@ -921,6 +965,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/fw/activate")) post_fw_activate(o, lvl);
         else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
+        else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }

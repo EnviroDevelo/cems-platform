@@ -33,7 +33,7 @@ typedef struct {
     unsigned        n_home;
 } ui_cfg_t;
 
-enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG };
+enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG, UI_CLOCK };
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

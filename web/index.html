@@ -151,6 +151,29 @@ td.c{text-align:center}
     <span class="err" id="acterr"></span>
   </section>
 
+  <section id="clocksec" style="display:none">
+    <h2>Clock</h2>
+    <p class="note">The instrument keeps the site's local standard time (no daylight saving), so records never jump.
+      Every change of the clock is in the event log.</p>
+    <p id="clocknow" style="font-size:16px">-</p>
+    <div class="row">
+      <button id="clockpc">Set to this computer's time</button>
+      <input id="clockin" type="datetime-local" step="1">
+      <button class="ghost" id="clockset">Set to this time</button>
+      <span class="err" id="clockerr"></span>
+    </div>
+    <div class="grid" style="margin-top:8px">
+      <label>Time server (SNTP) IP, empty = none <input id="t83" placeholder="192.168.1.10"></label>
+      <label>Ask every (min) <input id="t84" type="number" min="1" max="1440"></label>
+      <label>Local time is UTC + (minutes) <input id="t82" type="number" min="-720" max="840"></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="clocksave">Save</button>
+      <button class="ghost" id="clocksync">Sync now</button>
+    </div>
+    <p class="note" id="sntpstat"></p>
+  </section>
+
   <section id="mailsec" style="display:none">
     <h2>Alarm email</h2>
     <p class="note">Emails go to the site's mail server, addressed by IP. With email off the instrument makes no
@@ -309,7 +332,8 @@ async function refreshInfo() {
     $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
     $("admin").style.display = level >= 2 ? "block" : "none";
     const adm = level >= 2;
-    if (adm && $("actions").style.display === "none") { loadActions(); loadMail(); }
+    if (adm && $("actions").style.display === "none") { loadActions(); loadMail(); loadClock(); }
+    $("clocksec").style.display = adm ? "block" : "none";
     $("actions").style.display = adm ? "block" : "none";
     $("mailsec").style.display = adm ? "block" : "none";
     if (level >= 2) refreshFw();
@@ -475,6 +499,59 @@ $("mailtest").onclick = async () => {
 };
 $("mailtrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 1 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
 $("mailuntrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 0 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
+
+/* ---- clock ---- */
+const pad = n => String(n).padStart(2, "0");
+async function refreshClock() {
+  try {
+    const t = await api("/api/time");
+    $("clocknow").textContent = t.set ? `Instrument clock: ${t.text} (UTC${t.utc_offset_min >= 0 ? "+" : "-"}${pad(Math.floor(Math.abs(t.utc_offset_min) / 60))}:${pad(Math.abs(t.utc_offset_min) % 60)})`
+                                      : "Instrument clock: NOT SET (records use time since start-up)";
+    const s = t.sntp;
+    $("sntpstat").textContent = !s.on ? "No time server: the clock is set by hand, from the PLC (parameter 85) or from this page."
+      : s.error ? `Time server: ${s.error} (tries ${s.tries}).`
+      : s.last_ok_s_ago === null ? "Time server: waiting for the first answer."
+      : `Time server: answered ${s.last_ok_s_ago} s ago (stratum ${s.stratum}); the clock was ${Math.abs(s.diff_s)} s ${s.diff_s > 0 ? "slow" : s.diff_s < 0 ? "fast" : "right"}; ${s.steps} correction(s).`;
+  } catch (e) { }
+}
+async function loadClock() {
+  try {
+    const j = await api("/api/values?ids=82,83,84");
+    const ip = j.v[83];
+    $("t83").value = ip ? [24, 16, 8, 0].map(s => (ip >>> s) & 255).join(".") : "";
+    $("t84").value = j.v[84]; $("t82").value = j.v[82];
+    const d = new Date(); $("clockin").value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  } catch (e) { }
+  refreshClock();
+}
+/* local wall-clock components, sent as seconds since 1970 as if they were UTC (the clock keeps local time) */
+const localUnix = d => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()) / 1000);
+async function setClock(t) {
+  $("clockerr").textContent = "";
+  try { await api("/api/time", form({ t })); $("clockerr").textContent = "Set"; setTimeout(refreshClock, 600); }
+  catch (e) { $("clockerr").textContent = explain(e); }
+}
+$("clockpc").onclick = () => setClock(localUnix(new Date()));
+$("clockset").onclick = () => {
+  const m = /^(\d+)-(\d+)-(\d+)T(\d+):(\d+)(?::(\d+))?/.exec($("clockin").value);
+  if (!m) { $("clockerr").textContent = "Enter a date and time"; return; }
+  setClock(Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) / 1000));
+};
+$("clocksave").onclick = async () => {
+  $("clockerr").textContent = "";
+  try {
+    await api("/api/write", form({ id: 83, v: $("t83").value.trim() || "0" }));
+    await api("/api/write", form({ id: 84, v: $("t84").value }));
+    await api("/api/write", form({ id: 82, v: $("t82").value }));
+    $("clockerr").textContent = "Saved";
+  } catch (e) { $("clockerr").textContent = explain(e); }
+  loadClock();
+};
+$("clocksync").onclick = async () => {
+  try { await api("/api/time", form({ sync: 1 })); $("clockerr").textContent = "Asking..."; setTimeout(refreshClock, 2500); }
+  catch (e) { $("clockerr").textContent = e.message; }
+};
+setInterval(() => { if ($("clocksec").style.display !== "none") refreshClock(); }, 5000);
 
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 

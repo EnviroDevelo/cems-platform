@@ -30,6 +30,8 @@ bool bsp_rtc_read(bsp_rtc_t *t) {
     return true;
 }
 
+bool bsp_rtc_write(const bsp_rtc_t *t) { bsp_host.rtc = *t; bsp_host.rtc_valid = true; bsp_host.rtc_writes++; return true; }
+
 void bsp_io_read(plat_io_in_t *in) { *in = bsp_host.in; }
 void bsp_io_write(const plat_io_out_t *out) { bsp_host.out = *out; bsp_host.io_writes++; }
 void bsp_io_safe_state(void) { memset(&bsp_host.out, 0, sizeof bsp_host.out); bsp_host.safe_states++; }

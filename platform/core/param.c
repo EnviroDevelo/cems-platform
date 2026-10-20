@@ -2,6 +2,7 @@
 #include <math.h>
 #include <string.h>
 #include "param.h"
+#include "plat_clock.h"
 #include "plat_port.h"
 #include "plat_seqlock.h"
 
@@ -32,6 +33,10 @@ uint32_t        plat_log_status_word;     /* written by plat_log */
 
 #define NET (PF_PERSIST | PF_ANY_MODE | PF_NO_MODBUS)
 static uint16_t  p_alarm_ack;
+static int16_t   p_utc_off;
+static uint32_t  p_sntp_ip, p_clock_set;
+static uint16_t  p_sntp_min;
+extern uint32_t  plat_clock_unix;                                           /* plat_clock.c */
 static bool      p_mail_en, p_mail_on_clear;
 static uint32_t  p_mail_ip;
 static uint16_t  p_mail_port, p_mail_gap;
@@ -88,6 +93,11 @@ static const param_def_t plat_defs[] = {
     PARAM_BIT_D(PARAM_ID_MAIL_ON_CLEAR, "mail_on_clear", p_mail_on_clear, true, PLAT_LVL_ADMIN, MAILF),
     PARAM_UINT(PARAM_ID_MAIL_GAP_S, "mail_gap", p_mail_gap, CT_U16, 0, 3600, 10, PLAT_LVL_ADMIN, MAILF, "s"),
     PARAM_TEXT(PARAM_ID_SITE_NAME, "site_name", p_site, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
+    PARAM_INT (PARAM_ID_TIME_UTC_OFFSET, "time_utc_offset", p_utc_off, CT_I16, -720, 840, 0, PLAT_LVL_ADMIN, NET, "min"),
+    PARAM_UINT(PARAM_ID_SNTP_SERVER, "sntp_server_ip", p_sntp_ip, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_UINT(PARAM_ID_SNTP_INTERVAL, "sntp_interval", p_sntp_min, CT_U16, 1, 1440, 60, PLAT_LVL_ADMIN, NET, "min"),
+    PARAM_UINT(PARAM_ID_CLOCK_SET, "clock_set", p_clock_set, CT_U32, 0, PLAT_CLOCK_MAX_UNIX, 0, PLAT_LVL_OPERATOR, 0, "s"),
+    PARAM_UINT(PARAM_ID_CLOCK_UNIX, "clock_unix", plat_clock_unix, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
     PARAM_UINT(PARAM_ID_LOG_INTERVAL_S, "log_interval", plat_log_interval_s, CT_U16, 0, 3600, 60,
                PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE, "s"),
     PARAM_UINT(PARAM_ID_LOG_STATUS, "log_status", plat_log_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
@@ -360,6 +370,12 @@ param_err_t param_apply(const plat_cmd_t *c) {
             else param_set_defaults(PARAM_USER_ONLY);
         }
         p_restore = false;
+        return PERR_OK;
+    }
+    if (d->id == PARAM_ID_CLOCK_SET) {                 /* momentary: hand it to the clock (logged there) */
+        static const char *const how[] = { "touchscreen", "web", "modbus", "internal" };
+        if (n.u && plat_clock_request(n.u, c->src, c->level, how[c->src & 3u]) != 0) { p_clock_set = 0; return PERR_RANGE; }
+        p_clock_set = 0;
         return PERR_OK;
     }
     if (d->id == PARAM_ID_ALARM_ACK) {                 /* momentary command, logged by the alarm manager */

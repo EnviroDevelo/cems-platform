@@ -30,6 +30,7 @@ runs on top of it.
 | EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
 | Firmware image signing (D14): ECDSA P-256 signature over the image header (which holds the payload's SHA-256); key tool | `platform/net/fw_sig.c`, `platform/core/fw_pubkey.c` (generated), `tools/fwkey.py`, `tools/mkfwimage.py --key` | Done; host-tested (keys made in the test: product key accepted; unsigned, other-key, edited-header and edited-payload images refused) and end to end through netsim with a key made by `fwkey.py`. Compiled and linked for the H5 |
 | HTTPS (D11): own key and certificate, TLS 1.2 server, session tickets, port-80 redirect | `tls.h`, `platform/net/tls.c`, `tls_config.h`, `third_party/mbedtls` | Done; host-tested, handshakes against Python's TLS client (resumption, certificate trust by IP, redirect) and Chromium. Compiled and linked for the H5 |
+| Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
@@ -443,6 +444,27 @@ The email: subject `[<unit name>] ALARM: <first alarm> (and more)`, one line per
 raise/clear with time, text, severity, name and ID, then everything active now, the
 serial number and the unit's https:// link.
 
+## 5f. Clock (D22)
+
+The RTC holds the site's **local standard time** with no daylight saving: a CEMS record
+must not jump an hour twice a year, and the regulator's reports are usually in local
+standard time. Parameter 82 (`time_utc_offset`, minutes) says how far that is from UTC;
+SNTP and email Date headers use it.
+
+| Way | Who | Notes |
+|---|---|---|
+| Touchscreen, System > Set clock | admin | digits for year, month, day, hour, minute (and seconds) |
+| Web page, Clock | admin | "Set to this computer's time", or a typed date and time |
+| Modbus / any parameter writer: parameter 85 `clock_set` | operator, REMOTE mode for the PLC | local seconds since 1970; how a DAHS keeps the clock in step. Parameter 86 `clock_unix` reads the clock |
+| SNTP from the site's time server (parameter 83, IP; 84 interval, default 60 min) | automatic | RFC 4330 client, one packet each way; the answer must echo our request; unsynchronised servers (stratum 0/16, leap indicator 3) are ignored; the clock is only stepped when 2 s or more out, so the log is not filled with tiny corrections; 60 s retry after a failure |
+
+Every change goes to the event log once, with its source and login level (the
+logger's own "clock stepped" detection stays for unexplained jumps). A request is
+applied by the scan task, between scans, so no scan sees a half-set clock. The
+logger closes its averaging interval at a step, as before.
+
+The product board needs a VBAT supply for the RTC (`docs/CUBEMX_SETUP.md`).
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -468,6 +490,7 @@ work before integration.
 | Check | Result |
 |---|---|
 | Alarm email end to end (`tests/integration/mail_test.py`): netsim against a mail server written in the test (plain, STARTTLS, TLS; certificates from openssl, signed with SHA-384) | 23 checks: test email to two recipients; an alarm emailed with its line and what is active, its clear emailed, two alarms in one email; a login refused on plain SMTP; STARTTLS with an RSA-2048 certificate and AUTH PLAIN; the fingerprint reported and pinned; a changed certificate refused before logging in, three tries, NOTIFY_FAIL; TLS with an ECDSA certificate, NOTIFY_FAIL cleared; the password unreadable and absent from the backup file; "nothing" sends nothing; sends and failures in the event log; TLS pool within its 44 KB (also run with RSA-4096: 38 KB) |
+| Clock (`tests/test_clock.c`, `tests/test_ui.c`; `tests/integration/clock_test.py` against a test SNTP server) | Range refused; applied by the scan only, once; calendar and weekday (a leap day, a Sunday); through parameter 85 from Modbus in REMOTE; the logger told not to log the step twice; UTC offset. Touchscreen: Set clock, incomplete entry refused, set. End to end (14 checks): login and admin level needed, a set from the web, SNTP finds the clock an hour fast and steps it, no step when in step, an unsynchronised server ignored, no answer reported, following the server back 30 s, each step logged once with its source |
 | Alarm manager (`make test`, `tests/test_alarm.c`) | Table errors; raise, acknowledge (through the parameter, any mode, no login), clear; cleared-but-unacknowledged kept; on- and off-delays with restarts; the delay parameter; latch held until acknowledged, or cleared later if acknowledged while active; status alarms; suppression at once and delays again after; range deadband on both sides and a value sitting on a limit raising once; UTF-16 descriptions; order and paging; acknowledge all; the watchdog-reset and IP-conflict platform alarms; routes: defaults, the user's choice and "nothing", relays in all three modes and fail-safe, overriding the application's output, the common-alarm word |
 | Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 12,155 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
@@ -503,6 +526,7 @@ work before integration.
 | D19 | Alarm acknowledge and power-up | **Agreed (Gary, 20 Oct).** Acknowledging needs no login on the touchscreen (the operator at the instrument, as on the old panel); the web needs a login like every web write; Modbus follows `modbus_write_en`. Alarm states are not kept over a power cut: at power-up every condition is evaluated afresh (with its delays), and the event log keeps the history | An acknowledge changes nothing in the process, so a login would only slow the operator down. Keeping latched, unacknowledged alarms across a power cut is 32 bytes of FRAM if wanted |
 | D20 | Alarm actions | **Gary, 20 Oct: configurable per alarm by the user.** Email, Modbus common alarm, up to 4 relay outputs, or nothing; application defaults, user overrides persisted; email to the site mail server only, login over TLS only, server pinned by certificate fingerprint, password write-only | Sites differ: some have a PLC that polls, some a beacon and horn, some a mail relay, some none of these |
 | D21 | Secrets in backup files | Password hashes and the mail password are never written to a parameter backup file, and a restore never changes them | A backup file gets copied around; with 4-digit PINs the hashes could be brute-forced from it. Restoring settings onto a unit should not change who can log in |
+| D22 | Clock | Local standard time, no daylight saving; UTC offset as a setting; set from the touchscreen and web (admin), the PLC (parameter 85) or SNTP from the site's time server; every change logged once with its source | CEMS records must not jump twice a year; sites seldom have internet, so the time source is the operator, the DAHS or a site server |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout

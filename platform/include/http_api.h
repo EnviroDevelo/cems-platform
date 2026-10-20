@@ -23,6 +23,8 @@
  *   GET  /api/alarms       alarms shown (active or unacknowledged), most urgent first, and counts
  *   GET  /api/alarms/config every alarm with its actions (email, Modbus, relays) and the relay set-up
  *   POST /api/alarms/ack   id=<alarm ID>|all  (any login; logged with the login and source)
+ *   GET  /api/time         the clock (local standard time), UTC offset, SNTP status
+ *   POST /api/time         t=<local seconds since 1970> sets it; sync=1 asks the time server now (admin)
  *   GET  /api/mail         alarm email status: queue, last result, the server's certificate fingerprint, the pin
  *   POST /api/mail/test    send a test email (admin)
  *   POST /api/mail/trust   trust=1 pins the certificate the mail server last presented, trust=0 unpins (admin)

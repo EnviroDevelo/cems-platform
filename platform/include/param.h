@@ -125,6 +125,11 @@ enum {
     PARAM_ID_MAIL_ON_CLEAR    = 79,  /* also email when an alarm clears */
     PARAM_ID_MAIL_GAP_S       = 80,  /* collect alarms this long before sending, so a burst is one email */
     PARAM_ID_SITE_NAME        = 81,  /* the unit's name in emails and on the web page */
+    PARAM_ID_TIME_UTC_OFFSET  = 82,  /* minutes the clock (local standard time) is ahead of UTC */
+    PARAM_ID_SNTP_SERVER      = 83,  /* site time server IPv4 (0 = no SNTP) */
+    PARAM_ID_SNTP_INTERVAL    = 84,  /* minutes between SNTP queries */
+    PARAM_ID_CLOCK_SET        = 85,  /* write local seconds since 1970 to set the clock (logged; 0 = nothing) */
+    PARAM_ID_CLOCK_UNIX       = 86,  /* RO: the clock, local seconds since 1970 (0 = never set) */
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */

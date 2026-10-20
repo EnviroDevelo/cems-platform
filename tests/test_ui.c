@@ -21,6 +21,7 @@
 #include "ul_system.h"
 #include "log_csv.h"
 #include "plat_alarm.h"
+#include "plat_clock.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -49,7 +50,7 @@ static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = "0.5.0", 
 static uint32_t now = 100000;
 static void scan(void) {
     plat_cmd_t c; while (plat_cmdq_pop(&q, &c)) (void)param_apply(&c);
-    param_blob_drain(); alarm_scan(now); param_publish();
+    param_blob_drain(); plat_clock_scan(); alarm_scan(now); param_publish();
 }
 static void frame(void) { now += 20; plat_log_poll(now); ui_draw(&eve, now); }
 static void press(uint8_t tag) { ui_input(tag, now); now += 60; ui_input(0, now); scan(); plat_log_poll(now); frame(); }
@@ -283,6 +284,17 @@ static void t_ui(void) {
     fw_service(now, true);
     CHECK_EQ(fs.swaps, swaps + 1);
     CHECK(shows("80 %"));
+    /* set the clock from the System screen (factory login: admin or above) */
+    CHECK(tap("Set clock"));
+    CHECK_EQ(ui_screen(), UI_CLOCK);
+    CHECK(tap("Clear")); type("2026110515"); CHECK(tap("OK"));
+    CHECK(strstr(ui_toast(), "Enter year") != NULL);                         /* minutes missing */
+    type("30"); CHECK(shows("2026-11-05 15:30:__"));
+    dump("clock");
+    CHECK(tap("OK"));
+    CHECK(!strcmp(ui_toast(), "Clock set")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    CHECK_EQ(bsp_host.rtc.year, 2026); CHECK_EQ(bsp_host.rtc.month, 11); CHECK_EQ(bsp_host.rtc.day, 5);
+    CHECK_EQ(bsp_host.rtc.hours, 15); CHECK_EQ(bsp_host.rtc.minutes, 30); CHECK_EQ(bsp_host.rtc.dow_iso, 4);
     CHECK(tap("-")); CHECK_EQ(ui_brightness(now), 60);
 
     /* lockout after five wrong passwords */

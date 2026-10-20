@@ -14,7 +14,9 @@ void     bsp_init(void) { }
 uint32_t bsp_ms(void) { return (uint32_t)xTaskGetTickCount(); }   /* 1 kHz tick */
 uint32_t bsp_cycles(void) { return 0; }
 uint32_t bsp_cycles_per_us(void) { return 1; }
-bool bsp_rtc_read(bsp_rtc_t *t) { *t = (bsp_rtc_t){ 2026, 10, 19, 12, 0, 0, 1 }; return true; }
+static bsp_rtc_t rtc = { 2026, 10, 19, 12, 0, 0, 1 };
+bool bsp_rtc_read(bsp_rtc_t *t) { *t = rtc; return true; }
+bool bsp_rtc_write(const bsp_rtc_t *t) { rtc = *t; return true; }
 void bsp_io_read(plat_io_in_t *in) { in->di = sim_di; }
 void bsp_io_write(const plat_io_out_t *out) { sim_out = *out; }
 void bsp_io_safe_state(void) { sim_out = (plat_io_out_t){ 0 }; }

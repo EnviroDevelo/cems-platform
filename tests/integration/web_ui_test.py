@@ -100,6 +100,11 @@ async def run(unit):
         await pg.locator("#actions").screenshot(path=os.path.join(ROOT, "build", "web_alarm_actions.png"))
         await pg.locator("#mailsec").screenshot(path=os.path.join(ROOT, "build", "web_mail.png"))
         print("alarm actions:", relay_ok, "| mail form:", mail_ok); ok &= relay_ok and mail_ok
+        await pg.wait_for_function("document.getElementById('clocknow').textContent.startsWith('Instrument clock: 2')", timeout=6000)
+        await pg.click("#clockpc")
+        await pg.wait_for_function("document.getElementById('clockerr').textContent === 'Set'", timeout=5000)
+        await pg.locator("#clocksec").screenshot(path=os.path.join(ROOT, "build", "web_clock.png"))
+        clk = await pg.inner_text("#clocknow"); print("clock:", clk)
         # connection loss: stop the unit, the page must say so and grey out
         unit.send_signal(signal.SIGTERM); unit.wait(timeout=10)
         await pg.wait_for_timeout(2500)

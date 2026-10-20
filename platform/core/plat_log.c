@@ -205,6 +205,7 @@ static struct {
     uint32_t iv;                 /* interval the current schema was written for; 0xFFFFFFFF = none yet */
 } S;
 static volatile bool scan_no_clock;
+uint32_t plat_log_expected_time;          /* plat_clock.c: a requested step, already logged with its source */
 
 void plat_log_put(unsigned ch, float v, uint8_t q) {
     if (ch >= g_nch) return;
@@ -298,7 +299,9 @@ void plat_log_scan(uint32_t now_ms) {
         /* clock set or stepped? (a late scan may legitimately move it by more than 1 s) */
         uint32_t el = (now_ms - S.last_ms + 999u) / 1000u;
         bool jump = set != S.last_set || t < S.last_t || t > S.last_t + el + 2u;
-        if (jump && set) {
+        bool expected = plat_log_expected_time && t + 2u >= plat_log_expected_time && t <= plat_log_expected_time + 2u;
+        if (jump) plat_log_expected_time = 0;
+        if (jump && set && !expected) {
             plat_log_event(LOG_EV_TIME_SET, PLAT_SRC_INTERNAL, 0, 0,
                            S.last_set ? (double)S.last_t : NAN, (double)t, NULL);
         }

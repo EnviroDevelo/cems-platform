@@ -306,6 +306,21 @@ uint32_t bsp_cycles_per_us(void) {
 }
 
 /* ---------------- RTC ---------------- */
+bool bsp_rtc_write(const bsp_rtc_t *t) {
+#ifdef HAL_RTC_MODULE_ENABLED
+    if (t->year < 2000u || t->year > 2099u) return false;
+    RTC_TimeTypeDef tm = { 0 };
+    RTC_DateTypeDef dt = { 0 };
+    tm.Hours = t->hours; tm.Minutes = t->minutes; tm.Seconds = t->seconds;
+    tm.DayLightSaving = RTC_DAYLIGHTSAVING_NONE; tm.StoreOperation = RTC_STOREOPERATION_RESET;
+    dt.Year = (uint8_t)(t->year - 2000u); dt.Month = t->month; dt.Date = t->day; dt.WeekDay = t->dow_iso;
+    return HAL_RTC_SetTime(&hrtc, &tm, RTC_FORMAT_BIN) == HAL_OK && HAL_RTC_SetDate(&hrtc, &dt, RTC_FORMAT_BIN) == HAL_OK;
+#else
+    (void)t;
+    return false;
+#endif
+}
+
 bool bsp_rtc_read(bsp_rtc_t *t) {
 #ifdef HAL_RTC_MODULE_ENABLED
     if ((RTC->ICSR & RTC_ICSR_INITS) == 0u) return false;   /* calendar never set */

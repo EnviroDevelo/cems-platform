@@ -20,6 +20,7 @@ MODULES = [  # (module, object-name patterns)
     ("Event log / data logger", r"plat_log|nor_|log_csv"),
     ("Alarm manager", r"plat_alarm"),
     ("Alarm email (SMTP client)", r"^mail\.o"),
+    ("Clock + SNTP", r"plat_clock|^sntp\.o"),
     ("Firmware update + signature check", r"fw_update|fw_flash|fw_sig|fw_pubkey"),
     ("Modbus TCP", r"modbus|mbtcp"),
     ("Web server + page + logins", r"http_|web_|plat_sha256|plat_net_tasks"),

@@ -9,6 +9,7 @@
 #include "plat_port.h"
 #include "plat_cmdq.h"
 #include "param.h"
+#include "plat_clock.h"
 #include "tls.h"
 #include "ul_system.h"
 #include "mbedtls/base64.h"
@@ -222,7 +223,10 @@ static bool message(const item_t *it, unsigned n, bool test, const char *from, c
         static const char *const mn[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
         unsigned y, mo, d, h, mi, s;
         plat_civil_from_unix(nu, &y, &mo, &d, &h, &mi, &s);
-        snprintf(b, sizeof b, "Date: %s, %u %s %u %02u:%02u:%02u -0000", dn[(nu / 86400u) % 7u], d, mn[(mo - 1u) % 12u], y, h, mi, s);
+        int32_t off = plat_clock_utc_offset_s() / 60;
+        unsigned ao = (unsigned)(off < 0 ? -off : off);
+        snprintf(b, sizeof b, "Date: %s, %u %s %u %02u:%02u:%02u %c%02u%02u", dn[(nu / 86400u) % 7u], d, mn[(mo - 1u) % 12u], y,
+                 h, mi, s, off < 0 ? '-' : '+', ao / 60u, ao % 60u);
         if (!line(b)) return false;
     }
     if (test) {

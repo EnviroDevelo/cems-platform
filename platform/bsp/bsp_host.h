@@ -9,6 +9,7 @@ typedef struct {
     uint32_t cycles_per_us;
     bool     rtc_valid;
     bsp_rtc_t rtc;               /* returned as-is by bsp_rtc_read */
+    uint32_t rtc_writes;
     plat_io_in_t  in;            /* returned by bsp_io_read */
     plat_io_out_t out;           /* last bsp_io_write */
     uint32_t io_writes;

@@ -17,6 +17,7 @@
 #include "ul_system.h"
 #include "tls.h"
 #include "plat_alarm.h"
+#include "plat_clock.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -51,7 +52,7 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
-    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK,
+    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK,
     T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
     T_ROW0 = 200            /* .. T_ROW0 + ROWS - 1 */
 };
@@ -455,6 +456,26 @@ static void tap(uint8_t t, uint32_t now) {
             else toast(false, now, t == T_ACK_ALL ? "All alarms acknowledged" : "Acknowledged");
         }
         break;
+    case UI_CLOCK:
+        if (t == T_CANCEL) goto_scr(UI_SYSTEM);
+        else if (t == T_BKSP) { size_t n = strlen(U.entry); if (n) U.entry[n - 1] = 0; }
+        else if (t == T_CLEAR) U.entry[0] = 0;
+        else if (t >= '0' && t <= '9') { if (strlen(U.entry) < 14) edit_key(t); }
+        else if (t == T_OK) {
+            unsigned v[6] = { 0 }, len[6] = { 4, 2, 2, 2, 2, 2 };
+            size_t n = strlen(U.entry), p = 0;
+            for (int k = 0; k < 6; ++k) for (unsigned j = 0; j < len[k]; ++j, ++p) v[k] = v[k] * 10u + (p < n ? (unsigned)(U.entry[p] - '0') : 0u);
+            static const uint8_t mdays[12] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+            if (n < 12 || v[1] < 1 || v[1] > 12 || v[2] < 1 || v[2] > mdays[v[1] - 1] || v[3] > 23 || v[4] > 59 || v[5] > 59) {
+                toast(true, now, "Enter year, month, day, hour, minute (and seconds)"); break;
+            }
+            uint32_t tt = plat_unix_from_civil(v[0], v[1], v[2], v[3], v[4], v[5]);
+            if (plat_clock_request(tt, PLAT_SRC_LOCAL, U.level, "touchscreen") != 0) { toast(true, now, "Year must be 2020 to 2099"); break; }
+            toast(false, now, "Clock set");
+            goto_scr(UI_SYSTEM);
+        }
+        U.dirty = true;
+        break;
     case UI_ALARM_CFG:
         if (t == T_BACK) goto_scr(UI_ALARMS);
         else if (t == T_PGUP) { U.cfg_first = U.cfg_first >= ROWS ? U.cfg_first - ROWS : 0; U.dirty = true; }
@@ -472,7 +493,17 @@ static void tap(uint8_t t, uint32_t now) {
         }
         break;
     case UI_SYSTEM:
-        if (t == T_FW_ACT) {
+        if (t == T_CLOCK) {
+            if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to set the clock"); break; }
+            uint32_t cur;
+            if (plat_clock_now(&cur)) {
+                unsigned y, mo, d, h, mi, s;
+                plat_civil_from_unix(cur, &y, &mo, &d, &h, &mi, &s);
+                snprintf(U.entry, sizeof U.entry, "%04u%02u%02u%02u%02u%02u", y % 10000u, mo % 100u, d % 100u, h % 100u, mi % 100u, s % 100u);
+            } else U.entry[0] = 0;
+            U.kb = KB_IP;
+            goto_scr(UI_CLOCK);
+        } else if (t == T_FW_ACT) {
             fw_status_t st; fw_status(&st);
             if (U.level < PLAT_LVL_FACTORY) { toast(true, now, "Log in at factory (tech) level to change firmware"); break; }
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
@@ -813,6 +844,25 @@ static void draw_system(uint32_t now) {
     kv(544, BODY_Y + 312, "Log", b);
     snprintf(b, sizeof b, "0x%04lx", (unsigned long)param_store_status());
     kv(544, BODY_Y + 338, "Store status", b);
+    uint32_t ct;
+    if (plat_clock_now(&ct)) log_fmt_time(b, sizeof b, ct, true); else snprintf(b, sizeof b, "NOT SET");
+    kv(544, BODY_Y + 364, "Clock", b);
+    button(T_CLOCK, 868, BODY_Y + 318, 128, 64, "Set clock", C_ACCENT, true);
+}
+
+/* set the clock: digits in the order year, month, day, hour, minute, second */
+static void draw_clock(void) {
+    box(16, BODY_Y, 992, 70, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Set the clock (local standard time)");
+    char shown[24] = "____-__-__ __:__:__";
+    static const uint8_t pos[14] = { 0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18 };
+    for (size_t k = 0; k < strlen(U.entry) && k < 14; ++k) shown[pos[k]] = U.entry[k];
+    color(C_ACCENT); text(560, BODY_Y + 36, F_BIG, OPT_CENTERY, shown);
+    color(C_MUTE); text(32, BODY_Y + 44, F_SMALL, 0, "Type year, month, day, hour, minute, second");
+    int16_t y = BODY_Y + 84;
+    draw_keyboard(y, false);
+    button(T_OK, 664, y, 344, 119, "OK", C_OK, true);
+    button(T_CANCEL, 664, (int16_t)(y + 122), 344, 119, "Cancel", 0x5B6577u, true);
 }
 
 static uint32_t sev_colour(uint8_t s) {
@@ -944,6 +994,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_SYSTEM: draw_system(now); break;
     case UI_ALARMS: draw_alarms(); break;
     case UI_ALARM_CFG: draw_alarm_cfg(); break;
+    case UI_CLOCK: draw_clock(); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {
