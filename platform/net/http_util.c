@@ -6,10 +6,29 @@
 
 void out_init(http_out_t *o, int (*send)(void *, const void *, size_t), void *ctx) {
     o->send = send; o->ctx = ctx; o->n = 0; o->total = 0; o->err = false;
+    o->keep = o->chunked = o->head_done = false;
 }
 void out_flush(http_out_t *o) {
-    if (o->n && !o->err && o->send(o->ctx, o->buf, o->n) != 0) o->err = true;
+    if (o->n && !o->err) {
+        if (o->chunked) {
+            char h[12];
+            int hl = snprintf(h, sizeof h, "%lx\r\n", (unsigned long)o->n);
+            if (o->send(o->ctx, h, (size_t)hl) != 0 || o->send(o->ctx, o->buf, o->n) != 0 ||
+                o->send(o->ctx, "\r\n", 2) != 0) o->err = true;
+        } else if (o->send(o->ctx, o->buf, o->n) != 0) {
+            o->err = true;
+        }
+    }
     o->n = 0;
+}
+void out_head_done(http_out_t *o, bool has_length) {
+    o->head_done = true;
+    if (o->keep && !has_length) { out_flush(o); o->chunked = true; }
+}
+void out_end(http_out_t *o) {
+    out_flush(o);
+    if (o->chunked && !o->err && o->send(o->ctx, "0\r\n\r\n", 5) != 0) o->err = true;
+    o->chunked = false;
 }
 void out_bytes(http_out_t *o, const void *p, size_t n) {
     const char *s = p;

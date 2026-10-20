@@ -243,11 +243,11 @@ def main():
     check(st == 400, "damaged backup refused")
 
     # ---------------- HTTPS ----------------
-    import hashlib, socket
+    import hashlib, socket, http.client
     def tls_conn(session=None):
         raw = socket.create_connection(("127.0.0.1", WEB), timeout=5)
         t = CTX.wrap_socket(raw, server_hostname="127.0.0.1", session=session)
-        t.sendall(b"GET /api/info HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        t.sendall(b"GET /api/info HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         data = b""
         while True:
             chunk = t.recv(4096)
@@ -282,6 +282,31 @@ def main():
         junk = b""
     check(not junk.startswith(b"HTTP/"), "plain HTTP to the HTTPS port gets no page")
     raw.close()
+    # keep-alive: one TLS connection for many polls; a waiting client takes over; POST closes
+    kc = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
+    def kinfo():
+        kc.request("GET", "/api/info"); rr = kc.getresponse(); return json.loads(rr.read())["tls"]["handshakes"]
+    hs0 = kinfo()
+    ok_all = True
+    for k in range(20):
+        kc.request("GET", "/api/values?ids=1"); rr = kc.getresponse(); body = rr.read()
+        ok_all &= rr.status == 200 and rr.getheader("Connection") == "keep-alive" and body.startswith(b'{"t":')
+    hs1 = kinfo()
+    check(ok_all and hs1 == hs0, f"22 requests on one kept connection: no further TLS handshakes ({hs1 - hs0})")
+    kc.request("GET", "/api/log/events.csv"); rr = kc.getresponse(); body = rr.read()
+    check(rr.getheader("Transfer-Encoding") == "chunked" and body.startswith(b"seq,time,event"), "a streamed CSV is chunked on a kept connection")
+    other = Web(); other.json("/api/info")                # another client: the kept connection gives way
+    try:
+        kc.request("GET", "/api/values?ids=1"); rr = kc.getresponse(); rr.read(); gave_way = False
+    except (http.client.RemoteDisconnected, ConnectionError, ssl.SSLError):
+        gave_way = True
+    check(gave_way, "a waiting client closes the kept connection (one connection at a time)")
+    kc.close()
+    kc = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
+    kc.request("POST", "/api/logout", body=b"", headers={"X-CEMS": "1", "Content-Type": "application/x-www-form-urlencoded"})
+    rr = kc.getresponse(); rr.read()
+    check(rr.getheader("Connection") == "close", "after a POST the connection closes")
+    kc.close()
     st, info = web.json("/api/info")
     print(f"   TLS: {info['tls']}")
     check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 44 * 1024, "TLS statistics")

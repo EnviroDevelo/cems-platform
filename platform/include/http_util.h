@@ -14,12 +14,20 @@ typedef struct {
     size_t   n;
     size_t   total;
     bool     err;
+    bool     keep;        /* set by the server: this response may leave the connection open */
+    bool     chunked;     /* body sent as HTTP/1.1 chunks (keep-alive without a known length) */
+    bool     head_done;
 } http_out_t;
 
 void out_init(http_out_t *o, int (*send)(void *, const void *, size_t), void *ctx);
 void out_bytes(http_out_t *o, const void *p, size_t n);
 void out_str(http_out_t *o, const char *s);
 void out_flush(http_out_t *o);
+/* After the header's blank line: sends the header and, for a kept connection without
+ * a Content-Length, switches the body to chunked encoding. */
+void out_head_done(http_out_t *o, bool has_length);
+/* End of the response: the last chunk (if chunked), everything sent. */
+void out_end(http_out_t *o);
 
 /* JSON values */
 void json_str(http_out_t *o, const char *s);                 /* quoted, escaped (UTF-8 passes through) */

@@ -32,6 +32,7 @@ static int send_fd(void *ctx, const void *p, size_t n) {
 int http_open(http_server_t *s, uint16_t port, uint8_t *buf, uint32_t cap) {
     memset(s, 0, sizeof *s);
     s->buf = buf; s->cap = cap;
+    s->kfd = -1;
     s->lfd = socket(AF_INET, SOCK_STREAM, 0);
     if (s->lfd < 0) return -1;
     int one = 1;
@@ -45,59 +46,91 @@ int http_open(http_server_t *s, uint16_t port, uint8_t *buf, uint32_t cap) {
     return 0;
 }
 
-void http_close(http_server_t *s) { if (s->lfd >= 0) closesocket(s->lfd); s->lfd = -1; }
+void http_close(http_server_t *s) { http_drop_kept(s); if (s->lfd >= 0) closesocket(s->lfd); s->lfd = -1; }
 
-static void serve(http_server_t *s, int fd) {
+#define KEEP_IDLE_MS 5000u
+#define KEEP_MAX     200u
+
+/* one request on fd (TLS already up if HTTPS); true = the connection may stay open */
+static bool serve(http_server_t *s, int fd) {
     struct timeval rt = { .tv_sec = 2, .tv_usec = 0 }, wt = { .tv_sec = 5, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rt, sizeof rt);
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wt, sizeof wt);
     http_out_t o;
     conn_t c = { fd, s };
     out_init(&o, send_fd, &c);
-    if (s->tls && tls_accept(fd) != 0) { s->tls_failed++; return; }
     http_req_t r;
     uint32_t n = 0;
     int hl = 0;
     while (hl == 0) {                                   /* headers */
-        if (n >= s->cap) { s->too_large++; http_simple(&o, 413, "too large"); return; }
+        if (n >= s->cap) { s->too_large++; http_simple(&o, 413, "too large"); return false; }
         int got = recv_fd(&c, s->buf + n, s->cap - n);
-        if (got <= 0) { s->timeouts++; return; }
+        if (got <= 0) { if (n) s->timeouts++; return false; }
         n += (uint32_t)got;
         hl = http_parse_head((const char *)s->buf, n, &r);
     }
-    if (hl < 0) { s->bad_requests++; http_simple(&o, 400, "bad request"); return; }
-    if (s->redirect_only) { http_redirect_https(&r, &o); s->served++; return; }
-    if (!strcmp(r.method, "POST") && !r.has_length) { s->bad_requests++; http_simple(&o, 400, "length required"); return; }
+    if (hl < 0) { s->bad_requests++; http_simple(&o, 400, "bad request"); return false; }
+    if (s->redirect_only) { http_redirect_https(&r, &o); s->served++; return false; }
+    if (!strcmp(r.method, "POST") && !r.has_length) { s->bad_requests++; http_simple(&o, 400, "length required"); return false; }
     if (http_wants_stream(&r)) {                        /* firmware upload: not buffered */
         r.body = s->buf + hl;
         r.body_len = n - (uint32_t)hl > r.content_length ? r.content_length : n - (uint32_t)hl;
         http_handle_stream(&r, recv_fd, &c, &o, bsp_ms());
         s->served++;
-        return;
+        return false;
     }
-    if (r.content_length > s->cap - (uint32_t)hl) { s->too_large++; http_simple(&o, 413, "too large"); return; }
+    if (r.content_length > s->cap - (uint32_t)hl) { s->too_large++; http_simple(&o, 413, "too large"); return false; }
     while (n < (uint32_t)hl + r.content_length) {       /* body */
         int got = recv_fd(&c, s->buf + n, (uint32_t)hl + r.content_length - n);
-        if (got <= 0) { s->timeouts++; return; }
+        if (got <= 0) { s->timeouts++; return false; }
         n += (uint32_t)got;
     }
     r.body = s->buf + hl;
     r.body_len = r.content_length;
+    o.keep = s->tls && r.keep_alive && !strcmp(r.method, "GET") && n == (uint32_t)hl + r.content_length;
     http_handle(&r, &o, bsp_ms());
     s->served++;
+    return o.keep && !o.err;
+}
+
+static void finish(http_server_t *s, int fd) {
+    if (s->tls) tls_close();
+    shutdown(fd, SHUT_WR);
+    closesocket(fd);
+}
+
+void http_drop_kept(http_server_t *s) {
+    if (s->kfd < 0) return;
+    finish(s, s->kfd);
+    s->kfd = -1;
 }
 
 void http_poll(http_server_t *s, uint32_t timeout_ms) {
     if (s->lfd < 0) return;
+    if (s->kfd >= 0 && (bsp_ms() - s->kept_ms > KEEP_IDLE_MS || s->kept_n >= KEEP_MAX)) http_drop_kept(s);
     fd_set rd;
     FD_ZERO(&rd);
     FD_SET(s->lfd, &rd);
+    int mx = s->lfd;
+    if (s->kfd >= 0) { FD_SET(s->kfd, &rd); if (s->kfd > mx) mx = s->kfd; }
     struct timeval tv = { .tv_sec = (long)(timeout_ms / 1000u), .tv_usec = (long)((timeout_ms % 1000u) * 1000u) };
-    if (select(s->lfd + 1, &rd, NULL, NULL, &tv) <= 0) return;
-    int fd = accept(s->lfd, NULL, NULL);
-    if (fd < 0) return;
-    serve(s, fd);
-    if (s->tls) tls_close();
-    shutdown(fd, SHUT_WR);
-    closesocket(fd);
+    bool pending = s->kfd >= 0 && s->tls && tls_pending();
+    if (pending) tv.tv_sec = tv.tv_usec = 0;
+    int nr = select(mx + 1, &rd, NULL, NULL, &tv);
+    if (nr < 0) return;
+    if (FD_ISSET(s->lfd, &rd)) {                       /* someone else is waiting: they come first */
+        http_drop_kept(s);
+        int fd = accept(s->lfd, NULL, NULL);
+        if (fd < 0) return;
+        if (s->tls && tls_accept(fd) != 0) { s->tls_failed++; finish(s, fd); return; }
+        if (serve(s, fd)) { s->kfd = fd; s->kept_ms = bsp_ms(); s->kept_n = 1; }
+        else finish(s, fd);
+        return;
+    }
+    if (s->kfd >= 0 && (pending || FD_ISSET(s->kfd, &rd))) {
+        int fd = s->kfd;
+        s->reused++;
+        if (serve(s, fd)) { s->kept_ms = bsp_ms(); s->kept_n++; }
+        else { s->kfd = -1; finish(s, fd); }
+    }
 }

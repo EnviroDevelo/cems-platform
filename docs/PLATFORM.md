@@ -185,6 +185,15 @@ instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner
 and the values grey out until polling recovers. Admin users can download a parameter
 backup and restore it. Screenshots: `docs/web_ui.png`, `docs/web_ui_connection_lost.png`.
 
+**Keep-alive.** The server handles one HTTPS connection at a time. After a GET the
+connection stays open (HTTP/1.1 keep-alive; bodies without a known length are sent
+chunked), so the page's polls reuse it instead of opening a TLS connection each time.
+It gives way at once when another connection is waiting, so no browser can hold the
+server; it also closes after 5 s idle, after 200 requests, after any POST (browsers do
+not retry a POST on a connection the server closed) and before an alarm email borrows
+the TLS context. Measured with Chromium and the page open: about 0.7 new TLS
+connections a second (all resumed by ticket) instead of one per request (3-4 a second).
+
 **Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
 ported to native FreeRTOS. The address comes from the parameter table (static
 192.168.1.50/24 by default, or DHCP) and a change from the touchscreen or web takes effect

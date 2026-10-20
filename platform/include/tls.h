@@ -44,6 +44,7 @@ int  tls_read(uint8_t *buf, uint32_t cap);  /* bytes, <= 0 on close/timeout/erro
 int  tls_write(const uint8_t *p, uint32_t n);   /* 0 = all sent */
 void tls_close(void);
 bool tls_resumed(void);                     /* the last handshake resumed a session (ticket) */
+bool tls_pending(void);                     /* decrypted bytes are waiting (a request already received) */
 
 /* client, for alarm email (same task as the server, between its connections): TLS 1.2
  * on a connected socket; peer_fp = SHA-256 of the server's certificate, which the

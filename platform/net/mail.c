@@ -80,6 +80,7 @@ static bool tls_on;
 static char rbuf[512];
 static size_t rlen;
 static void (*alive_cb)(void);
+static void (*release_cb)(void);
 
 static void alive(void) { if (alive_cb) alive_cb(); }
 
@@ -371,6 +372,7 @@ static mail_err_t session(const item_t *it, unsigned n, bool test) {
 }
 
 static mail_err_t send_now(const item_t *it, unsigned n, bool test) {
+    if (release_cb) release_cb();
     M.last_text[0] = 0;
     M.last = MAIL_OK;
     mail_err_t e = session(it, n, test);
@@ -389,7 +391,8 @@ static void log_result(unsigned n, mail_err_t e) {
     plat_log_event(LOG_EV_MAIL, PLAT_SRC_INTERNAL, 0, n, NAN, e == MAIL_OK ? 1.0 : 0.0, t);
 }
 
-void mail_service(uint32_t now, void (*alive_fn)(void)) {
+void mail_service(uint32_t now, void (*alive_fn)(void), void (*release_fn)(void)) {
+    release_cb = release_fn;
     plat_val_t v;
     alive_cb = alive_fn;
     if (!param_read(PARAM_ID_MAIL_ENABLE, &v) || !v.b) {          /* off: forget everything */

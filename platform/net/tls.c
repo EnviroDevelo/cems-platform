@@ -241,6 +241,7 @@ void tls_close(void) {
 }
 
 bool tls_resumed(void) { return resumed; }
+bool tls_pending(void) { return sock >= 0 && !cli_on && mbedtls_ssl_get_bytes_avail(&ssl) > 0; }
 
 /* ---------------- client (alarm email) ----------------
  * The one ssl context is lent to the client: the server's buffers are freed for the
@@ -253,7 +254,7 @@ static void server_ssl_back(void) {
 }
 
 int tls_client_open(int fd, uint8_t peer_fp[32]) {
-    if (!ready || cli_on) return -1;
+    if (!ready || cli_on || sock >= 0) return -1;        /* a web connection still holds the context */
     if (!cli_conf_done) {
         mbedtls_ssl_config_init(&conf_cli);
         int rc = mbedtls_ssl_config_defaults(&conf_cli, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);

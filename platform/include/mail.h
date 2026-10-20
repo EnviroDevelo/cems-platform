@@ -50,7 +50,9 @@ typedef struct {
 } mail_status_t;
 
 void mail_init(const char *product);    /* the product name in the From line and the footer */
-void mail_service(uint32_t now_ms, void (*alive)(void));   /* HTTP task, between requests */
+/* HTTP task, between requests. release() is called just before a send: it closes the
+ * web server's kept-alive connection, which holds the TLS context. */
+void mail_service(uint32_t now_ms, void (*alive)(void), void (*release)(void));
 int  mail_request_test(void);           /* send a test email at the next service; 0 ok, -1 mail off */
 void mail_status(mail_status_t *s);
 const char *mail_err_name(mail_err_t e);

@@ -8,14 +8,14 @@ module, and before choosing hardware. Last run: 2026-10-20.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 309.6 KB | 1016.0 KB | 30 % | 706.4 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 310.9 KB | 1016.0 KB | 31 % | 705.1 KB |
 | RAM (STM32H573/H563, 640 KB) | 322.8 KB | 640.0 KB | 50 % | 317.2 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 12.5 | 0.1 |
+| Scan engine, queue, watchdog, diag | 12.6 | 0.1 |
 | Parameter table | 6.1 | 24.6 |
 | Parameter store (FRAM) | 5.1 | 28.7 |
 | Event log / data logger | 14.2 | 6.8 |
@@ -23,7 +23,7 @@ module, and before choosing hardware. Last run: 2026-10-20.
 | Alarm email (SMTP client) | 6.0 | 2.2 |
 | Firmware update + signature check | 3.5 | 1.3 |
 | Modbus TCP | 6.0 | 17.5 |
-| Web server + page + logins | 28.2 | 40.3 |
+| Web server + page + logins | 29.4 | 40.4 |
 | HTTPS (tls.c + mbedTLS) | 95.4 | 46.9 |
 | Touch UI + EVE driver | 19.0 | 0.9 |
 | Task layer (FreeRTOS glue) | 2.2 | 51.0 |

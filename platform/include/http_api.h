@@ -54,6 +54,7 @@ typedef struct {
     char     host[64];             /* Host header (for the https:// redirect) */
     bool     csrf;                 /* X-CEMS: 1 present */
     bool     has_length;
+    bool     keep_alive;           /* HTTP/1.1 without "Connection: close" (or 1.0 with keep-alive) */
     uint32_t content_length;
     const uint8_t *body;
     uint32_t body_len;

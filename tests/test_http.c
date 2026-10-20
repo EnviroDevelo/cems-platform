@@ -2,6 +2,7 @@
  * sessions, and the API handlers end to end through a capture buffer. */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "tst.h"
 #include "plat_sha256.h"
 #include "http_util.h"
@@ -76,6 +77,13 @@ static void t_parse_head(void) {
     const char *bad[] = { "GET\r\n\r\n", "GET nopath HTTP/1.1\r\n\r\n", "GET / FTP/1.0\r\n\r\n",
                           "POST / HTTP/1.1\r\nContent-Length: 1x\r\n\r\n", "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n" };
     for (size_t k = 0; k < 5; ++k) CHECK_EQ(http_parse_head(bad[k], (uint32_t)strlen(bad[k]), &r), -1);
+    /* keep-alive: HTTP/1.1 by default, unless "Connection: close"; 1.0 only if asked */
+    CHECK(http_parse_head(g, (uint32_t)strlen(g), &r) > 0 && r.keep_alive);
+    const char *kc = "GET / HTTP/1.1\r\nConnection: Close\r\n\r\n";
+    CHECK(http_parse_head(kc, (uint32_t)strlen(kc), &r) > 0 && !r.keep_alive);
+    const char *k10 = "GET / HTTP/1.0\r\n\r\n", *k10k = "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n";
+    CHECK(http_parse_head(k10, (uint32_t)strlen(k10), &r) > 0 && !r.keep_alive);
+    CHECK(http_parse_head(k10k, (uint32_t)strlen(k10k), &r) > 0 && r.keep_alive);
     const char *shortsid = "GET / HTTP/1.1\r\nCookie: sid=abc\r\n\r\n";
     CHECK(http_parse_head(shortsid, (uint32_t)strlen(shortsid), &r) > 0); CHECK_EQ(r.sid[0], 0);
 }
@@ -195,6 +203,37 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"product\":\"CEMS Supervisor\"")); CHECK(has("\"mode\":\"local\"")); CHECK(has("\"default_passwords\":true"));
     CHECK(has("\"cal_valid\":false")); CHECK(has("\"level\":\"view\""));
+    {   /* a kept connection: chunked body that decodes to the same JSON; fixed-length bodies stay as they are */
+        static char plain[16 * 1024];
+        size_t pn = capn; memcpy(plain, cap, capn + 1);
+        const char *raw = "GET /api/info HTTP/1.1\r\nHost: unit\r\n\r\n";
+        http_req_t r; int h = http_parse_head(raw, (uint32_t)strlen(raw), &r);
+        CHECK(h > 0 && r.keep_alive);
+        http_out_t o; out_init(&o, cap_send, NULL); capn = 0; o.keep = true;
+        http_handle(&r, &o, tnow);
+        CHECK(has("Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n"));
+        const char *b = strstr(cap, "\r\n\r\n") + 4, *pb = strstr(plain, "\r\n\r\n") + 4;
+        static char body[16 * 1024]; size_t bn = 0; bool ok = true;
+        for (;;) {                                       /* de-chunk */
+            unsigned long len = strtoul(b, NULL, 16);
+            const char *d = strstr(b, "\r\n"); if (!d) { ok = false; break; }
+            d += 2;
+            if (!len) { ok = strcmp(d, "\r\n") == 0; break; }
+            memcpy(body + bn, d, len); bn += len; b = d + len;
+            if (strncmp(b, "\r\n", 2)) { ok = false; break; }
+            b += 2;
+        }
+        body[bn] = 0;
+        CHECK(ok);
+        /* same content apart from the uptime-dependent fields: compare the start */
+        CHECK(bn > 100 && strncmp(body, pb, 40) == 0);
+        (void)pn;
+        const char *rg = "GET / HTTP/1.1\r\n\r\n";
+        h = http_parse_head(rg, (uint32_t)strlen(rg), &r);
+        out_init(&o, cap_send, NULL); capn = 0; o.keep = true;
+        http_handle(&r, &o, tnow);
+        CHECK(has("Connection: keep-alive\r\n")); CHECK(!has("chunked")); CHECK(has("Content-Length: "));
+    }
     CHECK_EQ(call("GET", "/api/params", NULL, false), 200);
     CHECK(has("{\"id\":1001,\"name\":\"setpoint\",\"type\":\"int\",\"unit\":\"%\",\"min\":0,\"max\":100,\"def\":10,\"level\":1,\"flags\":[\"persist\"]}"));
     CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25"));

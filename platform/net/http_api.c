@@ -51,6 +51,7 @@ int http_parse_head(const char *buf, uint32_t len, http_req_t *r) {
     if (pe - t >= (long)sizeof r->path || pe == t || *t != '/') return -1;
     memcpy(r->path, t, (size_t)(pe - t));
     if (q) { if (sp2 - q - 1 >= (long)sizeof r->query) return -1; memcpy(r->query, q + 1, (size_t)(sp2 - q - 1)); }
+    r->keep_alive = sp2[8] == '1';                     /* HTTP/1.1: persistent unless the client says close */
     /* headers */
     for (p = le + 2; p < end;) {
         const char *he = memchr(p, '\r', (size_t)(end - p + 2));
@@ -68,6 +69,11 @@ int http_parse_head(const char *buf, uint32_t len, http_req_t *r) {
             } else if (kl == 4 && ieq(p, "host", 4)) {
                 size_t n = vl < sizeof r->host - 1 ? vl : sizeof r->host - 1;
                 memcpy(r->host, v, n); r->host[n] = 0;
+            } else if (kl == 10 && ieq(p, "connection", 10)) {
+                for (const char *c = v; c + 5 <= he; ++c) {
+                    if (ieq(c, "close", 5)) r->keep_alive = false;
+                    if (c + 10 <= he && ieq(c, "keep-alive", 10)) r->keep_alive = true;
+                }
             } else if (kl == 6 && ieq(p, "x-cems", 6)) {
                 r->csrf = vl == 1 && v[0] == '1';
             } else if (kl == 17 && ieq(p, "transfer-encoding", 17)) {
@@ -102,10 +108,13 @@ static void head(http_out_t *o, int st, const char *ctype, const char *extra) {
     snprintf(l, sizeof l, "HTTP/1.1 %d %s\r\n", st, reason(st));
     out_str(o, l);
     out_str(o, "Content-Type: "); out_str(o, ctype); out_str(o, "\r\n");
-    out_str(o, "Cache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\n"
-               "X-Frame-Options: DENY\r\n");
+    bool len = extra && strstr(extra, "Content-Length:");
+    out_str(o, o->keep ? (len ? "Connection: keep-alive\r\n" : "Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n")
+                       : "Connection: close\r\n");
+    out_str(o, "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\n");
     if (extra) out_str(o, extra);
     out_str(o, "\r\n");
+    out_head_done(o, len);
 }
 
 static void json_error(http_out_t *o, int st, const char *err, long id) {
@@ -132,7 +141,7 @@ void http_redirect_https(const http_req_t *r, http_out_t *o) {
     out_flush(o);
 }
 
-void http_simple(http_out_t *o, int st, const char *msg) { json_error(o, st, msg, -1); out_flush(o); }
+void http_simple(http_out_t *o, int st, const char *msg) { json_error(o, st, msg, -1); out_end(o); }
 
 static const char *perr_name(param_err_t e) {
     switch (e) {
@@ -842,9 +851,9 @@ static void drain(http_read_fn rd, void *ctx, uint32_t left) {
 void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now) {
     uint8_t lvl = auth_session(r->sid, now, NULL);
     uint32_t rest = r->content_length - r->body_len;
-    if (!r->csrf) { drain(rd, ctx, rest); json_error(o, 403, "missing X-CEMS header", -1); out_flush(o); return; }
-    if (lvl == 0) { drain(rd, ctx, rest); json_error(o, 401, "login", -1); out_flush(o); return; }
-    if (lvl < PLAT_LVL_FACTORY) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_flush(o); return; }   /* tech level (D14) */
+    if (!r->csrf) { drain(rd, ctx, rest); json_error(o, 403, "missing X-CEMS header", -1); out_end(o); return; }
+    if (lvl == 0) { drain(rd, ctx, rest); json_error(o, 401, "login", -1); out_end(o); return; }
+    if (lvl < PLAT_LVL_FACTORY) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_end(o); return; }   /* tech level (D14) */
     fw_err_t e = fw_upload_begin(r->content_length);
     if (e == FW_OK) e = fw_upload_data(r->body, r->body_len);
     uint32_t got = r->body_len;
@@ -852,7 +861,7 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
         uint32_t want = r->content_length - got;
         if (want > cfg.scratch_size) want = cfg.scratch_size;
         int n = (cfg.scratch && want) ? rd(ctx, cfg.scratch, want) : -1;
-        if (n <= 0) { fw_upload_abort(); json_error(o, 400, "upload interrupted", -1); out_flush(o); return; }
+        if (n <= 0) { fw_upload_abort(); json_error(o, 400, "upload interrupted", -1); out_end(o); return; }
         got += (uint32_t)n;
         e = fw_upload_data(cfg.scratch, (uint32_t)n);
     }
@@ -861,7 +870,7 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
     if (e != FW_OK) {
         plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, (uint32_t)e, NAN, NAN, "upload refused");
         json_error(o, e == FW_E_BUSY ? 409 : 400, fw_err_name(e), -1);
-        out_flush(o);
+        out_end(o);
         return;
     }
     auth_touch(r->sid, now);
@@ -870,7 +879,7 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
     plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_WEB, lvl, 0, NAN, NAN, st.staged_version);
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true,\"staged\":"); json_str(o, st.staged_version); out_str(o, "}");
-    out_flush(o);
+    out_end(o);
 }
 
 /* ---------------- router ---------------- */
@@ -917,5 +926,5 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     }
     else if (!get && !post) json_error(o, 405, "method", -1);
     else json_error(o, 404, "not found", -1);
-    out_flush(o);
+    out_end(o);
 }

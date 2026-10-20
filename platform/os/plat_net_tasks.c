@@ -35,8 +35,10 @@ static void http_wait(void)  { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_
 
 /* HTTPS on 443 (one connection at a time, TLS); port 80 only redirects to https://,
  * and is closed when parameter 6 (http_redirect) is off. */
+static http_server_t s, r;
+static void release_web(void) { http_drop_kept(&s); }
+
 void plat_http_task_body(void) {
-    static http_server_t s, r;
     static uint8_t rbuf[2048];
     const plat_app_t *app = plat_app();
     http_cfg_t cfg = { .product = app->ident.product, .fw_version = app->ident.revision, .scan = &plat_scan,
@@ -56,7 +58,7 @@ void plat_http_task_body(void) {
         if (!want80 && r.lfd >= 0) http_close(&r);
         http_poll(&s, 50);
         if (r.lfd >= 0) http_poll(&r, 50);
-        mail_service(bsp_ms(), http_alive);   /* alarm email, between web requests (shares the TLS context) */
+        mail_service(bsp_ms(), http_alive, release_web);   /* alarm email, between web requests (shares the TLS context) */
         plat_checkin(PLAT_TASK_HTTP);
     }
 }
