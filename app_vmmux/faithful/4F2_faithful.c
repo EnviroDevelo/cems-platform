@@ -46,7 +46,15 @@ static void chain(bool *Periods, Sequences_t *S, ul_timer_t T[20], bool Stop[19]
     ton(&T[19], d20 && S->NumberArray[19] == cmp[19]);
     bool w7 = (d20 && S->NumberArray[19] == 0) || (p && T[19].Out);
     for (int i = 0; i < 19; i++) w7 = w7 || Stop[i];
-    if (w7) { *Periods = false; *SelIn = 0; *SelOut = 0; }
+    if (w7) {
+        *Periods = false; *SelIn = 0; *SelOut = 0;
+#if VM_FIX_VM_RESTART
+        /* F7 (app_vmmux): the same as MUX F5. A run that ends inside its window restarts on the next
+         * scan (V9) with every period timer still done, so it stood still with Periods on and never
+         * ended, and the next day's window could not start a run. Reset the chain's timers here. */
+        for (int k = 0; k < 20; k++) treset(&T[k]);
+#endif
+    }
 }
 /* compare values: period k compares NumberArray[k-1] with k, except interconnection 2 period 9, which compares
  * NumberArray[8] with 8 (finding V7; rung 11, wire w59). */

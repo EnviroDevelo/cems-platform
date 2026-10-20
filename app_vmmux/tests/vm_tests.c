@@ -726,6 +726,78 @@ static void t_vm_v7_long_tube2_sequence(void)
     press(VMC_VM_SCHEDULE, 1); scans(3);
 }
 
+static void t_vm_schedule_repeat(void)
+{
+    /* V9: a VM run that ends inside its window starts again (as S3 on the MUX) */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 1), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 3), PERR_OK); CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 2), PERR_OK);
+    scans(3);
+    const int16_t din[3] = { 0, 1, 2 }, dout[5] = { 0, 0, 0, 3, 4 };
+    write_i16_array(VMP_DOINLET, din, 3); write_i16_array(VMP_DOOUTLET, dout, 5);
+    memset(&Sequence1, 0, sizeof Sequence1);
+    Sequence1.NumberOfPeriods = 2;
+    Sequence1.NumberArray[0] = 1; Sequence1.Inlets[0] = 1; Sequence1.Outlets[0] = 1; Sequence1.Timers[0] = 2000;
+    Sequence1.NumberArray[1] = 2; Sequence1.Inlets[1] = 3; Sequence1.Outlets[1] = 2; Sequence1.Timers[1] = 2000;
+    memset(&Schedule1, 0, sizeof Schedule1); Schedule1.To_Hour[2] = 23;
+    scans(2);
+    CHECK_EQ(press(VMC_VM_SCHEDULE, 1), PERR_OK);
+    uint32_t seen[10]; int when[10], n = 0; uint32_t last = 0xFFFFFFFFu;
+    for (int t = 0; t < 1000; t++) {
+        scans(1);
+        if (bsp_host.out.do_bits != last && n < 10) { last = bsp_host.out.do_bits; seen[n] = last; when[n++] = t * 10; }
+    }
+    CHECK(n >= 3);
+    CHECK_EQ(seen[0], (1u << 0) | (1u << 3));   /* inlet 1 + outlet 1 (DO1, DO4) */
+    CHECK_EQ(seen[1], (1u << 2) | (1u << 4));   /* inlet 3 + outlet 2 (DO3, DO5) after 2 s */
+#if VM_FIX_VM_RESTART
+    CHECK(n >= 5);                              /* F7 fixed: the run repeats inside the window (V9) */
+    CHECK_EQ(seen[3], (1u << 0) | (1u << 3));
+    CHECK(when[3] - when[1] <= 2100);
+#else
+    CHECK_EQ(n, 3);                             /* the original stands still after the first run */
+    CHECK_EQ(seen[2], 0u);
+    CHECK(StartInterconnection1Periods);        /* ... with its run flag stuck on */
+#endif
+    press(VMC_VM_SCHEDULE, 1); scans(3);
+}
+
+static void t_mux_digital_stop(void)
+{
+    /* MUX DI function "Stop Seq." (24 without the add-on DI module, 44 with it, 43b) on DI5 stops the loop;
+     * releasing it starts the loop again from channel 1 */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    const int16_t map[3] = { 5, 6, 7 };
+    write_i16_array(VMP_DOSINGULARINLET, map, 3);
+    scans(2);
+    DI_FunctionMUX[4] = AdditionalDiscreteModule ? 44 : 24;
+    memset(&SequenceMUX, 0, sizeof SequenceMUX);
+    SequenceMUX.NumberOfPeriods = 2;
+    for (int k = 0; k < 2; k++) { SequenceMUX.NumberArray[k] = (uint8_t)(k + 1); SequenceMUX.DwellTimer[k] = 1000; SequenceMUX.SampleTimer[k] = 2000; }
+    SequenceMUX.SingulValves[0] = 0; SequenceMUX.SingulValves[1] = 1;
+    scans(2);
+    CHECK_EQ(press(VMC_MUX_SCHEDULE, 1), PERR_OK);
+    scans(400);                                          /* 4 s: channel 2 */
+    CHECK_EQ(bsp_host.out.do_bits, 1u << 5);
+    bsp_host.in.di = 1u << 4; scans(5);                  /* DI5 closed */
+    CHECK(StopSeqBit); CHECK(!StartPeriodsMUX);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);
+    CHECK(alarm_active(VM_AL_DIGITAL_STOP));
+    scans(300); CHECK_EQ(bsp_host.out.do_bits, 0u);      /* held while the stop is on */
+    bsp_host.in.di = 0; scans(5);                        /* released: again from channel 1 */
+    CHECK(StartPeriodsMUX);
+    CHECK_EQ(bsp_host.out.do_bits, 1u << 4);
+    press(VMC_MUX_SCHEDULE, 1); scans(3);
+    DI_FunctionMUX[4] = 0;
+}
+
 int main(void)
 {
     RUN(t_ai_conversion);
@@ -750,6 +822,8 @@ int main(void)
     RUN(t_record_checks);
     RUN(t_mux_repeated_inlet);
     RUN(t_vm_v7_long_tube2_sequence);
+    RUN(t_vm_schedule_repeat);
+    RUN(t_mux_digital_stop);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

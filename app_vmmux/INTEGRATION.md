@@ -26,13 +26,14 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `src/vm_compat.c` | keeps old Modbus coils and buffers meaningful where the platform took over |
 | `src/vm_hmi.c` | the old screens' button actions as command parameters (5000+), their status (5100+), and the EntryOK "...Entered" bits |
 | `src/vm_records.c` | the six sequence/schedule records: `vm_check_record` and the editors' field descriptions (core design, 20 Oct) |
+| `docs/BAT_VMMUX.md` | bench acceptance test procedure, step by step, each step tied to its host test |
 | `docs/SCREENS.md` | the application screens for the core thread's screen API (R2), by parameter ID |
 | `stage4_tests/` | the Stage 4 tests, run against the integrated code with every switch at the original behaviour |
 | `tests/vm_tests.c` | application tests on the real scan engine, parameter store, alarm manager and Modbus engine |
 | `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID |
 
 Build and test (repository root): `make -f app_vmmux/app.mk vm-test` (12 Stage 4 suites, 110,000+ checks,
-and 355 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
+and 384 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
 runs the platform's networked simulation with this application (Modbus TCP 1502, HTTPS 8443).
 Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Existing Design/Analysis"`.
 
@@ -43,7 +44,7 @@ Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Exis
 | Tags | 450 definitions covering 768 dictionary tags, + 117 UI/Modbus-only tags |
 | Parameters | 397 of 512 (149 settings, 7 new, 195 Modbus-only, 46 screen commands and status) |
 | Retained blocks | 194 |
-| **FRAM user image** | **13,400 bytes**; 14,848 per copy on the 32 KB part (90.2 %); 128 KB part chosen (Q7) |
+| **FRAM user image** | **13,600 bytes**; 14,848 per copy on the 32 KB part (90.2 %); 128 KB part chosen (Q7) |
 | Alarms | 57 (IDs 100-173) |
 | Modbus | 201 old entries + 6 platform alarm entries |
 
@@ -74,6 +75,7 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_FIX_DI_REAL_INPUTS` | 1 | Open item 8: DISABLED rungs 9-10 of DI_Assigning run, so DIG_IN_01..20 reach the logic |
 | `VM_FIX_AI_SCALING` | 1 | Open item 9: Low point at raw 0, High point at full scale |
 | `VM_FIX_MUX_VALVE_ASSIGN` | 1 | MUX S7/S8: an inlet used twice is on in both channels, and inlet 1 can be scheduled (needed for X looping channels) |
+| `VM_FIX_VM_RESTART` | 1 | Finding F7: the VM version of F5 (a run ending inside its window stood still and never ended, so a daily run happened once only) |
 | `VM_FIX_V7` | 1 | VM V7: a tube-2 sequence of 9+ periods no longer stalls at period 9 |
 | `VM_MUX_CONTINUOUS` | 1 | Q8: the MUX loops its sequence until stopped (no calendar window) |
 | `VM_FIX_MUX_RESTART` | 1 | Finding F5: reset the MUX period timers when a run ends, so a restart in the window begins at period 1 (Gary: the MUX is the automated loop) |
@@ -92,6 +94,7 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | F2 | DI_Control L45 loops `i = 0..20` over the 20-element `tmpDO` / `DOList`: one read and one write out of bounds every scan. Skipped (A4.1/A4.8) and counted in `g_oob` (2 per scan). |
 | F3 | A DI alarm is raised on the third scan after the input changes (DI_Control runs before DI_Assigning copies the inputs, as in the original; the platform evaluates on the next scan). 30 ms. |
 | F5 | **A MUX sequence that ends inside its start window restarts at once (S3) and then stands still**: its dwell/sample timers were never unpowered, so they are all "done", and no valve opens until the schedule is stopped. Fixed behind `VM_FIX_MUX_RESTART` (default on). Test `t_mux_schedule_run` checks both settings. |
+| F7 | **The VM schedule has the F5 fault too**: a run that ends inside its window restarts (V9), stands still with no valve open and its run flag stuck on, so no later window can start it: a daily calibration would run once. Fixed behind `VM_FIX_VM_RESTART` (default on); test `t_vm_schedule_repeat` checks both settings. |
 | F6 | The old screens' buttons and number boxes write logic tags directly (StartSchedule, ...Entered bits). Without them nothing can be started; `vm_hmi.c` reproduces them so the new UI and web page can operate the machine. Tests drive a MUX manual run, a MUX schedule and a VM Modbus run through these commands. |
 | F4 | With every analog/RTD channel `NOT_FITTED` on the bench, an *enabled* channel raises its sensor-fault alarm, as the handover asks; disabled channels are quiet. |
 

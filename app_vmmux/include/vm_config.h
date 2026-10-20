@@ -50,6 +50,15 @@
 #define VM_FIX_MUX_RESTART 1
 #endif
 
+/* Finding F7 (integration, 21 Oct): the VM version of F5. A VM schedule run that ends inside its
+ * window restarts at once (V9) with its period timers still done, so it stands still with the
+ * run flag on and never ends: no valve open, and no later window can start it again (a daily
+ * calibration would run once only). 1: the period timers are reset when a run ends.
+ * 0: as the original. */
+#ifndef VM_FIX_VM_RESTART
+#define VM_FIX_VM_RESTART 1
+#endif
+
 /* Gary (20 Oct): "The MUX has X amount of channels, a time that each of the channels will run
  * for and then this will simply loop until stopped for service." 1: the scheduler mode ignores
  * the calendar window (ScheduleMUX): once started it runs the sequence (channel = period,

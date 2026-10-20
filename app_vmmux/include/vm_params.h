@@ -154,6 +154,13 @@ enum {
     VMP_RANGEMIN                                 = 1146,   /* RangeMin */
     VMP_TEMPERATUREALARMENABLED                  = 1147,   /* TemperatureAlarmEnabled */
     VMP_TEMPERATUREENABLE                        = 1148,   /* TemperatureEnable */
+    VMP_ANALOGNAME1                              = 1149,   /* AnalogName1 */
+    VMP_ANALOGNAME2                              = 1150,   /* AnalogName2 */
+    VMP_ANALOGSENSORUNITS                        = 1151,   /* AnalogSensorUnits */
+    VMP_TEMPNAME1                                = 1152,   /* TempName1 */
+    VMP_TEMPNAME2                                = 1153,   /* TempName2 */
+    VMP_TEMPERATURESENSORUNITS                   = 1154,   /* TemperatureSensorUnits */
+    VMP_TEMPERATURESHIFT                         = 1155,   /* TemperatureShift */
     VMP_ALARM0_DESCRIPTIONBUF                    = 3000,   /* Alarm0 DescriptionBuf */
     VMP_ALARM0_DESCRIPTIONMUXBUF                 = 3001,   /* Alarm0 DescriptionMUXBuf */
     VMP_ALARM1_DESCRIPTIONBUF                    = 3002,   /* Alarm1 DescriptionBuf */
@@ -397,6 +404,12 @@ extern uint16_t vmx_Alarm8_Description[31];              /* Alarm8 Description *
 extern uint16_t vmx_Alarm8_DescriptionMUX[31];           /* Alarm8 DescriptionMUX */
 extern uint16_t vmx_Alarm9_Description[31];              /* Alarm9 Description */
 extern uint16_t vmx_Alarm9_DescriptionMUX[31];           /* Alarm9 DescriptionMUX */
+extern uint16_t vmx_AnalogName1[19];                     /* AnalogName1 */
+extern uint16_t vmx_AnalogName2[19];                     /* AnalogName2 */
+extern int16_t vmx_AnalogSensorUnits[4];                 /* AnalogSensorUnits */
+extern uint16_t vmx_TempName1[19];                       /* TempName1 */
+extern uint16_t vmx_TempName2[19];                       /* TempName2 */
+extern int16_t vmx_TemperatureSensorUnits[4];            /* TemperatureSensorUnits */
 extern bool vmx_Ackbit2;                                 /* Ackbit2 */
 extern uint8_t vmx_ValveNameMUX1[20];                    /* ValveNameMUX1 */
 extern uint8_t vmx_ValveNameMUX2[20];                    /* ValveNameMUX2 */

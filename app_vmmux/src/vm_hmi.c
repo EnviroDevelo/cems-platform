@@ -209,6 +209,9 @@ static const param_def_t defs[] = {
     PARAM_ARRAY_BOOL(VMS_MUX_INLET_VISIBLE, "mux_inlet_visible", SingularInletVisib, PLAT_LVL_VIEW, PF_RO),
     PARAM_ARRAY_BOOL(VMS_MUX_INLET_ON,      "mux_inlet_on",      SingularInletActivate, PLAT_LVL_VIEW, PF_RO),
     STB(VMS_MUX_PURGE_ON,       "mux_purge_on",           PurgeInletActivate),
+    /* the VM pipe picture: one colour/state code per pipe and valve segment, as the old screens */
+    PARAM_ARRAY_UINT(VMS_VM_TUBE1_COLOUR, "vm_tube1_colour", TubeColor1, CT_U8, 0u, 255u, PLAT_LVL_VIEW, PF_RO),
+    PARAM_ARRAY_UINT(VMS_VM_TUBE2_COLOUR, "vm_tube2_colour", TubeColor2, CT_U8, 0u, 255u, PLAT_LVL_VIEW, PF_RO),
 };
 const param_def_t *const vm_hmi_params = defs;
 const size_t vm_n_hmi_params = sizeof defs / sizeof defs[0];

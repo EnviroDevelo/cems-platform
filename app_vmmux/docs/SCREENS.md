@@ -33,8 +33,8 @@ Valve Manager side:
 - Pipe picture: inlets 1..`FirstInlets`, outlets 1..`FirstOutlets` (tube 1) and the second tube when
   `NumInterconnections` = 2. Valve touch: `vm_inlet_touch` 5006 / `vm_outlet_touch` 5007 with the
   valve number 1..19; touchable while `vm_inlet_touch_en[i]` 5110 / `vm_outlet_touch_en[i]` 5111.
-  Valve state colours: `TubeColor1` / `TubeColor2` (block 3000+ region; to be exposed as read-only
-  parameters when the API needs them).
+  Valve and pipe state colours: `vm_tube1_colour` 5140 (57 codes) / `vm_tube2_colour` 5141 (55),
+  the old pipe picture's per-segment codes.
 - Remaining time: `VMMB_PROCESSTIMER_PRESET` 4045 (ms), `VMMB_PROCESSTIMER2_PRESET` 4046.
 - Dialogs "sequences absent" 5108 (OK 5008) and "incorrect sequences" 5109 (OK 5009).
 
@@ -77,7 +77,9 @@ parameter 30, U2), `vm_link_close_min` 2901.
   `VMP_FEEDBACKCONDITIONMUX`, descriptions `Alarm<i> Description[MUX]` (UTF-16, 30 characters).
 - Analog: `VMP_ANALOGENABLE` 1142, `VMP_FIRSTCALIBPOINT` 1063 / `VMP_SECONDCALIBPOINT` 1119
   (factory class), `VMP_RANGEMIN/MAX` 1146/1145, `VMP_ANALOGALARMENABLED` 1141.
-- Temperature: `VMP_TEMPERATUREENABLE` 1148, `TemperatureShift` (to be exposed),
+- Channel labels and units (retained, U8): `AnalogName1/2`, `TempName1/2` (UTF-16, 18),
+  `AnalogSensorUnits` / `TemperatureSensorUnits` (combo index, item lists in stage5/screens/09, 13).
+- Temperature: `VMP_TEMPERATUREENABLE` 1148, `VMP_TEMPERATURESHIFT` 1155 (0.1 degree, factory class, Q6),
   `VMP_MIN/MAXTEMPERATURERANGE` 1144/1143, `VMP_TEMPERATUREALARMENABLED` 1147,
   `rtd1/2_alarm_delay_s` 2902/2903, `rtd1/2_alarm_hyst` 2904/2905.
 

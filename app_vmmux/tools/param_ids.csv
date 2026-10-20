@@ -148,6 +148,13 @@ id,dictionary_name
 1146,RangeMin
 1147,TemperatureAlarmEnabled
 1148,TemperatureEnable
+1149,AnalogName1
+1150,AnalogName2
+1151,AnalogSensorUnits
+1152,TempName1
+1153,TempName2
+1154,TemperatureSensorUnits
+1155,TemperatureShift
 2900,(new) valve_fb_settle_s
 2901,(new) vm_link_close_min
 2902,(new) rtd1_alarm_delay_s

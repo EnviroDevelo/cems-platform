@@ -73,6 +73,8 @@ typedef struct {
 /* Diagnostics kept from the Stage 4 test aids. On the target they count events the
  * original would have handled silently (A4.1 / A4.8 out-of-bounds index, A4.16 MOD by
  * zero, A4.9 endless FOR); they are shown on the diagnostics page, never acted on. */
+void treset(ul_timer_t *t);   /* TimerReset (src/ul_blocks.c) */
+
 extern int g_oob;
 extern int g_div0;
 extern int g_hang;

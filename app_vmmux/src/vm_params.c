@@ -53,6 +53,12 @@ uint16_t vmx_Alarm8_Description[31];                             /* Alarm8 Descr
 uint16_t vmx_Alarm8_DescriptionMUX[31];                          /* Alarm8 DescriptionMUX */
 uint16_t vmx_Alarm9_Description[31];                             /* Alarm9 Description */
 uint16_t vmx_Alarm9_DescriptionMUX[31];                          /* Alarm9 DescriptionMUX */
+uint16_t vmx_AnalogName1[19];                                    /* AnalogName1 */
+uint16_t vmx_AnalogName2[19];                                    /* AnalogName2 */
+int16_t vmx_AnalogSensorUnits[4];                                /* AnalogSensorUnits */
+uint16_t vmx_TempName1[19];                                      /* TempName1 */
+uint16_t vmx_TempName2[19];                                      /* TempName2 */
+int16_t vmx_TemperatureSensorUnits[4];                           /* TemperatureSensorUnits */
 bool vmx_Ackbit2;                                                /* Ackbit2 */
 uint8_t vmx_ValveNameMUX1[20];                                   /* ValveNameMUX1 */
 uint8_t vmx_ValveNameMUX2[20];                                   /* ValveNameMUX2 */
@@ -597,6 +603,9 @@ static const param_def_t defs[] = {
     PARAM_ARRAY_BOOL(VMP_ALARMENABLEVM, "AlarmEnableVM", AlarmEnableVM, PLAT_LVL_ADMIN, PF_PERSIST),
     PARAM_ARRAY_BOOL(VMP_ANALOGALARMENABLED, "AnalogAlarmEnabled", AnalogAlarmEnabled, PLAT_LVL_ADMIN, PF_PERSIST),
     PARAM_ARRAY_BOOL(VMP_ANALOGENABLE, "AnalogEnable", AnalogEnable, PLAT_LVL_ADMIN, PF_PERSIST),
+    PARAM_TEXT16(VMP_ANALOGNAME1, "AnalogName1", vmx_AnalogName1, NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
+    PARAM_TEXT16(VMP_ANALOGNAME2, "AnalogName2", vmx_AnalogName2, NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
+    PARAM_ARRAY_INT(VMP_ANALOGSENSORUNITS, "AnalogSensorUnits", vmx_AnalogSensorUnits, CT_I16, 0, 39, PLAT_LVL_ADMIN, PF_PERSIST),
     PARAM_INT(VMP_BACKFLUSHDONUMBER, "BackFlushDONumber", BackFlushDONumber, CT_I16, 0, 20, 0, PLAT_LVL_OPERATOR, PF_PERSIST, NULL),
     PARAM_BIT_D(VMP_BACKFLUSHEXISTS, "BackFlushExists", BackFlushExists, false, PLAT_LVL_ADMIN, PF_PERSIST),
     PARAM_ARRAY_UINT(VMP_DI_FUNCTIONMUX, "DI_FunctionMUX", DI_FunctionMUX, CT_U8, 0, 45, PLAT_LVL_ADMIN, PF_PERSIST),
@@ -692,8 +701,12 @@ static const param_def_t defs[] = {
     PARAM_TEXT(VMP_SINGULARINLET7, "SingularInlet7", SingularInlet[7], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_TEXT(VMP_SINGULARINLET8, "SingularInlet8", SingularInlet[8], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_TEXT(VMP_SINGULARINLET9, "SingularInlet9", SingularInlet[9], NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
+    PARAM_TEXT16(VMP_TEMPNAME1, "TempName1", vmx_TempName1, NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
+    PARAM_TEXT16(VMP_TEMPNAME2, "TempName2", vmx_TempName2, NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_ARRAY_BOOL(VMP_TEMPERATUREALARMENABLED, "TemperatureAlarmEnabled", TemperatureAlarmEnabled, PLAT_LVL_ADMIN, PF_PERSIST),
     PARAM_ARRAY_BOOL(VMP_TEMPERATUREENABLE, "TemperatureEnable", TemperatureEnable, PLAT_LVL_ADMIN, PF_PERSIST),
+    PARAM_ARRAY_INT(VMP_TEMPERATURESENSORUNITS, "TemperatureSensorUnits", vmx_TemperatureSensorUnits, CT_I16, 0, 4, PLAT_LVL_ADMIN, PF_PERSIST),
+    PARAM_ARRAY_INT(VMP_TEMPERATURESHIFT, "TemperatureShift", TemperatureShift, CT_I16, -32768, 32767, PLAT_LVL_ADMIN, PF_PERSIST | PF_FACTORY),
     /* sequences and schedules as record parameters (vm_records.c) */
 #ifdef PARAM_RECORD
     PARAM_RECORD(VMP_SCHEDULE1, "Schedule1", Schedule1, vm_check_record, PLAT_LVL_OPERATOR, PF_PERSIST),

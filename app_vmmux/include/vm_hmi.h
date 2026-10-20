@@ -27,6 +27,7 @@ enum {   /* status parameter IDs */
     VMS_MUX_MODBUS_EN, VMS_MUX_SCHEDULE_EN, VMS_MUX_MANUAL_EN,
     VMS_MUX_MANUAL_POPUP, VMS_MUX_START_VISIBLE, VMS_MUX_SELECT_EN, VMS_MUX_SEQ_ABSENT, VMS_MUX_INCORRECT,
     VMS_MUX_INLET_VISIBLE, VMS_MUX_INLET_ON, VMS_MUX_PURGE_ON,
+    VMS_VM_TUBE1_COLOUR = 5140, VMS_VM_TUBE2_COLOUR,
 };
 
 extern uint8_t ManualMode, ManualModeMUX;               /* HMI-only tags of the old project */
