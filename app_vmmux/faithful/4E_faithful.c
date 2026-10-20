@@ -236,7 +236,15 @@ void ScheduleModeMUX(void) {
         /* R14 w29-w55: end of sequence */
         bool end = (sp && SampleT[19].Out) || (sp && SampleT[18].Out && SequenceMUX.NumberArray[19] == 0);
         for (int i = 0; i <= 18; i++) end = end || SequenceStopMUX[i];
-        if (end) { StartPeriodsMUX = false; clear_b(SingularInletActivate, 19); }
+        if (end) {
+            StartPeriodsMUX = false; clear_b(SingularInletActivate, 19);
+#if VM_FIX_MUX_RESTART
+            /* F5 (app_vmmux): a run that ends inside its start window restarts on the next scan
+             * (S3) with every period timer still done, so the second run stood still with no
+             * valve open. Resetting the period timers here makes the restart begin at period 1. */
+            for (int k = 0; k < 20; k++) { treset(&DwellT[k]); treset(&SampleT[k]); }
+#endif
+        }
     }
 #ifdef ENABLE_DISABLED_RUNGS
     /* R15  DISABLED IN ORIGINAL (unfinished): coil SingularInletActivate[0]. Its other branches, and all of

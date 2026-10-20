@@ -12,6 +12,7 @@
 #include "param_store.h"
 #include "vm_params.h"
 #include "vm_alarms.h"
+#include "vm_hmi.h"
 
 uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];
 
@@ -30,8 +31,10 @@ static void remote_link_pre_logic(void);
 
 static void vm_logic(void)
 {
+    vm_hmi_pre_logic();        /* the old panel's button presses and EntryOK bits, between scans */
     remote_link_pre_logic();   /* Q1: may end a VM Modbus run before Function1 sees it */
-    Function1();          /* VM top level; calls MUX at rung 36 */
+    Function1();
+    vm_hmi_post_logic();          /* VM top level; calls MUX at rung 36 */
     vm_after_logic();
 }
 
@@ -125,7 +128,12 @@ const plat_app_t *vmmux_app(void)
     static plat_app_t a;
     if (a.scan == NULL) {
         a.scan = &vmmux_scan;
-        a.params = vm_params;          a.n_params = vm_n_params;
+        /* the generated table plus the screen-action entries (vm_hmi.c), one array */
+        static param_def_t all[PARAM_MAX];
+        size_t n = 0;
+        for (size_t k = 0; k < vm_n_params && n < PARAM_MAX; k++) all[n++] = vm_params[k];
+        for (size_t k = 0; k < vm_n_hmi_params && n < PARAM_MAX; k++) all[n++] = vm_hmi_params[k];
+        a.params = all;                a.n_params = n;
         a.retain = vm_retain;          a.n_retain = vm_n_retain;
         a.layout_version = 1;          a.migrate = NULL;
         a.modbus_map = vm_modbus;      a.n_modbus_map = vm_n_modbus;

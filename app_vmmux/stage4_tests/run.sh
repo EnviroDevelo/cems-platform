@@ -7,7 +7,7 @@
 # Usage (from the repository root): sh app_vmmux/stage4_tests/run.sh [outdir]
 set -e
 A=app_vmmux; O=${1:-build/stage4}; mkdir -p "$O"
-CF="-DVM_OLD_EMAIL=1 -DVM_OLD_LOGGING=1 -DVM_FIX_DI_REAL_INPUTS=0 -DVM_FIX_AI_SCALING=0 -std=c11 -O1 -g -Wall -Wextra -I$A/include -I$A/faithful -Iplatform/include -fsanitize=address,undefined -fno-omit-frame-pointer"
+CF="-DVM_OLD_EMAIL=1 -DVM_OLD_LOGGING=1 -DVM_FIX_DI_REAL_INPUTS=0 -DVM_FIX_AI_SCALING=0 -DVM_FIX_MUX_RESTART=0 -std=c11 -O1 -g -Wall -Wextra -I$A/include -I$A/faithful -Iplatform/include -fsanitize=address,undefined -fno-omit-frame-pointer"
 run() { k=$1; shift; gcc $CF "$@" -o "$O/$k" -lm && "./$O/$k" > "$O/$k.txt" 2>&1; r=$?; printf '%-4s %s\n' "$k" "$(tail -1 "$O/$k.txt")"; return $r; }
 S="$A/stage4_tests/t4_support.c $A/src/ul_blocks.c"
 F=$A/faithful; T=$A/stage4_tests

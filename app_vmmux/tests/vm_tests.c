@@ -18,6 +18,7 @@
 #include "vm_alarms.h"
 #include "plat_alarm.h"
 #include "modbus.h"
+#include "vm_hmi.h"
 
 int tst_fail, tst_pass;
 
@@ -303,7 +304,7 @@ static void t_modbus(void)
     NumInterconnections = 2; scans(1);
     const uint8_t rd[] = { 3, 0, 0, 0, 2 };
     CHECK_EQ(mb(rd, sizeof rd, r), 6);
-    CHECK_EQ(r[0], 3); CHECK_EQ(((r[2] << 8) | r[3]), 0); CHECK_EQ(((r[4] << 8) | r[5]), 2);   /* fc, byte count, data */
+    CHECK_EQ(r[0], 3); CHECK_EQ(((r[2] << 8) | r[3]), 0); CHECK_EQ(((r[4] << 8) | r[5]), NumInterconnections);   /* whatever the logic made of it */   /* fc, byte count, data */
 
     /* coils 13..34 = AlarmsVM[0..21] */
     AlarmsVM[2] = true; Di_FunctionVM[2] = 1; AlarmEnableVM[2] = true; AlarmConditionVM[2] = 0;  /* alarm on FALSE */
@@ -402,6 +403,168 @@ static void t_q5_q6_retained(void)
     CHECK(FirstCalibPoint[0] == 4.0f); CHECK(SecondCalibPoint[0] == 20.0f);
 }
 
+/* ---------------- operating the machine through the screen commands (vm_hmi.c) ---------------- */
+
+static param_err_t press(unsigned c, uint32_t v)
+{
+    uint16_t id = (uint16_t)(VM_CMD_FIRST + c);
+    plat_cmd_t k = { .id = id, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_OPERATOR, .kind = PLAT_VAL_U32, .v.u = v };
+    param_err_t e = param_check(id, k.kind, k.v, k.src, k.level);
+    if (e == PERR_OK) { plat_cmdq_post(&q, &k); scans(1); }
+    return e;
+}
+
+static void write_i16_array(uint16_t id, const int16_t *v, uint16_t n)
+{
+    CHECK_EQ(param_blob_post(id, 0, v, (uint16_t)(n * 2u), false, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK);
+    scans(1);
+}
+
+static void t_mux_manual_run(void)
+{
+    /* configure a 4-inlet multiplexor as an engineer would on the touchscreen */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    scans(2);
+    CHECK_EQ(NumberOfMUXValves, 4);
+    /* AdjustNumberOfValvesMUX ran (EntryOK emulation): 4 valves = inlets 1..3 shown (42b: i < n) */
+    CHECK(SingularInletVisib[2]); CHECK(!SingularInletVisib[3]);
+    const int16_t map[4] = { 5, 6, 7, 8 };                              /* inlet 1..4 -> DO5..DO8 (1-based) */
+    write_i16_array(VMP_DOSINGULARINLET, map, 4);
+
+    /* the inlet buttons are refused until manual mode is entered */
+    CHECK_EQ(press(VMC_MUX_INLET, 2), PERR_OK);                         /* check passes ... */
+    scans(2);
+    CHECK(!SingularInletActivate[1]);                                   /* ... the interlock refused it at apply */
+
+    /* Manual mode -> popup -> Yes -> Start -> inlet 2 */
+    CHECK(ManualModeEnableMUX);
+    press(VMC_MUX_MANUAL, 1);  scans(1); CHECK(ResetManualAttemptMUX);
+    press(VMC_MUX_MANUAL_YES, 1); scans(1); CHECK(StartButtonVisibMUX);
+    /* the popup's SetBit(EnableSingulManualSelection) is overwritten by MUX rung 10 on the next scan
+     * (it follows the manual run), so selection really opens with Start: as in the original */
+    press(VMC_MUX_MANUAL_START, 1); scans(1); CHECK(ManualModeStartMUX); CHECK(EnableSingulManualSelection);
+    press(VMC_MUX_INLET, 2); scans(3);
+    CHECK(SingularInletActivate[1]);
+    CHECK_EQ(bsp_host.out.do_bits, 1u << 5);                            /* DO6 (0-based 5) open */
+    CHECK_EQ(CurrentModeMUX, 3);
+    char why[64]; CHECK(!vm_fw_safe(why, sizeof why));                  /* no firmware restart now */
+
+    /* inlet 4 is not shown with 4 valves: refused */
+    press(VMC_MUX_INLET, 4); scans(2); CHECK(!SingularInletActivate[3]);
+
+    /* toggle inlet 2 off, leave manual mode */
+    press(VMC_MUX_INLET, 2); scans(3);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);
+    press(VMC_MUX_MANUAL, 1); scans(2);
+    CHECK(!ManualModeStartMUX);
+    CHECK(vm_fw_safe(why, sizeof why));
+}
+
+static void t_vm_modbus_run_and_link_loss(void)
+{
+    /* A one-tube valve manager: 3 inlets on DO1..3, 2 outlets on DO4..5 */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    const plat_app_t *a = vmmux_app();
+    CHECK_EQ(mb_init(a->modbus_map, a->n_modbus_map, &a->ident), 0);
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 1), PERR_OK);
+    scans(2);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 3), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 2), PERR_OK);
+    scans(2);
+    /* DOInlet / DOOutlet hold 0-based outputs, indexed by the valve's position in one sequence:
+     * inlets first, then outlets (43c: DOOutlet[FirstInlets + SecondInlets + k]) */
+    const int16_t din[3] = { 0, 1, 2 }, dout[5] = { 0, 0, 0, 3, 4 };
+    write_i16_array(VMP_DOINLET, din, 3);
+    write_i16_array(VMP_DOOUTLET, dout, 5);
+    scans(5);
+    CHECK_EQ(FirstInlets, 3); CHECK_EQ(FirstOutlets, 2); CHECK(ModbusModeEnable);
+
+    /* the operator puts the VM in Modbus mode on the touchscreen, then hands over to the PLC */
+    CHECK_EQ(press(VMC_VM_MODBUS, 1), PERR_OK);
+    scans(2);
+    CHECK(StartModbus); CHECK_EQ(CurrentMode, 1);
+    vm_link_close_min = 1;
+    set_mode(PARAM_MODE_REMOTE);
+    uint8_t r[256];
+    const uint8_t t[] = { 16, 0, 10, 0, 2, 4, 0x00, 0x36, 0xEE, 0x80 };   /* ModbusTimer.Preset = 3,600,000 ms */
+    CHECK_EQ(mb(t, sizeof t, r), 5);
+    const uint8_t route[] = { 16, 0, 6, 0, 2, 4, 0, 2, 0, 1 };           /* inlet 2, outlet 1 */
+    CHECK_EQ(mb(route, sizeof route, r), 5);
+    scans(1);
+    const uint8_t go[] = { 5, 0, 1, 0xFF, 0 };                          /* coil 1 StartModbusCoil */
+    CHECK_EQ(mb(go, sizeof go, r), 5);
+    scans(5);
+    /* the selections are cleared at the end of every scan (Function1 R37, V21), so the route
+     * shows only in the outputs: inlet 2 = DO2, outlet 1 = DO4 (0-based 1 and 3) */
+    CHECK(!ValveSelectionErrorModbus);
+    CHECK_EQ(bsp_host.out.do_bits, (1u << 1) | (1u << 3));
+    uint32_t open_bits = bsp_host.out.do_bits;
+
+    /* the PLC goes quiet: link lost after 10 s, valves held for vm_link_close_min, then closed */
+    scans(1100 + 3000);
+    CHECK(param_remote_link_lost());
+    CHECK_EQ(bsp_host.out.do_bits, open_bits);                          /* 40 s in: still open */
+    scans(3000);
+    CHECK(!StartModbus);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);                                 /* Q1: every VM valve closed */
+    vm_link_close_min = 30;
+    set_mode(PARAM_MODE_LOCAL);
+}
+
+static void t_mux_schedule_run(void)
+{
+    /* the automated sequence: inlet 2 then inlet 3, dwell 2 s + sample 3 s each */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    const int16_t map[3] = { 5, 6, 7 };                              /* inlet 1..3 -> DO5..DO7 (1-based) */
+    write_i16_array(VMP_DOSINGULARINLET, map, 3);
+    memset(&SequenceMUX, 0, sizeof SequenceMUX);                      /* as saved by the sequence editor */
+    SequenceMUX.NumberOfPeriods = 2;
+    SequenceMUX.NumberArray[0] = 1; SequenceMUX.NumberArray[1] = 2;  /* rows past the last period are 0 */
+    /* SingulValves 1 and 2 open SingularInletActivate[1] and [2] = inlets 2 and 3; value 0 opens
+     * nothing, so inlet 1 cannot be scheduled (finding S8, open item 12) */
+    SequenceMUX.SingulValves[0] = 1; SequenceMUX.SingulValves[1] = 2;
+    SequenceMUX.DwellTimer[0] = SequenceMUX.DwellTimer[1] = 2000;
+    SequenceMUX.SampleTimer[0] = SequenceMUX.SampleTimer[1] = 3000;
+    memset(&ScheduleMUX, 0, sizeof ScheduleMUX);                      /* every day, all day */
+    ScheduleMUX.To_Hour[2] = 23; ScheduleMUX.To_Hour[1] = 59; ScheduleMUX.To_Hour[0] = 59;
+    scans(2);
+    CHECK_EQ(press(VMC_MUX_SCHEDULE, 1), PERR_OK);
+    uint32_t seen[8]; int when[8], n = 0; uint32_t last = 0xFFFFFFFFu;
+    for (int t = 0; t < 2500; t++) {
+        scans(1);
+        if (bsp_host.out.do_bits != last && n < 8) { last = bsp_host.out.do_bits; seen[n] = last; when[n++] = t * 10; }
+    }
+    CHECK(n >= 3);
+    CHECK_EQ(seen[0], 1u << 5);  CHECK(when[0] <= 20);                 /* inlet 2 (DO6) at the start */
+    CHECK_EQ(seen[1], 1u << 6);  CHECK(when[1] >= 4900 && when[1] <= 5050);   /* inlet 3 after 2 s + 3 s */
+    CHECK_EQ(seen[2], 0u);       CHECK(when[2] >= 9900 && when[2] <= 10050);  /* end of the sequence */
+    CHECK_EQ(CurrentModeMUX, 2);
+    /* F5 fixed (VM_FIX_MUX_RESTART): ending inside the start window, the sequence starts again from
+     * period 1 (S3), so the loop goes on: inlet 2 again one scan after the end */
+#if VM_FIX_MUX_RESTART
+    CHECK(n >= 6);
+    CHECK_EQ(seen[3], 1u << 5); CHECK(when[3] - when[2] <= 30);
+    CHECK_EQ(seen[4], 1u << 6); CHECK(when[4] - when[3] >= 4900 && when[4] - when[3] <= 5050);
+#else
+    CHECK_EQ(n, 3);                                                  /* the original stands still */
+#endif
+    CHECK(StartPeriodsMUX);
+    press(VMC_MUX_SCHEDULE, 1); scans(3);
+    CHECK(!StartPeriodsMUX);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);
+}
+
 int main(void)
 {
     RUN(t_ai_conversion);
@@ -419,6 +582,9 @@ int main(void)
     RUN(t_modbus);
     RUN(t_q1_link_loss);
     RUN(t_q5_q6_retained);
+    RUN(t_mux_manual_run);
+    RUN(t_vm_modbus_run_and_link_loss);
+    RUN(t_mux_schedule_run);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

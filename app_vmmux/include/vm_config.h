@@ -41,4 +41,13 @@
 #define VM_FIX_AI_SCALING 1
 #endif
 
+/* Finding F5 (integration, 20 Oct): a MUX sequence that ends inside its start window restarts
+ * at once (S3), but its dwell/sample timers were never unpowered, so the restarted run stands
+ * with no valve open until the schedule is stopped. Gary (20 Oct): "the MUX should typically be
+ * an automated loop", which this breaks. 1: the period timers are reset when a run ends, so a
+ * restart begins at period 1 (ScheduleModeMUX rung 14). 0: as the original. */
+#ifndef VM_FIX_MUX_RESTART
+#define VM_FIX_MUX_RESTART 1
+#endif
+
 #endif
