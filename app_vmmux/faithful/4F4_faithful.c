@@ -255,7 +255,7 @@ void Function1(void) {
     if (Ladder_Initial_Cycle && strcmp(Password, "") == 0) { strncpy(Password, DEFAULT_PASSWORD, 16); Password[16] = 0; }
     /* R35, R36 */
     Analog_signals();
-    MUX();
+    if (vm_mux_enable) MUX(); else vm_mux_off();   /* app_vmmux: the MUX feature's master enable (Gary 20 Oct) */
     /* R37: all four selections set to 0, unconditionally, every scan (V21) */
     SelectedFirstInlet = 0; SelectedFirstOutlet = 0; SelectedSecondInlet = 0; SelectedSecondOutlet = 0;
     /* R38: MUX pause while a VM route is selected. Runs right after R37, so it is always OFF (V22). */

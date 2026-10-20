@@ -50,4 +50,13 @@
 #define VM_FIX_MUX_RESTART 1
 #endif
 
+/* Gary (20 Oct): "The MUX has X amount of channels, a time that each of the channels will run
+ * for and then this will simply loop until stopped for service." 1: the scheduler mode ignores
+ * the calendar window (ScheduleMUX): once started it runs the sequence (channel = period,
+ * time = dwell + sample) and starts it again at once, until the Scheduler button, the digital
+ * stop input, a pause or the analyser lock stops it. 0: the original daily start window. */
+#ifndef VM_MUX_CONTINUOUS
+#define VM_MUX_CONTINUOUS 1
+#endif
+
 #endif

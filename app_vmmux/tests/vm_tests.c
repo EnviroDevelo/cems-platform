@@ -536,8 +536,10 @@ static void t_mux_schedule_run(void)
     SequenceMUX.SingulValves[0] = 1; SequenceMUX.SingulValves[1] = 2;
     SequenceMUX.DwellTimer[0] = SequenceMUX.DwellTimer[1] = 2000;
     SequenceMUX.SampleTimer[0] = SequenceMUX.SampleTimer[1] = 3000;
-    memset(&ScheduleMUX, 0, sizeof ScheduleMUX);                      /* every day, all day */
-    ScheduleMUX.To_Hour[2] = 23; ScheduleMUX.To_Hour[1] = 59; ScheduleMUX.To_Hour[0] = 59;
+    memset(&ScheduleMUX, 0, sizeof ScheduleMUX);
+#if !VM_MUX_CONTINUOUS
+    ScheduleMUX.To_Hour[2] = 23; ScheduleMUX.To_Hour[1] = 59; ScheduleMUX.To_Hour[0] = 59;   /* every day, all day */
+#endif   /* continuous (Gary 20 Oct): the calendar is not used; an empty window must not matter */
     scans(2);
     CHECK_EQ(press(VMC_MUX_SCHEDULE, 1), PERR_OK);
     uint32_t seen[8]; int when[8], n = 0; uint32_t last = 0xFFFFFFFFu;
@@ -550,8 +552,8 @@ static void t_mux_schedule_run(void)
     CHECK_EQ(seen[1], 1u << 6);  CHECK(when[1] >= 4900 && when[1] <= 5050);   /* inlet 3 after 2 s + 3 s */
     CHECK_EQ(seen[2], 0u);       CHECK(when[2] >= 9900 && when[2] <= 10050);  /* end of the sequence */
     CHECK_EQ(CurrentModeMUX, 2);
-    /* F5 fixed (VM_FIX_MUX_RESTART): ending inside the start window, the sequence starts again from
-     * period 1 (S3), so the loop goes on: inlet 2 again one scan after the end */
+    /* the loop (VM_MUX_CONTINUOUS, and F5 fixed by VM_FIX_MUX_RESTART): the sequence starts again
+     * from channel 1 one scan after the end, until stopped */
 #if VM_FIX_MUX_RESTART
     CHECK(n >= 6);
     CHECK_EQ(seen[3], 1u << 5); CHECK(when[3] - when[2] <= 30);
@@ -563,6 +565,40 @@ static void t_mux_schedule_run(void)
     press(VMC_MUX_SCHEDULE, 1); scans(3);
     CHECK(!StartPeriodsMUX);
     CHECK_EQ(bsp_host.out.do_bits, 0u);
+}
+
+static void t_mux_master_enable(void)
+{
+    /* Gary 20 Oct: the whole MUX feature can be switched off (mux_enable, parameter 2906) */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK(vm_mux_enable);                                              /* default on */
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    const int16_t map[3] = { 5, 6, 7 };
+    write_i16_array(VMP_DOSINGULARINLET, map, 3);
+    press(VMC_MUX_MANUAL, 1); press(VMC_MUX_MANUAL_YES, 1); press(VMC_MUX_MANUAL_START, 1);
+    press(VMC_MUX_INLET, 1); scans(3);
+    CHECK_EQ(bsp_host.out.do_bits, 1u << 4);                           /* inlet 1 open (DO5) */
+
+    plat_cmd_t c = { .id = VM_PARAM_MUX_ENABLE, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_ADMIN,
+                     .kind = PLAT_VAL_BOOL, .v.b = false };
+    CHECK_EQ(param_check(c.id, c.kind, c.v, c.src, c.level), PERR_OK);
+    plat_cmdq_post(&q, &c); scans(3);
+    CHECK(!vm_mux_enable);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);                                /* every MUX valve closed */
+    CHECK(!ManualModeStartMUX); CHECK_EQ(CurrentModeMUX, 0);
+    /* the MUX buttons are refused while it is off; the VM is unaffected */
+    press(VMC_MUX_SCHEDULE, 1); scans(2); CHECK(!StartScheduleMUX);
+    press(VMC_MUX_MANUAL, 1);   scans(2); CHECK(!ResetManualAttemptMUX);
+    /* kept through power-off, and on again from rest */
+    scans(200); power_up(); scans(2);
+    CHECK(!vm_mux_enable);
+    c.v.b = true; plat_cmdq_post(&q, &c); scans(3);
+    CHECK(vm_mux_enable);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);                                /* nothing restarts by itself */
+    CHECK(ManualModeEnableMUX);
 }
 
 int main(void)
@@ -585,6 +621,7 @@ int main(void)
     RUN(t_mux_manual_run);
     RUN(t_vm_modbus_run_and_link_loss);
     RUN(t_mux_schedule_run);
+    RUN(t_mux_master_enable);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

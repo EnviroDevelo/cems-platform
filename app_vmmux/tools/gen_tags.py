@@ -72,6 +72,8 @@ NOT_TAGS = {
     "TA30_AI": "io", "TA30_AI_Status": "io", "TA30_TEMP": "io",
     # General.* HMI bits (PLATFORM.md rule 4): the application defines them until the UI supplies them
     "Touched_Bit": "hmi", "VNC_Touched_Bit": "hmi",
+    # application additions declared in a chunk header, defined in their own file
+    "vm_mux_enable": "model",
     # diagnostics counters (vm_types.h)
     "g_oob": "diag", "g_div0": "diag", "g_hang": "diag", "g_out_of_range_writes": "diag",
     # assumption switches of the Stage 4 models: fixed at their default reading

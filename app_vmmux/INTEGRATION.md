@@ -31,7 +31,7 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID |
 
 Build and test (repository root): `make -f app_vmmux/app.mk vm-test` (12 Stage 4 suites, 110,000+ checks,
-and 250 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
+and 270 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
 runs the platform's networked simulation with this application (Modbus TCP 1502, HTTPS 8443).
 Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Existing Design/Analysis"`.
 
@@ -40,9 +40,9 @@ Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Exis
 | | |
 |---|---|
 | Tags | 450 definitions covering 768 dictionary tags, + 117 UI/Modbus-only tags |
-| Parameters | 350 of 512 (149 settings, 6 new, 195 Modbus-only) |
+| Parameters | 397 of 512 (149 settings, 7 new, 195 Modbus-only, 46 screen commands and status) |
 | Retained blocks | 194 |
-| **FRAM user image** | **13,392 bytes**; 14,848 per copy on the 32 KB part (90.2 %); 128 KB part chosen (Q7) |
+| **FRAM user image** | **13,400 bytes**; 14,848 per copy on the 32 KB part (90.2 %); 128 KB part chosen (Q7) |
 | Alarms | 57 (IDs 100-173) |
 | Modbus | 201 old entries + 6 platform alarm entries |
 
@@ -72,6 +72,7 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_OLD_LOGGING` | 0 | Platform data logger replaces the data table / SD file (70 section 8). Channels AI1, AI2, RTD1, RTD2, one sample per scan with quality OK/FLAG/BAD/N/A |
 | `VM_FIX_DI_REAL_INPUTS` | 1 | Open item 8: DISABLED rungs 9-10 of DI_Assigning run, so DIG_IN_01..20 reach the logic |
 | `VM_FIX_AI_SCALING` | 1 | Open item 9: Low point at raw 0, High point at full scale |
+| `VM_MUX_CONTINUOUS` | 1 | Q8: the MUX loops its sequence until stopped (no calendar window) |
 | `VM_FIX_MUX_RESTART` | 1 | Finding F5: reset the MUX period timers when a run ends, so a restart in the window begins at period 1 (Gary: the MUX is the automated loop) |
 | `ENABLE_DISABLED_RUNGS` | off | every other DISABLED IN ORIGINAL rung, kept in full, off |
 | `VM_MB_BYTE_FLAGS` / `VM_MB_WORD_FLAGS` | 0 | Modbus byte / word order: Modbus convention (Q3) |
@@ -102,7 +103,7 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | Q5 | Range-alarm enables and limits retained; temperature alarm delay and hysteresis | `tools/decisions.py`: AnalogEnable, TemperatureEnable, AnalogAlarmEnabled, TemperatureAlarmEnabled, RangeMin/Max, Min/MaxTemperatureRange are retained settings (K4). New parameters `rtd1/2_alarm_delay_s` (default 10 s, the old temperature-email delay) and `rtd1/2_alarm_hyst` (0.1 degree, default 0). Test `t_q5_q6_retained` |
 | Q6 | Calibration values retained | `FirstCalibPoint` / `SecondCalibPoint` are factory class: separate FRAM image, never cleared by "restore defaults". Note: a new unit shows the platform's CALIBRATION INVALID alarm until a calibration value has been saved once |
 | Q7 | 128 KB FRAM | passed to the core thread (R4) |
-| Q8 | **Open.** The original MUX runs its sequence once per daily start window (start + 5 min, 45 section 1), repeating only while still inside that window. Is that the "automated loop" you mean, or should the MUX repeat its sequence continuously while the scheduler is on (no daily window)? | as the original + F5 fix |
+| Q8 | MUX: "X channels, a time each runs for, loops until stopped for service"; and a master enable for the whole MUX feature. The VM keeps its own sequence and schedule. | `VM_MUX_CONTINUOUS` (default 1): scheduler mode ignores the calendar window and repeats the sequence until the Scheduler button, the digital stop input, a pause or the analyser lock stops it (channel = period, time = dwell + sample; set dwell 0 for a single time). `mux_enable` (parameter 2906, admin, retained, default on, `vm_mux.c`): off holds the MUX at rest, closes its valves, clears its alarms and refuses its buttons; the VM is unaffected. Tests `t_mux_schedule_run`, `t_mux_master_enable` |
 
 ## 7. Requests to the core-platform thread
 
@@ -112,4 +113,4 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | R2 | The application-screen API (handover section 9). The screen list, by parameter ID, is `docs/SCREENS.md`. |
 | R3 | A UI-activity flag for the old screen-saver logic (`Touched_Bit`), low priority. |
 | R4 | FRAM size (D6): the application's user image is **13,392 bytes**; Gary chose the **128 KB** part (20 Oct). |
-| R5 | `make target` was not run here (no ARM toolchain in this workspace); please include `app_vmmux` in the target compile check, or run it on the PC with `ext/`. |
+| R5 | Include `app_vmmux` in your target compile check and memory report (`make target`, `tools/check_target.sh`): the ARM toolchain and `ext/` are only in the core workspace. |

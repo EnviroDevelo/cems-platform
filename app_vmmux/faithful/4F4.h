@@ -45,6 +45,9 @@ void Loading(void); void FillNumbers(void); void FB_ValveSelectionInter(void); v
 void Route(void); void ModbusMode(void); void ScheduleMode(void); void ModbusValveNames(void); void DI_Assigning(void);
 void Email(void); void DO_Control(void); void Analog_signals(void); void MUX(void);
 
+extern bool vm_mux_enable;   /* app_vmmux: MUX feature enable (vm_mux.c) */
+void vm_mux_off(void);       /* app_vmmux: the MUX's state while the feature is disabled (vm_mux.c) */
+
 void Interconnection_settings(void);
 void Function1(void);
 #endif

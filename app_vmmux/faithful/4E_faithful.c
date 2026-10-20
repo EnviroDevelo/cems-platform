@@ -43,6 +43,9 @@ static uint32_t rtc_to_unix(void) {
 /* TimeFunction (Schedule): 11 section 4. Years 0/0 and all-zero bit arrays mean "any"; From <= now < To.
  * ASSUMPTION A4.11: To is taken as h*3600 + m*60 + s with no range check, so 10:62:00 acts as 11:02:00. */
 static bool any_set(const bool *a, int n) { for (int i = 0; i < n; i++) if (a[i]) return true; return false; }
+#if VM_MUX_CONTINUOUS
+__attribute__((unused))
+#endif
 static bool time_function(const Schedule_t *s) {
     if (!(s->From_Year == 0 && s->To_Year == 0) && (RTC_Date.Year < s->From_Year || RTC_Date.Year > s->To_Year)) return false;
     if (any_set(s->Month, 12) && !s->Month[RTC_Date.Month - 1]) return false;
@@ -169,7 +172,13 @@ void ScheduleModeMUX(void) {
         if (p1 || p2 || p3) { CurrentUnix = rtc_to_unix(); ScheduleCalculate1stFastLoopPump(); }
     }
     /* R4 */
+#if VM_MUX_CONTINUOUS
+    /* Gary 20 Oct: "the MUX has X channels, a time each runs for, and simply loops until stopped
+     * for service". No calendar window: armed = run, again and again (vm_config.h). */
+    {   bool p = StartScheduleMUX && !StartPeriodsMUX;
+#else
     {   bool p = StartScheduleMUX && time_function(&ScheduleMUX) && !StartPeriodsMUX;
+#endif
         bool w7 = (p && EnableLockValvesIfAnalyzerNotOk && !AnalyzerOkBitAlarm) || (p && !EnableLockValvesIfAnalyzerNotOk);
         bool w10 = w7 && !StopSeqBit && !PauseMUX;
         StartMUXSchedule1 = pcoil(&m4, w10);

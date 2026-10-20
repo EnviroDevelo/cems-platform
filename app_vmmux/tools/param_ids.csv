@@ -154,6 +154,7 @@ id,dictionary_name
 2903,(new) rtd2_alarm_delay_s
 2904,(new) rtd1_alarm_hyst
 2905,(new) rtd2_alarm_hyst
+2906,(new) mux_enable
 3000,Alarm0 DescriptionBuf
 3001,Alarm0 DescriptionMUXBuf
 3002,Alarm1 DescriptionBuf

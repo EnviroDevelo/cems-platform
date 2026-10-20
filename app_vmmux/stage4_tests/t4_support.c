@@ -18,3 +18,7 @@ rtc_time_t RTC_Time = { .Seconds = 0, .Minutes = 5, .Hours = 9 };
 void TwoORFb_22(void);
 void TwoORFb_22(void) { g_twoorfb22_calls++; }
 #endif
+/* app_vmmux additions the Function1 test links against: the MUX is enabled, as in the original */
+__attribute__((weak)) bool vm_mux_enable = true;
+void vm_mux_off(void);
+__attribute__((weak)) void vm_mux_off(void) {}
