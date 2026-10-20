@@ -10,6 +10,7 @@
 #include "vm_app.h"
 #include "vm_tags.h"
 #include "param_store.h"
+#include "vm_params.h"
 
 uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];
 
@@ -19,7 +20,9 @@ static void vm_init(void)
 {
     /* Power-up values are the static initialisers of src/vm_tags.c (generated from the
      * data dictionary); retained tags are then loaded by the parameter store before the
-     * first scan. Nothing else to do here. */
+     * first scan. The table's text and block defaults are copies of those power-up values,
+     * taken here, before param_init and the FRAM load (scan_init calls this first). */
+    vm_params_snapshot();
 }
 
 static void vm_logic(void)

@@ -13,6 +13,8 @@
 #include "bsp_host.h"
 #include "vm_app.h"
 #include "vm_tags.h"
+#include "vm_params.h"
+#include "param_store.h"
 
 int tst_fail, tst_pass;
 
@@ -179,6 +181,60 @@ static void t_fw_safe_modes(void)
     CurrentModeMUX = 0; CHECK(vm_fw_safe(why, sizeof why));
 }
 
+
+/* ---------------- parameter table and store ---------------- */
+
+static param_err_t write_i(uint16_t id, int32_t v)
+{
+    plat_cmd_t c = { .id = id, .src = PLAT_SRC_LOCAL, .level = PLAT_LVL_ADMIN, .kind = PLAT_VAL_I32, .v.i = v };
+    param_err_t e = param_check(id, c.kind, c.v, c.src, c.level);
+    if (e == PERR_OK) { plat_cmdq_post(&q, &c); scans(1); }
+    return e;
+}
+
+static void t_store_fits_and_keeps(void)
+{
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(200);                                   /* the store saves within about 1 s */
+    store_stats_t st = param_store_stats();
+    printf("  user image %u bytes (32 KB FRAM map: 14848 per copy), %u parameters, %u blocks, status 0x%04x\n",
+           (unsigned)st.payload_usr, (unsigned)vm_n_params, (unsigned)vm_n_retain, param_store_status());
+    CHECK(!(param_store_status() & PSTAT_TABLE_ERROR));
+    CHECK(st.payload_usr > 0);
+    CHECK(st.payload_usr <= 14848u);
+
+    /* a setting written through the table survives a power cycle */
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 12), PERR_OK);
+    CHECK_EQ(MaxNumberOfValves, 12);
+    /* the panel's limits: 2..20, and NumberOfMUXValves 2..MaxNumberOfValves (interlock at apply) */
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 21), PERR_RANGE);
+    write_i(VMP_MAXNUMBEROFVALVES, 1);
+    CHECK_EQ(MaxNumberOfValves, 12);              /* refused by the interlock */
+    write_i(VMP_NUMBEROFMUXVALVES, 13);
+    CHECK(NumberOfMUXValves != 13);               /* above MaxNumberOfValves: refused (the logic itself may adjust it) */
+    write_i(VMP_NUMBEROFMUXVALVES, 8);
+    CHECK_EQ(NumberOfMUXValves, 8);
+    strcpy(SingularInlet[2], "Stack B");          /* a retained name the logic or UI changed */
+    scans(200);
+    MaxNumberOfValves = 0; NumberOfMUXValves = 0; memset(SingularInlet[2], 0, sizeof SingularInlet[2]);
+    power_up();
+    CHECK_EQ(MaxNumberOfValves, 12);
+    CHECK_EQ(NumberOfMUXValves, 8);
+    CHECK(strcmp(SingularInlet[2], "Stack B") == 0);
+}
+
+static void t_power_up_defaults(void)
+{
+    /* blank FRAM: retained blocks and texts come back to the original power-up values, not zero */
+    ModbusTimer2.Preset = 1; memset(ParamColName[0], 0, sizeof ParamColName[0]);
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    CHECK_EQ(ModbusTimer2.Preset, 7200000u);
+    CHECK(strcmp(ParamColName[0], "Param1") == 0);
+    CHECK_EQ(LoggingIndex, 1);
+}
+
 int main(void)
 {
     RUN(t_ai_conversion);
@@ -190,6 +246,8 @@ int main(void)
     RUN(t_ai_scaling_fixed);
     RUN(t_rtd_through_logic);
     RUN(t_fw_safe_modes);
+    RUN(t_store_fits_and_keeps);
+    RUN(t_power_up_defaults);
     printf("\nvm_tests: %d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
 }

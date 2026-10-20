@@ -1,0 +1,337 @@
+id,dictionary_name
+1000,AI0ColNumberName
+1001,AI1ColNumberName
+1002,Alarm0 Description
+1003,Alarm0 DescriptionMUX
+1004,Alarm1 Description
+1005,Alarm1 DescriptionMUX
+1006,Alarm10 Description
+1007,Alarm10 DescriptionMUX
+1008,Alarm11 Description
+1009,Alarm11 DescriptionMUX
+1010,Alarm12 Description
+1011,Alarm12 DescriptionMUX
+1012,Alarm13 Description
+1013,Alarm13 DescriptionMUX
+1014,Alarm14 Description
+1015,Alarm14 DescriptionMUX
+1016,Alarm15 Description
+1017,Alarm15 DescriptionMUX
+1018,Alarm16 Description
+1019,Alarm16 DescriptionMUX
+1020,Alarm17 Description
+1021,Alarm17 DescriptionMUX
+1022,Alarm18 Description
+1023,Alarm18 DescriptionMUX
+1024,Alarm19 Description
+1025,Alarm19 DescriptionMUX
+1026,Alarm2 Description
+1027,Alarm2 DescriptionMUX
+1028,Alarm20 Description
+1029,Alarm20 DescriptionMUX
+1030,Alarm21 Description
+1031,Alarm21 DescriptionMUX
+1032,Alarm3 Description
+1033,Alarm3 DescriptionMUX
+1034,Alarm4 Description
+1035,Alarm4 DescriptionMUX
+1036,Alarm5 Description
+1037,Alarm5 DescriptionMUX
+1038,Alarm6 Description
+1039,Alarm6 DescriptionMUX
+1040,Alarm7 Description
+1041,Alarm7 DescriptionMUX
+1042,Alarm8 Description
+1043,Alarm8 DescriptionMUX
+1044,Alarm9 Description
+1045,Alarm9 DescriptionMUX
+1046,AlarmConditionMUX
+1047,AlarmConditionVM
+1048,AlarmEnableMUX
+1049,AlarmEnableVM
+1050,BackFlushDONumber
+1051,BackFlushExists
+1052,DI_FunctionMUX
+1053,DOInlet
+1054,DOOutlet
+1055,DOPurgeInlet
+1056,DOSingularInlet
+1057,DefaultModeOnPowerup
+1058,Di_FunctionVM
+1059,EmailEnableMUX
+1060,EmailEnableVM
+1061,EnableLockValvesIfAnalyzerNotOk
+1062,FeedbackConditionMUX
+1063,FirstCalibPoint
+1064,FirstInlets
+1065,FirstOutlets
+1066,FlowAnalogInput
+1067,FlowValidation
+1068,FlowValidationTimer
+1069,InletName0
+1070,InletName1
+1071,InletName10
+1072,InletName11
+1073,InletName12
+1074,InletName13
+1075,InletName14
+1076,InletName15
+1077,InletName16
+1078,InletName17
+1079,InletName18
+1080,InletName2
+1081,InletName3
+1082,InletName4
+1083,InletName5
+1084,InletName6
+1085,InletName7
+1086,InletName8
+1087,InletName9
+1088,Manual Timer
+1089,Manual Timer2
+1090,Manual TimerMUX
+1091,MaxNumberOfValves
+1092,ModemIncudeOrNot
+1093,NumInterconnections
+1094,NumberOfMUXValves
+1095,OutletName0
+1096,OutletName1
+1097,OutletName10
+1098,OutletName11
+1099,OutletName12
+1100,OutletName13
+1101,OutletName14
+1102,OutletName15
+1103,OutletName16
+1104,OutletName17
+1105,OutletName18
+1106,OutletName2
+1107,OutletName3
+1108,OutletName4
+1109,OutletName5
+1110,OutletName6
+1111,OutletName7
+1112,OutletName8
+1113,OutletName9
+1114,ParameterColNumberArray
+1115,ParameterColNumberLoggingArray
+1116,RTD0ColNumberName
+1117,RTD1ColNumberName
+1118,ScreenSaverActive
+1119,SecondCalibPoint
+1120,SecondInlets
+1121,SecondOutlets
+1122,SingularInlet0
+1123,SingularInlet1
+1124,SingularInlet10
+1125,SingularInlet11
+1126,SingularInlet12
+1127,SingularInlet13
+1128,SingularInlet14
+1129,SingularInlet15
+1130,SingularInlet16
+1131,SingularInlet17
+1132,SingularInlet18
+1133,SingularInlet2
+1134,SingularInlet3
+1135,SingularInlet4
+1136,SingularInlet5
+1137,SingularInlet6
+1138,SingularInlet7
+1139,SingularInlet8
+1140,SingularInlet9
+3000,Alarm0 DescriptionBuf
+3001,Alarm0 DescriptionMUXBuf
+3002,Alarm1 DescriptionBuf
+3003,Alarm1 DescriptionMUXBuf
+3004,Alarm10 DescriptionBuf
+3005,Alarm10 DescriptionMUXBuf
+3006,Alarm11 DescriptionBuf
+3007,Alarm11 DescriptionMUXBuf
+3008,Alarm12 DescriptionBuf
+3009,Alarm12 DescriptionMUXBuf
+3010,Alarm13 DescriptionBuf
+3011,Alarm13 DescriptionMUXBuf
+3012,Alarm14 DescriptionBuf
+3013,Alarm14 DescriptionMUXBuf
+3014,Alarm15 DescriptionBuf
+3015,Alarm15 DescriptionMUXBuf
+3016,Alarm16 DescriptionBuf
+3017,Alarm16 DescriptionMUXBuf
+3018,Alarm17 DescriptionBuf
+3019,Alarm17 DescriptionMUXBuf
+3020,Alarm18 DescriptionBuf
+3021,Alarm18 DescriptionMUXBuf
+3022,Alarm19 DescriptionBuf
+3023,Alarm19 DescriptionMUXBuf
+3024,Alarm2 DescriptionBuf
+3025,Alarm2 DescriptionMUXBuf
+3026,Alarm20 DescriptionBuf
+3027,Alarm20 DescriptionMUXBuf
+3028,Alarm21 DescriptionBuf
+3029,Alarm21 DescriptionMUXBuf
+3030,Alarm3 DescriptionBuf
+3031,Alarm3 DescriptionMUXBuf
+3032,Alarm4 DescriptionBuf
+3033,Alarm4 DescriptionMUXBuf
+3034,Alarm5 DescriptionBuf
+3035,Alarm5 DescriptionMUXBuf
+3036,Alarm6 DescriptionBuf
+3037,Alarm6 DescriptionMUXBuf
+3038,Alarm7 DescriptionBuf
+3039,Alarm7 DescriptionMUXBuf
+3040,Alarm8 DescriptionBuf
+3041,Alarm8 DescriptionMUXBuf
+3042,Alarm9 DescriptionBuf
+3043,Alarm9 DescriptionMUXBuf
+3044,AlarmLoadingTable
+3045,Analog Alarm0 DescriptionBuf
+3046,Analog Alarm1 DescriptionBuf
+3047,AverageValues
+3048,DOInletVisibility10
+3049,DOInletVisibility20
+3050,DOOutletVisibility10
+3051,DOOutletVisibility20
+3052,DecimPart
+3053,DefaultModeOnPowerupMUX
+3054,EmailVisibMUX
+3055,EnableVisibleMUX
+3056,EnableVisibleVM
+3057,FBEmailEnableMUX
+3058,FirstInterconInletName1
+3059,FirstInterconInletName10
+3060,FirstInterconInletName11
+3061,FirstInterconInletName12
+3062,FirstInterconInletName13
+3063,FirstInterconInletName14
+3064,FirstInterconInletName15
+3065,FirstInterconInletName16
+3066,FirstInterconInletName17
+3067,FirstInterconInletName18
+3068,FirstInterconInletName19
+3069,FirstInterconInletName2
+3070,FirstInterconInletName3
+3071,FirstInterconInletName4
+3072,FirstInterconInletName5
+3073,FirstInterconInletName6
+3074,FirstInterconInletName7
+3075,FirstInterconInletName8
+3076,FirstInterconInletName9
+3077,FirstInterconOutletName1
+3078,FirstInterconOutletName10
+3079,FirstInterconOutletName11
+3080,FirstInterconOutletName12
+3081,FirstInterconOutletName13
+3082,FirstInterconOutletName14
+3083,FirstInterconOutletName15
+3084,FirstInterconOutletName16
+3085,FirstInterconOutletName17
+3086,FirstInterconOutletName18
+3087,FirstInterconOutletName19
+3088,FirstInterconOutletName2
+3089,FirstInterconOutletName3
+3090,FirstInterconOutletName4
+3091,FirstInterconOutletName5
+3092,FirstInterconOutletName6
+3093,FirstInterconOutletName7
+3094,FirstInterconOutletName8
+3095,FirstInterconOutletName9
+3096,FlushValveMUX20
+3097,FractPart
+3098,LoggingIndex
+3099,LoginIntervalsGeneral
+3100,ModbusParam0
+3101,ModbusTimer2
+3102,ModbusValueEnabled
+3103,OneInterconnectingTubeVisible
+3104,ParameterName10
+3105,ParameterName11
+3106,ParameterName12
+3107,ParameterName13
+3108,ParameterName14
+3109,ParameterName15
+3110,ParameterName16
+3111,ParameterName17
+3112,ParameterName18
+3113,ParameterName19
+3114,ParameterName4
+3115,ParameterName5
+3116,ParameterName6
+3117,ParameterName7
+3118,ParameterName8
+3119,ParameterName9
+3120,Read Request
+3121,SNentered
+3122,SaveDataFailedReserv
+3123,Schedule1
+3124,Schedule2
+3125,ScheduleMUX
+3126,SecondInterconInletName1
+3127,SecondInterconInletName10
+3128,SecondInterconInletName11
+3129,SecondInterconInletName12
+3130,SecondInterconInletName13
+3131,SecondInterconInletName14
+3132,SecondInterconInletName15
+3133,SecondInterconInletName16
+3134,SecondInterconInletName17
+3135,SecondInterconInletName18
+3136,SecondInterconInletName2
+3137,SecondInterconInletName3
+3138,SecondInterconInletName4
+3139,SecondInterconInletName5
+3140,SecondInterconInletName6
+3141,SecondInterconInletName7
+3142,SecondInterconInletName8
+3143,SecondInterconInletName9
+3144,SecondInterconOutletName1
+3145,SecondInterconOutletName10
+3146,SecondInterconOutletName11
+3147,SecondInterconOutletName12
+3148,SecondInterconOutletName13
+3149,SecondInterconOutletName14
+3150,SecondInterconOutletName15
+3151,SecondInterconOutletName16
+3152,SecondInterconOutletName17
+3153,SecondInterconOutletName18
+3154,SecondInterconOutletName2
+3155,SecondInterconOutletName3
+3156,SecondInterconOutletName4
+3157,SecondInterconOutletName5
+3158,SecondInterconOutletName6
+3159,SecondInterconOutletName7
+3160,SecondInterconOutletName8
+3161,SecondInterconOutletName9
+3162,SelectAllDaysSeq1
+3163,SelectAllDaysSeq2
+3164,Sequence1
+3165,Sequence2
+3166,SequenceMUX
+3167,SingularInletVisib
+3168,SingularInletVisib1
+3169,SingularInletVisib2
+3170,Temperature0AlarmDescriptionBuf
+3171,Temperature1AlarmDescriptionBuf
+3172,TubeVisibility1
+3173,TubeVisibility2
+3174,TwoInterconnectingTubeVisible
+3175,ValveNameMUX1
+3176,ValveNameMUX10
+3177,ValveNameMUX11
+3178,ValveNameMUX12
+3179,ValveNameMUX13
+3180,ValveNameMUX14
+3181,ValveNameMUX15
+3182,ValveNameMUX16
+3183,ValveNameMUX17
+3184,ValveNameMUX18
+3185,ValveNameMUX19
+3186,ValveNameMUX2
+3187,ValveNameMUX3
+3188,ValveNameMUX4
+3189,ValveNameMUX5
+3190,ValveNameMUX6
+3191,ValveNameMUX7
+3192,ValveNameMUX8
+3193,ValveNameMUX9
+3194,prevLogging
