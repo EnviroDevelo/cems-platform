@@ -21,7 +21,7 @@ static void ton(ul_timer_t *t, bool in) {
 static void tacc(ul_timer_t *t, bool in) {
     if (in && !t->Out) { if (t->Current > g_dt_ms) t->Current -= g_dt_ms; else { t->Current = 0; t->Out = true; } }
 }
-void treset(ul_timer_t *t) { t->Current = t->Preset; t->Out = false; t->On = false; }
+/* treset (TimerReset): one definition in src/ul_blocks.c (app_vmmux) */
 /* edge elements (E7) */
 static bool pcont(bool *m, bool b) { bool e = b && !*m; *m = b; return e; }
 static bool ncont(bool *m, bool b) { bool e = !b && *m; *m = b; return e; }

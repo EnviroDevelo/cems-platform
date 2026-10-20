@@ -3,9 +3,9 @@
  * Globals as in 20_Data_Dictionary (Rev B). Arrays stand for numbered tags where noted. */
 #ifndef STAGE4F3_H
 #define STAGE4F3_H
-#include "../4D/4D.h"
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
+#include "4D.h"
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;
 
 extern int g_div0;                                  /* MOD by zero in the scroll ST (A4.16) */
 

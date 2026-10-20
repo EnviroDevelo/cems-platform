@@ -34,7 +34,7 @@ uint8_t DefaultModeOnPowerup, ModbusModeState, ScheduleButtonState;
 int16_t InletIndex1, OutletIndex1, InletIndex2, OutletIndex2, CurrentMode, VMorMUXState;
 bool ModbusModeEnable, SchedulerModeEnable, TimerVisible, TimerVisible1, LoadVMorMUX, ScreenSaverActive, BrightessEntered, ModeIsActive, PauseMUX;
 ul_timer_t ActivateScreenSaver, YouCantLeave, SetsettingsBrightness;
-char Password[17]; seq_view_t Sequence1v, Sequence2v;
+char Password[17]; Sequences_t Sequence1, Sequence2;   /* app_vmmux: the real globals (the Stage 4 test used a view) */
 
 /* recording stubs */
 static char order[256]; static int n_fill, n_fb, sel_at_do, sel_at_route;
@@ -82,18 +82,18 @@ int main(void) {
     eqi("power-up, no interconnection count: system config screen", LoadSystemConfig, 1);
     eqi("... counts set to 0", FirstInlets + FirstOutlets + SecondInlets + SecondOutlets, 0);
     eqi("... no main screen", Load1_5 + Load1_9_2 + Load1_19_2, 0);
-    reset(); cfg(1, 3, 2, 0, 0, 10); memset(&Sequence1v, 0, sizeof Sequence1v); Sequence1v.NumberOfPeriods = 2;
-    Sequence1v.Inlets[0] = 3; Sequence1v.Outlets[0] = 2; DefaultModeOnPowerup = 1; powerup();
+    reset(); cfg(1, 3, 2, 0, 0, 10); memset(&Sequence1, 0, sizeof Sequence1); Sequence1.NumberOfPeriods = 2;
+    Sequence1.Inlets[0] = 3; Sequence1.Outlets[0] = 2; DefaultModeOnPowerup = 1; powerup();
     eqi("power-up, default schedule, valid sequence: schedule started", StartSchedule, 1);
     eqi("... button state 1", ScheduleButtonState, 1);
     eqi("... small main screen", Load1_5, 1);
     eqi("... mode number 2", CurrentMode, 2);
     eqi("... FillNumbers called (sequence 2 empty)", n_fill, 1);
-    reset(); cfg(1, 3, 2, 0, 0, 10); Sequence1v.Inlets[5] = 4; DefaultModeOnPowerup = 1; powerup();
+    reset(); cfg(1, 3, 2, 0, 0, 10); Sequence1.Inlets[5] = 4; DefaultModeOnPowerup = 1; powerup();
     eqi("power-up, default schedule, inlet 4 of 3 in a row: config error", YouHaveIncorrectInletOutletConfig, 1);
     eqi("... no schedule", StartSchedule, 0);
     eqi("... main screen still opened", Load1_5, 1);
-    Sequence1v.Inlets[5] = 0;
+    Sequence1.Inlets[5] = 0;
     reset(); DefaultModeOnPowerup = 0; powerup();
     eqi("power-up, default Modbus: Modbus started, state 1", StartModbus * 10 + ModbusModeState, 11);
     eqi("... mode number 1", CurrentMode, 1);

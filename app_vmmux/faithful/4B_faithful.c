@@ -8,7 +8,7 @@
  */
 #include "4B.h"
 
-int g_out_of_range_writes;
+/* g_out_of_range_writes: src/vm_tags.c */
 #define SETB(arr, n, idx, v) do { int _i = (idx); if (_i >= 0 && _i < (n)) (arr)[_i] = (v); else g_out_of_range_writes++; } while (0)
 
 /* ===================== AdjustNumberOfValves (VM_Code) ===================== */

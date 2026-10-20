@@ -27,7 +27,7 @@ static void reset(void) {
     StartSchedule = YouHaveIncorrectInletOutletConfig = SequenceAbsent = false;
     StartInterconnection1Periods = StartInterconnection2Periods = false; ScheduleMode();   /* clear edge memories */
     memset(T1, 0, sizeof T1); memset(T2, 0, sizeof T2); SelectedFirstInlet = SelectedFirstOutlet = SelectedSecondInlet = SelectedSecondOutlet = 0;
-    RTC_Date = (rtc_date_t){2026, 10, 18, 1}; RTC_Time = (rtc_time_t){6, 0, 30}; ms_acc = 0;
+    RTC_Date = (rtc_date_t){ .Year = 2026, .Month = 10, .Day_In_Month = 18, .Day_Of_Week = 1 }; RTC_Time = (rtc_time_t){ .Hours = 6, .Minutes = 0, .Seconds = 30 };   /* app_vmmux: named, the layout is ul_system.h's */ ms_acc = 0;
     NumInterconnections = 1; FirstInlets = FirstOutlets = 3; SecondInlets = SecondOutlets = 3;
     window(&Schedule1); window(&Schedule2); }
 
@@ -88,7 +88,7 @@ int main(void) {
     eqi("rung 1: an unused row above the count is checked too", YouHaveIncorrectInletOutletConfig, 1);
 
     /* ---------- 5. outside the window ---------- */
-    reset(); seq(&Sequence1, 2, 1000); RTC_Time = (rtc_time_t){7, 0, 0}; StartSchedule = true; scan(5);
+    reset(); seq(&Sequence1, 2, 1000); RTC_Time = (rtc_time_t){ .Hours = 7, .Minutes = 0, .Seconds = 0 }; StartSchedule = true; scan(5);
     eqi("outside the window: no run", StartInterconnection1Periods, 0);
 
     /* ---------- 6. the remaining-time display is written when idle (finding V10) ---------- */

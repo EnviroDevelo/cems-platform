@@ -4,9 +4,10 @@
  * test can check what Function1 itself does and in what order. */
 #ifndef STAGE4F4_H
 #define STAGE4F4_H
-#include "../4B/4B.h"
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
+#include "4B.h"
+#include "4D.h"
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;
 extern uint32_t g_dt_ms;
 extern bool Ladder_Initial_Cycle, Touched_Bit, VNC_Touched_Bit;     /* General.* system bits */
 
@@ -37,8 +38,7 @@ extern bool ModbusModeEnable, SchedulerModeEnable, TimerVisible, TimerVisible1;
 extern bool LoadVMorMUX, ScreenSaverActive, BrightessEntered, ModeIsActive, PauseMUX;
 extern ul_timer_t ActivateScreenSaver, YouCantLeave, SetsettingsBrightness;
 extern char Password[17];
-typedef struct { uint8_t NumberOfPeriods; uint8_t Inlets[20], Outlets[20]; } seq_view_t;   /* the Sequence fields Function1 reads */
-extern seq_view_t Sequence1v, Sequence2v;
+/* Sequence1 / Sequence2: Function1 reads NumberOfPeriods, Inlets, Outlets (4D.h; the Stage 4 test used a view) */
 
 /* Callees from other chunks (stubs in the test) */
 void Loading(void); void FillNumbers(void); void FB_ValveSelectionInter(void); void SchedulerSequencesVM(void);

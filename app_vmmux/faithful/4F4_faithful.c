@@ -105,7 +105,7 @@ void Function1(void) {
     WithoutModules = NumberOfDInputs <= 14;
     Loading();
     /* R3 */
-    if (Ladder_Initial_Cycle && (Sequence2v.NumberOfPeriods == 0 || Sequence1v.NumberOfPeriods == 0)) FillNumbers();
+    if (Ladder_Initial_Cycle && (Sequence2.NumberOfPeriods == 0 || Sequence1.NumberOfPeriods == 0)) FillNumbers();
     /* R4: leaving a settings screen with an empty configuration: stay, show "you can't leave" */
     {   bool p = CheckEmptySettingsBack || AnalogOrDiscrete || LoadDOMappingValvesCheckEmpty;
         bool empty = NumInterconnections == 0
@@ -188,8 +188,8 @@ void Function1(void) {
         bool w38 = Ladder_Initial_Cycle && ((NI == 1 && FirstInlets != 0 && FirstOutlets != 0)
                 || (NI == 2 && FirstInlets != 0 && FirstOutlets != 0 && SecondInlets != 0 && SecondOutlets != 0));
         if (w38) {
-            InletIndex2 = search_in_array(Sequence2v.Inlets, SecondInlets);  OutletIndex2 = search_in_array(Sequence2v.Outlets, SecondOutlets);
-            InletIndex1 = search_in_array(Sequence1v.Inlets, FirstInlets);   OutletIndex1 = search_in_array(Sequence1v.Outlets, FirstOutlets);
+            InletIndex2 = search_in_array(Sequence2.Inlets, SecondInlets);  OutletIndex2 = search_in_array(Sequence2.Outlets, SecondOutlets);
+            InletIndex1 = search_in_array(Sequence1.Inlets, FirstInlets);   OutletIndex1 = search_in_array(Sequence1.Outlets, FirstOutlets);
             if (DefaultModeOnPowerup == 0) { StartModbus = true; ModbusModeState = 1; w2 = true; }
             if (DefaultModeOnPowerup == 1) {
                 bool ok1 = InletIndex1 == 25 && OutletIndex1 == 25, ok2 = InletIndex2 == 25 && OutletIndex2 == 25;

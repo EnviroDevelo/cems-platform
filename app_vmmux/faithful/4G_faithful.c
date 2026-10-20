@@ -7,32 +7,8 @@
 
 void ConvertIntToString(int16_t It, uint8_t IntLength, char FinalASCIIINT_out[8 + 1]);   /* 4A, 41b */
 
-uint32_t g_dt_ms = 10;
-int16_t NumInterconnections, FirstInlets, FirstOutlets, SecondInlets, SecondOutlets;
-bool StartModbus, StartModbusCoil, ModbusModeNotActive, ValveSelectionErrorModbus, ResetMbError, FlushValveBitModbus;
-int16_t SelectedFirstInletMb, SelectedFirstOutletMb, SelectedSecondInletMb, SelectedSecondOutletMb;
-int16_t SelectedFirstInlet, SelectedFirstOutlet, SelectedSecondInlet, SelectedSecondOutlet;
-uint8_t ModbusModeState;
-ul_timer_t ModbusTimer, ModbusTimer2 = { 7200000, 7200000, false, false }, ProcessTimer, ProcessTimer2;
-bool ChangeModbusNamesVM, LoadingWindow;
-bool ChangeModbusNamesVMFirstInlets, ChangeModbusNamesVMFirstOutlets, ChangeModbusNamesVMSecondInlets, ChangeModbusNamesVMSecondOutlets;
-char InletName[19][11], OutletName[19][11];
-uint8_t FirstInterconInletName[19][20], FirstInterconOutletName[19][20];
-uint8_t SecondInterconInletName[18][20], SecondInterconOutletName[18][20];
-int16_t CurrentInletlistID, CurrentOutletlistID, TargetInletListID, TargetOutletListID;
-int16_t CurrentInletlistID2Inter, CurrentOutletlistID2Interc, TargetInletListID2Interc, TargetOutletListID2Interc;
-int16_t TempInletsModbus, TempOutletsModbus, TempStringLength, TempValveNumber, TempValveNumber2Interc, TempValveNumber2IntercTemp;
-uint8_t TempLength = 2;
-char TempString[11], TempStringASCII[9];
-uint8_t TempBuffer1[20];
-bool g_tag2buf_whole = false;
-int16_t NumberOfMUXValves;
-bool StartModbusMUX, StartModbusCoilMUX, ModbusNotActiveMUX, ValveSelectionErrorModbusMUX, ResetMbErrorMUX, PurgeInletActivateModbus;
-int16_t SelectedValveMbMUX, TempSelectedModbusValveMUX;
-uint8_t ModbusModeStateMUX;
-ul_timer_t ModbusTimerMUX, ProcessTimerMUX;
-bool EnableLockValvesIfAnalyzerNotOk, AnalyzerOkBitAlarm, StopSeqBit, PauseMUX;
-bool SingularInletActivate[19];
+/* app_vmmux: the tags are defined once in src/vm_tags.c (generated, power-up values from the
+ * data dictionary); g_dt_ms is the platform's (ul_system.h). */
 
 /* ---- element models ---- */
 static void ton(ul_timer_t *t, bool in) {                                             /* TimerOnDelay, A4.10 */
@@ -43,7 +19,7 @@ static void ton(ul_timer_t *t, bool in) {                                       
 static void tacc(ul_timer_t *t, bool in) {        /* TimerAccumulated: counts while powered, holds while not */
     if (in && !t->Out) { if (t->Current > g_dt_ms) t->Current -= g_dt_ms; else { t->Current = 0; t->Out = true; } }
 }
-void treset(ul_timer_t *t) { t->Current = t->Preset; t->Out = false; t->On = false; }
+/* treset (TimerReset): one definition in src/ul_blocks.c (app_vmmux) */
 static bool pcont(bool *m, bool b) { bool e = b && !*m; *m = b; return e; }
 static bool ncont(bool *m, bool b) { bool e = !b && *m; *m = b; return e; }
 static bool in_range(int16_t v, int16_t lo, int16_t hi) { return v >= lo && v <= hi; }   /* 11 6.7: inclusive */

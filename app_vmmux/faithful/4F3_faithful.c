@@ -271,7 +271,7 @@ static void load_row(int i, int idx) {
 }
 static void blank_row(int i) { Number1_7[i] = 0; Inlet[i] = 0; Outlet[i] = 0; Timer1_7[i].Preset = 0; Name1_7[i][0] = 0; }
 static int16_t mod(int16_t a, int16_t b) { if (b == 0) { g_div0++; return 0; } return (int16_t)(a % b); }   /* ASSUMPTION A4.16 */
-int g_div0;
+/* g_div0: src/vm_tags.c */
 
 void Scheduler_SequencesScroll(void) {
     int16_t cnt, idx, maxStart;                                       /* locals (A4.2) */

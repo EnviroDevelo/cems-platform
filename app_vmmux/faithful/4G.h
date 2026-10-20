@@ -3,10 +3,10 @@
  * declared here and defined in 4G_faithful.c. Links with ../4A/4A_faithful.c (ConvertIntToString). */
 #ifndef STAGE4G_H
 #define STAGE4G_H
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;   /* 11 section 4: ms, Current counts down */
 extern uint32_t g_dt_ms;
 
 /* ---- VM configuration (written by Interconnection settings, 46h) ---- */

@@ -8,7 +8,7 @@
 #include <string.h>
 #include "4C.h"
 
-int g_oob, g_alarm_desc_calls[64], g_twoorfb22_calls;
+int g_alarm_desc_calls[64];   /* model counter (ModifyAlarmProperty); g_oob, g_twoorfb22_calls: src/vm_tags.c */
 
 /* ST array access with bounds check (test aid; the original has no check) */
 #define WR(arr, n, i, v) do { int _i = (i); if (_i >= 0 && _i < (n)) (arr)[_i] = (v); else g_oob++; } while (0)
@@ -132,7 +132,7 @@ void DI_ControlMUX(void)
 }
 
 /* =========================== DO_Control (VM, ladder) =========================== */
-void TwoORFb_22(void) { g_twoorfb22_calls++; }   /* stub: the real function is specified in 4F */
+/* TwoORFb_22: the real function is 4F1_faithful.c (the Stage 4C test used a stub here) */
 
 void DO_Control(void)
 {

@@ -14,6 +14,7 @@
  */
 #include "ul_lf.h"
 #include "4A.h"
+#include "4D.h"   /* Sequence1, Sequence2, SequenceMUX (FillNumbers) */
 
 /* ======================================================================
  * Num to ASCII / Num to ASCIIINT / Num to ASCII_INT16  (VM_Code, ladder)
@@ -287,16 +288,18 @@ int16_t SearchInArray(const uint8_t InputArray[20], int16_t MaxValue)
 /* ======================================================================
  * FillNumbers (VM_Code, ST) and FillNumbersMUX (MUX_Code, ST)
  * ====================================================================== */
-void FillNumbers(uint8_t Sequence1_NumberArray[20], uint8_t Sequence2_NumberArray[20])
+/* app_vmmux: the original has no parameters and writes the globals (41g); the Stage 4A
+ * test passed the arrays in. Integrated form writes the globals directly. */
+void FillNumbers(void)
 {
     for (uint8_t i = 0; i <= 19; i++) {
-        Sequence1_NumberArray[i] = (uint8_t)(i + 1);
-        Sequence2_NumberArray[i] = (uint8_t)(i + 1);
+        Sequence1.NumberArray[i] = (uint8_t)(i + 1);
+        Sequence2.NumberArray[i] = (uint8_t)(i + 1);
     }
 }
-void FillNumbersMUX(uint8_t SequenceMUX_NumberArray[20])
+void FillNumbersMUX(void)
 {
-    for (uint8_t i = 0; i <= 19; i++) SequenceMUX_NumberArray[i] = (uint8_t)(i + 1);
+    for (uint8_t i = 0; i <= 19; i++) SequenceMUX.NumberArray[i] = (uint8_t)(i + 1);
 }
 
 /* ======================================================================

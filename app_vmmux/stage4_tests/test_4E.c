@@ -12,17 +12,17 @@ uint8_t ScheduleButtonStateMUX; bool RecalculateNextScheduleMUX, SequenceStopMUX
 bool EnableLockValvesIfAnalyzerNotOk, AnalyzerOkBitAlarm, StopSeqBit, PauseMUX;
 ul_timer_t Every30minutes, DwellT[20], SampleT[20], FastLoopT[20], ProcessTimerMUX;
 uint32_t CurrentUnix, FastLoopStartUnix, NextSampleStartUnix, FastLoopStartTime[19];
-bool PumpCmd, PumpCmd2, SingularInletActivate[19]; int16_t DwellSampleStep; bool Sequence1TimerOut[20];
+bool PumpCmd, PumpCmd2, SingularInletActivate[19]; int16_t DwellSampleStep;
 bool OpenScheduleSequenceMUX, OpenScheduleSequenceMUX1, LoadinletlistMUX, AppendStringToCSVListMUX, LoadSequence;
 bool ContactManufacturer1, LoadingWindow, EntryTimerBitMUX, SaveScheduleSequencesMUX, ResetSequencesMUX;
 bool NumberOfPeriodsEnteredMUX, ArrowButtonsVisib, ScheduleSequencesVisib[7];
-int16_t InletsDeleteStatus, CsvBufferStatus, CurrentInletlistID, TargetInletListID; char SingularInlet[19][21];
+int16_t InletsDeleteStatus, CurrentInletlistID, TargetInletListID; int8_t CsvBufferStatus; char SingularInlet[19][11];
 bool BlockNegativeDaysMUX, SelectAllDaysMUX, BlockForSelecAllMUX; int16_t scrollIndexMUX;
 uint8_t Number1_7MUX[7], InletMUX[7]; bool FastLoopPumpCheck[7]; ul_timer_t Timer1_7[7], SampleTimer1_7[7], FastLoopTimer1_7[7];
 bool ScrollUpMUX, ScrollDownMUX, EntryRowMUX[7]; char g_csv[24][24]; int g_csv_lines;
 bool SingularInletVisib1[19], SingularInletVisib2[19];
 bool NumberOfMUXVavlesEntered, ManualModeStartMUX, StartModbusMUX, EnableSingulManualSelection;
-bool ModbusModeEnableMUX, SchedulerModeEnableMUX, ManualModeEnableMUX, ModeIsActive; uint8_t CurrentModeMUX;
+bool ModbusModeEnableMUX, SchedulerModeEnableMUX, ManualModeEnableMUX, ModeIsActive; int16_t CurrentModeMUX;
 ul_timer_t ManualTimerMUX, FlowValidationTimer; bool FlowValidation, ValidationTime, FlowValidationAlarm, PurgeInletActivate, PurgeInletActivateDI, PurgeInletActivateModbus;
 float AnalogSensor[4], AnalogTempContainer, AnalogTempContainerPGap, AnalogTempContainerMGap, Gap = 2.0f; uint8_t FlowAnalogInput;
 

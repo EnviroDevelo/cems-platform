@@ -8,11 +8,10 @@
  * "joins wire" tail run once with OR power (11 6.1). Comments "R<n>" give the rung.
  */
 #include <string.h>
-#include "../4A/ul_lf.h"
+#include "ul_lf.h"
 #include "4I.h"
 
-uint32_t g_dt_ms = 10;
-rtc_time_t RTC_Time = { 0, 5, 9 };
+/* app_vmmux: g_dt_ms and RTC_Time are the platform's (ul_system.h). */
 
 /* ---------------- Send Mail model ----------------
  * Level-sensitive (11d s10: a new send on every scan the rung is powered). A request clears
@@ -41,19 +40,7 @@ const char *const MailName[N_MAILS] = {
     "FBAlarm10", "FBAlarm11", "FBAlarm12", "FBAlarm13", "FBAlarm14", "FBAlarm15", "FBAlarm16", "FBAlarm17", "FBAlarm18", "FBAlarm19",
     "Flow validation alarm" };
 
-/* ---------------- tags ---------------- */
-bool Send_Mail, ModemIncudeOrNot;                                   /* ModemIncudeOrNot retained */
-char HourString1[5] = "4", MinuteString1[5] = "40";                 /* power-up values in the project */
-int16_t HourStatus1, MinuteStatus1;
-bool AlarmsVM[22], AlarmsMUX[22], FBAlarmsMUX[20], EmailEnableVM[22], EmailEnableMUX[22], FBEmailEnableMUX[20];
-float AnalogSensor[4], RangeMax[4], RangeMin[4];
-int16_t TemperatureSensor[4], MaxTemperatureRange[4], MinTemperatureRange[4];
-ul_timer_t AnalogTimer[4] = { { 10000, 10000, false, false }, { 10000, 10000, false, false }, { 10000, 10000, false, false }, { 10000, 10000, false, false } };
-ul_timer_t TempTimer[4] = { { 10000, 10000, false, false }, { 10000, 10000, false, false }, { 10000, 10000, false, false }, { 10000, 10000, false, false } };
-ul_timer_t FlowValidationTimer = { 10000, 10000, false, false };   /* written by MUX rung 18 (45f) */
-bool AnalogSensorAlarmBit[4], TempSensorAlarmBit[4], AnalogAlarmEmailEnabled[4], TemperatureAlarmEmailEnabled[4];
-bool EmailCantbeSent, AcknowledgeBit, AcknEmailSentError, FlowValidationAlarm;
-int16_t MailStatus, MailStatusCode;
+/* ---------------- tags: defined once in src/vm_tags.c (app_vmmux) ---------------- */
 
 /* ---------------- element models ---------------- */
 static void ton(ul_timer_t *t, bool in) {                                             /* TimerOnDelay, A4.10 */
@@ -61,7 +48,7 @@ static void ton(ul_timer_t *t, bool in) {                                       
     if (!t->On) { t->Current = t->Preset; t->On = true; }
     if (!t->Out) { if (t->Current > g_dt_ms) t->Current -= g_dt_ms; else { t->Current = 0; t->Out = true; } }
 }
-void treset(ul_timer_t *t) { t->Current = t->Preset; t->Out = false; t->On = false; }
+/* treset (TimerReset): one definition in src/ul_blocks.c (app_vmmux) */
 static bool pcont(bool *m, bool b) { bool e = b && !*m; *m = b; return e; }        /* E7 */
 
 static bool m_vm[22], m_mux[22], m_fb[20], m_flow, m_ac[4], m_tc[4];

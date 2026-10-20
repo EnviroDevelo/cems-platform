@@ -3,20 +3,10 @@
  * DwellT[0..19] / SampleT[0..19] (DwellT[k-1] = SequenceMUXDwellTimer<k>). */
 #ifndef STAGE4E_H
 #define STAGE4E_H
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;   /* 11 section 4: ms, Current counts down */
-typedef struct {
-    uint16_t From_Year, To_Year; bool Month[12]; bool Day_Of_Month[31]; uint8_t Spare1;
-    bool Day_Of_Week[7]; uint8_t Spare2; uint8_t From_Hour[3]; uint8_t Spare3; uint8_t To_Hour[3]; uint8_t Spare4;
-} Schedule_t;                                   /* From_Hour/To_Hour = [Seconds=0, Minutes=1, Hours=2] (project DB) */
-typedef struct {
-    uint8_t NumberArray[20]; uint8_t SingulValves[20]; uint32_t DwellTimer[20]; uint32_t SampleTimer[20];
-    bool FastLoopPump[20]; uint32_t FastLoopPumpTimer[20]; uint8_t NumberOfPeriods;
-} ScheduleMUX_t;
-typedef struct { uint8_t Day_Of_Week, Day_In_Month, Month; uint16_t Year; } rtc_date_t;   /* RTC_Date members used */
-typedef struct { uint8_t Seconds, Minutes, Hours; } rtc_time_t;                          /* RTC_Time members used */
 
 /* ---- clock and scan (test harness) ---- */
 extern rtc_date_t RTC_Date; extern rtc_time_t RTC_Time;
@@ -39,14 +29,14 @@ extern ul_timer_t ProcessTimerMUX;
 extern uint32_t CurrentUnix, FastLoopStartUnix, NextSampleStartUnix, FastLoopStartTime[19];
 extern bool PumpCmd, PumpCmd2 /* disabled rung 10 only */, SingularInletActivate[19];
 extern int16_t DwellSampleStep;
-extern bool Sequence1TimerOut[20];                        /* Sequence1Timer1..20.Out, read by disabled rungs 15-20 only */
 
 /* ---- editor ---- */
 extern bool OpenScheduleSequenceMUX, OpenScheduleSequenceMUX1, LoadinletlistMUX, AppendStringToCSVListMUX, LoadSequence;
 extern bool ContactManufacturer1, LoadingWindow, EntryTimerBitMUX, SaveScheduleSequencesMUX, ResetSequencesMUX;
 extern bool NumberOfPeriodsEnteredMUX, ArrowButtonsVisib, ScheduleSequencesVisib[7];
-extern int16_t InletsDeleteStatus, CsvBufferStatus, CurrentInletlistID, TargetInletListID;
-extern char SingularInlet[19][21];                        /* SingularInlet0..18 (valve names) */
+extern int16_t InletsDeleteStatus, CurrentInletlistID, TargetInletListID;
+extern int8_t  CsvBufferStatus;                          /* INT8 (20_Data_Dictionary) */
+extern char SingularInlet[19][11];   /* STRING(10) per the tag export; Stage 4 had [21] (I-3) */                        /* SingularInlet0..18 (valve names) */
 extern bool BlockNegativeDaysMUX, SelectAllDaysMUX, BlockForSelecAllMUX;
 extern int16_t scrollIndexMUX;
 extern uint8_t Number1_7MUX[7], InletMUX[7]; extern bool FastLoopPumpCheck[7];
@@ -59,7 +49,7 @@ extern char g_csv[24][24]; extern int g_csv_lines;
 extern bool SingularInletVisib1[19], SingularInletVisib2[19];
 extern bool NumberOfMUXVavlesEntered, ManualModeStartMUX, StartModbusMUX, EnableSingulManualSelection;
 extern bool ModbusModeEnableMUX, SchedulerModeEnableMUX, ManualModeEnableMUX, ModeIsActive;
-extern uint8_t CurrentModeMUX;
+extern int16_t CurrentModeMUX;   /* INT16 (20_Data_Dictionary) */
 extern ul_timer_t ManualTimerMUX, FlowValidationTimer;    /* "Manual TimerMUX" */
 extern bool FlowValidation, ValidationTime, FlowValidationAlarm, PurgeInletActivate, PurgeInletActivateDI, PurgeInletActivateModbus;
 extern float AnalogSensor[4], AnalogTempContainer, AnalogTempContainerPGap, AnalogTempContainerMGap, Gap;

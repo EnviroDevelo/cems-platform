@@ -2,11 +2,10 @@
  * The 74 email definitions are listed in email_definitions.csv (database order = mail index here). */
 #ifndef STAGE4I_H
 #define STAGE4I_H
-#include "../4A/4A.h"
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
+#include "4A.h"
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;
 extern uint32_t g_dt_ms;
-typedef struct { uint8_t Seconds, Minutes, Hours; } rtc_time_t;
 extern rtc_time_t RTC_Time;
 
 /* ---- Send Mail model (11d section 10). Each definition has its auto-created struct. ---- */

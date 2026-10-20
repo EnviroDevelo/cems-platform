@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "4A.h"
+#include "4D.h"
 
 static int fails, checks;
 static void eq(const char *what, const char *got, const char *want) {
@@ -17,6 +18,7 @@ static void eqi(const char *what, long got, long want) {
     if (got != want) { fails++; printf("FAIL %-44s got %ld want %ld\n", what, got, want); }
 }
 
+Sequences_t Sequence1, Sequence2; ScheduleMUX_t SequenceMUX;   /* app_vmmux: globals FillNumbers writes */
 int main(void) {
     char s4[5], s8[9], s12[13], s19[19 + 1], n[32]; int16_t st;
 
@@ -66,9 +68,9 @@ int main(void) {
     eqi("SearchInArray first > 3", SearchInArray(a, 3), 9);
     eqi("SearchInArray max -1", SearchInArray(a, -1), 0);
 
-    uint8_t b[20], c[20];
-    FillNumbers(b, c); eqi("FillNumbers [0]", b[0], 1); eqi("FillNumbers [19]", c[19], 20);
-    FillNumbersMUX(b); eqi("FillNumbersMUX [10]", b[10], 11);
+    /* app_vmmux: FillNumbers / FillNumbersMUX write the globals, as in the original (41g) */
+    FillNumbers(); eqi("FillNumbers [0]", Sequence1.NumberArray[0], 1); eqi("FillNumbers [19]", Sequence2.NumberArray[19], 20);
+    FillNumbersMUX(); eqi("FillNumbersMUX [10]", SequenceMUX.NumberArray[10], 11);
 
     LoggingTableStruct_t row; memset(&row, 0, sizeof row);
     strcpy(row.Col3, "NOx ppm"); strcpy(row.Col22, "Flow");

@@ -2,10 +2,10 @@
  * FB_ValveSelectionInter. Types and globals as in 20_Data_Dictionary (Rev B). */
 #ifndef STAGE4F1_H
 #define STAGE4F1_H
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;
 extern uint32_t g_dt_ms;           /* scan time used by the timer model */
 extern int g_oob;                  /* out-of-range index count (A4.1 / A4.8) */
 

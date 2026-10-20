@@ -10,46 +10,18 @@
  * JumpToRegion is a goto (E9). Comments "R<n>" give the rung.
  */
 #include <string.h>
-#include "../4A/ul_lf.h"
+#include "ul_lf.h"
 #include "4H.h"
 
 /* ---------------- system and platform ---------------- */
-uint32_t g_dt_ms = 10;
-bool Ladder_Initial_Cycle;
-rtc_date_t RTC_Date = { 1, 18, 10, 2026 };
-rtc_time_t RTC_Time = { 0, 5, 9 };
+/* app_vmmux: g_dt_ms, Ladder_Initial_Cycle, RTC_Date, RTC_Time are the platform's (ul_system.h). */
 bool Is_SD_Present = true, Is_SD_Locked;
 
 LoggingTableStruct_t LoggingTable[DT_ROWS];            /* RAM: not retained (99 item 6) */
 int8_t LoggingTable_Status;
 sd_file_t g_reserv;
-bool g_dt_clear_sync;                                   /* A4.18 alternative reading */
-bool g_setcol_whole;                                    /* A4.19 alternative reading */
 
-/* ---------------- tags ---------------- */
-bool ParameterColNumberLoggingArray[20], ParameterColNumberSelectedArray[20], ColumnIsntVacantArray[20], prevLogging[20];
-int16_t ParameterColNumberArray[20] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 };
-bool ColNumberNameEntered[20], ResetCertainCheckBox, ResetLastLogCheckBox, ColumnIsntVacant, ReadOccupColumnName;
-int16_t ConflictingIndex = -1, index_, TempColumn, OpenValveShift, ValvesStringLength, LoggingIndex = 1;
-bool TempParameter, AssignColumn1, AssignColumn2, AssignColumn3;
-bool ContactManufacturer1, ContactManufacturer2, Ackbit1;
-char OccupiedColumnName[19], TempCol[19];
-char ParamColName[20][19] = { "Param1", "Param2", "Param3", "Param4", "Param5", "Param6", "Param7", "Param8",
-    "Param9", "Param10", "Param11", "Param12", "Param13", "Param14", "Param15", "Param16", "Param17", "Param18",
-    "Param19", "Param19" };                             /* ParameterName18 and 19 both default to "Param19" */
-LoggingTableStruct_t ReadTableStruct, InsertTableStruct;
-float Values[20], AverageValues[20];
-ul_timer_t EverySecond = { 1000, 1000, false, false }, LoginIntervalsGeneral = { 60000, 60000, false, false };
-char YearString[5], MonthString[5], DayString[5], HourString[5], MinuteString[5];
-int16_t YearStatus, MonthStatus, DayStatus, HourStatus, MinuteStatus;
-int8_t StatusOfSavingReserv; bool SaveReserv, SaveReserv1, SaveDataFailedReserv, AcknowledgeCSVReserv;
-bool SingularInletActivate[19], PurgeInletActivate, PurgeInletActivateDI, PurgeInletActivateModbus;
-char SingularInlet[19][21];
-char Par[20][13];
-uint8_t DecimPart = 4, FractPart = 3;
-bool FlowValidationAlarm, StartPeriodsMUX; int16_t DwellSampleStep;
-int8_t CountStatus, LoadWriteTableStatus; int16_t Rows, Columns;
-bool CheckCountStatus, CheckCountStatus1, CheckLoadStatus, CheckLoadStatus1, AlarmLoadingTable, AckowledgeLoadError;
+/* ---------------- tags: defined once in src/vm_tags.c (app_vmmux) ---------------- */
 
 static const char DATETIMEColumn[] = "DATE&TIME";       /* constant tags (power-up values, never written) */
 static const char ValvesNames[] = "Active Valves";
@@ -60,7 +32,7 @@ static void ton(ul_timer_t *t, bool in) {                                       
     if (!t->On) { t->Current = t->Preset; t->On = true; }
     if (!t->Out) { if (t->Current > g_dt_ms) t->Current -= g_dt_ms; else { t->Current = 0; t->Out = true; } }
 }
-void treset(ul_timer_t *t) { t->Current = t->Preset; t->Out = false; t->On = false; }
+/* treset (TimerReset): one definition in src/ul_blocks.c (app_vmmux) */
 static bool pcont(bool *m, bool b) { bool e = b && !*m; *m = b; return e; }        /* E7 */
 static bool in_range(int v, int lo, int hi) { return v >= lo && v <= hi; }         /* 11 6.7 */
 static bool save_error(int s) { return s != -37 && in_range(s, -38, -1); }       /* the NotEqual + InRange pair */

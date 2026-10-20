@@ -4,13 +4,11 @@
  * The data table LoggingTable and the SD file "Reserv" are modelled here (section "platform models"). */
 #ifndef STAGE4H_H
 #define STAGE4H_H
-#include "../4A/4A.h"
+#include "vm_types.h"   /* shared types and system tags (app_vmmux) */
+#include "4A.h"
 
-typedef struct { uint32_t Preset, Current; bool Out, On; } ul_timer_t;
 extern uint32_t g_dt_ms;
 extern bool Ladder_Initial_Cycle;                       /* General.Ladder_Initial_Cycle */
-typedef struct { uint8_t Day_Of_Week, Day_In_Month, Month; uint16_t Year; } rtc_date_t;
-typedef struct { uint8_t Seconds, Minutes, Hours; } rtc_time_t;
 extern rtc_date_t RTC_Date; extern rtc_time_t RTC_Time;
 extern bool Is_SD_Present, Is_SD_Locked;                /* External_Storage.* */
 
@@ -45,7 +43,7 @@ extern char YearString[5], MonthString[5], DayString[5], HourString[5], MinuteSt
 extern int16_t YearStatus, MonthStatus, DayStatus, HourStatus, MinuteStatus;
 extern int8_t StatusOfSavingReserv; extern bool SaveReserv, SaveReserv1, SaveDataFailedReserv, AcknowledgeCSVReserv;
 extern bool SingularInletActivate[19], PurgeInletActivate, PurgeInletActivateDI, PurgeInletActivateModbus;
-extern char SingularInlet[19][21];
+extern char SingularInlet[19][11];   /* STRING(10) per the tag export; Stage 4 had [21] (I-3) */
 extern char Par[20][13];                                /* Par0..Par19 */
 extern uint8_t DecimPart, FractPart;                    /* 4 and 3, never written */
 extern bool FlowValidationAlarm, StartPeriodsMUX; extern int16_t DwellSampleStep;

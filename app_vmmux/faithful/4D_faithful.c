@@ -4,7 +4,7 @@
 #include <string.h>
 #include "4D.h"
 
-int g_oob, g_hang;
+/* g_oob, g_hang: src/vm_tags.c */
 
 char *seq_name(Sequences_t *s, int k) {
     char *t[20] = { s->Name1, s->Name2, s->Name3, s->Name4, s->Name5, s->Name6, s->Name7, s->Name8,
