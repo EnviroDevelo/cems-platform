@@ -3,7 +3,10 @@
 unused code has been dropped), written as docs/MEMORY.md. Run after
 tools/check_target.sh (it uses the last, fullest configuration):
 
-    tools/mem_report.py build/target/cems_check.map [docs/MEMORY.md]
+    tools/mem_report.py build/target/cems_check.map [docs/MEMORY.md [app.map "app name"]]
+
+The optional second map is the same build with the real application linked in
+(make target APP=app_vmmux): its totals go in their own section.
 
 Keep this file current with every module: it is the record of how close the
 firmware is to the chip's limits (decision D18)."""
@@ -31,7 +34,7 @@ MODULES = [  # (module, object-name patterns)
     ("lwIP + Ethernet driver", r"lwip|ethernetif|lan8742|plat_net_lwip|^(altcp|def|dns|inet_chksum|init|ip|mem|memp|netif|pbuf|raw|stats|sys|tcp|tcp_in|tcp_out|timeouts|udp|acd|autoip|dhcp|etharp|icmp|igmp|ip4|ip4_addr|ip4_frag|api_lib|api_msg|err|if_api|netbuf|netdb|netifapi|sockets|tcpip|ethernet|sys_arch)\.o"),
     ("FreeRTOS kernel + heap", r"^(tasks|list|queue|timers|port|portasm|heap_4)\.o"),
     ("ST HAL + startup", r"stm32h5xx_|system_stm32|startup_"),
-    ("Demo application", r"app_demo"),
+    ("Application", r"app_demo|^vm_|_faithful|app_vmmux"),
     ("C library", r"libc|libm|libgcc|lib_a|crt"),
 ]
 
@@ -112,6 +115,24 @@ def parse(path):
 def main():
     mp = sys.argv[1] if len(sys.argv) > 1 else "build/target/cems_check.map"
     out = sys.argv[2] if len(sys.argv) > 2 else "docs/MEMORY.md"
+    app_sec = ""
+    if len(sys.argv) > 4:
+        au, ast = parse(sys.argv[3])
+        af = sum(f for f, _ in au.values()); ar = sum(r for _, r in au.values()) + ast
+        kk = lambda b: f"{b / 1024:.1f}"
+        a_f, a_r = au.get("Application", (0, 0))
+        app_sec = f"""
+## With the {sys.argv[4]}
+
+The same build with the real application linked in (`make target APP=...`).
+
+| Resource | Used | Limit | Used % | Free |
+|---|---|---|---|---|
+| Flash | {kk(af)} KB | {kk(FLASH_IMAGE)} KB | {100 * af / FLASH_IMAGE:.0f} % | {kk(FLASH_IMAGE - af)} KB |
+| RAM | {kk(ar)} KB | {kk(RAM_TOTAL)} KB | {100 * ar / RAM_TOTAL:.0f} % | {kk(RAM_TOTAL - ar)} KB |
+
+The application itself: {kk(a_f)} KB of flash, {kk(a_r)} KB of RAM (its tags, timers and tables).
+"""
     use, stack = parse(mp)
     order = [n for n, _ in MODULES] + ["Other"]
     tf = sum(f for f, _ in use.values())
@@ -140,26 +161,28 @@ module, and before choosing hardware. Last run: {datetime.date.today().isoformat
 | Module | Flash | RAM |
 |---|---|---|
 """ + "\n".join(rows) + f"""
+{app_sec}
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
 "FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
 shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
 (web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
 about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
-11 KB of RAM (the larger pool, the client context and buffers).
+11 KB of RAM (the larger pool, the client context and buffers). The 128 KB FRAM map (D6)
+added about 60 KB of RAM: the store's working copy of a 40 KB settings slot and the web
+server's buffer, which holds a whole backup file for restore.
 
 ## Still to come (estimates, update when built)
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
 | Application alarm table (the ~50 alarms of 70_alarm_map) | ~2.5 | 0 | 24 bytes of constants each; RAM per alarm is already reserved (96 slots) |
-| Translated VM/MUX application | **unknown** | **unknown** | retained data alone is 12.5 KB; size it as soon as the Stage 4 code compiles together |
 
 ## Other non-volatile memory
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC256V, 32 KB) | 32 KB | user image: the application's estimated 12.5 KB plus 0.8 KB of platform settings (alarm actions 256 B, relays, mail set-up 0.45 KB) = 13.3 KB of 14.5 KB per copy (92 %), factory 1 KB, log pointer, boot record, HTTPS key record and firmware update history 848 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
+| FRAM (MB85RC1MT, 128 KB; D6, Gary 20 Oct) | 128 KB | user image: the VM/MUX application's 13.4 KB including the platform settings, of 40 KB per copy (34 %); factory 4 KB; log pointer, boot record, HTTPS key record and firmware update history 848 B | the 32 KB breakout (MB85RC256V) still fits the application (90 % per copy) with PLAT_FRAM_SIZE=32768u; the driver refuses a part smaller than the build's map |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |
 """
     open(out, "w").write(doc)

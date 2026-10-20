@@ -37,7 +37,7 @@ SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/ta
           $(APP_SRC) port/stm32h5/check/check_main.c \
           $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c \
           $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/port.c $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/portasm.c
-OUT     = build/target
+OUT    ?= build/target
 OBJS    = $(addprefix $(OUT)/,$(notdir $(SRCS:.c=.o)))
 vpath %.c $(sort $(dir $(SRCS)))
 
