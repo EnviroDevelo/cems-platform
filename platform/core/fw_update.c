@@ -9,6 +9,7 @@
 #include "plat_cmdq.h"
 #include "bsp.h"
 #include "param.h"
+#include "plat_clock.h"
 
 bool (*fw_safe_check)(char *why, size_t cap);
 #define LOCAL_WAIT_MS (5u * 60u * 1000u)
@@ -19,8 +20,22 @@ bool (*fw_safe_check)(char *why, size_t cap);
 typedef struct {
     uint32_t magic, gen, state, trial_boots;
     char     from[16], to[16];
+    uint32_t t_act;            /* when the restart onto "to" was made (0 = clock not set) */
+    uint8_t  src, level, clk, rsvd;
     uint32_t crc;
 } boot_rec_t;
+_Static_assert(sizeof(boot_rec_t) <= 64u, "boot record slot");
+
+#define HIST_MAGIC 0x48425746u     /* "FWBH" */
+#define HIST_OFF   256u            /* from fram_addr */
+typedef struct {
+    uint32_t  magic, gen;
+    uint16_t  n, rsvd;
+    fw_hist_t e[FW_HIST_MAX];      /* e[0] newest */
+    uint32_t  crc;
+} hist_t;
+#define HIST_SLOT 232u
+_Static_assert(sizeof(hist_t) <= HIST_SLOT, "history slot");
 
 static struct {
     fw_flash_t *fl;
@@ -28,6 +43,10 @@ static struct {
     uint32_t    fram_addr;
     char        running[24];
     boot_rec_t  rec;
+    hist_t      hist;
+    bool        hist_pending;      /* a rollback to record once the clock is readable */
+    uint32_t    boot_ms;
+    uint8_t     act_src, act_level;
     /* upload */
     bool        uploading;
     uint32_t    total, received;
@@ -149,6 +168,52 @@ static bool bank_hash_ok(const fw_header_t *h) {
     return memcmp(dig, h->sha256, 32) == 0;
 }
 
+/* ---------------- update history ---------------- */
+static void hist_save(void) {
+    if (!F.fram) return;
+    F.hist.magic = HIST_MAGIC;
+    F.hist.gen++;
+    F.hist.crc = plat_crc32(0, &F.hist, (uint32_t)offsetof(hist_t, crc));
+    F.fram->write(F.fram, F.fram_addr + HIST_OFF + (F.hist.gen & 1u) * HIST_SLOT, &F.hist, sizeof F.hist);
+}
+
+static void hist_load(void) {
+    memset(&F.hist, 0, sizeof F.hist);
+    if (!F.fram) return;
+    bool have = false;
+    for (unsigned c = 0; c < 2u; ++c) {
+        hist_t h;
+        if (F.fram->read(F.fram, F.fram_addr + HIST_OFF + c * HIST_SLOT, &h, sizeof h) != 0) continue;
+        if (h.magic != HIST_MAGIC || h.n > FW_HIST_MAX || h.crc != plat_crc32(0, &h, (uint32_t)offsetof(hist_t, crc))) continue;
+        if (!have || (int32_t)(h.gen - F.hist.gen) > 0) { F.hist = h; have = true; }
+    }
+}
+
+static void hist_add(uint8_t kind) {
+    fw_hist_t e;
+    memset(&e, 0, sizeof e);
+    e.kind = kind;
+    e.t_installed = F.rec.t_act;
+    if (F.rec.clk) e.flags |= FWH_INST_CLOCK;
+    if (plat_clock_now(&e.t_done)) e.flags |= FWH_DONE_CLOCK;
+    else e.t_done = 0;
+    e.src = F.rec.src; e.level = F.rec.level;
+    copy_ver(e.from, sizeof e.from, F.rec.from);
+    copy_ver(e.to, sizeof e.to, F.rec.to);
+    memmove(&F.hist.e[1], &F.hist.e[0], (FW_HIST_MAX - 1u) * sizeof e);
+    F.hist.e[0] = e;
+    if (F.hist.n < FW_HIST_MAX) F.hist.n++;
+    hist_save();
+}
+
+size_t fw_history(fw_hist_t *out, size_t max) {
+    size_t n = F.hist.n < max ? F.hist.n : max;
+    PLAT_CRIT_ENTER();
+    memcpy(out, F.hist.e, n * sizeof *out);
+    PLAT_CRIT_EXIT();
+    return n;
+}
+
 void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char *running_version) {
     memset(&F, 0, sizeof F);
     F.fl = flash;
@@ -156,6 +221,7 @@ void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char 
     F.fram_addr = fram_addr;
     copy_ver(F.running, sizeof F.running, running_version);
     rec_load();
+    hist_load();
     F.staged = read_trailer(&F.staged_hdr);
 }
 
@@ -180,6 +246,7 @@ void fw_boot(uint8_t cause, uint32_t now_ms) {
     }
     case FW_ST_ROLLED_BACK:                     /* this is the previous image again */
         F.rolled_back = true;
+        F.hist_pending = true;                  /* recorded once the clock has been read (fw_service) */
         plat_log_event(LOG_EV_FW_ROLLBACK, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, F.rec.to);
         F.rec.state = FW_ST_IDLE;
         rec_save();
@@ -187,6 +254,7 @@ void fw_boot(uint8_t cause, uint32_t now_ms) {
     default:
         break;
     }
+    F.boot_ms = now_ms;
     F.healthy_since = now_ms;
     F.healthy_run = false;
     F.trial_left = fw_trial_ms;
@@ -311,6 +379,7 @@ fw_err_t fw_request_activate_from(uint8_t src, uint8_t level) {
     }
     F.wait_local = false;
     plat_log_event(LOG_EV_FW_UPDATE, src, level, 0, NAN, NAN, "activate");
+    F.act_src = src; F.act_level = level;
     F.activate_req = true;
     return FW_OK;
 }
@@ -322,6 +391,7 @@ void fw_local_answer(bool yes, uint8_t level) {
     if (!F.staged || F.uploading || F.rec.state == FW_ST_TRIAL) return;
     if (!safe()) { plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_LOCAL, level, 0, NAN, NAN, "refused: not safe"); return; }
     plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_LOCAL, level, 0, NAN, NAN, "confirmed on touch");
+    F.act_src = F.wait_src; F.act_level = F.wait_level;   /* asked from afar, confirmed here */
     F.activate_req = true;
 }
 
@@ -332,6 +402,10 @@ void fw_service(uint32_t now_ms, bool healthy) {
             F.wait_local = false;
             plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, "not confirmed: dropped");
         }
+    }
+    if (F.hist_pending) {                       /* a rollback: wait a moment for the clock (first scans) */
+        uint32_t t;
+        if (plat_clock_now(&t) || now_ms - F.boot_ms >= 3000u) { F.hist_pending = false; hist_add(FWH_ROLLED_BACK); }
     }
     if (F.activate_req) {
         F.activate_req = false;
@@ -350,6 +424,9 @@ void fw_service(uint32_t now_ms, bool healthy) {
         F.rec.trial_boots = 0;
         copy_ver(F.rec.from, sizeof F.rec.from, F.running);
         copy_ver(F.rec.to, sizeof F.rec.to, h.version_str);
+        F.rec.clk = plat_clock_now(&F.rec.t_act) ? 1u : 0u;
+        if (!F.rec.clk) F.rec.t_act = 0;
+        F.rec.src = F.act_src; F.rec.level = F.act_level;
         rec_save();
         if (fw_before_swap) fw_before_swap();
         if (F.fl->swap_and_reset) F.fl->swap_and_reset(F.fl);
@@ -370,6 +447,7 @@ void fw_service(uint32_t now_ms, bool healthy) {
         plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_INTERNAL, 0, fw_parse_version(F.rec.to), NAN, NAN, txt);
         F.rec.state = FW_ST_IDLE;
         rec_save();
+        hist_add(FWH_UPDATED);
         F.staged = read_trailer(&F.staged_hdr);              /* the free bank now holds the previous image */
     }
 }

@@ -125,7 +125,27 @@ typedef struct {
     char       not_safe[48];                 /* why the last activation was refused as not safe ("" = it wasn't) */
 } fw_status_t;
 
-/* Set up. fram_addr: 64 bytes for the boot record (STORE_META_ADDR + 128).
+/* Update history (FRAM, survives power cuts and "restore defaults"): the last
+ * FW_HIST_MAX firmware changes, newest first. Times are the instrument's clock (local
+ * standard time, s since 1970); a time is 0 with its FWH_*_CLOCK flag clear if the
+ * clock was not set then. */
+#define FW_HIST_MAX 6u
+enum { FWH_UPDATED = 1,        /* the new firmware passed its trial and was kept */
+       FWH_ROLLED_BACK = 2 };  /* it failed its trial: the unit went back to "from" */
+#define FWH_INST_CLOCK 0x01u   /* t_installed is a real time */
+#define FWH_DONE_CLOCK 0x02u   /* t_done is a real time */
+typedef struct {
+    uint32_t t_installed;      /* restart onto the new firmware */
+    uint32_t t_done;           /* kept (trial passed) or rolled back */
+    uint8_t  kind;             /* FWH_* */
+    uint8_t  flags;            /* FWH_*_CLOCK */
+    uint8_t  src, level;       /* who asked for the restart (plat_src_t, plat_level_t) */
+    char     from[12], to[12]; /* versions */
+} fw_hist_t;
+size_t fw_history(fw_hist_t *out, size_t max);   /* any task (a copy); returns the entries */
+
+/* Set up. fram_addr: 128 bytes for the boot record (STORE_META_ADDR + 128) and,
+ * from fram_addr + 256, 464 bytes for the update history (STORE_META_ADDR + 384..847).
  * running_version: this image's version text. */
 void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char *running_version);
 

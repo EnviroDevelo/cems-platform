@@ -136,6 +136,11 @@ def main():
     time.sleep(5.5)
     st, j = w.req("/api/fw")
     check(j["state"] == "idle", f"confirmed after a healthy trial ({j})")
+    hs = j.get("history", [])
+    today = time.strftime("%Y-%m-%d")
+    check(len(hs) == 1 and hs[0]["result"] == "updated" and hs[0]["from"] == "0.3.0" and hs[0]["to"] == "0.4.0"
+          and (hs[0]["installed"] or "").startswith(today) and (hs[0]["done"] or "").startswith(today)
+          and hs[0]["level"] == "factory" and hs[0]["source"] == "web", f"update date and time stored ({hs})")
     ev = events(w)
     check(any(e["event"] == "fw_update" and e["detail"] == "0.3.0>0.4.0" for e in ev), "fw_update event 0.3.0>0.4.0")
     check(any(e["event"] == "fw_update" and e["detail"] == "activate" and e["level"] == "factory" for e in ev),
@@ -158,6 +163,10 @@ def main():
     check(j["running"] == "0.4.0" and j["state"] == "idle" and j["rolled_back"] is True, f"back on 0.4.0 ({j})")
     check(j["staged"] == "0.5.0", "the failed image stays in the free bank")
     check(any(e["event"] == "fw_rollback" for e in events(w)), "fw_rollback event")
+    time.sleep(3.5)
+    hs = w.req("/api/fw")[1].get("history", [])
+    check(len(hs) == 2 and hs[0]["result"] == "rolled_back" and hs[0]["to"] == "0.5.0" and hs[0]["done"]
+          and hs[1]["to"] == "0.4.0", f"the rollback is in the history too, newest first ({hs})")
     u.stop()
 
     print("gates: safe state, touchscreen confirmation, minimum version")

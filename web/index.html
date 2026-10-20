@@ -118,6 +118,10 @@ td.c{text-align:center}
     </div>
     <h2 style="margin-top:14px">Firmware</h2>
     <p id="fwinfo" class="note">-</p>
+    <table id="fwhisttab" style="display:none">
+      <thead><tr><th>Installed</th><th>Change</th><th>Result</th><th>Kept / rolled back</th><th>Asked by</th></tr></thead>
+      <tbody id="fwhist"></tbody>
+    </table>
     <p class="note" id="fwlvl">Firmware updates need the factory (tech) login.</p>
     <div class="row" id="fwctl">
       <input type="file" id="fwfile" accept=".cfw">
@@ -667,6 +671,7 @@ $("pwbtn").onclick = async () => {
   try { await api("/api/password", form({ level: $("pwlvl").value, password: $("newpw").value })); $("newpw").value = ""; $("pwerr").textContent = "Changed"; }
   catch (e) { $("pwerr").textContent = e.message === "access" ? "Your level cannot change that password" : "4-32 characters, no spaces"; }
 };
+let fwHistKey = "";
 async function refreshFw() {
   try {
     const f = await api("/api/fw");
@@ -678,6 +683,20 @@ async function refreshFw() {
     if (f.waiting_local) t += `. Waiting for someone at the instrument to confirm the restart (${f.waiting_left_s} s left)`;
     if (f.not_safe) t += `. Last restart refused: ${f.not_safe}`;
     $("fwinfo").textContent = t + ".";
+    const hk = JSON.stringify(f.history || []);
+    if (hk !== fwHistKey) {
+      fwHistKey = hk;
+      const tb = $("fwhist"); tb.textContent = "";
+      for (const h of f.history || []) {
+        const tr = document.createElement("tr");
+        for (const c of [h.installed || "clock not set", `${h.from} → ${h.to}`, h.result === "updated" ? "Updated" : "Rolled back",
+                         h.done || "clock not set", `${h.level} (${h.source})`]) {
+          const td = document.createElement("td"); td.textContent = c; tr.appendChild(td);
+        }
+        tb.appendChild(tr);
+      }
+      $("fwhisttab").style.display = (f.history || []).length ? "" : "none";
+    }
     $("fwact").style.display = f.staged && f.state !== "trial" && level >= 3 ? "" : "none";
     $("fwact").textContent = `Restart on ${f.staged || "new firmware"}`;
   } catch (e) { }

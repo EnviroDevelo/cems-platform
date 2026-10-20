@@ -14,6 +14,8 @@
 #include "param_store.h"
 #include "bsp_host.h"
 #include "tls.h"
+#include "ul_system.h"
+#include "plat_clock.h"
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
@@ -23,7 +25,7 @@
 static uint8_t b0[BANK], b1[BANK];
 static fw_flash_t fl;
 static fw_flash_sim_t fs;
-static uint8_t fr_mem[512];
+static uint8_t fr_mem[1024];
 static nvm_dev_t fr;
 static nvm_ram_t fr_ram;
 
@@ -145,6 +147,88 @@ static void t_upload(void) {
     /* and a good one again */
     CHECK_EQ(upload(len, 4096), FW_OK);
     CHECK_EQ(fs.violations, 0);
+}
+
+static void set_clock(unsigned y, unsigned mo, unsigned d, unsigned h, unsigned mi) {
+    RTC_Date.Year = (uint16_t)y; RTC_Date.Month = (uint8_t)mo; RTC_Date.Day_In_Month = (uint8_t)d;
+    RTC_Time.Hours = (uint8_t)h; RTC_Time.Minutes = (uint8_t)mi; RTC_Time.Seconds = 0;
+}
+static void clock_off(void) { memset(&RTC_Date, 0, sizeof RTC_Date); memset(&RTC_Time, 0, sizeof RTC_Time); }
+
+/* every firmware change is recorded with its date and time, in FRAM */
+static void t_history(void) {
+    fw_hist_t h[FW_HIST_MAX + 2];
+    memset(fr_mem, 0, sizeof fr_mem);
+    power_up("0.4.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 0u);
+    /* an update asked from the web by the factory login, at 09:30, kept at 09:32 */
+    uint32_t len = make_image(20000, "0.5.0", PLAT_FW_PRODUCT, 3);
+    CHECK_EQ(upload(len, 2048), FW_OK);
+    set_clock(2026, 10, 20, 9, 30);
+    CHECK_EQ(fw_request_activate_from(PLAT_SRC_WEB, PLAT_LVL_FACTORY), FW_OK);
+    fw_service(bsp_host.ms, true);
+    fw_trial_ms = 60000;
+    power_up("0.5.0", BSP_RESET_SOFTWARE);
+    set_clock(2026, 10, 20, 9, 32);
+    uint32_t t = bsp_host.ms;
+    fw_service(t, true); fw_service(t + 61000, true);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 1u);
+    CHECK_EQ(h[0].kind, FWH_UPDATED);
+    CHECK(!strcmp(h[0].from, "0.4.0")); CHECK(!strcmp(h[0].to, "0.5.0"));
+    CHECK_EQ(h[0].src, PLAT_SRC_WEB); CHECK_EQ(h[0].level, PLAT_LVL_FACTORY);
+    CHECK_EQ(h[0].flags, FWH_INST_CLOCK | FWH_DONE_CLOCK);
+    CHECK_EQ(h[0].t_installed, plat_unix_from_civil(2026, 10, 20, 9, 30, 0));
+    CHECK_EQ(h[0].t_done, plat_unix_from_civil(2026, 10, 20, 9, 32, 0));
+    /* kept over restarts and power cuts */
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 1u); CHECK(!strcmp(h[0].to, "0.5.0"));
+    /* a failed update is recorded as rolled back, newest first; this time the clock is not set */
+    clock_off();
+    len = make_image(20000, "0.6.0", PLAT_FW_PRODUCT, 4);
+    CHECK_EQ(upload(len, 2048), FW_OK);
+    CHECK_EQ(fw_request_activate(), FW_OK);
+    fw_service(bsp_host.ms, true);
+    power_up("0.6.0", BSP_RESET_SOFTWARE);
+    power_up("0.6.0", BSP_RESET_IWDG);
+    power_up("0.5.0", BSP_RESET_SOFTWARE);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 1u);                /* not yet: waits for the clock */
+    set_clock(2026, 10, 21, 8, 0);
+    fw_service(bsp_host.ms + 10, true);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 2u);
+    CHECK_EQ(h[0].kind, FWH_ROLLED_BACK); CHECK(!strcmp(h[0].to, "0.6.0")); CHECK(!strcmp(h[0].from, "0.5.0"));
+    CHECK_EQ(h[0].flags, FWH_DONE_CLOCK);                    /* installed while the clock was not set */
+    CHECK_EQ(h[0].t_installed, 0u);
+    CHECK_EQ(h[0].src, PLAT_SRC_LOCAL);
+    CHECK_EQ(h[1].kind, FWH_UPDATED); CHECK(!strcmp(h[1].to, "0.5.0"));
+    /* no clock for 3 s after a rollback: recorded anyway, without a time */
+    clock_off();
+    CHECK_EQ(fw_request_activate(), FW_OK);
+    fw_service(bsp_host.ms, true);
+    power_up("0.6.0", BSP_RESET_SOFTWARE);
+    power_up("0.6.0", BSP_RESET_IWDG);
+    power_up("0.5.0", BSP_RESET_SOFTWARE);
+    fw_service(bsp_host.ms + 1000, true);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 2u);
+    fw_service(bsp_host.ms + 3000, true);
+    CHECK_EQ(fw_history(h, FW_HIST_MAX), 3u); CHECK_EQ(h[0].flags, 0); CHECK_EQ(h[0].t_done, 0u);
+    /* only the last FW_HIST_MAX are kept */
+    for (int k = 0; k < 6; ++k) {
+        CHECK_EQ(fw_request_activate(), FW_OK);
+        fw_service(bsp_host.ms, true);
+        power_up("0.6.0", BSP_RESET_SOFTWARE);
+        power_up("0.6.0", BSP_RESET_IWDG);
+        power_up("0.5.0", BSP_RESET_SOFTWARE);
+        fw_service(bsp_host.ms + 3000, true);
+    }
+    CHECK_EQ(fw_history(h, FW_HIST_MAX + 2), FW_HIST_MAX);
+    for (size_t k = 0; k < FW_HIST_MAX; ++k) CHECK_EQ(h[k].kind, FWH_ROLLED_BACK);
+    CHECK_EQ(fw_history(h, 2), 2u);
+    /* a damaged copy: the other one is used */
+    fr_mem[128 + 256 + 20] ^= 0xFF;
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK(fw_history(h, FW_HIST_MAX) >= FW_HIST_MAX - 1u);
+    fw_trial_ms = FW_TRIAL_MS;
+    clock_off();
 }
 
 static void t_activate_confirm(void) {
@@ -423,6 +507,7 @@ void test_fw_all(void) {
     RUN(t_upload);
     RUN(t_activate_confirm);
     RUN(t_rollback);
+    RUN(t_history);
     RUN(t_signed);
     RUN(t_http);
     RUN(t_gates);

@@ -159,7 +159,7 @@ about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate,
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC256V, 32 KB) | 32 KB | user image: the application's estimated 12.5 KB plus 0.8 KB of platform settings (alarm actions 256 B, relays, mail set-up 0.45 KB) = 13.3 KB of 14.5 KB per copy (92 %), factory 1 KB, log pointer + boot record 256 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
+| FRAM (MB85RC256V, 32 KB) | 32 KB | user image: the application's estimated 12.5 KB plus 0.8 KB of platform settings (alarm actions 256 B, relays, mail set-up 0.45 KB) = 13.3 KB of 14.5 KB per copy (92 %), factory 1 KB, log pointer, boot record, HTTPS key record and firmware update history 848 B of 1 KB | **tightest store.** A 128 KB part (MB85RC1MT, same driver) is one setting (D6) |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |
 """
     open(out, "w").write(doc)

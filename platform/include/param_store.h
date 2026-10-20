@@ -92,7 +92,7 @@ typedef struct {
 #define STORE_FAC_B     0x0400u
 #define STORE_USR_A     0x0800u
 #define STORE_USR_B     0x4200u
-#define STORE_META_ADDR 0x7C00u
+#define STORE_META_ADDR 0x7C00u   /* 1 KB: +0 log pointer, +128 fw boot record, +256 HTTPS key, +384..847 fw update history */
 #endif
 #ifndef STORE_SAVE_PERIOD_MS
 #define STORE_SAVE_PERIOD_MS 1000u       /* changes reach FRAM within about 1 s */

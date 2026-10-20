@@ -819,7 +819,16 @@ static void draw_system(uint32_t now) {
     color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Firmware");
     kv(32, BODY_Y + 44, "Running", st.running_version);
     if (st.state == FW_ST_TRIAL) { snprintf(b, sizeof b, "on trial, keeps itself in %u s", (unsigned)((st.trial_left_ms + 999u) / 1000u)); kv(32, BODY_Y + 72, "State", b); }
-    else kv(32, BODY_Y + 72, "State", st.rolled_back ? "last update rolled back" : "normal");
+    else {
+        fw_hist_t h;
+        if (fw_history(&h, 1) && h.kind == FWH_UPDATED) {        /* when the running firmware was put in */
+            char t[24];
+            bool known = (h.flags & FWH_INST_CLOCK) || (h.flags & FWH_DONE_CLOCK);
+            if (known) log_fmt_time(t, sizeof t, (h.flags & FWH_INST_CLOCK) ? h.t_installed : h.t_done, true);
+            snprintf(b, sizeof b, "%.16s, was %.11s", known ? t : "clock not set", h.from);
+            kv(32, BODY_Y + 72, "Updated", b);
+        } else kv(32, BODY_Y + 72, "State", st.rolled_back || (fw_history(&h, 1) && h.kind == FWH_ROLLED_BACK) ? "last update rolled back" : "normal");
+    }
     kv(32, BODY_Y + 100, "Spare bank", st.staged ? st.staged_version : "empty");
     if (st.uploading) {
         snprintf(b, sizeof b, "receiving %lu of %lu bytes", (unsigned long)st.upload_bytes, (unsigned long)st.upload_total);

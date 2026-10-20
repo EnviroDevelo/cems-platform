@@ -718,7 +718,26 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"waiting_left_s\":"); json_uint(o, (st.wait_left_ms + 999u) / 1000u);
     out_str(o, ",\"not_safe\":"); json_str(o, st.not_safe);
     { plat_val_t v; out_str(o, ",\"min_version\":"); json_uint(o, param_read(PARAM_ID_FW_MIN_VERSION, &v) ? v.u : 0); }
-    out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error)); out_str(o, "}");
+    out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error));
+    /* the update history (FRAM), newest first */
+    fw_hist_t h[FW_HIST_MAX];
+    size_t n = fw_history(h, FW_HIST_MAX);
+    out_str(o, ",\"history\":[");
+    for (size_t k = 0; k < n; ++k) {
+        char t[24];
+        if (k) out_str(o, ",");
+        out_str(o, "{\"result\":"); json_str(o, h[k].kind == FWH_UPDATED ? "updated" : "rolled_back");
+        out_str(o, ",\"from\":"); json_str(o, h[k].from);
+        out_str(o, ",\"to\":"); json_str(o, h[k].to);
+        log_fmt_time(t, sizeof t, h[k].t_installed, true);
+        out_str(o, ",\"installed\":"); if (h[k].flags & FWH_INST_CLOCK) json_str(o, t); else out_str(o, "null");
+        log_fmt_time(t, sizeof t, h[k].t_done, true);
+        out_str(o, ",\"done\":"); if (h[k].flags & FWH_DONE_CLOCK) json_str(o, t); else out_str(o, "null");
+        out_str(o, ",\"source\":"); json_str(o, log_src_name(h[k].src));
+        out_str(o, ",\"level\":"); json_str(o, log_level_name(h[k].level));
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
 }
 
 /* ---------------- alarms ---------------- */
