@@ -31,7 +31,7 @@ static plat_seqlock_t lk;
 /* an application table like the demo's */
 static uint32_t a_delay = 2000, a_run = 5;
 static bool a_valve, a_in;
-static float a_gain = 1.5f;
+static float a_gain = 1.5f, a_temp = 182.5f;
 static char a_name[11] = "Valve 1";
 static const char name_def[11] = "Valve 1";       /* defaults are the full size of the block */
 static bool a_ack[4];
@@ -43,6 +43,7 @@ static const param_def_t defs[] = {
     PARAM_TEXT(1005, "valve_name", a_name, name_def, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_ARRAY_BOOL(1006, "ack", a_ack, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_REAL(1007, "gain", a_gain, 0.0f, 10.0f, 1.5f, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_CONFIRM),
+    PARAM_REAL(1008, "stack_temp", a_temp, -50.0f, 500.0f, 182.5f, "\xC2\xB0" "C", PLAT_LVL_VIEW, PF_RO),
 };
 static const uint16_t home_ids[] = { 1001, 1002, 1003, 1005 };
 static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = "0.5.0", .home_ids = home_ids, .n_home = 4 };
@@ -73,6 +74,48 @@ static void dump(const char *name) {
     if (!dir) return;
     char p[256]; snprintf(p, sizeof p, "%s/%s.eve", dir, name);
     FILE *f = fopen(p, "wb"); if (f) { eve_sim_dump(&sim, f); fclose(f); }
+}
+
+static void t_fonts(void) {
+    eve_sim_init(&sim);
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(eve_fonts_load(&eve, EVE_FONT_BASE), 0x0F);                     /* all four inflated and CRC-checked */
+    CHECK_EQ(sim.inflates, 4); CHECK_EQ(sim.memcrcs, 4); CHECK_EQ(sim.inflate_errors, 0);
+    /* glyph data where the metric block says, minus one cell for code 0 (first character is 1) */
+    uint32_t m0 = eve.font_metric[0];
+    uint32_t ptr = (uint32_t)sim.ram_g[m0 + 144] | (uint32_t)sim.ram_g[m0 + 145] << 8 | (uint32_t)sim.ram_g[m0 + 146] << 16 | (uint32_t)sim.ram_g[m0 + 147] << 24;
+    CHECK_EQ(ptr + eve_fonts[0].cell, (m0 + 148u + 3u) & ~3u);
+    CHECK_EQ(sim.ram_g[m0 + 128], 2);                             /* L4 */
+    CHECK_EQ(sim.ram_g[m0 + 'A'] > 0, 1);                         /* a width for 'A' */
+    /* the CRC check reads the chip's answer back from the FIFO */
+    uint32_t crc = 0;
+    CHECK_EQ(eve_memcrc(&eve, eve.font_metric[0], 148, &crc), 0);
+    { uint8_t m[148]; memcpy(m, sim.ram_g + eve.font_metric[0], 148);
+      uint32_t c = 0xFFFFFFFFu; for (int i = 0; i < 148; ++i) { c ^= m[i]; for (int k = 0; k < 8; ++k) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u))); }
+      CHECK_EQ(crc, ~c); }
+    /* a co-processor fault while loading: that font is not used (ROM font instead), the rest are */
+    eve_sim_init(&sim);
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    sim.fault_next = true;
+    uint8_t ok = eve_fonts_load(&eve, EVE_FONT_BASE);
+    CHECK_EQ(ok & 1u, 0); CHECK_EQ(ok, 0x0E);
+    CHECK_EQ(eve.faults, 1);
+    /* a damaged stream: the chip reports nothing useful, the CRC does not match */
+    static uint8_t bad[8192];
+    uint32_t zl = eve_fonts[1].zlen < sizeof bad ? eve_fonts[1].zlen : (uint32_t)sizeof bad;
+    memcpy(bad, eve_fonts[1].z, zl);
+    bad[zl / 2] ^= 0x55;
+    (void)eve_inflate(&eve, 0x80000u, bad, zl);
+    CHECK_EQ(sim.inflate_errors, 1);
+    /* encoding: symbols to codes 1..31 with our fonts, '?' with the ROM fonts */
+    char b[32];
+    CHECK(!strcmp(eve_font_encode("12 \xC2\xB0" "C", b, sizeof b, true), "12 \x01" "C"));
+    CHECK(!strcmp(eve_font_encode("mg/m\xC2\xB3", b, sizeof b, true), "mg/m\x03"));
+    CHECK(!strcmp(eve_font_encode("\xCE\xBCg", b, sizeof b, true), "\x04g"));        /* Greek mu -> micro */
+    CHECK(!strcmp(eve_font_encode("mg/m\xC2\xB3", b, sizeof b, false), "mg/m?"));
+    CHECK(!strcmp(eve_font_encode("\xE4\xB8\xAD!", b, sizeof b, true), "?!"));       /* not in the font */
+    CHECK(!strcmp(eve_font_encode("a\xC2", b, sizeof b, true), "a?"));                 /* cut short */
+    CHECK(!strcmp(eve_font_encode("tab\there", b, sizeof b, true), "tabhere"));
 }
 
 static void t_eve_driver(void) {
@@ -148,6 +191,7 @@ static void setup(void) {
     param_publish();
     eve_sim_init(&sim);
     CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(eve_fonts_load(&eve, EVE_FONT_BASE), 0x0F);                     /* as the UI task does */
     ui_init(&cfg, now);
     frame();
 }
@@ -185,6 +229,11 @@ static void t_ui(void) {
     CHECK_EQ(ui_screen(), UI_PARAMS);
     CHECK(strstr(ui_toast(), "Log in as operator") != NULL);
 
+    /* a unit the ROM fonts cannot draw: shown with our font (degree sign = code 1) */
+    for (int k = 0; k < 10 && !shows("stack_temp"); ++k) if (!tap("Down")) break;
+    CHECK(shows("182.5 \x01" "C"));
+    dump("settings_units");
+    for (int k = 0; k < 10 && eve_sim_tag_of(&sim, "Up") > 0; ++k) tap("Up");
     /* log in: wrong, then right */
     CHECK(tap("Log in"));
     CHECK_EQ(ui_screen(), UI_LOGIN);
@@ -393,5 +442,6 @@ void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
     RUN(t_eve_driver);
+    RUN(t_fonts);
     RUN(t_ui);
 }

@@ -25,6 +25,16 @@ typedef struct {
     uint32_t  cur_n;
     uint8_t   frame[16384];         /* last complete frame (DLSTART .. SWAP) */
     uint32_t  frame_n, frames;
+    /* memories and the out-of-frame commands (CMD_INFLATE, CMD_MEMCRC) */
+    uint8_t  *ram_g;                /* 1 MB (shared by every simulator: tests run one at a time) */
+    uint8_t   ram_cmd[4096];        /* the FIFO as the chip holds it (results are read back from it) */
+    uint32_t  op;                   /* the out-of-frame command being received (0 = none) */
+    uint32_t  op_args[3], op_n;
+    uint8_t   opw[4];
+    uint32_t  opw_n;
+    uint8_t  *zbuf;                 /* CMD_INFLATE's compressed stream so far */
+    uint32_t  zn;
+    uint32_t  inflates, memcrcs, inflate_errors;
 } eve_sim_t;
 
 void eve_sim_init(eve_sim_t *s);

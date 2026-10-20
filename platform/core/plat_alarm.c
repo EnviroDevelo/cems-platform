@@ -1,6 +1,7 @@
 /* plat_alarm.c - the alarm manager (plat_alarm.h). */
 #include "plat_alarm.h"
 #include <string.h>
+#include <stdio.h>
 #include <math.h>
 #include "param.h"
 #include "param_store.h"
@@ -10,6 +11,20 @@
 #include "fw_update.h"
 #include "bsp.h"
 #include "ul_system.h"
+#include "plat_health.h"
+
+plat_health_t plat_health;
+
+bool plat_health_low(const plat_health_t *h, char *why, unsigned cap) {
+    if (!h->valid) return false;
+    if ((h->heap_free || h->heap_min) && h->heap_min < PLAT_HEAP_LOW) {   /* (0/0: not known, e.g. the PC run) */ if (why && cap) snprintf(why, cap, "heap: %lu bytes left at worst", (unsigned long)h->heap_min); return true; }
+    for (unsigned i = 0; i < h->n_tasks && i < PLAT_HEALTH_TASKS; ++i)
+        if (h->task[i].free_words < PLAT_STACK_LOW) {
+            if (why && cap) snprintf(why, cap, "stack of %s: %u words left at worst", h->task[i].name, h->task[i].free_words);
+            return true;
+        }
+    return false;
+}
 
 /* Display working, or none fitted. The UI task provides the real one. */
 __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
@@ -31,6 +46,8 @@ static const alarm_def_t core_defs[] = {
       .text = "Firmware update failed its trial and was undone" },
     { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
       .text = "Alarm email could not be sent" },
+    { .id = ALARM_ID_RESOURCE_LOW, .severity = AL_SEV_WARNING, .flags = AL_LATCH | AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS,
+      .name = "RESOURCE_LOW", .text = "Memory running low: tell the manufacturer", .on_delay_ms = 10000 },
     { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "DISPLAY_FAULT",
       .text = "Touchscreen not responding", .on_delay_ms = 5000 },
 };
@@ -183,6 +200,7 @@ static void poll_platform(void) {
     fw_status_t fw;
     fw_status(&fw);
     alarm_set(ALARM_ID_FW_ROLLED_BACK, fw.rolled_back);
+    alarm_set(ALARM_ID_RESOURCE_LOW, plat_health_low(&plat_health, NULL, 0));
 }
 
 static void publish(void) {

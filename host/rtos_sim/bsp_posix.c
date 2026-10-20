@@ -46,3 +46,7 @@ struct fw_flash *bsp_fw_flash(void) {
     return &f;
 }
 void bsp_random(void *buf, uint32_t len) { FILE *f = fopen("/dev/urandom", "rb"); if (!f || fread(buf, 1, len, f) != len) abort(); fclose(f); }
+
+/* heap_3 (malloc) has no free-space figures: the health sample reports 0 here */
+size_t xPortGetFreeHeapSize(void) { return 0; }
+size_t xPortGetMinimumEverFreeHeapSize(void) { return 0; }

@@ -21,6 +21,7 @@ void plat_assert_failed(const char *file, int line);
 #define configUSE_TICK_HOOK                     0
 #define configCHECK_FOR_STACK_OVERFLOW          0   /* not supported meaningfully on POSIX */
 #define configUSE_MALLOC_FAILED_HOOK            1
+#define configUSE_TRACE_FACILITY                1
 #define configUSE_TIMERS                        1
 #define configTIMER_TASK_PRIORITY               11
 #define configTIMER_QUEUE_LENGTH                10

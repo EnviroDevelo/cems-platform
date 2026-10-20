@@ -15,6 +15,7 @@
 #include "plat_alarm.h"
 #include "mail.h"
 #include "plat_clock.h"
+#include "plat_health.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -213,6 +214,22 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"unacked\":"); json_uint(o, s.unacked);
       out_str(o, ",\"worst\":"); if (s.worst >= 0) json_str(o, alarm_sev_name((uint8_t)s.worst)); else out_str(o, "null");
       out_str(o, "}"); }
+    {   plat_health_t h = plat_health;
+        char why[64] = "";
+        bool low = plat_health_low(&h, why, sizeof why);
+        out_str(o, ",\"health\":{\"known\":"); json_bool(o, h.valid);
+        out_str(o, ",\"heap_size\":"); json_uint(o, h.heap_size);
+        out_str(o, ",\"heap_free\":"); json_uint(o, h.heap_free);
+        out_str(o, ",\"heap_min\":"); json_uint(o, h.heap_min);
+        out_str(o, ",\"low\":"); json_bool(o, low);
+        out_str(o, ",\"why\":"); json_str(o, why);
+        out_str(o, ",\"stacks\":{");
+        for (unsigned i = 0; i < h.n_tasks && i < PLAT_HEALTH_TASKS; ++i) {
+            if (i) out_str(o, ",");
+            h.task[i].name[sizeof h.task[i].name - 1] = 0;
+            json_str(o, h.task[i].name); out_str(o, ":"); json_uint(o, h.task[i].free_words);
+        }
+        out_str(o, "}}"); }
     out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
     out_str(o, ",\"log_status\":"); json_uint(o, plat_log_status());
     out_str(o, ",\"default_passwords\":"); json_bool(o, auth_any_default());

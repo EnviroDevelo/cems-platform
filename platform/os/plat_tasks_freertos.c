@@ -6,6 +6,7 @@
 #include "task.h"
 #include <string.h>
 #include "plat_tasks.h"
+#include "plat_health.h"
 #include "plat_config.h"
 #include "plat_diag.h"
 #include "bsp.h"
@@ -71,11 +72,28 @@ static void fatal(plat_fault_t f, int32_t task, const char *name, uint32_t arg) 
     for (;;) { }   /* IWDG catches it if the reset request fails */
 }
 
+/* heap and every task's stack margin (lwIP's and the timer task too), every 5 s */
+static void health_sample(void) {
+    static TaskStatus_t ts[PLAT_HEALTH_TASKS];
+    UBaseType_t n = uxTaskGetSystemState(ts, PLAT_HEALTH_TASKS, NULL);
+    plat_health_t h = { .valid = true, .heap_size = configTOTAL_HEAP_SIZE,
+                        .heap_free = (uint32_t)xPortGetFreeHeapSize(), .heap_min = (uint32_t)xPortGetMinimumEverFreeHeapSize() };
+    for (UBaseType_t i = 0; i < n && h.n_tasks < PLAT_HEALTH_TASKS; ++i) {
+        plat_task_health_t *t = &h.task[h.n_tasks++];
+        strncpy(t->name, ts[i].pcTaskName, sizeof t->name - 1);
+        t->free_words = (uint16_t)(ts[i].usStackHighWaterMark > 0xFFFFu ? 0xFFFFu : ts[i].usStackHighWaterMark);
+    }
+    h.sampled_ms = bsp_ms();
+    plat_health = h;
+}
+
 static void supervisor_task(void *arg) {
     (void)arg;
     TickType_t last = xTaskGetTickCount();
+    uint32_t n = 0;
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_SUPERVISOR_PERIOD_MS));
+        if (n++ % (5000u / PLAT_SUPERVISOR_PERIOD_MS) == 0) health_sample();
         int bad = tm_check(&plat_monitor, bsp_ms());
         if (bad == TM_ALL_OK) { bsp_wdg_kick(); continue; }
         fatal(PLAT_FAULT_TASK_SILENT, bad, tm_name(&plat_monitor, bad), 0);

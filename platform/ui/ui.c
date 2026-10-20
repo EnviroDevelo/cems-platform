@@ -18,6 +18,7 @@
 #include "tls.h"
 #include "plat_alarm.h"
 #include "plat_clock.h"
+#include "plat_health.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -552,14 +553,33 @@ void ui_input(uint8_t tag, uint32_t now) {
 /* ---------------- drawing ---------------- */
 static eve_t *E;
 static void color(uint32_t c) { eve_color(E, c); }
-static void text(int16_t x, int16_t y, int16_t f, uint16_t o, const char *s) { eve_text(E, x, y, f, o, s); }
+/* the font to use for a ROM font size: our own (with ° ² ³ µ ...) when it loaded */
+static int16_t fnt(int16_t rom, bool *own) {
+    for (unsigned i = 0; i < EVE_FONTS; ++i)
+        if (eve_fonts[i].rom == rom && (E->fonts_ok & (1u << i))) { *own = true; return (int16_t)(EVE_FONT_HANDLE0 + i); }
+    *own = false;
+    return rom;
+}
+static void text(int16_t x, int16_t y, int16_t f, uint16_t o, const char *s) {
+    bool own; int16_t h = fnt(f, &own);
+    char b[160];
+    eve_text(E, x, y, h, o, eve_font_encode(s, b, sizeof b, own));
+}
+static void ebutton(int16_t x, int16_t y, int16_t w, int16_t h, int16_t f, uint16_t o, const char *s) {
+    bool own; int16_t fh = fnt(f, &own);
+    char b[96];
+    eve_button(E, x, y, w, h, fh, o, eve_font_encode(s, b, sizeof b, own));
+}
+static void ekeys(int16_t x, int16_t y, int16_t w, int16_t h, int16_t f, uint16_t o, const char *s) {
+    bool own; eve_keys(E, x, y, w, h, fnt(f, &own), o, s);
+}
 static void box(int16_t x, int16_t y, int16_t w, int16_t h, uint32_t c, uint16_t r) { color(c); eve_rect(E, x, y, w, h, r); }
 
 static void button(uint8_t tag, int16_t x, int16_t y, int16_t w, int16_t h, const char *label, uint32_t fg, bool enabled) {
     eve_tag(E, enabled ? tag : 0);
     eve_fgcolor(E, !enabled ? C_GREY : (U.pressed == tag ? C_PRESS : fg));
     color(0xFFFFFFu);
-    eve_button(E, x, y, w, h, F_TEXT, OPT_FLAT, label);
+    ebutton(x, y, w, h, F_TEXT, OPT_FLAT, label);
     eve_tag(E, 0);
 }
 
@@ -670,14 +690,14 @@ static void draw_keyboard(int16_t y, bool full) {
     if (full) {
         const char *rows[] = { "1234567890", U.shift ? "QWERTYUIOP" : "qwertyuiop", U.shift ? "ASDFGHJKL" : "asdfghjkl",
                                U.shift ? "ZXCVBNM-._" : "zxcvbnm-._" };
-        for (int r = 0; r < 4; ++r) eve_keys(E, 16, (int16_t)(y + r * 61), 760, 58, F_TEXT, (uint16_t)(OPT_FLAT | o), rows[r]);
+        for (int r = 0; r < 4; ++r) ekeys(16, (int16_t)(y + r * 61), 760, 58, F_TEXT, (uint16_t)(OPT_FLAT | o), rows[r]);
         button(T_SHIFT, 784, y, 224, 58, U.shift ? "abc" : "ABC", C_ACCENT, true);
         button(T_SPACE, 784, (int16_t)(y + 61), 224, 58, "Space", C_ACCENT, true);
         button(T_BKSP, 784, (int16_t)(y + 122), 224, 58, "Delete", C_ACCENT, true);
         button(T_CLEAR, 784, (int16_t)(y + 183), 224, 58, "Clear", C_ACCENT, true);
     } else {
         const char *rows[] = { "789", "456", "123", U.kb == KB_IP ? "0." : "-0." };
-        for (int r = 0; r < 4; ++r) eve_keys(E, 16, (int16_t)(y + r * 61), 420, 58, F_BIG, (uint16_t)(OPT_FLAT | o), rows[r]);
+        for (int r = 0; r < 4; ++r) ekeys(16, (int16_t)(y + r * 61), 420, 58, F_BIG, (uint16_t)(OPT_FLAT | o), rows[r]);
         button(T_BKSP, 444, y, 200, 58, "Delete", C_ACCENT, true);
         button(T_CLEAR, 444, (int16_t)(y + 61), 200, 58, "Clear", C_ACCENT, true);
     }
@@ -856,6 +876,13 @@ static void draw_system(uint32_t now) {
     kv(544, BODY_Y + 312, "Log", b);
     snprintf(b, sizeof b, "0x%04lx", (unsigned long)param_store_status());
     kv(544, BODY_Y + 338, "Store status", b);
+    if (plat_health.valid) {
+        unsigned lo = 0xFFFFu; const char *ln = "";
+        for (unsigned i = 0; i < plat_health.n_tasks && i < PLAT_HEALTH_TASKS; ++i)
+            if (plat_health.task[i].free_words < lo) { lo = plat_health.task[i].free_words; ln = plat_health.task[i].name; }
+        snprintf(b, sizeof b, "heap %lu KB free at worst, stack %.11s %u words", (unsigned long)(plat_health.heap_min / 1024u), ln, lo);
+        kv(544, BODY_Y + 390, "Memory", b);
+    }
     uint32_t ct;
     if (plat_clock_now(&ct)) log_fmt_time(b, sizeof b, ct, true); else snprintf(b, sizeof b, "NOT SET");
     kv(544, BODY_Y + 364, "Clock", b);
@@ -905,14 +932,7 @@ static void draw_alarms(void) {
         snprintf(line, sizeof line, "%s  -  %s%s", t,
                  a->active ? (a->unacked ? "active, not acknowledged" : "active") : "cleared, not acknowledged",
                  a->active && a->unacked && (a->flags & AL_LATCH) ? " (latched)" : "");
-        /* the description in 7-bit ASCII (the ROM fonts): anything else shows as '?' */
-        char d7[64]; size_t k = 0;
-        for (const unsigned char *p = (const unsigned char *)a->text; *p && k + 1 < sizeof d7; ++p) {
-            if (*p < 0x80) d7[k++] = (char)*p;
-            else if ((*p & 0xC0) != 0x80) d7[k++] = '?';
-        }
-        d7[k] = 0;
-        color(C_INK); text(44, (int16_t)(y + 18), a->unacked ? F_TEXT : F_TEXT, OPT_CENTERY, d7);
+        color(C_INK); text(44, (int16_t)(y + 18), F_TEXT, OPT_CENTERY, a->text);
         color(a->unacked ? sev_colour(a->severity) : C_MUTE); text(44, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, line);
         if (a->unacked) {
             U.al_ids[r] = a->id;
@@ -942,7 +962,7 @@ static void draw_alarm_cfg(void) {
         char d7[64]; size_t k = 0;
         if (alarm_get(d->id, &v))
             for (const unsigned char *p = (const unsigned char *)v.text; *p && k + 1 < sizeof d7; ++p) {
-                if (*p < 0x80) d7[k++] = (char)*p; else if ((*p & 0xC0) != 0x80) d7[k++] = '?';
+                d7[k++] = (char)*p;                    /* UTF-8 kept: text() shows what the font has */
             }
         d7[k] = 0;
         if (k > 42) {                                  /* the column holds ~42 characters: cut at a word */
@@ -961,7 +981,7 @@ static void draw_alarm_cfg(void) {
             eve_tag(E, can ? tg : 0);              /* the state shows either way; only admin can change it */
             eve_fgcolor(E, U.pressed == tg ? C_PRESS : on ? C_OK : 0xB8C0CCu);
             color(0xFFFFFFu);
-            eve_button(E, x, (int16_t)(y + 6), 70, ROW_H - 12, F_SMALL, OPT_FLAT, lab[b]);
+            ebutton(x, (int16_t)(y + 6), 70, ROW_H - 12, F_SMALL, OPT_FLAT, lab[b]);
             eve_tag(E, 0);
         }
     }
@@ -1013,6 +1033,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     fw_hold_check();
     events_poll(now);
     eve_frame_begin(e, 0xF4, 0xF5, 0xF7);
+    eve_fonts_use(e);
     eve_tag(e, 0);
     header(now);
     switch (U.scr) {

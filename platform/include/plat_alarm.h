@@ -101,6 +101,7 @@ enum {
     ALARM_ID_FW_ROLLED_BACK    = 7,   /* a firmware update failed its trial and was undone */
     ALARM_ID_DISPLAY_FAULT     = 8,   /* the touchscreen stopped responding */
     ALARM_ID_NOTIFY_FAIL       = 10,  /* an alarm email could not be sent (after retries) */
+    ALARM_ID_RESOURCE_LOW      = 11,  /* memory running low (plat_health.h) */
 };
 
 /* A copy of one alarm, for lists. */

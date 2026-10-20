@@ -12,6 +12,7 @@
 #define EVE_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* ---------------- transport (from the board) ---------------- */
 typedef struct eve_bus {
@@ -123,6 +124,9 @@ enum { EVE_POINTS = 2, EVE_LINES = 3, EVE_LINE_STRIP = 4, EVE_RECTS = 9 };
 #define CMD_GRADCOLOR 0xFFFFFF34u
 #define CMD_ROMFONT   0xFFFFFF3Fu
 #define CMD_FILLWIDTH 0xFFFFFF58u
+#define CMD_MEMCRC    0xFFFFFF18u
+#define CMD_INFLATE   0xFFFFFF22u
+#define CMD_SETFONT2  0xFFFFFF3Bu
 /* options */
 #define OPT_FLAT      256u
 #define OPT_CENTERX   512u
@@ -130,6 +134,30 @@ enum { EVE_POINTS = 2, EVE_LINES = 3, EVE_LINE_STRIP = 4, EVE_RECTS = 9 };
 #define OPT_CENTER    1536u
 #define OPT_RIGHTX    2048u
 #define OPT_FILL      8192u
+
+/* ---------------- own fonts (eve_fonts.c, made by tools/mkfont.py; decision D24) ----------------
+ * L4 "legacy" fonts with ASCII and, in codes 1..31, the symbols the ROM fonts lack
+ * (° ² ³ µ ± ...). Kept zlib-compressed in the H5's flash (so they are versioned with
+ * the firmware), inflated into RAM_G by the co-processor at start-up and checked by
+ * CRC; if anything fails the UI keeps the ROM fonts. */
+#define EVE_FONTS 4
+typedef struct {
+    uint8_t        rom;        /* the ROM font it replaces (26, 28, 30, 31) */
+    uint8_t        height;
+    uint8_t        first;      /* first character code (1) */
+    uint32_t       cell;       /* bytes per glyph */
+    uint32_t       size;       /* glyph data, bytes */
+    uint32_t       crc;        /* CRC-32 of the glyph data */
+    const uint8_t *z;          /* zlib stream */
+    uint32_t       zlen;
+    const uint8_t *metric;     /* 144 bytes: widths[128], format, stride, width, height (the pointer is added) */
+} eve_font_t;
+typedef struct { uint16_t cp; uint8_t code; } eve_font_char_t;
+extern const eve_font_t eve_fonts[EVE_FONTS];
+extern const eve_font_char_t eve_font_extra[];
+extern const unsigned eve_font_n_extra;
+#define EVE_FONT_HANDLE0 1       /* fonts use bitmap handles 1..EVE_FONTS */
+#define EVE_FONT_BASE 0x1000u    /* RAM_G address of the fonts (>= one glyph cell, so the code-0 pointer stays positive) */
 
 /* ---------------- driver ---------------- */
 #ifndef EVE_CMDBUF
@@ -144,10 +172,22 @@ typedef struct {
     bool      overflow;
     uint32_t  frames, faults, timeouts;
     char      fault_msg[32];
+    uint8_t   fonts_ok;           /* bit i: eve_fonts[i] is loaded and checked */
+    uint32_t  font_metric[EVE_FONTS];   /* RAM_G address of each metric block */
     uint8_t   buf[EVE_CMDBUF];
 } eve_t;
 
 int  eve_init(eve_t *e, eve_bus_t *bus, const eve_panel_t *panel);   /* 0 ok; -1 no chip; -2 engines not ready */
+/* Co-processor work outside a frame (start-up): returns 0 when it has all been done. */
+int  eve_inflate(eve_t *e, uint32_t ram_g, const uint8_t *z, uint32_t zlen);
+int  eve_memcrc(eve_t *e, uint32_t ram_g, uint32_t n, uint32_t *crc);
+/* Load eve_fonts[] into RAM_G from base; returns fonts_ok (bit per font). */
+uint8_t eve_fonts_load(eve_t *e, uint32_t base);
+/* In a frame: make the loaded fonts usable (handles EVE_FONT_HANDLE0..). */
+void eve_fonts_use(eve_t *e);
+/* UTF-8 -> what cmd_text shows: with own fonts the symbols map to codes 1..31,
+ * otherwise (ROM fonts) they become '?'. Returns out. */
+char *eve_font_encode(const char *utf8, char *out, size_t cap, bool own_fonts);
 void eve_backlight(eve_t *e, uint8_t percent);
 
 uint8_t  eve_rd8(eve_t *e, uint32_t a);

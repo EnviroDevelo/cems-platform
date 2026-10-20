@@ -41,6 +41,7 @@ void plat_ui_task_body(void) {
                 first = false;
                 retry = now;
                 disp_up = eve_init(&eve, bus, &eve_panel_rvt70h) == 0;
+                if (disp_up) { plat_checkin(PLAT_TASK_UI); (void)eve_fonts_load(&eve, EVE_FONT_BASE); }   /* own fonts; ROM fonts if this fails */
                 bl = 255;
                 plat_checkin(PLAT_TASK_UI);
             }

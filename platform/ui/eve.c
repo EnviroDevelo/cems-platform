@@ -202,31 +202,121 @@ static void recover(eve_t *e) {
     e->faults++;
 }
 
-int eve_frame_end(eve_t *e) {
-    if (!e->ok) return -2;
-    put32(e, DL_DISPLAY);                                      /* (room was kept for these two) */
-    put32(e, CMD_SWAP);
+/* stream n bytes (a multiple of 4) into the co-processor FIFO; 0 ok, -1 fault, -2 timeout */
+static int send_stream(eve_t *e, const uint8_t *p, uint32_t n) {
     uint32_t sent = 0;
-    for (int tries = 0; sent < e->n; ) {
+    for (int tries = 0; sent < n; ) {
         uint16_t space = eve_rd16(e, REG_CMDB_SPACE) & 0xFFCu;
         if (space == 0) {
             if (eve_rd16(e, REG_CMD_READ) == 0xFFFu) { recover(e); return -1; }
-            if (++tries > 50) { e->timeouts++; return -2; }
+            if (++tries > 200) { e->timeouts++; return -2; }
             e->bus->delay_ms(1);
             continue;
         }
-        uint32_t chunk = e->n - sent < space ? e->n - sent : space;
-        eve_wr_mem(e, REG_CMDB_WRITE, e->buf + sent, chunk);
+        tries = 0;
+        uint32_t chunk = n - sent < space ? n - sent : space;
+        eve_wr_mem(e, REG_CMDB_WRITE, p + sent, chunk);
         sent += chunk;
     }
-    for (int k = 0; k < 50; ++k) {                             /* wait for the co-processor to finish */
+    return 0;
+}
+
+static int wait_idle(eve_t *e, int ms) {
+    for (int k = 0; k < ms; ++k) {                             /* wait for the co-processor to finish */
         uint16_t rd = eve_rd16(e, REG_CMD_READ);
         if (rd == 0xFFFu) { recover(e); return -1; }
-        if (rd == eve_rd16(e, REG_CMD_WRITE)) { e->frames++; return 0; }
+        if (rd == eve_rd16(e, REG_CMD_WRITE)) return 0;
         e->bus->delay_ms(1);
     }
     e->timeouts++;
     return -2;
+}
+
+int eve_frame_end(eve_t *e) {
+    if (!e->ok) return -2;
+    put32(e, DL_DISPLAY);                                      /* (room was kept for these two) */
+    put32(e, CMD_SWAP);
+    int rc = send_stream(e, e->buf, e->n);
+    if (rc == 0) rc = wait_idle(e, 50);
+    if (rc == 0) e->frames++;
+    return rc;
+}
+
+/* ---------------- start-up work: inflate, CRC, fonts ---------------- */
+static void le32(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); b[2] = (uint8_t)(v >> 16); b[3] = (uint8_t)(v >> 24); }
+
+int eve_inflate(eve_t *e, uint32_t ram_g, const uint8_t *z, uint32_t zlen) {
+    if (!e->ok) return -2;
+    uint8_t h[8];
+    le32(h, CMD_INFLATE); le32(h + 4, ram_g);
+    int rc = send_stream(e, h, 8);
+    uint32_t whole = zlen & ~3u;
+    if (rc == 0 && whole) rc = send_stream(e, z, whole);
+    if (rc == 0 && whole < zlen) {                             /* the tail, padded to a word */
+        uint8_t t[4] = { 0, 0, 0, 0 };
+        memcpy(t, z + whole, zlen - whole);
+        rc = send_stream(e, t, 4);
+    }
+    return rc == 0 ? wait_idle(e, 500) : rc;
+}
+
+int eve_memcrc(eve_t *e, uint32_t ram_g, uint32_t n, uint32_t *crc) {
+    if (!e->ok) return -2;
+    uint16_t w = eve_rd16(e, REG_CMD_WRITE);
+    uint8_t c[16];
+    le32(c, CMD_MEMCRC); le32(c + 4, ram_g); le32(c + 8, n); le32(c + 12, 0);
+    int rc = send_stream(e, c, sizeof c);
+    if (rc == 0) rc = wait_idle(e, 200);
+    if (rc == 0) *crc = eve_rd32(e, EVE_RAM_CMD + ((w + 12u) & 0xFFFu));   /* the result word, in the FIFO */
+    return rc;
+}
+
+uint8_t eve_fonts_load(eve_t *e, uint32_t base) {
+    e->fonts_ok = 0;
+    uint32_t a = base;
+    for (unsigned i = 0; i < EVE_FONTS && e->ok; ++i) {
+        const eve_font_t *f = &eve_fonts[i];
+        uint32_t metric = a, data = (a + 148u + 3u) & ~3u;
+        uint8_t m[148];
+        memcpy(m, f->metric, 144);
+        le32(m + 144, data - (uint32_t)f->first * f->cell);    /* glyph address of code 0 */
+        eve_wr_mem(e, metric, m, sizeof m);
+        uint32_t crc = 0;
+        if (eve_inflate(e, data, f->z, f->zlen) == 0 && eve_memcrc(e, data, f->size, &crc) == 0 && crc == f->crc) {
+            e->font_metric[i] = metric;
+            e->fonts_ok |= (uint8_t)(1u << i);
+        }
+        a = (data + f->size + 3u) & ~3u;
+    }
+    return e->fonts_ok;
+}
+
+void eve_fonts_use(eve_t *e) {
+    for (unsigned i = 0; i < EVE_FONTS; ++i) {
+        if (!(e->fonts_ok & (1u << i)) || !room(e, 16)) continue;
+        put32(e, CMD_SETFONT2); put32(e, EVE_FONT_HANDLE0 + i); put32(e, e->font_metric[i]); put32(e, eve_fonts[i].first);
+    }
+}
+
+char *eve_font_encode(const char *s, char *out, size_t cap, bool own) {
+    size_t k = 0;
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p && k + 1 < cap) {
+        uint32_t cp = *p;
+        int more = 0;
+        if (cp >= 0xF0) { cp &= 0x07; more = 3; } else if (cp >= 0xE0) { cp &= 0x0F; more = 2; }
+        else if (cp >= 0xC0) { cp &= 0x1F; more = 1; } else if (cp >= 0x80) { p++; out[k++] = '?'; continue; }
+        p++;
+        for (; more && (*p & 0xC0) == 0x80; --more) cp = (cp << 6) | (*p++ & 0x3Fu);
+        if (more) { out[k++] = '?'; continue; }                 /* cut short */
+        if (cp >= 32 && cp < 127) { out[k++] = (char)cp; continue; }
+        if (cp < 32) continue;                                  /* control characters: dropped */
+        char c = '?';
+        if (own) for (unsigned j = 0; j < eve_font_n_extra; ++j) if (eve_font_extra[j].cp == cp) { c = (char)eve_font_extra[j].code; break; }
+        out[k++] = c;
+    }
+    out[k] = 0;
+    return out;
 }
 
 uint8_t eve_touch_tag(eve_t *e) { return e->ok ? eve_rd8(e, REG_TOUCH_TAG) : 0; }

@@ -30,12 +30,16 @@ runs on top of it.
 | EVE BT817 display driver (Riverdi RVT70 timing, co-processor commands, touch tags, fault recovery) and the touch UI (home, settings, edit, log in, events, system) | `eve.h`, `platform/ui/eve.c`, `ui.h`, `platform/ui/ui.c`, `platform/os/plat_ui_task.c`, `port/stm32h5/eve_bus_stm32h5.c`; `host/eve_sim/`, `tools/eve_preview.py` | Done; host-tested against a simulated BT817 driven by simulated touches; screens rendered from the real command lists (`docs/ui/`). Not yet run on the display |
 | Firmware image signing (D14): ECDSA P-256 signature over the image header (which holds the payload's SHA-256); key tool | `platform/net/fw_sig.c`, `platform/core/fw_pubkey.c` (generated), `tools/fwkey.py`, `tools/mkfwimage.py --key` | Done; host-tested (keys made in the test: product key accepted; unsigned, other-key, edited-header and edited-payload images refused) and end to end through netsim with a key made by `fwkey.py`. Compiled and linked for the H5 |
 | HTTPS (D11): own key and certificate, TLS 1.2 server, session tickets, port-80 redirect | `tls.h`, `platform/net/tls.c`, `tls_config.h`, `third_party/mbedtls` | Done; host-tested, handshakes against Python's TLS client (resumption, certificate trust by IP, redirect) and Chromium. Compiled and linked for the H5 |
+| Health: heap and every task's stack margin sampled every 5 s (web, System screen), alarm 11 RESOURCE_LOW; soak test | `plat_health.h`, `plat_tasks_freertos.c` (sampling), `tests/integration/soak_test.py` | Done; host-tested; soak run for 15 min on the PC build (no failures, sockets and memory flat) |
+| Own touchscreen fonts (D24): DejaVu Sans at the ROM font sizes with ° ² ³ µ ± and 26 more symbols, kept compressed in the firmware, inflated into the display's RAM at start-up and CRC-checked; UTF-8 text encoded for them; ROM fonts if loading fails | `tools/mkfont.py`, `platform/ui/eve_fonts.c` (generated), `eve.h` (`eve_fonts_load`, `eve_font_encode`), `ui.c`; simulator: `host/eve_sim/zinflate.c` | Done; host-tested against the simulated BT817 (inflate, CRC read back from the FIFO, a fault while loading, a damaged stream) and glyph sheets checked by eye. Not yet run on the display |
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
-Not in this revision (next modules, in the order proposed): QSPI for the display.
+Not in this revision: everything in the spec for the core platform is now built and
+host-tested; what remains is bringing it up on the DK (`docs/CUBEMX_SETUP.md`) and the
+72-hour soak on hardware.
 
 ## 2. Tasks and priorities
 
@@ -407,6 +411,7 @@ Platform alarms (always present; the application doesn't define them):
 | 7 | FW_ROLLED_BACK (warning, latched) | a firmware update failed its trial |
 | 8 | DISPLAY_FAULT (warning) | the touchscreen stopped responding for 5 s |
 | 10 | NOTIFY_FAIL (warning) | an alarm email failed three times (clears at the next email that goes through) |
+| 11 | RESOURCE_LOW (warning, latched) | heap or a task stack nearly used up (5h) |
 
 Costs: 4.1 KB of flash and 2.7 KB of RAM for up to 96 alarms (`docs/MEMORY.md`); the
 scan spends a few microseconds per alarm.
@@ -475,6 +480,50 @@ logger closes its averaging interval at a step, as before.
 
 The product board needs a VBAT supply for the RTC (`docs/CUBEMX_SETUP.md`).
 
+## 5g. Touchscreen fonts (D24)
+
+The BT817's ROM fonts have ASCII only, so a CEMS unit such as "mg/m³", "°C" or "µg"
+could not be shown. `tools/mkfont.py` renders DejaVu Sans at the sizes of the ROM fonts
+the UI uses (26, 28, 30, 31) as EVE "legacy" L4 fonts: ASCII 32..126, plus in codes 1..31
+° ² ³ µ ± · × ÷ ¼ ½ ¾ ≤ ≥ ≠ ≈ Ω Δ √ ‰ € £ ä ö ü Ä Ö Ü é è à ñ (Greek mu and the ohm sign
+map to µ and Ω). The UI's text calls convert UTF-8 to those codes (`eve_font_encode`);
+anything else shows as "?".
+
+The spec suggested programming assets into the display module's own flash. For fonts
+that is not needed: they are 24 KB compressed in the H5's flash (249 KB once inflated,
+in the BT817's 1 MB RAM_G), so they are versioned with the firmware automatically, need
+no flash programming step on the module and no wear, and do not depend on which flash
+part Riverdi fits. At start-up the co-processor inflates them (`CMD_INFLATE`, about 10 ms
+at 30 MHz SPI) and each is checked with `CMD_MEMCRC` against the CRC in the firmware; a
+font that fails is simply not used (the ROM font of that size is). The module's flash
+stays available for large images (logos, photos) if the UI ever needs them.
+
+The link stays single-lane SPI: a frame is 2-4 KB of commands (about 1 ms at 30 MHz),
+so QSPI would save nothing visible and costs four more pins.
+
+**To check on the display:** the metric block's glyph pointer convention for a first
+character other than 0 (we store the address of code 0's cell, as the BT81x guide
+describes); if glyphs appear shifted by one character, that is the line to change in
+`eve_fonts_load()`.
+
+## 5h. Health and the soak test
+
+The supervisor task samples the FreeRTOS heap (free now, lowest ever; lwIP allocates from
+it) and every task's stack margin (lowest-ever unused, including lwIP's tcpip and
+Ethernet tasks) every 5 s. `/api/info` returns them under `health`, the System screen
+shows the heap's worst figure and the tightest stack, and alarm 11 RESOURCE_LOW (latched,
+email and Modbus by default) is raised when the heap's worst falls below 4 KB or a stack
+margin below 64 words, so a slow leak or an undersized stack is reported long before it
+stops the unit.
+
+`tests/integration/soak_test.py [minutes]` runs the networked simulation under a steady
+load (3 Modbus clients, keep-alive and one-shot HTTPS polling, web writes every second,
+an alarm raised and acknowledged every 20 s, event CSV downloads) and watches the
+process's memory and open sockets every 10 s. It passes when no request failed, the
+socket count stays flat, memory stops growing after the first third and the address
+sanitizer reports no leak at exit. The spec's 72-hour soak is the same script with
+4320 minutes; on the DK the figures to watch are `health` on `/api/info`.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -502,14 +551,16 @@ work before integration.
 | Alarm email end to end (`tests/integration/mail_test.py`): netsim against a mail server written in the test (plain, STARTTLS, TLS; certificates from openssl, signed with SHA-384) | 23 checks: test email to two recipients; an alarm emailed with its line and what is active, its clear emailed, two alarms in one email; a login refused on plain SMTP; STARTTLS with an RSA-2048 certificate and AUTH PLAIN; the fingerprint reported and pinned; a changed certificate refused before logging in, three tries, NOTIFY_FAIL; TLS with an ECDSA certificate, NOTIFY_FAIL cleared; the password unreadable and absent from the backup file; "nothing" sends nothing; sends and failures in the event log; TLS pool within its 44 KB (also run with RSA-4096: 38 KB) |
 | Clock (`tests/test_clock.c`, `tests/test_ui.c`; `tests/integration/clock_test.py` against a test SNTP server) | Range refused; applied by the scan only, once; calendar and weekday (a leap day, a Sunday); through parameter 85 from Modbus in REMOTE; the logger told not to log the step twice; UTC offset. Touchscreen: Set clock, incomplete entry refused, set. End to end (14 checks): login and admin level needed, a set from the web, SNTP finds the clock an hour fast and steps it, no step when in step, an unsynchronised server ignored, no answer reported, following the server back 30 s, each step logged once with its source |
 | Alarm manager (`make test`, `tests/test_alarm.c`) | Table errors; raise, acknowledge (through the parameter, any mode, no login), clear; cleared-but-unacknowledged kept; on- and off-delays with restarts; the delay parameter; latch held until acknowledged, or cleared later if acknowledged while active; status alarms; suppression at once and delays again after; range deadband on both sides and a value sitting on a limit raising once; UTF-16 descriptions; order and paging; acknowledge all; the watchdog-reset and IP-conflict platform alarms; routes: defaults, the user's choice and "nothing", relays in all three modes and fail-safe, overriding the application's output, the common-alarm word |
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 12,155 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 12,494 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
 | Firmware update end to end (`tests/integration/fw_test.py`): image from `tools/mkfwimage.py`, netsim with file-backed banks; a swap exits the process as a reset | 39 checks: login needed; 300 KB upload; damaged file and other-hardware image refused; activate, restart as the new version on trial, confirmed after the trial, events logged; second update "hangs" in its trial, watchdog reset rolls it back, the old version runs with `rolled_back`, the failed image stays available; with a product key (`CEMS_FW_PUBKEY`): unsigned and other-key images refused, the product-signed image accepted; gates: refused with the application's reason while a sequence runs, held for the touchscreen (refused, then confirmed and restarted), an image older than the minimum refused, every step logged |
+| Touchscreen fonts (`tests/test_ui.c`, `t_fonts`) | All four fonts inflated and CRC-checked by the simulated co-processor (a zlib decoder written for the simulator); the metric block's layout; the CRC answer read back from the FIFO; a co-processor fault while loading leaves that size on the ROM font; a damaged stream detected; UTF-8 encoding (symbols, Greek mu, unknown characters, cut-short sequences, control characters); a unit with ° shown in the settings list |
 | Touchscreen (`make test`, `tests/test_ui.c`): the EVE driver against a simulated BT817 that decodes the SPI framing and executes the command lists; the UI driven by simulated touches | Start-up sequence and panel registers; chip missing; co-processor fault recovered; command-buffer overflow caught. UI: every screen; settings refused without login with the reason; wrong then right password; out-of-range refused then accepted; text with capitals; arrays sent to the web; mode to REMOTE only after confirmation, touchscreen writes then refused, LOCAL taken back without login; IP entry with the network confirmation; ON/OFF; a PF_CONFIRM entry; events show the touchscreen as the source; firmware restart confirmed; lockout after five wrong passwords; slide-off cancels; idle logout, dimming and wake-only first touch; the alarm pill counts alarms and new ones, opens the list, one acknowledged then all, without a login; alarm actions visible to all but changed only by admin |
 | Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 88 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer; alarms: the platform's calibration alarm, a latching application alarm raised and held, the counts and per-alarm bits read over Modbus, acknowledged over Modbus (and logged as such), a range alarm waiting out its 2 s on-delay with its edited description, acknowledge refused without a login, acknowledge all, suppression, the Modbus common-alarm word following each alarm's Modbus action |
 | Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Admin firmware upload with progress, "Ready in the spare bank" and the restart button (`docs/web_firmware.png`); login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors; the alarm badge and list, one alarm acknowledged from its row; an alarm's relay action ticked, a relay given an output, the email set-up saved with the password left blank on reload |
-| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With I2C FRAM, NOR and the display: 182 KB flash (of a 1 MB bank), 269 KB RAM (of 640 KB); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
+| Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With everything fitted, flash and RAM by module are in `docs/MEMORY.md` (now 34 % of the 1 MB bank and 51 % of the RAM); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
+| Soak (`tests/integration/soak_test.py 15`) on the PC build | 15 minutes: no request failed; open sockets steady; memory flat after warm-up; no sanitizer errors or leaks |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
 ## 8. Decisions (working defaults, change any of them)
@@ -538,6 +589,7 @@ work before integration.
 | D21 | Secrets in backup files | Password hashes and the mail password are never written to a parameter backup file, and a restore never changes them | A backup file gets copied around; with 4-digit PINs the hashes could be brute-forced from it. Restoring settings onto a unit should not change who can log in |
 | D22 | Clock | Local standard time, no daylight saving; UTC offset as a setting; set from the touchscreen and web (admin), the PLC (parameter 85) or SNTP from the site's time server; every change logged once with its source | CEMS records must not jump twice a year; sites seldom have internet, so the time source is the operator, the DAHS or a site server |
 | D23 | Firmware restart gates | The application's safe-state check (always on), touchscreen confirmation of web-requested restarts (setting, off by default), minimum version (setting, factory) | The spec's three conditions; confirmation is off by default so a site without anyone at the panel can still be updated |
+| D24 | Display assets | Own fonts (DejaVu, L4) compressed in the firmware, inflated into RAM_G at start-up and CRC-checked; nothing in the module's flash yet; link stays single SPI | Versioned with the firmware with no extra step; the units the instrument shows need ° ² ³ µ; the module's flash is kept for big images if ever needed |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout

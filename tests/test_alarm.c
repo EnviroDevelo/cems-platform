@@ -317,6 +317,37 @@ static void t_routes(void) {
     memset(plat_alarm_relay_inv, 0, 4);
 }
 
+#include "plat_health.h"
+static void t_health(void) {
+    setup(BSP_RESET_POWER_ON);
+    char why[64];
+    plat_health = (plat_health_t){ 0 };
+    CHECK(!plat_health_low(&plat_health, why, sizeof why));          /* not sampled: nothing to say */
+    plat_health.valid = true; plat_health.heap_size = 49152; plat_health.heap_free = 9000; plat_health.heap_min = 8000;
+    plat_health.n_tasks = 2;
+    strcpy(plat_health.task[0].name, "http"); plat_health.task[0].free_words = 300;
+    strcpy(plat_health.task[1].name, "tcpip"); plat_health.task[1].free_words = 200;
+    CHECK(!plat_health_low(&plat_health, why, sizeof why));
+    scan(11000);
+    CHECK(!get(ALARM_ID_RESOURCE_LOW).active);
+    plat_health.task[1].free_words = 40;                              /* a stack nearly used up */
+    CHECK(plat_health_low(&plat_health, why, sizeof why));
+    CHECK(!strcmp(why, "stack of tcpip: 40 words left at worst"));
+    scan(5000);
+    CHECK(!get(ALARM_ID_RESOURCE_LOW).active);                        /* 10 s on-delay */
+    scan(6000);
+    CHECK(get(ALARM_ID_RESOURCE_LOW).active);
+    plat_health.task[1].free_words = 200; plat_health.heap_min = 3000;
+    CHECK(plat_health_low(&plat_health, why, sizeof why)); CHECK(strstr(why, "heap") != NULL);
+    plat_health.heap_free = plat_health.heap_min = 0;                 /* 0/0: not known (the PC run) */
+    CHECK(!plat_health_low(&plat_health, why, sizeof why));
+    scan(1000);
+    CHECK(get(ALARM_ID_RESOURCE_LOW).active);                         /* latched until acknowledged */
+    alarm_ack(ALARM_ID_RESOURCE_LOW, PLAT_SRC_LOCAL, 0);
+    CHECK(!get(ALARM_ID_RESOURCE_LOW).active);
+    plat_health = (plat_health_t){ 0 };
+}
+
 extern uint32_t plat_net_status_word;
 static void t_platform(void) {
     setup(BSP_RESET_IWDG);
@@ -349,5 +380,6 @@ void test_alarm_all(void) {
     RUN(t_range);
     RUN(t_text_order);
     RUN(t_routes);
+    RUN(t_health);
     RUN(t_platform);
 }

@@ -17,6 +17,12 @@ FONT_PX = {26: 15, 27: 18, 28: 21, 29: 24, 30: 30, 31: 42}       # rough cap hei
 OPT_CENTERX, OPT_CENTERY, OPT_RIGHTX, OPT_FLAT = 512, 1024, 2048, 256
 FONT_FILE = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 _fonts = {}
+OWN = {}                                     # bitmap handle -> ROM font it stands in for (CMD_SETFONT2)
+try:                                         # codes 1..31 of our own fonts (tools/mkfont.py)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from mkfont import EXTRA, SIZES
+except Exception:
+    EXTRA, SIZES = [], []
 
 
 def font(n):
@@ -52,6 +58,9 @@ def render(data):
         return data[off:end].decode("latin-1"), (end - off + 4) & ~3
 
     def draw_text(x, y, f, opt, s, col=None):
+        if f in OWN:                                          # our font: map codes 1..31 to their symbols
+            f = OWN[f]
+            s = "".join(chr(EXTRA[ord(c) - 1]) if 1 <= ord(c) <= len(EXTRA) else c for c in s)
         fn = font(f)
         bb = d.textbbox((0, 0), s, font=fn)
         tw, th = bb[2] - bb[0], FONT_PX.get(f, 18)
@@ -109,6 +118,11 @@ def render(data):
             rng = u16(i + 12); i += 16
             d.rounded_rectangle((x, y, x + bw, y + bh), radius=bh // 2, fill=st["bg"])
             d.rounded_rectangle((x, y, x + int(bw * val / max(1, rng)), y + bh), radius=bh // 2, fill=st["fg"])
+        elif w == 0xFFFFFF3B:                                 # SETFONT2 handle ptr first
+            h = struct.unpack_from("<I", data, i)[0]
+            if 1 <= h <= len(SIZES):
+                OWN[h] = SIZES[h - 1][0]
+            i += 12
         elif w == 0xFFFFFF16:                                 # SPINNER (not drawn)
             i += 8
         elif w == 0xFFFFFF0A:
