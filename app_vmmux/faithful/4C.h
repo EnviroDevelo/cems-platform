@@ -1,6 +1,7 @@
 /* 4C.h - Stage 4C I/O layer: globals (types/sizes from 20_Data_Dictionary) and prototypes. */
 #ifndef STAGE4C_H
 #define STAGE4C_H
+#include "vm_types.h"   /* shared types, system tags and vm_config.h switches (app_vmmux) */
 #include <stdint.h>
 #include <stdbool.h>
 

@@ -35,8 +35,9 @@ void DI_Assigning(void)
     /* R7, R8: live in the original; TempBoolsDI/TempBoolsDI1 are never written (item 8) */
     for (int i = 0; i < 14; i++) DiscreteInputsArray[i] = TempBoolsDI[i];
     for (int i = 0; i < 6; i++)  DiscreteInputsArray[14 + i] = TempBoolsDI1[i];
-#ifdef ENABLE_DISABLED_RUNGS
-    /* R9, R10: DISABLED IN ORIGINAL. The real inputs, as the new firmware will use them. */
+#if defined(ENABLE_DISABLED_RUNGS) || VM_FIX_DI_REAL_INPUTS
+    /* R9, R10: DISABLED IN ORIGINAL. The real inputs, as the new firmware will use them
+     * (open item 8, owner's decision 18 Oct: VM_FIX_DI_REAL_INPUTS, vm_config.h). */
     for (int i = 0; i < 14; i++) DiscreteInputsArray[i] = TA30_DI[i];
     for (int i = 0; i < 6; i++)  DiscreteInputsArray[14 + i] = UID_DI[i];
 #endif
@@ -205,7 +206,13 @@ void Analog_signals(void)
         /* R1 / R3: RealLinear = (X*((S-F)/16383))+F with A=X raw, B=S=FirstCalibPoint,
            C=F=SecondCalibPoint (item 9, accepted). Status 2 -> SecondCalibPoint. */
         float X = (float)TA30_AI[c], S = FirstCalibPoint[c], F = SecondCalibPoint[c];
+#if VM_FIX_AI_SCALING
+        /* open item 9, owner 18 Oct: the new firmware scales from Low point (FirstCalibPoint)
+         * at raw 0 to High point (SecondCalibPoint) at raw 16383 (vm_config.h). */
+        AnalogSensor[c] = (X * ((F - S) / 16383.0f)) + S;
+#else
         AnalogSensor[c] = (X * ((S - F) / 16383.0f)) + F;
+#endif
         if (TA30_AI_Status[c] == 2) AnalogSensor[c] = SecondCalibPoint[c];
         /* R2 / R4 */
         bool fAE = !AnalogEnable[c] && pAE[c]; pAE[c] = AnalogEnable[c];

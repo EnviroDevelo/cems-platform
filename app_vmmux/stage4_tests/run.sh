@@ -2,10 +2,13 @@
 # Re-run the Stage 4 tests against the integrated faithful code (app_vmmux).
 # Each test links the same chunk files as in Stage 4; 4G/4H/4I also link src/vm_tags.c,
 # because their tags are now defined there (with the data dictionary's power-up values).
+# Every vm_config.h switch is set to the original behaviour (old email and logging
+# called, no owner fixes), which
+# is what these tests check.
 # Usage (from the repository root): sh app_vmmux/stage4_tests/run.sh [outdir]
 set -e
 A=app_vmmux; O=${1:-build/stage4}; mkdir -p "$O"
-CF="-std=c11 -O1 -g -Wall -Wextra -I$A/include -I$A/faithful -Iplatform/include -fsanitize=address,undefined -fno-omit-frame-pointer"
+CF="-DVM_OLD_EMAIL=1 -DVM_OLD_LOGGING=1 -DVM_FIX_DI_REAL_INPUTS=0 -DVM_FIX_AI_SCALING=0 -std=c11 -O1 -g -Wall -Wextra -I$A/include -I$A/faithful -Iplatform/include -fsanitize=address,undefined -fno-omit-frame-pointer"
 run() { k=$1; shift; gcc $CF "$@" -o "$O/$k" -lm && "./$O/$k" > "$O/$k.txt" 2>&1; r=$?; printf '%-4s %s\n' "$k" "$(tail -1 "$O/$k.txt")"; return $r; }
 S="$A/stage4_tests/t4_support.c $A/src/ul_blocks.c"
 F=$A/faithful; T=$A/stage4_tests

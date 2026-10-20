@@ -233,7 +233,10 @@ void Function1(void) {
         TimerVisible1 = anym && NumInterconnections == 2;
     }
     /* R27, R28 */
-    DI_Assigning(); Email();
+    DI_Assigning();
+#if VM_OLD_EMAIL
+    Email();
+#endif                                  /* R27: platform alarms and email (vm_config.h) */
     DO_Control();
     /* R29 */
     if (LoadVMorMUX) { LoadVMorMUX = false;

@@ -1,6 +1,7 @@
 /* 4B.h - Stage 4B configuration and sizing functions: globals they touch, and prototypes. */
 #ifndef STAGE4B_H
 #define STAGE4B_H
+#include "vm_types.h"   /* shared types, system tags and vm_config.h switches (app_vmmux) */
 #include <stdint.h>
 #include <stdbool.h>
 

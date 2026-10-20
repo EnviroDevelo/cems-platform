@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "ul_system.h"
+#include "vm_config.h"
 
 typedef struct {
     uint16_t From_Year, To_Year;

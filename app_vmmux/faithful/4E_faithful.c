@@ -442,7 +442,9 @@ void MUX(void) {
     ScheduleModeMUX();                                                          /* R6 */
     ModbusModeMUX(); ModbusValveNamesMUX();                                     /* R7 */
     DO_AssignMUX(); DO_ControlMUX();                                            /* R8 */
+#if VM_OLD_LOGGING
     Logging(); LoadTable();                                                     /* R9 */
+#endif                                                                          /* R9: platform data logger (vm_config.h) */
     /* R10 manual mode */
     {   bool p = ManualModeStartMUX;
         bool w5 = (p && EnableLockValvesIfAnalyzerNotOk && !AnalyzerOkBitAlarm) || (p && !EnableLockValvesIfAnalyzerNotOk);
