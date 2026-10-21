@@ -81,6 +81,19 @@
 #define VM_FIX_V7 1
 #endif
 
+/* 47 M8: the MUX valve-name Modbus registers were never written. 1: they carry the MUX inlet
+ * names (vm_compat.c). 0: zeros, as the original. */
+#ifndef VM_FIX_MUX_MODBUS_NAMES
+#define VM_FIX_MUX_MODBUS_NAMES 1
+#endif
+
+/* 47b M10 / M12: a blank VM valve name wrote its number into inlet 1's Modbus name (and left its own
+ * buffer with the previous name), and a short name kept the tail of a longer one. 1: each buffer
+ * gets its own name, or its number when blank, cleanly. 0: as the original. */
+#ifndef VM_FIX_VM_MODBUS_NAMES
+#define VM_FIX_VM_MODBUS_NAMES 1
+#endif
+
 #ifndef VM_MUX_CONTINUOUS
 #define VM_MUX_CONTINUOUS 1
 #endif

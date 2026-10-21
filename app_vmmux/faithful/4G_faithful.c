@@ -85,13 +85,20 @@ static void names_first(bool *bit, int16_t *cur, const int16_t *target, char nam
         strcpy(TempString, names[*cur]);                         /* the matching StoreString head */
         TempStringLength = (int16_t)strlen(TempString);
         bool a = TempStringLength > 0, b;
+#if VM_FIX_VM_MODBUS_NAMES
+        memset(TempBuffer1, 0, sizeof TempBuffer1);              /* M12: no tail of the previous name */
+#endif
         if (a) tag_to_buffer(TempBuffer1, TempString, sizeof TempString);
         b = TempStringLength <= 0;
         if (b) {
             TempValveNumber = (int16_t)(*cur + 1);
             ConvertIntToString(TempValveNumber, TempLength, TempStringASCII);
             TempStringLength = (int16_t)strlen(TempStringASCII);
+#if VM_FIX_VM_MODBUS_NAMES
+            tag_to_buffer(TempBuffer1, TempStringASCII, sizeof TempStringASCII);   /* M10: into its own buffer */
+#else
             tag_to_buffer(FirstInterconInletName[0], TempStringASCII, sizeof TempStringASCII);
+#endif
         }
         if (a || b) {                                            /* w12 tail: copy by the (old) ID, then Inc */
             if (*cur >= lo && *cur <= hi) { memcpy(dest[*cur], TempBuffer1, 20); (*cur)++; }
@@ -111,12 +118,19 @@ static void names_second_read(bool *bit, const int16_t *cur, const int16_t *targ
         bool g9 = TempInletsModbus > 9 || TempOutletsModbus > 9;
         if (g9) TempValveNumber2Interc = (int16_t)(19 - *cur);
         if (r9 || g9) {                                          /* w13 tail, once */
+#if VM_FIX_VM_MODBUS_NAMES
+            memset(TempBuffer1, 0, sizeof TempBuffer1);          /* M12 */
+#endif
             if (TempStringLength > 0) tag_to_buffer(TempBuffer1, TempString, sizeof TempString);
             if (TempStringLength <= 0) {
                 TempValveNumber2IntercTemp = (int16_t)(TempValveNumber2Interc + 1);
                 ConvertIntToString(TempValveNumber2IntercTemp, TempLength, TempStringASCII);
                 TempStringLength = (int16_t)strlen(TempStringASCII);
+#if VM_FIX_VM_MODBUS_NAMES
+                tag_to_buffer(TempBuffer1, TempStringASCII, sizeof TempStringASCII);   /* M10 */
+#else
                 tag_to_buffer(FirstInterconInletName[0], TempStringASCII, sizeof TempStringASCII);
+#endif
             }
         }
     }

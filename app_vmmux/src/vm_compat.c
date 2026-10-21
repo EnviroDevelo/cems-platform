@@ -28,6 +28,12 @@ static void utf16_to_utf8(uint8_t *dst, size_t cap, const uint16_t *src, size_t 
     memset(dst + o, 0, cap - o);
 }
 
+static void name_to_buf(uint8_t *buf, size_t cap, const char *name)
+{
+    size_t n = strlen(name); if (n > cap) n = cap;
+    memcpy(buf, name, n); memset(buf + n, 0, cap - n);
+}
+
 #if !VM_OLD_EMAIL
 /* Email rung 20: coil 91 "Acknowledge Bit" acknowledged every alarm (and cleared the source
  * arrays, which DI_Control rebuilds every scan anyway). Now: acknowledge all platform alarms. */
@@ -66,6 +72,31 @@ void vm_compat_scan(void)
      * UniLogic did, recommend"): text on Modbus is UTF-8, NUL padded, two bytes per register,
      * first byte in the high half (the platform default, as Modbus device identification and
      * most PLC string blocks do). Copied here every scan from the description parameters. */
+#if VM_FIX_MUX_MODBUS_NAMES
+    /* 47 M8: the MUX valve-name registers (767-950) were never written (ModbusValveNamesMUX is
+     * empty), so the master read zeros. Now they carry the MUX inlet names, as the VM ones carry
+     * the VM names. ValveNameMUX8 keeps its 8 bytes (the map's irregular entry), so that name is
+     * cut to 8 characters there. */
+    name_to_buf(vmx_ValveNameMUX1, sizeof vmx_ValveNameMUX1, SingularInlet[0]);
+    name_to_buf(vmx_ValveNameMUX2, sizeof vmx_ValveNameMUX2, SingularInlet[1]);
+    name_to_buf(vmx_ValveNameMUX3, sizeof vmx_ValveNameMUX3, SingularInlet[2]);
+    name_to_buf(vmx_ValveNameMUX4, sizeof vmx_ValveNameMUX4, SingularInlet[3]);
+    name_to_buf(vmx_ValveNameMUX5, sizeof vmx_ValveNameMUX5, SingularInlet[4]);
+    name_to_buf(vmx_ValveNameMUX6, sizeof vmx_ValveNameMUX6, SingularInlet[5]);
+    name_to_buf(vmx_ValveNameMUX7, sizeof vmx_ValveNameMUX7, SingularInlet[6]);
+    name_to_buf(vmx_ValveNameMUX8, sizeof vmx_ValveNameMUX8, SingularInlet[7]);
+    name_to_buf(vmx_ValveNameMUX9, sizeof vmx_ValveNameMUX9, SingularInlet[8]);
+    name_to_buf(vmx_ValveNameMUX10, sizeof vmx_ValveNameMUX10, SingularInlet[9]);
+    name_to_buf(vmx_ValveNameMUX11, sizeof vmx_ValveNameMUX11, SingularInlet[10]);
+    name_to_buf(vmx_ValveNameMUX12, sizeof vmx_ValveNameMUX12, SingularInlet[11]);
+    name_to_buf(vmx_ValveNameMUX13, sizeof vmx_ValveNameMUX13, SingularInlet[12]);
+    name_to_buf(vmx_ValveNameMUX14, sizeof vmx_ValveNameMUX14, SingularInlet[13]);
+    name_to_buf(vmx_ValveNameMUX15, sizeof vmx_ValveNameMUX15, SingularInlet[14]);
+    name_to_buf(vmx_ValveNameMUX16, sizeof vmx_ValveNameMUX16, SingularInlet[15]);
+    name_to_buf(vmx_ValveNameMUX17, sizeof vmx_ValveNameMUX17, SingularInlet[16]);
+    name_to_buf(vmx_ValveNameMUX18, sizeof vmx_ValveNameMUX18, SingularInlet[17]);
+    name_to_buf(vmx_ValveNameMUX19, sizeof vmx_ValveNameMUX19, SingularInlet[18]);
+#endif
 #define DESC(BUF, TXT) utf16_to_utf8(BUF, sizeof BUF, TXT, sizeof TXT / sizeof TXT[0])
 #include "vm_compat_desc.inc"
 #undef DESC

@@ -92,10 +92,12 @@ reason to stop, unless an output is driven that should not be.
 1. Read holding 0-5 (mode, counts), coils 13-34 (VM DI alarms), holding 961-968 (AnalogSensor,
    floats high word first), 969-972 (temperatures, 0.1 degree), 973-1002 (DI 1 description,
    UTF-8). Pass: values as on the touchscreen. [t_modbus]
-2. Write holding 0 (read-only). Pass: exception 02. Write a command coil in LOCAL. Pass: 04.
-3. Coil 91 = 1. Pass: every alarm acknowledged. Input registers 0-2 and 10-45: alarm counts and
+2. Name VM inlet 1 "ZERO", leave inlet 2 blank, name MUX inlet 2 "Stack B". Pass: holding 20-29 read
+   "ZERO", holding 30-39 read "2" (blank = its number, M10 fix), holding 777-786 read "Stack B" (M8 fix).
+3. Write holding 0 (read-only). Pass: exception 02. Write a command coil in LOCAL. Pass: 04.
+4. Coil 91 = 1. Pass: every alarm acknowledged. Input registers 0-2 and 10-45: alarm counts and
    bits as on the alarm screen.
-4. Device identification (FC 43/14). Pass: "CEMS", "CEMS Supervisor Valve Manager / Multiplexor",
+5. Device identification (FC 43/14). Pass: "CEMS", "CEMS Supervisor Valve Manager / Multiplexor",
    the firmware revision.
 
 ## 8. Data log and events

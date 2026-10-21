@@ -8,3 +8,4 @@ python3 "$A/gen_params.py" "$D/stage2/data_dictionary.csv" "$D/stage5/hmi_elemen
 python3 "$A/gen_modbus.py" "$D/stage2/data_dictionary.csv" "$A/../faithful/modbus_map.csv"
 python3 "$A/gen_params.py" "$D/stage2/data_dictionary.csv" "$D/stage5/hmi_elements.csv" "$A/../faithful/modbus_map.csv"
 python3 "$A/gen_compat_desc.py" "$D/stage2/data_dictionary.csv"
+python3 "$A/gen_modbus_doc.py"

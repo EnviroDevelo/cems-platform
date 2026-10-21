@@ -1,6 +1,7 @@
 # app.mk - host builds of the VM/MUX application (app_vmmux) on the core platform.
 # Run from the repository root:
 #   make -f app_vmmux/app.mk vm-test      Stage 4 regression + application tests
+#   make -f app_vmmux/app.mk vm-nettest   end-to-end test on real sockets (web page API + Modbus)
 #   make -f app_vmmux/app.mk vm-netsim    the platform's networked simulation with this app
 #                                         (Modbus TCP on 1502, web on 8080)
 # Uses the platform Makefile's flags and source lists unchanged.
@@ -27,10 +28,13 @@ $(BUILD)/vm_netsim: $(VM_NETSIM_SRC) $(HDRS) $(VM_HDRS) | $(BUILD)
 	  -DPLAT_HOST -DPLAT_HOST_THREADS -Iplatform/include -Iplatform/bsp -Iapp_demo $(MBED_FLAGS) $(VM_INC) \
 	  '-Dapp_demo_plat=(*vmmux_app())' $(filter-out %.h,$^) -o $@ -lm -lpthread
 
-.PHONY: vm-test vm-netsim vm-stage4
+.PHONY: vm-test vm-netsim vm-stage4 vm-nettest
 vm-stage4:
 	sh $(VM)/stage4_tests/run.sh $(BUILD)/stage4
 vm-test: vm-stage4 $(BUILD)/vm_tests
 	./$(BUILD)/vm_tests
 vm-netsim: $(BUILD)/vm_netsim
 	./$(BUILD)/vm_netsim
+# real sockets: web API + Modbus TCP against vm_netsim (python3, no extra packages)
+vm-nettest: $(BUILD)/vm_netsim
+	python3 $(VM)/tests/integration/vm_net_test.py

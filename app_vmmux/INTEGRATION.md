@@ -26,6 +26,8 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `src/vm_compat.c` | keeps old Modbus coils and buffers meaningful where the platform took over |
 | `src/vm_hmi.c` | the old screens' button actions as command parameters (5000+), their status (5100+), and the EntryOK "...Entered" bits |
 | `src/vm_records.c` | the six sequence/schedule records: `vm_check_record` and the editors' field descriptions (core design, 20 Oct) |
+| `docs/MODBUS_MAP.md` | the Modbus TCP register map for integrators (generated, `tools/gen_modbus_doc.py`) |
+| `tests/integration/vm_net_test.py` | end-to-end on real sockets: touchscreen stand-in, web API, Modbus TCP, restart (`make -f app_vmmux/app.mk vm-nettest`) |
 | `docs/BAT_VMMUX.md` | bench acceptance test procedure, step by step, each step tied to its host test |
 | `docs/SCREENS.md` | the application screens for the core thread's screen API (R2), by parameter ID |
 | `stage4_tests/` | the Stage 4 tests, run against the integrated code with every switch at the original behaviour |
@@ -33,7 +35,7 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID |
 
 Build and test (repository root): `make -f app_vmmux/app.mk vm-test` (12 Stage 4 suites, 110,000+ checks,
-and 384 application checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
+and 395 application checks, plus 19 end-to-end network checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
 runs the platform's networked simulation with this application (Modbus TCP 1502, HTTPS 8443).
 Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Existing Design/Analysis"`.
 
@@ -76,6 +78,8 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_FIX_AI_SCALING` | 1 | Open item 9: Low point at raw 0, High point at full scale |
 | `VM_FIX_MUX_VALVE_ASSIGN` | 1 | MUX S7/S8: an inlet used twice is on in both channels, and inlet 1 can be scheduled (needed for X looping channels) |
 | `VM_FIX_VM_RESTART` | 1 | Finding F7: the VM version of F5 (a run ending inside its window stood still and never ended, so a daily run happened once only) |
+| `VM_FIX_VM_MODBUS_NAMES` | 1 | 47b M10/M12: a blank VM valve name no longer overwrites inlet 1's Modbus name; no tails of longer names |
+| `VM_FIX_MUX_MODBUS_NAMES` | 1 | 47 M8: the MUX valve-name registers carry the MUX inlet names (they were never written) |
 | `VM_FIX_V7` | 1 | VM V7: a tube-2 sequence of 9+ periods no longer stalls at period 9 |
 | `VM_MUX_CONTINUOUS` | 1 | Q8: the MUX loops its sequence until stopped (no calendar window) |
 | `VM_FIX_MUX_RESTART` | 1 | Finding F5: reset the MUX period timers when a run ends, so a restart in the window begins at period 1 (Gary: the MUX is the automated loop) |

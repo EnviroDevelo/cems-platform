@@ -345,7 +345,28 @@ static void t_modbus(void)
     const uint8_t rb[] = { 3, 0x03, 0xCD, 0, 2 };
     CHECK_EQ(mb(rb, sizeof rb, r), 6);
     CHECK_EQ(r[2], 'A'); CHECK_EQ(r[3], 'B'); CHECK_EQ(r[4], 0);   /* Q3: UTF-8, first byte in the high half */
+    /* names on Modbus: the MUX inlet names (M8 fix) and the VM names (rebuilt when a name changes) */
+    strcpy(SingularInlet[1], "Stack B"); scans(2);
+    const uint8_t rn[] = { 3, 0x03, 0x09, 0, 2 };                     /* holding 777: ValveNameMUX2 */
+    CHECK_EQ(mb(rn, sizeof rn, r), 6);
+#if VM_FIX_MUX_MODBUS_NAMES
+    CHECK(r[2] == 'S' && r[3] == 't' && r[4] == 'a' && r[5] == 'c');
+#endif
     c.v.u = PARAM_MODE_LOCAL; plat_cmdq_post(&q, &c); scans(1);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 1), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 2), PERR_OK); CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 1), PERR_OK);
+    scans(5);
+    /* inlet 2 and outlet 1 left blank: with the M10 fix they show their numbers in their own buffers */
+    CHECK_EQ(param_blob_post(VMP_INLETNAME0, 0, "ZERO", 4, true, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR), PERR_OK);
+    scans(20);                                                        /* EntryOK -> ChangeModbusNamesVM -> 47b */
+    const uint8_t rv[] = { 3, 0, 20, 0, 2 };                          /* holding 20: FirstInterconInletName1 */
+    CHECK_EQ(mb(rv, sizeof rv, r), 6);
+#if VM_FIX_VM_MODBUS_NAMES
+    CHECK(r[2] == 'Z' && r[3] == 'E' && r[4] == 'R' && r[5] == 'O');
+    CHECK(FirstInterconInletName[1][0] == '2');                       /* blank inlet 2 -> "2" */
+    CHECK(FirstInterconOutletName[0][0] == '1');                      /* blank outlet 1 -> "1" */
+#endif
 }
 
 /* ---------------- owner decisions of 20 Oct ---------------- */
