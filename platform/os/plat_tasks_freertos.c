@@ -180,6 +180,11 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "param table", param_table_error(), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
+    if (ui_app_check(app->ui) != 0) {                          /* a screen or record names a missing ID */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "ui table", ui_app_check(app->ui), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
+    ui_app_set(app->ui);
     nvm_dev_t *fram = bsp_param_nvm();
     if (!param_store_init(fram, NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "store table", param_store_status(), bsp_ms());

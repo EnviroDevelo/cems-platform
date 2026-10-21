@@ -19,6 +19,7 @@
 #include "plat_alarm.h"
 #include "plat_clock.h"
 #include "plat_health.h"
+#include "ui_app.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -55,6 +56,9 @@ enum {
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
     T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK,
     T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
+    /* application screens and record editors (no keyboard there, so 1..126 are free):
+     * 1..8 tabs, T_W0.. widgets and cells (looked up in U.tmap), T_DLG_* the dialog */
+    T_TAB0 = 1, T_W0 = 10, T_WMAX = 118, T_DLG_YES = 120, T_DLG_NO = 121,
     T_ROW0 = 200            /* .. T_ROW0 + ROWS - 1 */
 };
 
@@ -102,6 +106,22 @@ static struct {
     size_t   al_first;
     uint16_t al_ids[ROWS];
     size_t   cfg_first;
+    /* application screens */
+    int      app_scr;
+    uint8_t  app_first, app_next, app_hist[8], app_nh;
+    uint8_t  tmap_w[128];          /* tag -> widget (or field) index + 1 */
+    uint16_t tmap_i[128];          /* tag -> grid item / cell (row << 6 | element) */
+    char     ok_msg[48];
+    /* record editor */
+    const ui_record_t *rec;
+    uint8_t  rec_buf[PARAM_RECORD_MAX];
+    uint16_t rec_first;            /* table: first row shown; form: first field */
+    uint16_t rec_next;
+    bool     rec_wait, rec_changed;
+    uint32_t rec_ticket, rec_wait_t;
+    const ui_field_t *cell_f;      /* UI_EDIT is changing this cell of the copy */
+    unsigned cell_row, cell_elem;
+    int      rec_back;
 } U;
 
 /* ---------------- helpers ---------------- */
@@ -273,13 +293,16 @@ static void do_action(uint32_t now) {
         return;
     }
     U.act = ACT_NONE;
-    if (e != PERR_OK) { toast(true, now, "%s", perr_text(e)); return; }
-    toast(false, now, "Saved");
+    if (e != PERR_OK) { U.ok_msg[0] = 0; toast(true, now, "%s", perr_text(e)); return; }
+    toast(false, now, "%s", U.ok_msg[0] ? U.ok_msg : "Saved");
+    U.ok_msg[0] = 0;
     if (U.scr == UI_EDIT) goto_scr(U.back);
 }
 
 /* ---------------- edit ---------------- */
+static bool rec_open(const ui_record_t *r, uint32_t now);
 static void edit_begin(const param_def_t *d, uint32_t now) {
+    if ((d->flags & PF_RECORD) && ui_app_record(d->id)) { (void)rec_open(ui_app_record(d->id), now); return; }
     const char *why = why_not(d);
     if (why) { toast(true, now, "%s", why); return; }
     U.ed = d;
@@ -293,7 +316,9 @@ static void edit_begin(const param_def_t *d, uint32_t now) {
     goto_scr(UI_EDIT);
 }
 
+static bool cell_submit(bool on, uint32_t now);
 static void edit_submit(bool on, uint32_t now) {
+    if (U.cell_f) { if (cell_submit(on, now)) goto_scr(UI_REC); return; }
     const param_def_t *d = U.ed;
     plat_cmd_t c = { .id = d->id, .src = PLAT_SRC_LOCAL, .level = U.level, .kind = val_kind(d) };
     if (PARAM_IS_BLOB(d)) {
@@ -397,7 +422,10 @@ static void mode_tap(uint32_t now) {
 /* ---------------- input ---------------- */
 static size_t n_params(void) { return param_count(); }
 
+static bool app_tap(uint8_t t, uint32_t now);
+static void rec_tap(uint8_t t, uint32_t now);
 static void tap(uint8_t t, uint32_t now) {
+    if (U.scr == UI_APP && !U.confirm && app_tap(t, now)) return;     /* its dialog comes first */
     if (U.confirm) {
         if (t == T_YES) { U.confirm = false; do_action(now); }
         else if (t == T_NO) {
@@ -408,7 +436,7 @@ static void tap(uint8_t t, uint32_t now) {
         return;
     }
     switch (t) {
-    case T_NAV_HOME: goto_scr(UI_HOME); return;
+    case T_NAV_HOME: goto_scr(ui_app() && ui_app()->n_screens ? UI_APP : UI_HOME); return;
     case T_NAV_PARAMS: goto_scr(UI_PARAMS); return;
     case T_NAV_EVENTS: U.ev_off = 0; U.ev_want = true; goto_scr(UI_EVENTS); return;
     case T_NAV_SYSTEM: goto_scr(UI_SYSTEM); return;
@@ -430,8 +458,9 @@ static void tap(uint8_t t, uint32_t now) {
         else if (t >= T_ROW0 && t < T_ROW0 + ROWS && U.first + (size_t)(t - T_ROW0) < n_params())
             edit_begin(param_at(U.first + (size_t)(t - T_ROW0)), now);
         break;
+    case UI_REC: rec_tap(t, now); break;
     case UI_EDIT:
-        if (t == T_CANCEL) goto_scr(U.back);
+        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else goto_scr(U.back); }
         else if (t == T_OK) edit_submit(true, now);
         else if (t == T_ON || t == T_OFF) { strcpy(U.entry, t == T_ON ? "1" : "0"); edit_submit(t == T_ON, now); }
         else if (t == T_BKSP) { size_t n = strlen(U.entry); if (n) U.entry[n - 1] = 0; }
@@ -535,6 +564,7 @@ void ui_input(uint8_t tag, uint32_t now) {
     if (tag && !U.last_tag) {                          /* finger down */
         bool dimmed = now - U.activity > IDLE_DIM_MS;
         U.activity = now;
+        ui_last_touch_ms = now ? now : 1u;
         U.pressed = tag;
         U.swallow = dimmed;                            /* the first touch only wakes the screen */
         U.dirty = true;
@@ -618,7 +648,7 @@ static void nav(void) {
     static const int scr_of[] = { UI_HOME, UI_PARAMS, UI_EVENTS, UI_SYSTEM };
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
     for (int k = 0; k < 4; ++k) {
-        bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT);
+        bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC));
         button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
     char b[32];
@@ -704,7 +734,9 @@ static void draw_keyboard(int16_t y, bool full) {
     }
 }
 
+static void draw_cell_edit(void);
 static void draw_edit(void) {
+    if (U.cell_f) { draw_cell_edit(); return; }
     const param_def_t *d = U.ed;
     if (!d) return;
     char b[96], r[64];
@@ -1001,6 +1033,506 @@ static void draw_alarm_cfg(void) {
     if (!can) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, "Green = on. Log in as admin to change."); }
 }
 
+
+/* ================= application screens and record editors (ui_app.h, D26) ================= */
+#define APP_Y   (BODY_Y + 54)          /* below the tabs */
+#define APP_BOT (TOAST_Y - 4)
+#define APP_R   896                    /* right edge of the widgets; the pager is beyond */
+
+static bool is_arr(uint16_t id) { const param_def_t *d = id ? param_find(id) : NULL; return d && d->ptype == PT_ARRAY; }
+static int64_t pv(uint16_t id, uint16_t idx, int64_t dflt) { int64_t v; return id && ui_param_value(id, idx, &v) ? v : dflt; }
+static const ui_screen_t *cur_screen(void) {
+    const ui_app_t *a = ui_app();
+    return a && U.app_scr >= 0 && (size_t)U.app_scr < a->n_screens ? &a->screens[U.app_scr] : NULL;
+}
+static bool w_visible(const ui_widget_t *w) {
+    if (!w->show_id || (w->kind == UW_GRID && is_arr(w->show_id))) return true;
+    return pv(w->show_id, UW_NO_INDEX, 0) >= (w->show_min ? w->show_min : 1);
+}
+static unsigned grid_count(const ui_widget_t *w) {
+    int64_t n = 0;
+    if (w->count_id) n = pv(w->count_id, UW_NO_INDEX, 0);
+    else if (is_arr(w->show_id)) { const param_def_t *d = param_find(w->show_id); n = (int64_t)(d->size / param_ctype_size(d->ctype)); }
+    return n < 0 ? 0u : n > 32 ? 32u : (unsigned)n;
+}
+static bool item_visible(const ui_widget_t *w, unsigned i) { return !is_arr(w->show_id) || pv(w->show_id, (uint16_t)(i - 1u), 0) != 0; }
+static bool item_enabled(const ui_widget_t *w, unsigned i) {
+    if (!w->enable_id) return true;
+    return pv(w->enable_id, is_arr(w->enable_id) ? (uint16_t)(i - 1u) : UW_NO_INDEX, 0) != 0;
+}
+static bool item_lit(const ui_widget_t *w, unsigned i) {
+    if (!w->state_id) return false;
+    if (is_arr(w->state_id)) return pv(w->state_id, (uint16_t)(i - 1u), 0) != 0;
+    return pv(w->state_id, UW_NO_INDEX, 0) == (int64_t)i;
+}
+static void item_label(const ui_widget_t *w, unsigned i, char *b, size_t cap) {
+    const param_def_t *d = w->names_id ? param_find((uint16_t)(w->names_id + i - 1u)) : NULL;
+    if (d && PARAM_IS_BLOB(d)) fmt_value(d, b, cap);
+    if (!d || !b[0]) snprintf(b, cap, "%u", i);
+}
+
+/* one element of an array parameter, formatted */
+static void fmt_elem(const param_def_t *d, uint16_t idx, char *b, size_t cap) {
+    size_t es = param_ctype_size(d->ctype);
+    uint8_t raw[4] = { 0 };
+    if (d->ptype != PT_ARRAY || (size_t)(idx + 1u) * es > d->size || param_read_blob(d->id, (uint16_t)(idx * es), raw, (uint16_t)es) != PERR_OK) { snprintf(b, cap, "-"); return; }
+    if (d->ctype == CT_F32) { float f; memcpy(&f, raw, 4); fmt_float(b, cap, (double)f); }
+    else { int64_t v; ui_param_value(d->id, idx, &v); snprintf(b, cap, "%lld", (long long)v); }
+    if (d->unit && strlen(b) + strlen(d->unit) + 2 < cap) { strcat(b, " "); strcat(b, d->unit); }
+}
+
+/* a command from a button, grid item or dialog: through the table like any write */
+static void app_write(uint16_t id, int32_t value, const char *label, uint32_t now) {
+    const param_def_t *d = param_find(id);
+    if (!d) return;
+    plat_cmd_t c = { .id = id, .src = PLAT_SRC_LOCAL, .level = U.level, .kind = val_kind(d) };
+    switch (d->ptype) {
+    case PT_BOOL: c.v.b = value != 0; break;
+    case PT_INT: c.v.i = value; break;
+    case PT_FLOAT: c.v.f = (float)value; break;
+    default: c.v.u = (uint32_t)value; break;
+    }
+    param_err_t e = param_check(id, c.kind, c.v, PLAT_SRC_LOCAL, U.level);
+    if (e != PERR_OK) { toast(true, now, "%s", perr_text(e)); return; }
+    U.pend = c;
+    U.act = ACT_POST;
+    snprintf(U.ok_msg, sizeof U.ok_msg, "%s", label && label[0] ? label : "Done");
+    if (d->flags & PF_CONFIRM) {
+        char m[96];
+        snprintf(m, sizeof m, "%s?", label && label[0] ? label : d->name);
+        ask(ACT_POST, m);
+    } else do_action(now);
+}
+
+static const ui_widget_t *app_dialog(void) {
+    const ui_screen_t *s = cur_screen();
+    for (unsigned i = 0; s && i < s->n; ++i) if (s->w[i].kind == UW_DIALOG && w_visible(&s->w[i])) return &s->w[i];
+    return NULL;
+}
+
+static bool app_tap(uint8_t t, uint32_t now) {
+    const ui_app_t *a = ui_app();
+    const ui_screen_t *s = cur_screen();
+    if (!a || !s) return false;
+    const ui_widget_t *dlg = app_dialog();
+    if (dlg) {                                    /* a question on the screen: only its buttons */
+        if (t == T_DLG_YES) app_write(dlg->cmd_id, ui_cmd_value(dlg->cmd_value), dlg->cmd2_id ? "Yes" : "OK", now);
+        else if (t == T_DLG_NO && dlg->cmd2_id) app_write(dlg->cmd2_id, 1, "No", now);
+        else if (t >= T_NAV_HOME && t <= T_NAV_LOGIN) return false;   /* the bottom bar still works */
+        U.dirty = true;
+        return true;
+    }
+    unsigned ntab = a->n_screens > 7 ? 7u : (unsigned)a->n_screens;
+    if (t >= T_TAB0 && t < T_TAB0 + ntab) { U.app_scr = t - T_TAB0; U.app_first = 0; U.app_nh = 0; U.dirty = true; return true; }
+    if (t == T_TAB0 + ntab) { goto_scr(UI_HOME); return true; }
+    if (t == T_PGDN && U.app_next < s->n) { if (U.app_nh < sizeof U.app_hist) U.app_hist[U.app_nh++] = U.app_first; U.app_first = U.app_next; U.dirty = true; return true; }
+    if (t == T_PGUP && U.app_nh) { U.app_first = U.app_hist[--U.app_nh]; U.dirty = true; return true; }
+    if (t < T_W0 || t > T_WMAX || !U.tmap_w[t]) return false;
+    const ui_widget_t *w = &s->w[U.tmap_w[t] - 1u];
+    switch (w->kind) {
+    case UW_BUTTON: app_write(w->cmd_id, ui_cmd_value(w->cmd_value), w->label, now); break;
+    case UW_GRID: {
+        char b[32]; item_label(w, U.tmap_i[t], b, sizeof b);
+        app_write(w->cmd_id, (int32_t)U.tmap_i[t], b, now);
+        break;
+    }
+    case UW_RECORD: (void)rec_open(ui_app_record(w->record_id), now); break;
+    case UW_VALUE: {
+        const param_def_t *d = param_find(w->value_id);
+        if (d && w->index == UW_NO_INDEX) edit_begin(d, now);
+        break;
+    }
+    default: break;
+    }
+    return true;
+}
+
+static void draw_tabs(void) {
+    const ui_app_t *a = ui_app();
+    unsigned ntab = a->n_screens > 7 ? 7u : (unsigned)a->n_screens;
+    int16_t tw = (int16_t)(992 / (ntab + 1u)) ;
+    for (unsigned k = 0; k <= ntab; ++k) {
+        bool cur = (k < ntab && U.scr == UI_APP && U.app_scr == (int)k) || (k == ntab && U.scr == UI_HOME);
+        button((uint8_t)(T_TAB0 + k), (int16_t)(16 + k * tw), BODY_Y, (int16_t)(tw - 6), 44,
+               k < ntab ? a->screens[k].title : "Status", cur ? C_HEAD : 0x5B6577u, true);
+    }
+}
+
+static void draw_app(void) {
+    const ui_screen_t *s = cur_screen();
+    memset(U.tmap_w, 0, sizeof U.tmap_w);
+    if (!s) { goto_scr(UI_HOME); return; }
+    draw_tabs();
+    int16_t x = 16, y = APP_Y, row_h = 0;
+    unsigned tag = T_W0, i = U.app_first;
+    bool any = false;
+    for (; i < s->n; ++i) {
+        const ui_widget_t *w = &s->w[i];
+        if (w->kind == UW_DIALOG || !w_visible(w)) continue;
+        if (w->kind == UW_SECTION || w->kind == UW_GRID) {             /* across the screen */
+            if (x > 16) { y = (int16_t)(y + row_h + 8); x = 16; row_h = 0; }
+        }
+        if (w->kind == UW_SECTION) {
+            if (y + 34 > APP_BOT) break;
+            color(C_MUTE); text(20, (int16_t)(y + 17), F_TEXT, OPT_CENTERY, w->label ? w->label : "");
+            color(C_LINE); eve_line(E, 20, (int16_t)(y + 33), APP_R, (int16_t)(y + 33), 1);
+            y = (int16_t)(y + 40); any = true;
+            continue;
+        }
+        if (w->kind == UW_GRID) {
+            unsigned n = grid_count(w), vis = 0;
+            for (unsigned k = 1; k <= n; ++k) vis += item_visible(w, k);
+            int16_t lines = (int16_t)((vis + 7u) / 8u), h = (int16_t)(28 + (lines ? lines : 1) * 62);
+            if ((y + h > APP_BOT && any) || tag + vis > T_WMAX) break;
+            color(C_INK); text(20, (int16_t)(y + 12), F_SMALL, OPT_CENTERY, w->label ? w->label : "");
+            unsigned c = 0;
+            for (unsigned k = 1; k <= n; ++k) {
+                if (!item_visible(w, k)) continue;
+                int16_t ix = (int16_t)(16 + (c % 8u) * 110), iy = (int16_t)(y + 28 + (c / 8u) * 62);
+                char b[24]; item_label(w, k, b, sizeof b);
+                if (strlen(b) > 10) b[10] = 0;
+                bool en = item_enabled(w, k);
+                U.tmap_w[tag] = (uint8_t)(i + 1u); U.tmap_i[tag] = (uint16_t)k;
+                eve_tag(E, en ? (uint8_t)tag : 0);
+                eve_fgcolor(E, !en ? C_GREY : U.pressed == tag ? C_PRESS : item_lit(w, k) ? C_OK : 0x5B6577u);
+                color(0xFFFFFFu);
+                ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, b);
+                eve_tag(E, 0);
+                tag++; c++;
+            }
+            y = (int16_t)(y + h + 8); any = true;
+            continue;
+        }
+        int16_t wdt = 212, h = w->kind == UW_VALUE ? 84 : 64;
+        if (x + wdt > APP_R) { y = (int16_t)(y + row_h + 8); x = 16; row_h = 0; }
+        if ((y + h > APP_BOT && any) || tag > T_WMAX) break;
+        U.tmap_w[tag] = (uint8_t)(i + 1u); U.tmap_i[tag] = 0;
+        if (w->kind == UW_VALUE) {
+            const param_def_t *d = param_find(w->value_id);
+            bool can = d && w->index == UW_NO_INDEX && why_not(d) == NULL;
+            eve_tag(E, can ? (uint8_t)tag : 0);
+            box(x, y, wdt, h, U.pressed == tag ? 0xDCE6F5u : C_CARD, 8);
+            color(C_MUTE); text((int16_t)(x + 12), (int16_t)(y + 8), F_SMALL, 0, w->label ? w->label : d ? d->name : "?");
+            char v[64] = "-";
+            if (d) { if (w->index != UW_NO_INDEX) fmt_elem(d, w->index, v, sizeof v); else fmt_value(d, v, sizeof v); }
+            if (strlen(v) > 14) strcpy(v + 11, "...");
+            color(C_INK); text((int16_t)(x + 12), (int16_t)(y + 36), F_BIG, 0, v);
+            if (can) { color(C_ACCENT); text((int16_t)(x + wdt - 10), (int16_t)(y + 8), F_SMALL, OPT_RIGHTX, ">"); }
+            eve_tag(E, 0);
+        } else if (w->kind == UW_RECORD) {
+            button((uint8_t)tag, x, y, wdt, h, w->label ? w->label : "Edit", C_ACCENT, true);
+        } else {                                                 /* UW_BUTTON */
+            bool en = !w->enable_id || pv(w->enable_id, UW_NO_INDEX, 0) != 0;
+            bool lit = w->state_id && pv(w->state_id, UW_NO_INDEX, 0) != 0;
+            button((uint8_t)tag, x, y, wdt, h, w->label ? w->label : "?", lit ? C_OK : C_ACCENT, en);
+        }
+        tag++;
+        x = (int16_t)(x + wdt + 8);
+        if (h > row_h) row_h = h;
+        any = true;
+    }
+    U.app_next = (uint8_t)i;
+    if (U.app_nh || U.app_next < s->n) {
+        button(T_PGUP, 908, APP_Y, 100, 160, "Up", C_ACCENT, U.app_nh > 0);
+        button(T_PGDN, 908, (int16_t)(APP_Y + 176), 100, 160, "Down", C_ACCENT, U.app_next < s->n);
+    }
+}
+
+static void draw_app_dialog(void) {
+    const ui_widget_t *w = app_dialog();
+    if (!w) return;
+    snprintf(U.confirm_msg, sizeof U.confirm_msg, "%s", w->label ? w->label : "");
+    color(0x000000u); eve_cmd(E, DL_COLOR_A(140));
+    eve_rect(E, 0, 0, W, 600, 1);
+    eve_cmd(E, DL_COLOR_A(255));
+    box(162, 150, 700, 300, C_CARD, 12);
+    color(C_INK);
+    const char *s = U.confirm_msg;
+    int16_t y = 180;
+    while (*s && y < 330) {
+        char line[48]; size_t n = strlen(s);
+        if (n > 44) { n = 44; while (n > 20 && s[n] != ' ') n--; }
+        memcpy(line, s, n); line[n] = 0;
+        text(512, y, F_TEXT, OPT_CENTERX, line);
+        s += n; while (*s == ' ') s++;
+        y = (int16_t)(y + 36);
+    }
+    if (w->cmd2_id) {
+        button(T_DLG_YES, 202, 350, 290, 70, "Yes", C_OK, true);
+        button(T_DLG_NO, 532, 350, 290, 70, "No", 0x5B6577u, true);
+    } else button(T_DLG_YES, 367, 350, 290, 70, "OK", C_OK, true);
+}
+
+/* ---------------- record editor ---------------- */
+static const char *rec_why_not(void) {
+    param_err_t e = U.rec ? param_record_check(U.rec->param_id, PLAT_SRC_LOCAL, U.level) : PERR_NO_ID;
+    if (e == PERR_ACCESS) {
+        static char m[48];
+        const param_def_t *d = param_find(U.rec->param_id);
+        snprintf(m, sizeof m, "Log in as %s to change this", lvl_name(d ? d->level : 1));
+        return m;
+    }
+    return e == PERR_OK ? NULL : perr_text(e);
+}
+
+static bool rec_open(const ui_record_t *r, uint32_t now) {
+    const param_def_t *d = r ? param_find(r->param_id) : NULL;
+    if (!d || d->size > sizeof U.rec_buf || param_read_blob(d->id, 0, U.rec_buf, d->size) != PERR_OK) {
+        toast(true, now, "Not available"); return false;
+    }
+    U.rec = r;
+    U.rec_first = 0; U.rec_next = 0;
+    U.rec_changed = false; U.rec_wait = false;
+    U.cell_f = NULL;
+    if (U.scr != UI_REC && U.scr != UI_EDIT) U.rec_back = U.scr;
+    goto_scr(UI_REC);
+    return true;
+}
+
+static void rec_leave(void) { U.rec = NULL; U.cell_f = NULL; goto_scr(U.rec_back == UI_REC || U.rec_back == UI_EDIT ? UI_HOME : U.rec_back); }
+
+static void rec_poll(uint32_t now) {
+    if (!U.rec_wait) return;
+    param_err_t e;
+    char why[80];
+    if (param_record_result(U.rec_ticket, &e, why, sizeof why)) {
+        U.rec_wait = false;
+        if (e == PERR_OK) { toast(false, now, "%s saved", U.rec ? U.rec->title : "Record"); U.rec_changed = false; if (U.scr == UI_REC) rec_leave(); }
+        else toast(true, now, "%s", why[0] ? why : perr_text(e));
+        U.dirty = true;
+    } else if (now - U.rec_wait_t > 3000u) {
+        U.rec_wait = false;
+        toast(true, now, "No answer from the instrument: not saved");
+    }
+}
+
+static void fmt_cell(const ui_field_t *f, unsigned row, unsigned elem, char *b, size_t cap) {
+    const uint8_t *p = U.rec_buf + ui_field_at(U.rec, f, row, elem);
+    int64_t v = 0;
+    if (f->kind == RF_TEXT) {
+        size_t k = 0;
+        for (; k < f->size && p[k] && k + 1 < cap; ++k) b[k] = p[k] >= 32 && p[k] < 127 ? (char)p[k] : '?';
+        b[k] = 0;
+        return;
+    }
+    if (!ui_field_get(f, U.rec_buf, row, elem, &v)) { snprintf(b, cap, "?"); return; }
+    switch (f->kind) {
+    case RF_BOOL: snprintf(b, cap, "%s", v ? "Yes" : "No"); break;
+    case RF_MS_AS_S: { char t[24]; fmt_float(t, sizeof t, (double)v / 1000.0); snprintf(b, cap, "%s s", t); break; }
+    case RF_HMS: snprintf(b, cap, "%02u:%02u:%02u", (unsigned)(v / 3600), (unsigned)(v / 60 % 60), (unsigned)(v % 60)); break;
+    case RF_ENUM: if (v >= 0 && v < f->n_items) snprintf(b, cap, "%s", f->items[v]); else snprintf(b, cap, "%lld", (long long)v); break;
+    default: snprintf(b, cap, "%lld%s%s", (long long)v, f->unit ? " " : "", f->unit ? f->unit : ""); break;
+    }
+}
+
+static void rec_tap(uint8_t t, uint32_t now) {
+    const ui_record_t *r = U.rec;
+    if (!r) { goto_scr(UI_HOME); return; }
+    const char *why = rec_why_not();
+    unsigned used = ui_record_rows_used(r, U.rec_buf);
+    if (t == T_CANCEL) { if (U.rec_changed) toast(false, now, "Not saved"); rec_leave(); return; }
+    if (t == T_OK) {
+        if (why) { toast(true, now, "%s", why); return; }
+        const param_def_t *d = param_find(r->param_id);
+        param_err_t e = param_record_post(r->param_id, U.rec_buf, d->size, PLAT_SRC_LOCAL, U.level, &U.rec_ticket);
+        if (e != PERR_OK) { toast(true, now, "%s", perr_text(e)); return; }
+        U.rec_wait = true; U.rec_wait_t = now;
+        toast(false, now, "Saving...");
+        return;
+    }
+    if (t == T_PGUP) { U.rec_first = U.rec_first >= (r->rows ? 5u : 1u) ? (uint16_t)(U.rec_first - (r->rows ? 5u : 1u)) : 0; U.dirty = true; return; }
+    if (t == T_PGDN) { if (U.rec_next > U.rec_first) U.rec_first = U.rec_next; U.dirty = true; return; }
+    if (why && (t == T_ON || t == T_OFF || (t >= T_W0 && t <= T_WMAX))) { toast(true, now, "%s", why); return; }
+    if (r->rows && r->rows_off != UI_ROWS_ALL && (t == T_ON || t == T_OFF)) {
+        if (t == T_ON && used < r->rows) used++;
+        else if (t == T_OFF && used > 0) used--;
+        ui_record_set_rows(r, U.rec_buf, used);
+        U.rec_changed = true; U.dirty = true;
+        return;
+    }
+    if (t < T_W0 || t > T_WMAX || !U.tmap_w[t]) return;
+    const ui_field_t *f = &r->fields[U.tmap_w[t] - 1u];
+    unsigned row = U.tmap_i[t] >> 6, elem = U.tmap_i[t] & 63u;
+    int64_t v = 0;
+    if (f->kind == RF_BOOL) { ui_field_get(f, U.rec_buf, row, elem, &v); ui_field_set(f, U.rec_buf, row, elem, !v); U.rec_changed = true; U.dirty = true; return; }
+    if (f->kind == RF_ENUM) {
+        ui_field_get(f, U.rec_buf, row, elem, &v);
+        int64_t mx = ui_field_max(f);
+        if (mx > f->min + (int64_t)f->n_items - 1) mx = f->min + (int64_t)f->n_items - 1;
+        v = v >= mx ? f->min : v + 1;
+        ui_field_set(f, U.rec_buf, row, elem, v);
+        U.rec_changed = true; U.dirty = true;
+        return;
+    }
+    U.cell_f = f; U.cell_row = row; U.cell_elem = elem;
+    U.shift = false;
+    U.kb = f->kind == RF_TEXT ? KB_TEXT : f->kind == RF_HMS ? KB_IP : KB_NUM;
+    fmt_cell(f, row, elem, U.entry, sizeof U.entry);
+    if (f->kind == RF_MS_AS_S) { char *sp = strchr(U.entry, ' '); if (sp) *sp = 0; }
+    else if (f->kind == RF_HMS) { for (char *p = U.entry; *p; ++p) if (*p == ':') *p = '.'; }
+    else if (f->kind != RF_TEXT) { char *sp = strchr(U.entry, ' '); if (sp) *sp = 0; }
+    goto_scr(UI_EDIT);
+}
+
+static bool cell_submit(bool on, uint32_t now) {
+    (void)on;
+    const ui_field_t *f = U.cell_f;
+    uint8_t *p = U.rec_buf + ui_field_at(U.rec, f, U.cell_row, U.cell_elem);
+    char *end = NULL;
+    int64_t v = 0;
+    switch (f->kind) {
+    case RF_TEXT: {
+        size_t n = strlen(U.entry);
+        if (n + 1u > f->size) { toast(true, now, "Too long (at most %u characters)", (unsigned)f->size - 1u); return false; }
+        memset(p, 0, f->size); memcpy(p, U.entry, n);
+        U.cell_f = NULL; U.rec_changed = true;
+        return true;
+    }
+    case RF_MS_AS_S: {
+        double s = strtod(U.entry, &end);
+        if (!U.entry[0] || *end || !isfinite(s) || s < 0 || s > 4294967.0) { toast(true, now, "Not a valid number of seconds"); return false; }
+        v = (int64_t)(s * 1000.0 + 0.5);
+        break;
+    }
+    case RF_HMS: {
+        unsigned h = 0, m = 0, s = 0;
+        int n = sscanf(U.entry, "%u.%u.%u", &h, &m, &s);
+        if (n < 2 || h > 23 || m > 59 || s > 59) { toast(true, now, "Enter hours.minutes.seconds, e.g. 7.30.00"); return false; }
+        v = (int64_t)h * 3600 + m * 60 + s;
+        break;
+    }
+    default:
+        v = strtoll(U.entry, &end, 10);
+        if (!U.entry[0] || *end) { toast(true, now, "Not a valid number"); return false; }
+    }
+    if (!ui_field_set(f, U.rec_buf, U.cell_row, U.cell_elem, v)) {
+        if (f->kind == RF_MS_AS_S) toast(true, now, "Allowed %ld .. %ld s", (long)(f->min / 1000), (long)(ui_field_max(f) / 1000));
+        else toast(true, now, "Allowed %ld .. %ld", (long)f->min, (long)ui_field_max(f));
+        return false;
+    }
+    U.cell_f = NULL; U.rec_changed = true;
+    return true;
+}
+
+static void draw_cell_edit(void) {
+    const ui_field_t *f = U.cell_f;
+    char b[96], r[64];
+    box(16, BODY_Y, 992, 88, C_CARD, 8);
+    color(C_INK);
+    if (U.rec->rows) snprintf(b, sizeof b, "%s: %s, row %u", U.rec->title, f->label, U.cell_row + 1u);
+    else if (f->count > 1) snprintf(b, sizeof b, "%s: %s %u", U.rec->title, f->label, U.cell_elem + 1u);
+    else snprintf(b, sizeof b, "%s: %s", U.rec->title, f->label);
+    text(32, BODY_Y + 10, F_BIG, 0, b);
+    if (f->kind == RF_TEXT) snprintf(r, sizeof r, "Up to %u characters", (unsigned)f->size - 1u);
+    else if (f->kind == RF_HMS) snprintf(r, sizeof r, "Hours.minutes.seconds, e.g. 7.30.00");
+    else if (f->kind == RF_MS_AS_S) snprintf(r, sizeof r, "Seconds, %ld .. %ld", (long)(f->min / 1000), (long)(ui_field_max(f) / 1000));
+    else snprintf(r, sizeof r, "Range %ld .. %ld%s%s", (long)f->min, (long)ui_field_max(f), f->unit ? " " : "", f->unit ? f->unit : "");
+    color(C_MUTE); text(32, BODY_Y + 56, F_TEXT, 0, r);
+    int16_t y = BODY_Y + 96;
+    box(16, y, U.kb == KB_TEXT ? 760 : 628, 48, C_CARD, 6);
+    color(C_INK);
+    snprintf(b, sizeof b, "%s_", U.entry);
+    text(28, (int16_t)(y + 24), F_BIG, OPT_CENTERY, b);
+    draw_keyboard((int16_t)(y + 54), U.kb == KB_TEXT);
+    int16_t bx = U.kb == KB_TEXT ? 784 : 664;
+    if (U.kb == KB_TEXT) { button(T_OK, bx, y, 108, 48, "OK", C_OK, true); button(T_CANCEL, bx + 116, y, 108, 48, "Cancel", 0x5B6577u, true); }
+    else { button(T_OK, bx, (int16_t)(y + 54), 344, 119, "OK", C_OK, true); button(T_CANCEL, bx, (int16_t)(y + 176), 344, 119, "Cancel", 0x5B6577u, true); }
+}
+
+static void draw_rec(void) {
+    const ui_record_t *r = U.rec;
+    memset(U.tmap_w, 0, sizeof U.tmap_w);
+    if (!r) return;
+    const char *why = rec_why_not();
+    unsigned used = ui_record_rows_used(r, U.rec_buf);
+    box(16, BODY_Y, 992, 56, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 28, F_BIG, OPT_CENTERY, r->title);
+    if (r->rows && r->rows_off != UI_ROWS_ALL) {
+        char b[32]; snprintf(b, sizeof b, "In use: %u", used);
+        color(C_MUTE); text(330, BODY_Y + 28, F_TEXT, OPT_CENTERY, b);
+        button(T_OFF, 470, BODY_Y + 4, 64, 48, "-", C_ACCENT, !why && used > 0);
+        button(T_ON, 540, BODY_Y + 4, 64, 48, "+", C_ACCENT, !why && used < r->rows);
+    }
+    button(T_OK, 700, BODY_Y + 4, 150, 48, U.rec_wait ? "Saving..." : "Save", U.rec_changed ? C_OK : C_ACCENT, !why && !U.rec_wait);
+    button(T_CANCEL, 858, BODY_Y + 4, 150, 48, U.rec_changed ? "Cancel" : "Close", 0x5B6577u, true);
+    int16_t y = BODY_Y + 64;
+    unsigned tag = T_W0;
+    if (r->rows) {                                       /* table: 5 rows a page */
+        int16_t cx[12], cw[12];
+        int16_t x = 70;
+        unsigned nf = r->n_fields > 11 ? 11u : r->n_fields;
+        for (unsigned c = 0; c < nf; ++c) {
+            cw[c] = r->fields[c].kind == RF_TEXT ? 220 : 130;
+            if (x + cw[c] > APP_R) { nf = c; break; }
+            cx[c] = x; x = (int16_t)(x + cw[c] + 6);
+        }
+        color(C_MUTE); text(24, (int16_t)(y + 14), F_SMALL, OPT_CENTERY, "#");
+        for (unsigned c = 0; c < nf; ++c) text(cx[c], (int16_t)(y + 14), F_SMALL, OPT_CENTERY, r->fields[c].label);
+        y = (int16_t)(y + 28);
+        unsigned row = U.rec_first;
+        for (unsigned k = 0; k < 5 && row < r->rows; ++k, ++row) {
+            bool on = row < used;
+            int16_t ry = (int16_t)(y + k * 60);
+            char b[48];
+            snprintf(b, sizeof b, "%u", row + 1u);
+            color(on ? C_INK : C_GREY); text(24, (int16_t)(ry + 26), F_TEXT, OPT_CENTERY, b);
+            for (unsigned c = 0; c < nf; ++c) {
+                const ui_field_t *f = &r->fields[c];
+                fmt_cell(f, row, 0, b, sizeof b);
+                if (on && tag <= T_WMAX) { U.tmap_w[tag] = (uint8_t)(c + 1u); U.tmap_i[tag] = (uint16_t)(row << 6); eve_tag(E, (uint8_t)tag); }
+                box(cx[c], ry, cw[c], 54, !on ? 0xECEEF2u : U.pressed == tag ? 0xDCE6F5u : C_CARD, 6);
+                color(on ? C_INK : C_GREY);
+                if (strlen(b) > (f->kind == RF_TEXT ? 13u : 8u)) b[f->kind == RF_TEXT ? 13 : 8] = 0;
+                text((int16_t)(cx[c] + 10), (int16_t)(ry + 27), F_TEXT, OPT_CENTERY, on ? b : "-");
+                eve_tag(E, 0);
+                if (on) tag++;
+            }
+        }
+        U.rec_next = (uint16_t)row;
+        button(T_PGUP, 908, (int16_t)(BODY_Y + 64), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
+        button(T_PGDN, 908, (int16_t)(BODY_Y + 232), 100, 160, "Down", C_ACCENT, row < r->rows);
+    } else {                                             /* form: one line per field (arrays wrap at 16) */
+        unsigned i = U.rec_first;
+        for (; i < r->n_fields; ++i) {
+            const ui_field_t *f = &r->fields[i];
+            unsigned cnt = f->count > 1 ? f->count : 1u, lines = (cnt + 15u) / 16u;
+            int16_t h = (int16_t)(lines * 58);
+            if (y + h > APP_BOT && i > U.rec_first) break;
+            if (tag + cnt > T_WMAX + 1u) break;
+            color(C_INK); text(24, (int16_t)(y + 27), F_TEXT, OPT_CENTERY, f->label);
+            for (unsigned e = 0; e < cnt; ++e) {
+                int16_t ex, ew;
+                char b[32];
+                if (cnt == 1) { ex = 300; ew = 240; fmt_cell(f, 0, 0, b, sizeof b); }
+                else {
+                    ex = (int16_t)(260 + (e % 16u) * 39); ew = 36;
+                    int64_t v = 0; ui_field_get(f, U.rec_buf, 0, e, &v);
+                    if (f->items && e < f->n_items) snprintf(b, sizeof b, "%.3s", f->items[e]);
+                    else snprintf(b, sizeof b, "%u", e + 1u);
+                    if (f->kind != RF_BOOL) fmt_cell(f, 0, e, b, sizeof b);
+                }
+                int16_t ey = (int16_t)(y + (e / 16u) * 58);
+                U.tmap_w[tag] = (uint8_t)(i + 1u); U.tmap_i[tag] = (uint16_t)e;
+                eve_tag(E, (uint8_t)tag);
+                int64_t on = 0;
+                bool tick = f->kind == RF_BOOL && ui_field_get(f, U.rec_buf, 0, e, &on) && on;
+                box(ex, ey, ew, 52, U.pressed == tag ? 0xDCE6F5u : tick ? C_OK : C_CARD, 6);
+                color(tick ? 0xFFFFFFu : C_INK);
+                text((int16_t)(ex + ew / 2), (int16_t)(ey + 26), cnt > 1 ? F_SMALL : F_TEXT, OPT_CENTER, b);
+                eve_tag(E, 0);
+                tag++;
+            }
+            y = (int16_t)(y + h + 4);
+        }
+        U.rec_next = (uint16_t)i;
+        if (U.rec_first || i < r->n_fields) {
+            button(T_PGUP, 908, (int16_t)(BODY_Y + 64), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
+            button(T_PGDN, 908, (int16_t)(BODY_Y + 232), 100, 160, "Down", C_ACCENT, i < r->n_fields);
+        }
+    }
+    if (why) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, why); }   /* a message covers it */
+}
+
 static void draw_confirm(void) {
     color(0x000000u); eve_cmd(E, DL_COLOR_A(140));
     eve_rect(E, 0, 0, W, 600, 1);
@@ -1041,6 +1573,7 @@ static void fw_hold_check(void) {
 void ui_draw(eve_t *e, uint32_t now) {
     E = e;
     fw_hold_check();
+    rec_poll(now);
     events_poll(now);
     eve_frame_begin(e, 0xF4, 0xF5, 0xF7);
     eve_fonts_use(e);
@@ -1055,6 +1588,8 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_ALARMS: draw_alarms(); break;
     case UI_ALARM_CFG: draw_alarm_cfg(); break;
     case UI_CLOCK: draw_clock(); break;
+    case UI_APP:   draw_app(); break;
+    case UI_REC:   draw_rec(); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {
@@ -1063,6 +1598,7 @@ void ui_draw(eve_t *e, uint32_t now) {
         text(512, TOAST_Y + 22, F_TEXT, OPT_CENTER, U.toast);
     }
     nav();
+    if (U.scr == UI_APP && !U.confirm) draw_app_dialog();
     if (U.confirm) draw_confirm();
     (void)eve_frame_end(e);
     U.dirty = false;
@@ -1073,7 +1609,7 @@ void ui_draw(eve_t *e, uint32_t now) {
 void ui_init(const ui_cfg_t *cfg, uint32_t now) {
     memset(&U, 0, sizeof U);
     U.cfg = cfg;
-    U.scr = UI_HOME;
+    U.scr = ui_app() && ui_app()->n_screens ? UI_APP : UI_HOME;
     U.activity = now;
     U.bright = 80;
     U.dirty = true;
@@ -1081,11 +1617,14 @@ void ui_init(const ui_cfg_t *cfg, uint32_t now) {
 
 bool ui_due(uint32_t now) {
     if (U.scr == UI_EVENTS) events_poll(now);
+    rec_poll(now);
     if (U.toast_until && now >= U.toast_until) { U.toast_until = 0; U.dirty = true; }
     return U.dirty || now - U.last_draw >= 250u;
 }
 
 uint8_t ui_brightness(uint32_t now) { return now - U.activity > IDLE_DIM_MS ? 10 : U.bright; }
 int ui_screen(void) { return U.scr; }
+int ui_app_screen(void) { return U.app_scr; }
+bool ui_record_open(uint16_t id) { const ui_record_t *r = ui_app_record(id); return r && rec_open(r, U.last_draw); }
 uint8_t ui_level(void) { return U.level; }
 const char *ui_toast(void) { return U.toast; }

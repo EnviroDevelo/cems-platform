@@ -46,8 +46,11 @@ real board, all 22 inputs and 20 outputs come from the schematic.
 
 Development part: **Adafruit 1895** (Digi-Key 1528-1035-ND), an MB85RC256V I2C FRAM,
 32 KB, address 0x50 with A0..A2 left open, WP pulled down on the board (writes enabled),
-3.3 V or 5 V, up to 1 MHz. The platform's default memory map (`PLAT_FRAM_SIZE`
-32768) is built for it. Wire VCC to 3.3 V, GND, and SCL/SDA to a free I2C on the DK
+3.3 V or 5 V, up to 1 MHz. The platform's default memory map is now the product's 128 KB
+part (D6), so **with this breakout add `PLAT_FRAM_SIZE=32768u` to the project's preprocessor
+symbols** (Project → Properties → C/C++ General → Paths and Symbols). Without it the driver
+reads the part's ID, sees 32 KB, and refuses it (the unit runs on defaults with the
+calibration alarm) rather than writing past its end. Wire VCC to 3.3 V, GND, and SCL/SDA to a free I2C on the DK
 **(check which I2C the DK brings out, and whether that bus already has pull-ups)**.
 
 | CubeMX | Setting |

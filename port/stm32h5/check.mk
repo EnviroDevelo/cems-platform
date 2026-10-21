@@ -3,6 +3,14 @@
 # build: that is the STM32CubeIDE project (docs/CUBEMX_SETUP.md).
 #   make target EXT=/path/to/ext   (default ../ext next to this repo)
 EXT    ?= $(abspath ../ext)
+# the application linked in (Makefile: make target APP=...)
+APP     ?= app_demo
+ifeq ($(APP),app_demo)
+APP_SRC ?= app_demo/app_demo.c
+APP_INC ?= -Iapp_demo
+else
+include $(APP)/app_vars.mk
+endif
 ARMCC  ?= $(EXT)/xpack-arm-none-eabi-gcc-13.3.1-1.1/bin/arm-none-eabi-gcc
 FR      = $(EXT)/FreeRTOS-Kernel
 DEV     = -DSTM32H573xx -DUSE_HAL_DRIVER
@@ -14,7 +22,7 @@ LWIP_SRC = $(wildcard $(LW)/src/core/*.c) $(wildcard $(LW)/src/core/ipv4/*.c) $(
 MBED    = third_party/mbedtls
 MBED_SRC = $(wildcard $(MBED)/library/*.c)
 INC     = -DMBEDTLS_CONFIG_FILE='"tls_config.h"' -Iplatform/net -I$(MBED)/include -I$(MBED)/library -I$(LW)/src/include -I$(LW)/contrib/ports/freertos/include -Iport/stm32h5/lwip -I$(EXT)/lan8742 \
-          -Iplatform/include -Iplatform/bsp -Iapp_demo -Iport/stm32h5 -Iport/stm32h5/check \
+          -Iplatform/include -Iplatform/bsp $(APP_INC) -Iport/stm32h5 -Iport/stm32h5/check \
           -I$(FR)/include -I$(FR)/portable/GCC/ARM_CM33_NTZ/non_secure \
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
@@ -24,12 +32,12 @@ SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/ta
           port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c port/stm32h5/fw_flash_stm32h5.c \
           platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/http_util.c \
           platform/net/http_api.c platform/net/http_server.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/net/tls.c platform/net/mail.c platform/net/sntp.c platform/net/fw_sig.c \
-          platform/os/plat_net_tasks.c platform/os/plat_ui_task.c platform/ui/eve.c platform/ui/eve_fonts.c platform/ui/ui.c port/stm32h5/eve_bus_stm32h5.c port/stm32h5/lwip/plat_net_lwip.c port/stm32h5/lwip/ethernetif.c \
+          platform/os/plat_net_tasks.c platform/os/plat_ui_task.c platform/ui/eve.c platform/ui/eve_fonts.c platform/ui/ui.c platform/ui/ui_app.c port/stm32h5/eve_bus_stm32h5.c port/stm32h5/lwip/plat_net_lwip.c port/stm32h5/lwip/ethernetif.c \
           $(EXT)/lan8742/lan8742.c $(LWIP_SRC) $(MBED_SRC) \
-          app_demo/app_demo.c port/stm32h5/check/check_main.c \
+          $(APP_SRC) port/stm32h5/check/check_main.c \
           $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c \
           $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/port.c $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/portasm.c
-OUT     = build/target
+OUT    ?= build/target
 OBJS    = $(addprefix $(OUT)/,$(notdir $(SRCS:.c=.o)))
 vpath %.c $(sort $(dir $(SRCS)))
 

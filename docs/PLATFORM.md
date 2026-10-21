@@ -31,6 +31,7 @@ runs on top of it.
 | Firmware image signing (D14): ECDSA P-256 signature over the image header (which holds the payload's SHA-256); key tool | `platform/net/fw_sig.c`, `platform/core/fw_pubkey.c` (generated), `tools/fwkey.py`, `tools/mkfwimage.py --key` | Done; host-tested (keys made in the test: product key accepted; unsigned, other-key, edited-header and edited-payload images refused) and end to end through netsim with a key made by `fwkey.py`. Compiled and linked for the H5 |
 | HTTPS (D11): own key and certificate, TLS 1.2 server, session tickets, port-80 redirect | `tls.h`, `platform/net/tls.c`, `tls_config.h`, `third_party/mbedtls` | Done; host-tested, handshakes against Python's TLS client (resumption, certificate trust by IP, redirect) and Chromium. Compiled and linked for the H5 |
 | Serial number with developer authority (D25): no ordinary write at any level or from any route, not restored from backups; changed only with a token signed by a separate developer key, bound to the chip's unique ID and the current serial; every change and refusal logged | `plat_serial.h`, `platform/core/plat_serial.c`, `platform/core/dev_pubkey.c` (generated), `tools/serial_token.py`, `tools/fwkey.py devpubkey`; web Administration → Serial number | Done; host-tested (every source and level refused, wrong key / chip / serial / tampered token refused, replay refused, kept over a power cut, a factory-level backup restore leaves it alone) and end to end with tokens from the tool (`tests/integration/serial_test.py`). Needs the developer key made and `dev_pubkey.c` committed |
+| Application screens and record editors (D26): the application describes screens (values, buttons, valve grids, dialogs) and sequence/schedule editors by parameter ID; drawn on the touchscreen and the web page; records written whole after the application's check | `ui_app.h`, `platform/ui/ui_app.c`, `ui.c`, `param.h` (`PARAM_RECORD`), `/api/ui`, `/api/record`, web page | Done; host-tested on the simulated display and the web API (`tests/test_ui_app.c`), end to end in Chromium with the demo's screen and record; the VM/MUX application links and runs with it |
 | Health: heap and every task's stack margin sampled every 5 s (web, System screen), alarm 11 RESOURCE_LOW; soak test | `plat_health.h`, `plat_tasks_freertos.c` (sampling), `tests/integration/soak_test.py` | Done; host-tested; soak run for 15 min on the PC build (no failures, sockets and memory flat) |
 | Own touchscreen fonts (D24): DejaVu Sans at the ROM font sizes with ° ² ³ µ ± and 26 more symbols, kept compressed in the firmware, inflated into the display's RAM at start-up and CRC-checked; UTF-8 text encoded for them; ROM fonts if loading fails | `tools/mkfont.py`, `platform/ui/eve_fonts.c` (generated), `eve.h` (`eve_fonts_load`, `eve_font_encode`), `ui.c`; simulator: `host/eve_sim/zinflate.c` | Done; host-tested against the simulated BT817 (inflate, CRC read back from the FIFO, a fault while loading, a damaged stream) and glyph sheets checked by eye. Not yet run on the display |
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
@@ -561,6 +562,48 @@ developer authority, which no login gives on its own:
 The HTTPS certificate takes the new serial at the next restart. The chip ID comes from
 the H5's 96-bit unique ID (`bsp_chip_uid`), the same one the MAC address is derived from.
 
+## 5j. Application screens and records (D26)
+
+Asked for by the VM/MUX build (its `docs/SCREENS.md`, requests R1-R5).
+
+**Records.** A sequence or schedule is one `PARAM_RECORD` table entry holding the whole C
+structure (up to 1 KB, `PF_PERSIST` keeps it in FRAM, not on Modbus). It is written only
+whole: `param_record_post()` copies the new image into a single slot, the scan applies it
+at its next command point (access and mode checked again, then the record's
+`check_block(id, image, why, cap)`, then the copy, all in one scan), and
+`param_record_result()` gives the outcome with the check's reason. One record write is in
+flight at a time. Chunked block writes and `/api/write` are refused for records, so the
+logic can never see half an edit.
+
+**Editors.** `ui_record_t` describes a record's fields (`ui_field_t`: text, unsigned,
+signed, tick box, milliseconds shown as seconds, h:m:s, a list of names), either as a
+table (rows = periods, a "rows in use" count such as `NumberOfPeriods`) or as a form
+(tick-box rows such as Month[12], Day_Of_Week[7]). A field's maximum can follow a live
+parameter (inlet <= FirstInlets). The touchscreen and the web page both edit a copy: tap a
+cell for the keypad (or tick a box), + and - for the rows in use, Save sends one record
+write and shows "saved" or the check's reason, Cancel drops the copy.
+
+**Screens.** `ui_screen_t` lists widgets by parameter ID: a section heading, a value (a
+scalar or one element of an array; tap to change it), a button (writes a command
+parameter; lit by a state parameter, greyed by an enable parameter), a grid of numbered
+items (valves, inlets: count, visible, touchable and lit from arrays or scalars, names
+from consecutive text parameters; a tap writes the item number), a dialog (shown while a
+status parameter is set; Yes/No or OK commands), and a record button. Any widget can be
+shown only while a parameter is at least a value (the second tube while
+NumInterconnections >= 2). The application's screens come first, as tabs, with the
+platform's own Status screen beside them; the Settings list opens a record's editor too.
+On the web page the same description is drawn under its own heading (`/api/ui`,
+`/api/record`). Commands go through the table like any write, so levels, LOCAL/REMOTE and
+`PF_CONFIRM` ("are you sure?") apply. `ui_app_check()` refuses, at start-up, a
+description naming a missing parameter or a field past the end of its record.
+
+**For the application build:** `app_select()` names the application a build runs, and
+`APP=<dir>` with that directory's `app_vars.mk` links it into `make netsim` and
+`make target` (R1). `ui_last_touch_ms` is the uptime of the last touch, for the old
+screen-saver logic (R3). The target check and the memory report include `app_vmmux` when
+its directory is present (R5): with it the firmware is 454 KB of flash (45 %) and 435 KB
+of RAM (68 %).
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -609,7 +652,7 @@ work before integration.
 | D3 | Network stack | lwIP 2.2.1 from ST's `stm32h5-classic-coremw-apps`, added by hand | CubeMX doesn't offer lwIP for the H5 (ST recommends NetX Duo). The spec says lwIP; NetX Duo is ThreadX-based, and choosing it would mean changing the RTOS |
 | D4 | Hard-fault handling | Record PC/LR in `plat_diag`, then reset | Not written yet; small, belongs in the port |
 | D5 | Factory network default | Static 192.168.1.50/24, gateway 192.168.1.1, DHCP off | Always settable from the touchscreen, so a unit can be recovered locally |
-| D6 | FRAM | Development: your 32 KB I2C MB85RC256V breakout. **Product size chosen once the translated application's storage is known (Gary, 20 Oct)**; `docs/MEMORY.md` keeps the running total; a 128 KB part (e.g. MB85RC1MT, I2C, same driver) is one setting away | 32 KB works but is tight once the instrument family adds data |
+| D6 | FRAM | **128 KB (MB85RC1MT, I2C, same driver) for the product (Gary, 20 Oct)**, now the build default (`PLAT_FRAM_SIZE`). The VM/MUX application's settings image is 13.4 KB of the 40 KB slot. The 32 KB development breakout (MB85RC256V) still fits the application: build with `PLAT_FRAM_SIZE=32768u`; the I2C driver reads the part's Device ID and refuses a part smaller than the build's map instead of wrapping onto the factory data. `make test` runs both maps | Room for the instrument family to grow; costs about 60 KB of RAM (the store's slot copy and the web restore buffer) |
 | D7 | Modbus writes at first power-up | Enabled; any client IP | Plugs into a DAHS without setup; an admin can make Modbus read-only or limit it to one IP |
 | D8 | Touchscreen writes in REMOTE mode | Refused, except the mode switch and `PF_ANY_MODE` entries | Stops the local panel and the PLC fighting over a setpoint; the spec only states the remote side |
 | D9 | Default passwords | operator 1111, admin 2222, factory 9999; the page warns while any is unchanged; "restore defaults" also restores these | Change at commissioning. A per-unit factory password (e.g. from the serial) is an option if units leave the factory |
@@ -627,6 +670,7 @@ work before integration.
 | D22 | Clock | Local standard time, no daylight saving; UTC offset as a setting; set from the touchscreen and web (admin), the PLC (parameter 85) or SNTP from the site's time server; every change logged once with its source | CEMS records must not jump twice a year; sites seldom have internet, so the time source is the operator, the DAHS or a site server |
 | D23 | Firmware restart gates | The application's safe-state check (always on), touchscreen confirmation of web-requested restarts (setting, off by default), minimum version (setting, factory) | The spec's three conditions; confirmation is off by default so a site without anyone at the panel can still be updated |
 | D24 | Display assets | Own fonts (DejaVu, L4) compressed in the firmware, inflated into RAM_G at start-up and CRC-checked; nothing in the module's flash yet; link stays single SPI | Versioned with the firmware with no extra step; the units the instrument shows need ° ² ³ µ; the module's flash is kept for big images if ever needed |
+| D26 | Application screens and records | The application describes its screens and record editors by parameter ID (`ui_app.h`); the platform draws them on the touchscreen and the web page the same way, and every press is a write through the table. Sequences and schedules are records: whole C structures, written only whole and applied in one scan after the application's check of the complete new image (`PARAM_RECORD`) | One description serves both screens; no half-edited sequence can reach the logic; the old 7-row editor bits and copies are not needed |
 | D25 | Serial number authority | **Gary, 20 Oct: developer level authority to change it at all.** No login level can write it; only a token signed by a separate developer key, bound to the chip's unique ID and the current serial (single use, single unit); not restored from backups; every change and refusal logged; no key built in = cannot be changed | The serial is the unit's identity for the customer, certificates and records; a tech login or a copied backup must not be able to change or clone it |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 

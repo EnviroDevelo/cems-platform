@@ -54,10 +54,15 @@ typedef enum { PT_BOOL = 0, PT_INT, PT_UINT, PT_FLOAT, PT_BYTES, PT_TEXT, PT_TEX
 #define PF_CONFIRM     0x0040u  /* the touchscreen asks "are you sure?" before changing it (critical setpoints) */
 #define PF_SECRET      0x0080u  /* write-only: never read back (web, Modbus, touchscreen), never in a backup file
                                    (e.g. the mail server password); the platform reads it with param_read_secret */
+#define PF_RECORD      0x0200u  /* a structure (sequence, schedule) written only whole with param_record_post, after the
+                                   application's check_block has accepted the complete new image (D26) */
 #define PF_DEV         0x0100u  /* developer authority: no ordinary write at any level, not restored from a backup;
                                    changed only through plat_serial_assign with a signed token (D25) */
 
 typedef int (*param_interlock_fn)(uint16_t id, plat_val_t v);  /* 0 = allow */
+/* Records: the whole new image, before it replaces the tag. 0 = accept; otherwise put
+ * the reason in why (shown to the operator, e.g. "Period 4: inlet 7 is not fitted"). */
+typedef int (*param_block_check_fn)(uint16_t id, const void *image, char *why, size_t cap);
 
 typedef struct {
     uint16_t   id;
@@ -73,6 +78,7 @@ typedef struct {
     param_interlock_fn interlock;   /* may be NULL (scalars only) */
     uint16_t   size;        /* blobs: bytes at ptr */
     const void *dflt;       /* blobs: default content (NULL = zeros) */
+    param_block_check_fn check_block;   /* records: the application's check of a whole new image (may be NULL) */
 } param_def_t;
 
 /* Result codes (mapped to Modbus exceptions and HTTP errors by those modules) */
@@ -179,6 +185,12 @@ extern uint32_t plat_net_status_word;
 #define PARAM_BYTES(ID, NAME, VAR, LVL, FLAGS) \
     { .id = (ID), .ctype = CT_BLOB, .ptype = PT_BYTES, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
       .size = (uint16_t)sizeof(VAR), .name = (NAME) }
+/* A record: a whole C structure (a sequence, a schedule), up to PARAM_RECORD_MAX bytes.
+ * Written only whole (param_record_post, the editors, POST /api/record), applied in one
+ * scan after CHECK (may be NULL) has accepted the new image. Not on Modbus. */
+#define PARAM_RECORD(ID, NAME, VAR, CHECK, LVL, FLAGS) \
+    { .id = (ID), .ctype = CT_BLOB, .ptype = PT_BYTES, .flags = (uint16_t)((FLAGS) | PF_RECORD | PF_NO_MODBUS), \
+      .level = (LVL), .ptr = &(VAR), .size = (uint16_t)sizeof(VAR), .name = (NAME), .check_block = (CHECK) }
 #define PARAM_ARRAY_INT(ID, NAME, VAR, CT, MIN, MAX, LVL, FLAGS) \
     { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = (FLAGS), .level = (LVL), .ptr = (VAR), \
       .vmin.i = (MIN), .vmax.i = (MAX), .size = (uint16_t)sizeof(VAR), .name = (NAME) }
@@ -251,6 +263,18 @@ void        param_blob_drain(void);       /* scan task: apply queued block write
 typedef struct { uint16_t id, off, len; bool whole; const void *data; } param_blob_write_t;
 param_err_t param_post_many(const plat_cmd_t *cmds, size_t n);
 param_err_t param_blob_post_many(const param_blob_write_t *w, size_t n, uint8_t src, uint8_t level);
+
+/* Records (PF_RECORD). Any task: queue a whole new image (len = the record's size).
+ * One record write is in flight at a time (PERR_BUSY otherwise). The scan applies it at
+ * its next command point: access checks again, then the record's check_block, then the
+ * copy, all in one scan. *ticket identifies the write; param_record_result() reports
+ * the outcome once applied (false = not yet): PERR_OK, or PERR_INTERLOCK with the
+ * check's reason in why. */
+#define PARAM_RECORD_MAX 1024u
+param_err_t param_record_post(uint16_t id, const void *data, uint16_t len, uint8_t src, uint8_t level, uint32_t *ticket);
+bool        param_record_result(uint32_t ticket, param_err_t *e, char *why, size_t cap);
+param_err_t param_record_check(uint16_t id, uint8_t src, uint8_t level);   /* may this source/level write it now? */
+void        param_record_drain(void);     /* scan task (called by param_blob_drain) */
 
 /* Any task: len bytes from offset off, as of the end of the last scan.
  * PF_SECRET entries: PERR_ACCESS (param_read_secret reads them, for the platform only). */

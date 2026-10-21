@@ -60,6 +60,35 @@ async def run(unit):
         print("alarm badge:", repr(badge), "| rows:", rows.replace("\n", " | ")[:200], "| after ack:", rows2.replace("\n", " | ")[:200])
         ok &= badge.startswith("2 ALARMS") and "TO ACKNOWLEDGE" in badge and "Demo fault" in rows \
               and "Active, not acknowledged" in rows and "Demo fault" in rows2 and "Active, acknowledged" in rows2
+        # the application's own screen (ui_app.h): buttons through the table, a record editor
+        await pg.wait_for_selector('#apptabs button:has-text("Demo")')
+        await pg.click('#appbody button:has-text("Sequence on")')
+        onlit = "[...document.querySelectorAll('#appbody button.lit')].some(b => b.textContent === 'Sequence on')"
+        await pg.wait_for_function(onlit, timeout=4000)
+        lit = "Sequence on"
+        await pg.click('#appbody button:has-text("Sequence off")')
+        await pg.wait_for_function("!" + onlit, timeout=4000)
+        await pg.click('#appbody button:has-text("Edit steps")')
+        await pg.wait_for_selector("#recbox table")
+        await pg.fill("#recbox .row input[type=number]", "2"); await pg.dispatch_event("#recbox .row input[type=number]", "change")
+        await pg.wait_for_timeout(200)
+        cells = pg.locator("#recbox table tr").nth(1).locator("input")
+        await cells.nth(0).fill("Purge"); await cells.nth(1).fill("12.5"); await cells.nth(2).fill("2")
+        cells2 = pg.locator("#recbox table tr").nth(2).locator("input")
+        await cells2.nth(0).fill("Sample"); await cells2.nth(1).fill("0"); await cells2.nth(2).fill("3")
+        await pg.click('#recbox button:has-text("Save")')
+        await pg.wait_for_function("document.getElementById('recerr').textContent.length > 0", timeout=4000)
+        refused_rec = await pg.inner_text("#recerr")
+        await pg.locator("#appsec").screenshot(path=os.path.join(ROOT, "build", "web_app_record.png"))
+        await cells2.nth(1).fill("30")
+        await pg.click('#recbox button:has-text("Save")')
+        await pg.wait_for_function("document.getElementById('recerr').textContent === 'Saved'", timeout=4000)
+        await pg.fill("#filter", "demo_steps")
+        await pg.wait_for_timeout(1500)
+        steps = await pg.inner_text("#v1012")
+        await pg.fill("#filter", "")
+        print("app screen: lit", repr(lit), "| record refused:", repr(refused_rec), "| stored:", steps[:60])
+        ok &= lit == "Sequence on" and refused_rec == "Step 2: no time set" and steps.startswith("507572676500")
         # firmware upload as admin
         img = os.path.join(TMPD, "fw.bin"); open(img, "wb").write(os.urandom(150000))
         cfw = os.path.join(TMPD, "fw.cfw")

@@ -17,6 +17,7 @@
 #include "plat_clock.h"
 #include "plat_health.h"
 #include "plat_serial.h"
+#include "ui_app.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -269,7 +270,7 @@ static void get_params(http_out_t *o) {
         static const struct { uint16_t bit; const char *n; } fl[] = {
             { PF_RO, "ro" }, { PF_PERSIST, "persist" }, { PF_FACTORY, "factory" }, { PF_ANY_MODE, "any_mode" },
             { PF_LOCAL_ONLY, "local_only" }, { PF_NO_MODBUS, "no_modbus" }, { PF_CONFIRM, "confirm" }, { PF_SECRET, "secret" },
-            { PF_DEV, "ro" }, { PF_DEV, "dev" } };
+            { PF_DEV, "ro" }, { PF_DEV, "dev" }, { PF_RECORD, "record" } };
         for (size_t k = 0; k < sizeof fl / sizeof fl[0]; ++k)
             if (d->flags & fl[k].bit) { if (f) out_str(o, ","); json_str(o, fl[k].n); f = true; }
         out_str(o, "]}");
@@ -864,6 +865,137 @@ static void post_time(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- application screens and records (ui_app.h, D26) ---------------- */
+static void id_field(http_out_t *o, const char *k, uint16_t id) {
+    if (!id) return;
+    out_str(o, ",\""); out_str(o, k); out_str(o, "\":"); json_uint(o, id);
+}
+
+/* the whole description: the page draws the same screens and editors as the touchscreen */
+static void get_ui(http_out_t *o) {
+    const ui_app_t *a = ui_app();
+    static const char *const wk[] = { "section", "value", "button", "grid", "dialog", "record" };
+    static const char *const fk[] = { "uint", "int", "bool", "text", "ms_as_s", "hms", "enum" };
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"screens\":[");
+    for (size_t s = 0; a && s < a->n_screens; ++s) {
+        const ui_screen_t *sc = &a->screens[s];
+        if (s) out_str(o, ",");
+        out_str(o, "{\"title\":"); json_str(o, sc->title ? sc->title : "");
+        out_str(o, ",\"widgets\":[");
+        for (unsigned i = 0; i < sc->n; ++i) {
+            const ui_widget_t *w = &sc->w[i];
+            if (i) out_str(o, ",");
+            out_str(o, "{\"kind\":"); json_str(o, w->kind <= UW_RECORD ? wk[w->kind] : "?");
+            out_str(o, ",\"label\":"); json_str(o, w->label ? w->label : "");
+            id_field(o, "value", w->value_id);
+            if (w->index != UW_NO_INDEX && w->kind == UW_VALUE) { out_str(o, ",\"index\":"); json_uint(o, w->index); }
+            id_field(o, "cmd", w->cmd_id);
+            if (w->cmd_id) { out_str(o, ",\"cmd_value\":"); json_int(o, ui_cmd_value(w->cmd_value)); }
+            id_field(o, "cmd2", w->cmd2_id); id_field(o, "state", w->state_id); id_field(o, "enable", w->enable_id);
+            id_field(o, "show", w->show_id);
+            if (w->show_id) { out_str(o, ",\"show_min\":"); json_int(o, w->show_min ? w->show_min : 1); }
+            id_field(o, "count", w->count_id); id_field(o, "names", w->names_id); id_field(o, "record", w->record_id);
+            out_str(o, "}");
+        }
+        out_str(o, "]}");
+    }
+    out_str(o, "],\"records\":[");
+    for (size_t k = 0; a && k < a->n_records; ++k) {
+        const ui_record_t *r = &a->records[k];
+        const param_def_t *d = param_find(r->param_id);
+        if (k) out_str(o, ",");
+        out_str(o, "{\"id\":"); json_uint(o, r->param_id);
+        out_str(o, ",\"title\":"); json_str(o, r->title ? r->title : "");
+        out_str(o, ",\"size\":"); json_uint(o, d ? d->size : 0);
+        out_str(o, ",\"level\":"); json_uint(o, d ? d->level : 0);
+        out_str(o, ",\"rows\":"); json_uint(o, r->rows);
+        if (r->rows && r->rows_off != UI_ROWS_ALL) {
+            out_str(o, ",\"rows_off\":"); json_uint(o, r->rows_off);
+            out_str(o, ",\"rows_size\":"); json_uint(o, (unsigned long)param_ctype_size(r->rows_ctype));
+        }
+        out_str(o, ",\"fields\":[");
+        for (unsigned i = 0; i < r->n_fields; ++i) {
+            const ui_field_t *f = &r->fields[i];
+            if (i) out_str(o, ",");
+            out_str(o, "{\"label\":"); json_str(o, f->label ? f->label : "");
+            out_str(o, ",\"kind\":"); json_str(o, f->kind <= RF_ENUM ? fk[f->kind] : "?");
+            /* element layout, so the page reads and writes the image like ui_field_at() */
+            unsigned es = f->kind == RF_BOOL ? 1u : f->kind == RF_TEXT ? f->size : f->kind == RF_MS_AS_S ? 4u :
+                          f->kind == RF_HMS ? 3u : (unsigned)param_ctype_size(f->ctype);
+            bool sgn = f->kind == RF_INT;
+            out_str(o, ",\"off\":"); json_uint(o, f->off);
+            out_str(o, ",\"esize\":"); json_uint(o, es);
+            out_str(o, ",\"signed\":"); json_bool(o, sgn);
+            out_str(o, ",\"row_stride\":"); json_uint(o, r->rows ? f->stride : 0);
+            out_str(o, ",\"elem_stride\":"); json_uint(o, r->rows || !f->stride ? es : f->stride);
+            out_str(o, ",\"count\":"); json_uint(o, r->rows ? 1u : (f->count ? f->count : 1u));
+            out_str(o, ",\"min\":"); json_int(o, f->min);
+            out_str(o, ",\"max\":"); json_int(o, ui_field_max(f));
+            if (f->unit) { out_str(o, ",\"unit\":"); json_str(o, f->unit); }
+            if (f->items && f->n_items) {
+                out_str(o, ",\"items\":[");
+                for (unsigned j = 0; j < f->n_items; ++j) { if (j) out_str(o, ","); json_str(o, f->items[j]); }
+                out_str(o, "]");
+            }
+            out_str(o, "}");
+        }
+        out_str(o, "]}");
+    }
+    out_str(o, "]}");
+}
+
+/* ?id=: the record's image (hex) and whether this login may write it now */
+static void get_record(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char v[8];
+    long id = form_get(r->query, strlen(r->query), "id", v, sizeof v) ? strtol(v, NULL, 10) : -1;
+    const param_def_t *d = id > 0 && id <= 65535 ? param_find((uint16_t)id) : NULL;
+    if (!d || !(d->flags & PF_RECORD)) { json_error(o, 404, "unknown", id); return; }
+    static uint8_t img[PARAM_RECORD_MAX];
+    if (param_read_blob(d->id, 0, img, d->size) != PERR_OK) { json_error(o, 503, "busy", id); return; }
+    param_err_t e = param_record_check(d->id, PLAT_SRC_WEB, lvl);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"id\":"); json_uint(o, d->id);
+    out_str(o, ",\"writable\":"); json_bool(o, e == PERR_OK);
+    if (e != PERR_OK) { out_str(o, ",\"why\":"); json_str(o, perr_name(e)); }
+    out_str(o, ",\"data\":\"");
+    for (uint16_t k = 0; k < d->size; k += 32) {
+        char h[65]; uint16_t n = (uint16_t)(d->size - k < 32 ? d->size - k : 32);
+        hex_encode(img + k, n, h); out_str(o, h);
+    }
+    out_str(o, "\"}");
+}
+
+/* id=&data=<hex of the whole record>: applied in one scan after the application's check */
+static void post_record(const http_req_t *r, http_out_t *o, uint8_t lvl, uint32_t now) {
+    char v[8];
+    long id = form_get((const char *)r->body, r->body_len, "id", v, sizeof v) ? strtol(v, NULL, 10) : -1;
+    const param_def_t *d = id > 0 && id <= 65535 ? param_find((uint16_t)id) : NULL;
+    if (!d || !(d->flags & PF_RECORD)) { json_error(o, 404, "unknown", id); return; }
+    static char hex[2 * PARAM_RECORD_MAX + 2];
+    static uint8_t img[PARAM_RECORD_MAX];
+    if (!form_get((const char *)r->body, r->body_len, "data", hex, sizeof hex) || strlen(hex) != 2u * d->size ||
+        hex_decode(hex, img, sizeof img) != (int)d->size) { json_error(o, 400, "data", id); return; }
+    uint32_t ticket;
+    param_err_t e = param_record_post(d->id, img, d->size, PLAT_SRC_WEB, lvl, &ticket);
+    if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), id); return; }
+    auth_touch(r->sid, now);
+    param_comms_activity(PLAT_SRC_WEB, now);
+    char why[80] = "";
+    bool done = false;
+    for (int k = 0; k < 300 && !(done = param_record_result(ticket, &e, why, sizeof why)); ++k)
+        if (cfg.wait) cfg.wait(); else break;
+    if (!done) { json_error(o, 503, "no answer from the scan", id); return; }
+    if (e != PERR_OK) {
+        head(o, perr_status(e), "application/json", NULL);
+        out_str(o, "{\"ok\":false,\"error\":"); json_str(o, perr_name(e));
+        out_str(o, ",\"why\":"); json_str(o, why); out_str(o, ",\"id\":"); json_uint(o, d->id); out_str(o, "}");
+        return;
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 /* ---------------- serial number (developer authority, D25) ---------------- */
 static bool parse_u32(const char *v, uint32_t *out) {
     char *e;
@@ -1053,6 +1185,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
+    else if (get && !strcmp(r->path, "/api/ui")) get_ui(o);
+    else if (get && !strcmp(r->path, "/api/record")) get_record(r, o, lvl);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
     else if (get && !strcmp(r->path, "/api/log/events")) get_log_events(r, o);
     else if (get && !strcmp(r->path, "/api/log/events.csv")) get_log_csv(r, o, LOG_RING_EVENTS);
@@ -1073,6 +1207,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
         else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
+        else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }

@@ -168,6 +168,7 @@ static uint8_t elem_ptype(uint8_t ct) {
 
 static bool blob_def_ok(const param_def_t *d) {
     if (d->size == 0 || d->ptype > PT_ARRAY) return false;
+    if ((d->flags & PF_RECORD) && (d->ptype != PT_BYTES || d->size > PARAM_RECORD_MAX)) return false;
     if (d->ptype != PT_ARRAY) return d->ctype == CT_BLOB && (d->ptype != PT_TEXT16 || d->size % 2u == 0);
     size_t es = param_ctype_size(d->ctype);
     if (es == 0 || d->size % es != 0) return false;
@@ -197,7 +198,10 @@ static bool def_ok(const param_def_t *d) {
     return mn <= mx && mn >= lo && mx <= hi && df >= mn && df <= mx;
 }
 
+static void record_reset(void);
+
 param_err_t param_init(const param_def_t *app_defs, size_t n_app) {
+    record_reset();
     n_tab = 0;
     tab_err_id = 0;
     if (N_PLAT + n_app > PARAM_MAX) { tab_err_id = 0xFFFF; return PERR_TABLE; }
@@ -511,6 +515,7 @@ param_err_t param_blob_check(uint16_t id, uint16_t off, const void *data, uint16
     param_err_t a = access_ok(d, src, level);
     if (a != PERR_OK) return a;
     if (!PARAM_IS_BLOB(d)) return PERR_TYPE;
+    if (d->flags & PF_RECORD) return PERR_TYPE;        /* records: whole images only (param_record_post) */
     if (len > PARAM_BLOB_MAX_WRITE) return PERR_RANGE;
     if (whole) off = 0;
     if ((d->ptype == PT_TEXT || d->ptype == PT_TEXT16) && !whole) return PERR_TYPE;
@@ -557,7 +562,89 @@ param_err_t param_post_many(const plat_cmd_t *c, size_t n) {
     return PERR_OK;
 }
 
+/* ---------------- records (one write in flight) ---------------- */
+enum { RS_FREE = 0, RS_FILLING, RS_QUEUED, RS_DONE };
+static struct {
+    volatile uint8_t state;
+    uint16_t   id, len;
+    uint8_t    src, level;
+    uint32_t   ticket;
+    param_err_t result;
+    char       why[80];
+    uint8_t    data[PARAM_RECORD_MAX];
+} rq;
+static uint32_t rq_next_ticket = 1;
+static void record_reset(void) { memset(&rq, 0, sizeof rq); }
+
+static param_err_t record_access(const param_def_t *d, uint16_t len, uint8_t src, uint8_t level) {
+    param_err_t a = access_ok(d, src, level);
+    if (a != PERR_OK) return a;
+    if (!(d->flags & PF_RECORD) || !PARAM_IS_BLOB(d)) return PERR_TYPE;
+    if (len != d->size || len > PARAM_RECORD_MAX) return PERR_RANGE;
+    return PERR_OK;
+}
+
+param_err_t param_record_check(uint16_t id, uint8_t src, uint8_t level) {
+    const param_def_t *d = param_find(id);
+    return record_access(d, d ? d->size : 0, src, level);
+}
+
+param_err_t param_record_post(uint16_t id, const void *data, uint16_t len, uint8_t src, uint8_t level, uint32_t *ticket) {
+    const param_def_t *d = param_find(id);
+    param_err_t e = record_access(d, len, src, level);
+    if (e != PERR_OK) return e;
+    bool ok;
+    PLAT_CRIT_ENTER();
+    ok = rq.state != RS_FILLING && rq.state != RS_QUEUED;
+    if (ok) rq.state = RS_FILLING;
+    PLAT_CRIT_EXIT();
+    if (!ok) return PERR_BUSY;
+    memcpy(rq.data, data, len);
+    rq.id = id; rq.len = len; rq.src = src; rq.level = level;
+    rq.why[0] = 0;
+    PLAT_CRIT_ENTER();
+    rq.ticket = rq_next_ticket++;
+    if (rq_next_ticket == 0) rq_next_ticket = 1;
+    if (ticket) *ticket = rq.ticket;
+    rq.state = RS_QUEUED;
+    PLAT_CRIT_EXIT();
+    return PERR_OK;
+}
+
+bool param_record_result(uint32_t ticket, param_err_t *e, char *why, size_t cap) {
+    bool done;
+    PLAT_CRIT_ENTER();
+    done = rq.state == RS_DONE && rq.ticket == ticket;
+    PLAT_CRIT_EXIT();
+    if (!done) return false;
+    if (e) *e = rq.result;
+    if (why && cap) { strncpy(why, rq.why, cap - 1u); why[cap - 1u] = 0; }
+    return true;
+}
+
+void param_record_drain(void) {
+    if (rq.state != RS_QUEUED) return;
+    const param_def_t *d = param_find(rq.id);
+    param_err_t e = record_access(d, rq.len, rq.src, rq.level);   /* the mode may have changed since */
+    rq.why[0] = 0;
+    if (e == PERR_OK && d->check_block && d->check_block(d->id, rq.data, rq.why, sizeof rq.why) != 0) {
+        e = PERR_INTERLOCK;
+        if (!rq.why[0]) strcpy(rq.why, "refused by the application");
+    }
+    rq.why[sizeof rq.why - 1u] = 0;
+    if (e == PERR_OK) {
+        bool same = memcmp(d->ptr, rq.data, rq.len) == 0;
+        memcpy(d->ptr, rq.data, rq.len);
+        if (!same && param_on_change) param_on_change(d, (plat_val_t){ .u = 0 }, (plat_val_t){ .u = 0 }, rq.src, rq.level);
+    }
+    rq.result = e;
+    PLAT_CRIT_ENTER();
+    rq.state = RS_DONE;
+    PLAT_CRIT_EXIT();
+}
+
 void param_blob_drain(void) {
+    param_record_drain();
     for (unsigned n = 0; n < PARAM_BLOBQ_DEPTH; ++n) {   /* everything queued before this scan */
         blobcmd_t b;
         bool have;
