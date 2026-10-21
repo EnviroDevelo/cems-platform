@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""End-to-end test of the VM/MUX application on real sockets (build/vm_netsim).
+"""End-to-end test of the VM/MUX application on real sockets (build/netsim-app_vmmux, make netsim APP=app_vmmux).
 
 Drives the application the way a site will: an engineer configures it on the touchscreen,
 an operator runs the Multiplexor from the web page, a PLC reads it over Modbus TCP, and the
 settings survive a restart. Plain sockets and urllib only (no third-party packages).
 
-    make -f app_vmmux/app.mk build/vm_netsim && python3 app_vmmux/tests/integration/vm_net_test.py
+    make -f app_vmmux/app.mk vm-nettest   (or: make build/netsim-app_vmmux APP=app_vmmux && python3 app_vmmux/tests/integration/vm_net_test.py
 """
 import http.cookiejar, json, os, signal, socket, ssl, struct, subprocess, sys, tempfile, threading, time
 import urllib.parse, urllib.request, urllib.error
@@ -22,6 +22,20 @@ passed = failed = 0
 MAXV, NUMMUX, DOSING, MUXEN = 1091, 1094, 1056, 2906
 MUX_MANUAL, MUX_YES, MUX_START, MUX_INLET = 5012, 5013, 5015, 5016
 MUX_POPUP, MUX_INLET_ON, MUX_MANUAL_STATE = 5126, 5132, 5122
+NUMIC, FIRSTIN, FIRSTOUT, SEQ1 = 1093, 1064, 1065, 3164
+
+
+def seq_image(size, periods):
+    """Sequences_t (vm_types.h): NumberArray[20], Name[20][13], Timers[20] (u32), Inlets[20],
+    Outlets[20], NumberOfPeriods; little-endian, padded to size. Row numbers left 0: the
+    application's check writes them."""
+    b = bytearray(size)
+    for k, (name, ms, i, o) in enumerate(periods):
+        nb = name.encode()[:12]; b[20 + 13 * k: 20 + 13 * k + len(nb)] = nb
+        struct.pack_into("<I", b, 280 + 4 * k, ms)
+        b[360 + k] = i; b[380 + k] = o
+    b[400] = len(periods)
+    return bytes(b)
 
 
 def check(cond, what):
@@ -35,7 +49,7 @@ def check(cond, what):
 
 class Unit:
     def __init__(self):
-        self.p = subprocess.Popen([os.path.join(ROOT, "build", "vm_netsim"), str(MB), str(WEB), FRAM, NOR],
+        self.p = subprocess.Popen([os.path.join(ROOT, "build", "netsim-app_vmmux"), str(MB), str(WEB), FRAM, NOR],
                                   stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         self.log = []
         threading.Thread(target=self._read, daemon=True).start()
@@ -44,7 +58,7 @@ class Unit:
                 urllib.request.urlopen(BASE + "/api/info", timeout=1, context=CTX).read(); return
             except Exception:
                 time.sleep(0.05)
-        raise RuntimeError("vm_netsim did not start: " + "".join(self.log))
+        raise RuntimeError("netsim-app_vmmux did not start: " + "".join(self.log))
 
     def _read(self):
         for line in self.p.stderr:
@@ -112,7 +126,7 @@ def wait_for(fn, timeout=3.0):
 
 
 def main():
-    print("vm_netsim with a blank FRAM")
+    print("netsim-app_vmmux with a blank FRAM")
     unit = Unit(); web = Web(); mb = Modbus()
 
     st, info = web.req("/api/info")
@@ -124,7 +138,21 @@ def main():
 
     # engineer: configure a 4-valve MUX on the touchscreen (LOCAL)
     unit.touch(f"set {MAXV} 10"); unit.touch(f"set {NUMMUX} 4")
-    check(wait_for(lambda: web.values()[str(NUMMUX)] == 4), "touchscreen: 4 MUX valves")
+    unit.touch(f"set {NUMIC} 1"); unit.touch(f"set {FIRSTIN} 3"); unit.touch(f"set {FIRSTOUT} 2")
+    check(wait_for(lambda: web.values()[str(NUMMUX)] == 4 and web.values()[str(FIRSTIN)] == 3),
+          "touchscreen: 4 MUX valves, 3 inlets / 2 outlets")
+
+    # the application's screens and editors, as the web page and the panel draw them (D26)
+    st, ui = web.req("/api/ui")
+    titles = [sc["title"] for sc in ui.get("screens", [])] if st == 200 else []
+    check(titles == ["Valve Mgr", "Multiplexor", "Sequences", "Layout", "Process", "Inputs", "Names"],
+          f"/api/ui: the seven screens ({titles})")
+    recs = {r["id"]: r for r in ui.get("records", [])} if st == 200 else {}
+    check(SEQ1 in recs and recs[SEQ1]["rows"] == 20 and len(recs[SEQ1]["fields"]) == 4,
+          "/api/ui: sequence 1 editor, 20 rows, 4 columns")
+    check(len(recs) == 5, f"/api/ui: five editors (the MUX calendar is unused while it loops) ({len(recs)})")
+    grid = [w for w in ui["screens"][0]["widgets"] if w["kind"] == "grid"] if titles else []
+    check(len(grid) == 2, "Valve Mgr: inlet and outlet grids")
     # the DO map is an array: written from the web page later (REMOTE), as a site would
 
     # operator on the web page: refused in LOCAL, accepted in REMOTE
@@ -155,12 +183,31 @@ def main():
     check(st == 200 and wait_for(lambda: (mb.holding(760, 1) or [9])[0] == 0), "mux_enable off: MUX at rest")
     check(not any(web.values()[str(MUX_INLET_ON)]), "mux_enable off: no inlet open")
 
+    # sequence editor through the web API: refused with the check's reason, then accepted
+    st, rec = web.req(f"/api/record?id={SEQ1}")
+    size = recs.get(SEQ1, {}).get("size", 404)
+    check(st == 200 and rec.get("writable") and len(rec.get("data", "")) == 2 * size, f"read Sequence1 ({st})")
+    bad = seq_image(size, [("Zero", 30000, 1, 1), ("Span", 30000, 4, 2)])
+    st, j = web.req("/api/record", [("id", SEQ1), ("data", bad.hex())])
+    check(st == 409 and j and j.get("why", "").startswith("Period 2: inlet 4 is not fitted"),
+          f"record refused with the reason ({st} {j})")
+    good = seq_image(size, [("Zero", 30000, 1, 1), ("Span", 45000, 3, 2)])
+    st, j = web.req("/api/record", [("id", SEQ1), ("data", good.hex())])
+    check(st == 200 and j and j.get("ok"), f"record accepted ({st} {j})")
+    st, rec = web.req(f"/api/record?id={SEQ1}")
+    img = bytes.fromhex(rec["data"]) if st == 200 else b""
+    check(img[:3] == bytes([1, 2, 0]) and img[361] == 3 and img[400] == 2, "record applied, rows renumbered 1..2")
+    st, j = web.req("/api/write", [("id", SEQ1), ("v", "0")])
+    check(st >= 400, f"a record is not written piecemeal ({st})")
+
     # restart: settings kept, mode LOCAL again
     unit.stop(); unit = Unit(); web = Web(); mb = Modbus()
     v = web.values()
     check(v[str(NUMMUX)] == 4 and v[str(MAXV)] == 10, "counts kept through a restart")
     check(v[str(MUXEN)] in (False, 0), "mux_enable kept off through a restart")
     check(v["1"] == 0, "LOCAL mode after a restart")
+    st, rec = web.req(f"/api/record?id={SEQ1}")
+    check(st == 200 and bytes.fromhex(rec["data"])[400] == 2, "Sequence1 kept through a restart")
     st, ev = web.req("/api/log/events")
     check(st == 200, "event log readable")
     unit.stop()

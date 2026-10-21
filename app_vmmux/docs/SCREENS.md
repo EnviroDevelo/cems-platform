@@ -1,112 +1,65 @@
-# VM/MUX application screens: what the core platform's application-screen API must carry
+# VM/MUX application screens and record editors
 
-Rev A, 20 Oct 2026. For the core-platform thread (APP_INTEGRATION.md section 9, request R2).
-Source: `Existing Design/Analysis/50_HMI_Map.md` ("Map to the new 1024x600 EVE screen set") and
-`stage5/hmi_elements.csv`. Every value below is already a parameter-table entry, so the same
-screen can be drawn by the touchscreen and the web page from IDs alone.
+Rev B, 21 Oct 2026: as built in `src/vm_ui.c` on the core platform's screen API (`ui_app.h`,
+decision D26). Rev A (20 Oct) was the request to the core thread. The platform draws these the
+same way on the touchscreen (tabs before its own Status screen) and on the web page, and every
+write goes through the parameter table: login level, LOCAL/REMOTE, "are you sure?" for the
+valve-moving commands (`PF_CONFIRM`), and the application's interlocks.
 
-## 1. What the application provides today
+## 1. IDs used by the screens
 
 | Kind | IDs | Where |
 |---|---|---|
-| Settings (persisted) | 1000-1148 | `include/vm_params.h` (`VMP_*`), generated |
-| New settings | 2900-2905 | `src/vm_params_new.inc` |
-| Retained blocks (sequences, schedules, names ...) | 3000-3194 | `include/vm_params.h`, not parameters |
-| Modbus-visible values (read only, or master commands) | 4000-4194 | `include/vm_params_modbus.h` (`VMMB_*`) |
-| **Screen commands** (one write = one press of the old button) | **5000-5019** | `include/vm_hmi.h`, `src/vm_hmi.c` |
-| **Screen status** (button states, popups, enables) | **5100-5133** | `include/vm_hmi.h` |
-| Alarms | 100-173 | `include/vm_alarms.h` (the platform's alarm screens show them) |
+| Settings (persisted) | 1000-1155, valve names 1200-1258 | `include/vm_params.h` (`VMP_*`), generated |
+| New settings | 2900-2906 | `src/vm_params_new.inc` |
+| Records (sequences, schedules) | 3123-3125, 3164-3166 | `PARAM_RECORD`, `src/vm_records.c` |
+| Modbus views (read) | 4000-4194 | `include/vm_params_modbus.h` (`VMMB_*`) |
+| Screen commands (one write = one press of the old button) | 5000-5019 | `include/vm_hmi.h` |
+| Screen status (button states, dialogs, enables) | 5100-5141 | `include/vm_hmi.h` |
+| Display values (read only, not stored, not on Modbus) | 5150-5159 | `include/vm_ui.h` |
 
-A command is checked against the old button's enable/visibility when it is applied
-(`PERR_INTERLOCK` if the button was disabled or hidden). Commands that start valve movement carry
-`PF_CONFIRM`. Settings written from any source set the old "...Entered" bits as if typed on the
-panel (`vm_hmi.c`, entry emulation), so the screen needs no special handling for them.
+Valve names have consecutive IDs (inlet *i* = 1200 + *i* - 1, outlet 1220 + ..., MUX inlet
+1240 + ...) so a grid labels its items with them; a blank name shows the position number.
 
-## 2. Screens (from 50_HMI_Map, merged VM + MUX)
+## 2. Tabs
 
-### 2.1 Home (replaces the four old main screens)
-Valve Manager side:
-- Mode buttons: `vm_btn_modbus` 5000, `vm_btn_schedule` 5001, `vm_btn_manual` 5002; their state
-  5100-5102 (0 = off, 1 = on) and enables 5103-5105.
-- Manual-mode dialog: shown while `vm_manual_popup` 5106; Yes 5003, No 5004. Then a Start button,
-  shown while `vm_start_visible` 5107, command 5005.
-- Pipe picture: inlets 1..`FirstInlets`, outlets 1..`FirstOutlets` (tube 1) and the second tube when
-  `NumInterconnections` = 2. Valve touch: `vm_inlet_touch` 5006 / `vm_outlet_touch` 5007 with the
-  valve number 1..19; touchable while `vm_inlet_touch_en[i]` 5110 / `vm_outlet_touch_en[i]` 5111.
-  Valve and pipe state colours: `vm_tube1_colour` 5140 (57 codes) / `vm_tube2_colour` 5141 (55),
-  the old pipe picture's per-segment codes.
-- Remaining time: `VMMB_PROCESSTIMER_PRESET` 4045 (ms), `VMMB_PROCESSTIMER2_PRESET` 4046.
-- Dialogs "sequences absent" 5108 (OK 5008) and "incorrect sequences" 5109 (OK 5009).
+| Tab | Content |
+|---|---|
+| **Valve Mgr** | Modbus mode / Scheduler / Manual mode (5000-5002, lit 5100-5102, greyed 5103-5105); Start (5005, shown while 5107); Time left (5150) and, with two interconnections, tube 2 (5151); **Inlets** and **Outlets** grids (below); dialogs: manual mode Yes/No (5106: 5003/5004), no sequence (5108: OK 5008), sequence uses an unfitted valve (5109: OK 5009); readings AI1, AI2 (4145[0..1]), RTD1, RTD2 in degrees (5158, 5159) |
+| **Multiplexor** | the three mode buttons (5010-5012, 5120-5122, 5123-5125) and Start (5015, shown while 5127), all hidden while `mux_enable` (2906) is off; step time left (5152); **Inlets** grid (visible 5131[i], open 5132[i], touchable while 5128, tap = 5016 with the inlet number, names 1240+); Purge (5017, lit 5133); dialogs 5126 (5013/5014), 5129 (OK 5018), 5130 (OK 5019); "Multiplexor enabled" |
+| **Sequences** | editors: Sequence 1, Schedule 1; Sequence 2 and Schedule 2 while two interconnections; MUX Channels while the MUX is enabled (the MUX calendar only while `VM_MUX_CONTINUOUS` is 0); manual-run times (1088-1090, ms) and the mode at power-up (1057) |
+| **Layout** | valve outputs (1091), interconnections (1093), inlets/outlets per tube (1064, 1065, 1120, 1121), back-flush valve and output (1051, 1050), MUX enable (2906), MUX valves (1094), purge output (1055) |
+| **Process** | flow validation (1067), its input (1066) and delay (1068), lock valves if the analyser is not OK (1061), close the VM after link loss (2901, min), valve feedback settle time (2900, s) |
+| **Inputs** | per analog input: enabled, Low (4 mA) and High (20 mA) points, alarm, range min/max; per RTD: enabled, shift, alarm, range min/max (0.1 degree), alarm delay (2902/2903), hysteresis (2904/2905). The array elements are read-only on the panel until request R6; they are changed on the web page's settings list |
+| **Names** | VM inlet and outlet names per picture position (shown up to the positions in use, 5157), MUX inlet names (shown for the fitted inlets) |
 
-Multiplexor side:
-- Mode buttons 5010-5012, states 5120-5122, enables 5123-5125.
-- Manual-mode dialog `mux_manual_popup` 5126: Yes 5013, No 5014; Start (visible 5127) 5015.
-- Inlet list: inlet *i* shown while `mux_inlet_visible[i]` 5131, open while `mux_inlet_on[i]`
-  5132; toggle with `mux_inlet_toggle` 5016 (value = inlet 1..19) while `mux_inlet_select_en` 5128.
-  Purge: state 5133, toggle 5017. Names: `SingularInlet0..18` (parameters 1122+).
-- Remaining time: `VMMB_PROCESSTIMERMUX_PRESET` 4124; dialogs 5129 / 5130 with OK 5018 / 5019.
+## 3. The VM valve grids
 
-Both: readings `VMMB_ANALOGSENSOR` 4145 (4 floats), `VMMB_TEMPERATURESENSOR` 4146 (4 values,
-0.1 degree), local/remote and alarm indicators (platform).
+The old picture was one row of 9 positions (19 when a tube has more than 9 valves) for the inlets
+and one for the outlets: tube 1 from the left, tube 2 from the right (4F1). The grids keep that
+row, so a tap writes the same position the old picture did (`vm_inlet_touch` 5006 /
+`vm_outlet_touch` 5007): position *i* is shown while 5153[*i*] / 5155[*i*], touchable while
+5110[*i*] / 5111[*i*], lit while 5154[*i*] / 5156[*i*] (the route `DO_Assign` drove this scan,
+I-13). Tube 2's valves are numbered from the right, as in the original.
 
-### 2.2 Valve layout (System Config / System Config_MUX, counts part)
-`VMP_MAXNUMBEROFVALVES` 1091, `VMP_NUMINTERCONNECTIONS` 1093, `VMP_FIRSTINLETS` 1064,
-`VMP_FIRSTOUTLETS` 1065, `VMP_SECONDINLETS` 1120, `VMP_SECONDOUTLETS` 1121,
-`VMP_NUMBEROFMUXVALVES` 1094, `VMP_BACKFLUSHEXISTS` 1051. Limits and the tag-dependent maxima are
-enforced by the table (interlocks). 0 means "not configured yet" (the original's power-up value).
+## 4. Editors (records)
 
-### 2.3 Valve names
-`InletName0..18`, `OutletName0..18` (VM, 10 characters), `SingularInlet0..18` (MUX, 10 characters),
-parameters 1069+ / 1095+ / 1122+ (`VMP_INLETNAME0` ...). Operator level (the old panel had no password for them, U8).
+| ID | Record | Editor |
+|---|---|---|
+| 3164 / 3165 | `Sequence1` / `Sequence2` | table, up to 20 periods: Name (12), Time (s), Inlet 1..inlets of that tube, Outlet 1..outlets |
+| 3166 | `SequenceMUX` | table, up to 20 channels: Inlet (shown 1-based, stored 0-based), Dwell, Sample (s; channel time = dwell + sample), Pre-pump, Pump lead (s) |
+| 3123 / 3124 / 3125 | `Schedule1` / `Schedule2` / `ScheduleMUX` | form: from / to year, months, days of the month, weekdays (Sun..Sat), start and end time (h:m:s) |
 
-### 2.4 Output mapping (old DO-mapping screens and MUX_DOMapping)
-`VMP_DOINLET` 1053 and `VMP_DOOUTLET` 1054 (0-based DO per valve position: inlets first, then
-outlets, 43c), `VMP_DOSINGULARINLET` 1056 and `VMP_DOPURGEINLET` 1055 (1-based DO), back-flush
-`VMP_BACKFLUSHDONUMBER` 1050. The old MUX mapping screen's toggles could open valves in any mode
-(U3); the new screen should not offer them.
+The editor keeps the numbers inside each column's range (the inlet column's maximum follows the
+tube's inlet count). On Save the application's check (`vm_check_record`) sees the whole record: it
+writes the row numbers (1..n, 0 after; the period chains end on the first 0) and clears the rows
+past the last period, then refuses anything the logic would stall on, with the reason, e.g.
+"Period 2: inlet 4 is not fitted (interconnection 1 has 3)". Records are never on Modbus.
+Without `PF_ANY_MODE` they are edited in LOCAL from the panel and in REMOTE from the web page.
 
-### 2.5 Process
-`VMP_DEFAULTMODEONPOWERUP` 1057, manual timers `VMP_MANUAL_TIMER` 1088 / `..._TIMER2` 1089 /
-`..._TIMERMUX` 1090 (ms), flow validation `VMP_FLOWVALIDATION` 1067, `VMP_FLOWANALOGINPUT` 1066,
-`VMP_FLOWVALIDATIONTIMER` 1068, `VMP_ENABLELOCKVALVESIFANALYZERNOTOK` 1061, log interval (platform
-parameter 30, U2), `vm_link_close_min` 2901.
+## 5. Not carried over
 
-### 2.6 Inputs
-- Discrete (VM and MUX, 22 each): `VMP_DI_FUNCTIONVM` 1058 / `VMP_DI_FUNCTIONMUX` 1052 (combo,
-  item lists in `stage5/screens/08..24`), `VMP_ALARMENABLEVM/MUX`, `VMP_ALARMCONDITIONVM/MUX`,
-  `VMP_FEEDBACKCONDITIONMUX`, descriptions `Alarm<i> Description[MUX]` (UTF-16, 30 characters).
-- Analog: `VMP_ANALOGENABLE` 1142, `VMP_FIRSTCALIBPOINT` 1063 / `VMP_SECONDCALIBPOINT` 1119
-  (factory class), `VMP_RANGEMIN/MAX` 1146/1145, `VMP_ANALOGALARMENABLED` 1141.
-- Channel labels and units (retained, U8): `AnalogName1/2`, `TempName1/2` (UTF-16, 18),
-  `AnalogSensorUnits` / `TemperatureSensorUnits` (combo index, item lists in stage5/screens/09, 13).
-- Temperature: `VMP_TEMPERATUREENABLE` 1148, `VMP_TEMPERATURESHIFT` 1155 (0.1 degree, factory class, Q6),
-  `VMP_MIN/MAXTEMPERATURERANGE` 1144/1143, `VMP_TEMPERATUREALARMENABLED` 1147,
-  `rtd1/2_alarm_delay_s` 2902/2903, `rtd1/2_alarm_hyst` 2904/2905.
-
-### 2.7 Sequence and schedule editors (records, core design 20 Oct)
-Six record parameters, same IDs as the retained blocks they replace (`src/vm_params.c` switches
-from `RETAIN` to `PARAM_RECORD` automatically once the platform defines the macro):
-
-| ID | Record | Kind | Rows / fields |
-|---|---|---|---|
-| 3164 | `Sequence1` (VM interconnection 1) | table | rows = `NumberOfPeriods` (0..20): No., Name (12), Time (ms as s), Inlet 1..`FirstInlets` (1064), Outlet 1..`FirstOutlets` (1065) |
-| 3165 | `Sequence2` (VM interconnection 2) | table | as 3164 with `SecondInlets` (1120) / `SecondOutlets` (1121) |
-| 3166 | `SequenceMUX` (MUX channels) | table | rows = channels: No., Inlet (0-based index, shown 1..fitted), Dwell and Sample (ms as s; channel time = dwell + sample), Pre-pump, Pump lead |
-| 3123 / 3124 / 3125 | `Schedule1` / `Schedule2` / `ScheduleMUX` | form | years, Month[12], Day_Of_Month[31], Day_Of_Week[7] (index 0 = Sunday), Start and End as h:m:s (stored s, min, h) |
-
-- Field offsets, sizes, kinds and live maxima: `vm_records[]` in `src/vm_records.c` (application
-  types until `ui_record_t` lands; one-to-one with the core design).
-- Check: `vm_check_record(id, image, why, cap)`; messages such as "Period 2: inlet 4 is not fitted
-  (interconnection 1 has 3)". The editor writes the row numbers itself (1..n, 0 after) and zeroes
-  rows past n; the check refuses anything else (a wrong row number stalls the original's chains).
-- `ScheduleMUX` is not used while the MUX loops continuously (Q8); the form can be hidden then.
-- Modbus: the masters of the old system never had sequence registers (stage4/4G/modbus_map.csv),
-  so no mapped view is needed.
-- The old editor copies (`ScheduleHMI`, `HMISequences`, `HMISequenceMUX`) and the scroll/Save bits
-  are read only by the old editor functions, which stay in the faithful code but do nothing
-  without their screen bits. The new editors do not use them.
-
-### 2.8 Not carried over
 Settings/password popups (platform login), email settings (platform mail), the Modbus client test
 screen (dropped), the Log screen (platform data log + CSV download), screen saver and brightness
-(platform UI).
+(platform UI; `Touched_Bit` still follows the panel, R3), the old MUX DO-mapping screen's toggles
+(they opened valves in any mode, U3).

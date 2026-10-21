@@ -94,6 +94,27 @@
 #define VM_FIX_VM_MODBUS_NAMES 1
 #endif
 
+/* VM finding V21 (46i): Function1 rung 37 clears the four VM selections at the end of every
+ * scan. The schedule and Modbus modes rewrite them every scan, but manual mode sets them only
+ * on a touch, so a route chosen by hand drives its valves for one scan only: VM manual mode
+ * cannot hold a valve open (found again on 21 Oct by the screen test). 1: rung 37 leaves the
+ * selections alone while a manual run is on (ManualModeStart); rung 38 (V22) still computes
+ * PauseMUX OFF, as the original always did. The run's end (manual timer, Manual button)
+ * clears them as before (rung 12). 0: as the original. */
+#ifndef VM_FIX_VM_MANUAL_HOLD
+#define VM_FIX_VM_MANUAL_HOLD 1
+#endif
+
+/* Finding F8 (integration, 21 Oct): ProcessTimer.Preset / ProcessTimer2.Preset, the VM time left
+ * shown on the old screen and read by the master (holding registers), are written by the manual
+ * (4F4 R10) and Modbus (4G) runs and then, later in the same scan, by the idle schedule step
+ * (4F2 step_of: period 1's timer, 0). So they read 0 during manual and Modbus runs.
+ * 1: after the logic, they are set from the running mode's own timer (vm_compat.c).
+ * 0: as the original. */
+#ifndef VM_FIX_TIME_LEFT
+#define VM_FIX_TIME_LEFT 1
+#endif
+
 #ifndef VM_MUX_CONTINUOUS
 #define VM_MUX_CONTINUOUS 1
 #endif

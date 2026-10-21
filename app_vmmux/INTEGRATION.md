@@ -1,7 +1,8 @@
 # app_vmmux: the Valve Manager / Multiplexor on the CEMS core platform
 
-Rev B, 20 Oct 2026 (Rev B: owner decisions Q1-Q7). Branch `app/vmmux` of `cems-platform`. Built against platform commit `a986362`
-(APP_INTEGRATION.md handover). Nothing under `platform/` is changed.
+Rev C, 21 Oct 2026 (Rev B: owner decisions Q1-Q7; Rev C: main `45a7cc3` merged: records, screens,
+app selection, 128 KB FRAM; requests R1-R5 closed). Branch `app/vmmux` of `cems-platform`. Nothing under
+`platform/` is changed.
 
 ## 1. What this is
 
@@ -25,18 +26,24 @@ scan:    vm_io_in -> Function1 (VM top level, calls MUX at rung 36) -> vm_after_
 | `src/vm_alarms.c` | alarm table and producers (70_alarm_map) |
 | `src/vm_compat.c` | keeps old Modbus coils and buffers meaningful where the platform took over |
 | `src/vm_hmi.c` | the old screens' button actions as command parameters (5000+), their status (5100+), and the EntryOK "...Entered" bits |
-| `src/vm_records.c` | the six sequence/schedule records: `vm_check_record` and the editors' field descriptions (core design, 20 Oct) |
+| `src/vm_records.c` | the six sequence/schedule records (`PARAM_RECORD`): `vm_check_record`, which also writes the derived row numbers |
+| `src/vm_ui.c`, `include/vm_ui.h` | the screens and record editors for the platform (`ui_app_t`, D26): seven tabs, five editors, and the display values they need (5150-5159) |
+| `src/vm_select.c`, `app_vars.mk` | `app_select()` and the source lists: `make netsim APP=app_vmmux`, `make target APP=app_vmmux` (R1) |
 | `docs/MODBUS_MAP.md` | the Modbus TCP register map for integrators (generated, `tools/gen_modbus_doc.py`) |
-| `tests/integration/vm_net_test.py` | end-to-end on real sockets: touchscreen stand-in, web API, Modbus TCP, restart (`make -f app_vmmux/app.mk vm-nettest`) |
+| `tests/integration/vm_net_test.py` | end-to-end on real sockets: touchscreen stand-in, web API, Modbus TCP, record editor API, restart (`make -f app_vmmux/app.mk vm-nettest`) |
+| `tests/integration/vm_web_ui_test.py` | the screens on the web page in headless Chromium: every tab, a manual route by clicking, the sequence editor (`vm-webtest`) |
 | `docs/BAT_VMMUX.md` | bench acceptance test procedure, step by step, each step tied to its host test |
-| `docs/SCREENS.md` | the application screens for the core thread's screen API (R2), by parameter ID |
+| `docs/SCREENS.md` | the application screens as built (`vm_ui.c`), by parameter ID |
 | `stage4_tests/` | the Stage 4 tests, run against the integrated code with every switch at the original behaviour |
 | `tests/vm_tests.c` | application tests on the real scan engine, parameter store, alarm manager and Modbus engine |
-| `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID |
+| `tools/param_ids.csv` | parameter / block IDs. **Never renumber**: FRAM records are found by ID. The one exception, before any unit was built (21 Oct): the 57 valve names moved to consecutive IDs (1200-1218 inlets, 1220-1238 outlets, 1240-1258 MUX inlets) so a screen grid can label its items; the old IDs are kept as `retired:` rows and never reused |
 
 Build and test (repository root): `make -f app_vmmux/app.mk vm-test` (12 Stage 4 suites, 110,000+ checks,
-and 395 application checks, plus 19 end-to-end network checks, ASan + UBSan, platform warning flags). `make -f app_vmmux/app.mk vm-netsim`
-runs the platform's networked simulation with this application (Modbus TCP 1502, HTTPS 8443).
+and 539 application checks including the touchscreen walk-through on the simulated panel), `vm-nettest`
+(29 end-to-end checks on real sockets) and `vm-webtest` (14 checks in headless Chromium); ASan + UBSan,
+platform warning flags. `make netsim APP=app_vmmux` runs the platform's networked simulation with this
+application (Modbus TCP 1502, HTTPS 8443). Panel pictures: `UI_DUMP=build/vmui ./build/vm_tests` then
+`tools/eve_preview.py build/vmui/*.eve`. Target: `tools/check_target.sh EXT=<ext>` links it for the STM32H573.
 Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Existing Design/Analysis"`.
 
 ## 2. Numbers
@@ -44,9 +51,10 @@ Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Exis
 | | |
 |---|---|
 | Tags | 450 definitions covering 768 dictionary tags, + 117 UI/Modbus-only tags |
-| Parameters | 397 of 512 (149 settings, 7 new, 195 Modbus-only, 46 screen commands and status) |
+| Parameters | 422 application entries + 40 platform = 462 of `PARAM_MAX` 512 (364 settings, records and Modbus views; 48 screen commands and status; 10 display values) |
+| STM32H573 (21 Oct, `check_target.sh`, fullest configuration) | flash 509.5 KB of 1016 KB (50 %), RAM 434.5 KB of 640 KB (68 %); the application itself 95.7 KB flash, 46.1 KB RAM |
 | Retained blocks | 194 |
-| **FRAM user image** | **13,600 bytes**; 14,848 per copy on the 32 KB part (90.2 %); 128 KB part chosen (Q7) |
+| **FRAM user image** | **13,600 bytes**: 33 % of the 40 KB copy on the 128 KB part (Q7, now the platform default); the 32 KB breakout still fits (90.2 % of 14,848) with `PLAT_FRAM_SIZE=32768u` in the CubeIDE preprocessor symbols |
 | Alarms | 57 (IDs 100-173) |
 | Modbus | 201 old entries + 6 platform alarm entries |
 
@@ -65,6 +73,8 @@ Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Exis
 | I-9 | `#include` paths flattened | one include directory |
 | I-10 | Call sites of `Email` (Function1 R27) and `Logging`/`LoadTable` (MUX R9) behind switches | section 4 |
 | I-11 | DI rungs 9-10 and the analog scaling behind switches | section 4 |
+| I-12 | Function1 R37 / R38 behind `VM_FIX_VM_MANUAL_HOLD` (4F4) | V21: VM manual mode could not hold a route (section 4) |
+| I-13 | `DO_Assign` (4C) calls `vm_do_assign_hook` at its end (NULL in Stage 4) | the screens show the route DO_Assign used; the selections are cleared every scan (V21) |
 
 After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 
@@ -81,6 +91,8 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_FIX_VM_MODBUS_NAMES` | 1 | 47b M10/M12: a blank VM valve name no longer overwrites inlet 1's Modbus name; no tails of longer names |
 | `VM_FIX_MUX_MODBUS_NAMES` | 1 | 47 M8: the MUX valve-name registers carry the MUX inlet names (they were never written) |
 | `VM_FIX_V7` | 1 | VM V7: a tube-2 sequence of 9+ periods no longer stalls at period 9 |
+| `VM_FIX_VM_MANUAL_HOLD` | 1 | VM V21: Function1 R37 cleared the selections every scan, so a manual route drove its valves for one scan only (BAT 5.1 could never pass). The route is now held while the manual run is on; R38 (`PauseMUX`) still computes OFF as the original did (V22 not changed) |
+| `VM_FIX_TIME_LEFT` | 1 | Finding F8: the VM time left (`ProcessTimer(2).Preset`, holding registers and the screen) is set from the running mode's own timer after the logic; the idle schedule step had zeroed it in manual and Modbus runs |
 | `VM_MUX_CONTINUOUS` | 1 | Q8: the MUX loops its sequence until stopped (no calendar window) |
 | `VM_FIX_MUX_RESTART` | 1 | Finding F5: reset the MUX period timers when a run ends, so a restart in the window begins at period 1 (Gary: the MUX is the automated loop) |
 | `ENABLE_DISABLED_RUNGS` | off | every other DISABLED IN ORIGINAL rung, kept in full, off |
@@ -90,7 +102,7 @@ Other replacements: password screens -> platform logins; SN -> platform serial (
 platform mail recipients; brightness -> platform UI; Modify Alarm Property texts -> `text_param` of
 each alarm; the Modbus client test screen -> dropped (no logic used it).
 
-## 5. Behaviour found on integration (recorded, not changed)
+## 5. Behaviour found on integration (F5, F7, F8, F9 fixed behind switches; the rest recorded, not changed)
 
 | # | Finding |
 |---|---|
@@ -100,6 +112,8 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | F5 | **A MUX sequence that ends inside its start window restarts at once (S3) and then stands still**: its dwell/sample timers were never unpowered, so they are all "done", and no valve opens until the schedule is stopped. Fixed behind `VM_FIX_MUX_RESTART` (default on). Test `t_mux_schedule_run` checks both settings. |
 | F7 | **The VM schedule has the F5 fault too**: a run that ends inside its window restarts (V9), stands still with no valve open and its run flag stuck on, so no later window can start it: a daily calibration would run once. Fixed behind `VM_FIX_VM_RESTART` (default on); test `t_vm_schedule_repeat` checks both settings. |
 | F6 | The old screens' buttons and number boxes write logic tags directly (StartSchedule, ...Entered bits). Without them nothing can be started; `vm_hmi.c` reproduces them so the new UI and web page can operate the machine. Tests drive a MUX manual run, a MUX schedule and a VM Modbus run through these commands. |
+| F8 | **The VM time left reads 0 during manual and Modbus runs**: ManualMode R10 and ModbusMode write `ProcessTimer(2).Preset`, then `ScheduleModeSTValveAssign` (4F2 `step_of`) overwrites it in the same scan with the idle schedule's period-1 timer (0). The master's time-left registers and the old screen showed 0. Fixed behind `VM_FIX_TIME_LEFT`; checked in `t_vm_modbus_run_and_link_loss` and `t_panel`. |
+| F9 | V21 (46i) confirmed on the integrated code by the screen test: a manual VM route lasted one scan. Fixed behind `VM_FIX_VM_MANUAL_HOLD` (I-12); `t_screen_values` and `t_panel` hold a route for 1 s and release it with the Manual button. V5 (a touched valve's bit stays set, so the same valve cannot be pressed again) is not changed. |
 | F4 | With every analog/RTD channel `NOT_FITTED` on the bench, an *enabled* channel raises its sensor-fault alarm, as the handover asks; disabled channels are quiet. |
 
 ## 6. Owner decisions (Gary, 20 Oct) and how they are built
@@ -119,8 +133,10 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 
 | # | Request |
 |---|---|
-| R1 | A way to choose the application in `host/netsim` (and `host/sim_main.c`) without the `-Dapp_demo_plat=(*vmmux_app())` define in `app.mk`. |
-| R2 | The application-screen API (handover section 9). The screen list, by parameter ID, is `docs/SCREENS.md`. |
-| R3 | A UI-activity flag for the old screen-saver logic (`Touched_Bit`), low priority. |
-| R4 | FRAM size (D6): the application's user image is **13,392 bytes**; Gary chose the **128 KB** part (20 Oct). |
-| R5 | Include `app_vmmux` in your target compile check and memory report (`make target`, `tools/check_target.sh`): the ARM toolchain and `ext/` are only in the core workspace. |
+| R1 | **Closed** (core `c45c39e`): `app_select()`; `app_vars.mk` + `src/vm_select.c` added; `make netsim APP=app_vmmux`; the define in `app.mk` is gone. |
+| R2 | **Closed** (D26): records and the screen API. Built in `vm_ui.c` (seven tabs, five editors); the six records are `PARAM_RECORD`s and no longer retained blocks. |
+| R3 | **Closed**: `Touched_Bit` = panel touched within the last second (`ui_last_touch_ms`, `vm_ui_pre_logic`). |
+| R4 | **Closed**: 128 KB is the default map. |
+| R5 | **Closed**: `check_target.sh` links the application; re-run here on 21 Oct with the screens (figures in section 2). |
+| R6 | **New.** The touchscreen opens an editor only for a whole parameter: a `UW_VALUE` with `index` (one element of an array) is shown but cannot be changed there. The VM/MUX keeps many settings as arrays (`AnalogEnable[2]`, `RangeMin[2]`, `DOInlet[19]`, `Di_FunctionVM[22]` ...): editable on the web page's settings list today, read-only on the panel's Inputs tab. Please let a `UW_VALUE` with `index` edit that element (a one-element block write), with the usual level and mode checks. |
+| R7 | **New, for information.** `PARAM_MAX` 512: the platform's 40 and the application's 422 entries leave 50. If the platform's own table grows by more than that, the application will not start (`param_init` refuses the table; `vm_tests` prints the count). A `#ifndef PARAM_MAX` would let a build raise it. |

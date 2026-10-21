@@ -1,6 +1,6 @@
 # VM/MUX bench acceptance test (BAT) procedure
 
-Rev A, 21 Oct 2026. For the first bench test of the Valve Manager / Multiplexor application on
+Rev B, 21 Oct 2026 (Rev B: the new screens; VM manual route held, I-12; time left, F8). For the first bench test of the Valve Manager / Multiplexor application on
 real hardware. Each step says what to do, what to watch and what passes. Every behaviour here is
 already covered by a host test (`tests/vm_tests.c`, named in brackets); the BAT confirms it on the
 board with real I/O, real timing and the real touchscreen, web page and Modbus.
@@ -56,20 +56,23 @@ reason to stop, unless an output is driven that should not be.
    [t_q5_q6_retained]
 
 ## 5. Valve Manager
-1. Manual mode: Manual, Yes, Start, touch inlet 2 then outlet 1. Pass: DO2 and DO4 on; the
-   remaining time counts down from the manual timer; "firmware update refused: Valve Manager
-   manual mode is running". Manual again: valves off.
+1. Manual mode (Valve Mgr tab): Manual mode, Yes, Start, touch inlet 2 then outlet 1. Pass: DO2
+   and DO4 on and **stay on** (I-12; the original held them for one scan), inlet 2 and outlet 1
+   lit; Time left counts down from the manual timer (F8); "firmware update refused: Valve Manager
+   manual mode is running". Manual mode again: valves off. [t_panel, t_screen_values]
 2. Modbus mode: press Modbus Mode on the touchscreen, switch to REMOTE. From the master: holding
    10-11 = 3,600,000 (ModbusTimer.Preset, U32 high word first), holding 6-7 = 2, 1 (inlet 2,
-   outlet 1), coil 1 = 1. Pass: DO2 and DO4 on. [t_vm_modbus_run_and_link_loss]
+   outlet 1), coil 1 = 1. Pass: DO2 and DO4 on; the master's time-left register (ProcessTimer)
+   counts down from 3,600,000 (F8). [t_vm_modbus_run_and_link_loss]
 3. Link loss (Q1): set vm_link_close_min = 2. Stop the master's polling (unplug the cable). Pass:
    "remote link lost" after comms_timeout (10 s); valves stay on for 2 min, then DO2/DO4 off and
    the event "Valve Manager Modbus run ended". Any MUX run carries on.
 4. Schedule: Sequence1 = 2 periods (inlet 1/outlet 1 for 30 s, inlet 3/outlet 2 for 30 s),
    Schedule1 window covering now. Press Scheduler. Pass: routes in order, then the run repeats while
    inside the window (F7 fix: it must not stand still with no valve open); after the window ends,
-   the next day's window starts it again. [t_vm_schedule_repeat] A sequence with inlet 4 is refused with "Period 2: inlet 4 is not fitted ...".
-   [t_record_checks]
+   the next day's window starts it again. [t_vm_schedule_repeat] In the Sequence 1 editor the Inlet column
+   accepts 1..3 only; Save with a period's inlet left at 0 is refused with "Period 1: inlet 0 is not
+   fitted (interconnection 1 has 3)". [t_record_checks, t_panel]
 5. Two interconnections, Sequence2 of 10 periods. Pass: runs past period 9 (V7 fix).
    [t_vm_v7_long_tube2_sequence]
 
@@ -107,6 +110,18 @@ reason to stop, unless an output is driven that should not be.
 2. Event log has: power-ups, every setting change (old and new value, who, from where), mode
    changes, alarms, link loss.
 
-## 9. Sign-off
+## 9. Screens (touchscreen and web page)
+1. Every tab (Valve Mgr, Multiplexor, Sequences, Layout, Process, Inputs, Names, Status) opens on
+   the panel and on the web page with the same content. [t_panel, vm_web_ui_test]
+2. Names: name VM inlet 1 "ZERO". Pass: the Valve Mgr inlet grid shows ZERO; a blank name shows
+   its number.
+3. Two interconnections (2 + 1 inlets on tube 2): the grid shows tube 1 from the left and tube 2
+   from the right; touch tube 2's inlet 1 (the right-most). Pass: its configured output.
+4. Not logged in: values shown, not changeable; commands refused. REMOTE: the panel cannot save
+   a sequence ("Not allowed in REMOTE mode"); the web page can.
+5. Inputs tab: array settings (enables, limits) are shown, not changeable on the panel yet (R6);
+   change them on the web page's settings list.
+
+## 10. Sign-off
 List every failure with its step number and send the sheet back; failures become findings in
 `INTEGRATION.md` and get a host test before they are fixed.

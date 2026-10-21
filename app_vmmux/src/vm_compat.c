@@ -97,6 +97,11 @@ void vm_compat_scan(void)
     name_to_buf(vmx_ValveNameMUX18, sizeof vmx_ValveNameMUX18, SingularInlet[17]);
     name_to_buf(vmx_ValveNameMUX19, sizeof vmx_ValveNameMUX19, SingularInlet[18]);
 #endif
+#if VM_FIX_TIME_LEFT
+    /* F8: the time left of the running VM mode (the idle schedule step zeroed it) */
+    if (CurrentMode == 1)      { ProcessTimer.Preset = ModbusTimer.Current; ProcessTimer2.Preset = ModbusTimer2.Current; }
+    else if (CurrentMode == 3) { ProcessTimer.Preset = ManualTimer.Current; ProcessTimer2.Preset = ManualTimer2.Current; }
+#endif
 #define DESC(BUF, TXT) utf16_to_utf8(BUF, sizeof BUF, TXT, sizeof TXT / sizeof TXT[0])
 #include "vm_compat_desc.inc"
 #undef DESC

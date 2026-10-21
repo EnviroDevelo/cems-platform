@@ -6,6 +6,7 @@
  * tests cover what integration added: the I/O mapping, the owner's fixes behind the
  * switches, whole scans of Function1 + MUX through the platform, and the hooks. */
 #include <string.h>
+#include <stdlib.h>
 #include <math.h>
 #include "tst.h"
 #include "scan_engine.h"
@@ -20,6 +21,12 @@
 #include "modbus.h"
 #include "vm_hmi.h"
 #include "vm_records.h"
+#include "vm_ui.h"
+#include "ui_app.h"
+#include "ui.h"
+#include "eve.h"
+#include "eve_sim.h"
+#include "web_auth.h"
 
 int tst_fail, tst_pass;
 
@@ -32,10 +39,13 @@ static void power_up(void)
     plat_cmdq_init(&q);
     param_bind(&q, NULL);                         /* Modbus / web writes go to this scan's queue */
     scan_init(&s, a->scan, &scan_hw_bsp, &q, &lock, 10);
-    CHECK_EQ(param_init(a->params, a->n_params), PERR_OK);
+    param_err_t pe = param_init(a->params, a->n_params);
+    if (pe != PERR_OK) printf("  param_init: table error at ID %u (%zu application entries)\n", param_table_error(), a->n_params);
+    CHECK_EQ(pe, PERR_OK);
     param_store_init(bsp_param_nvm(), NULL, a->retain, a->n_retain, a->layout_version, a->migrate);
     param_store_boot();
     CHECK_EQ(alarm_init(a->alarms, a->n_alarms, BSP_RESET_POWER_ON), 0);
+    ui_app_set(a->ui);
     scan_set_sys(&s, &plat_sys);
     bsp_host.rtc_valid = true;
     bsp_host.rtc = (bsp_rtc_t){ .year = 2026, .month = 10, .day = 20, .hours = 9, .minutes = 0, .seconds = 0, .dow_iso = 2 };   /* Tuesday 20 Oct 2026 */
@@ -204,8 +214,8 @@ static void t_store_fits_and_keeps(void)
     power_up();
     scans(200);                                   /* the store saves within about 1 s */
     store_stats_t st = param_store_stats();
-    printf("  user image %u bytes (32 KB FRAM map: 14848 per copy), %u parameters, %u blocks, status 0x%04x\n",
-           (unsigned)st.payload_usr, (unsigned)vm_n_params, (unsigned)vm_n_retain, param_store_status());
+    printf("  user image %u bytes (%u per copy in this build's FRAM map; must also fit the 32 KB map's 14848), %u parameters, %u blocks, status 0x%04x\n",
+           (unsigned)st.payload_usr, (unsigned)STORE_USR_SLOT, (unsigned)vm_n_params, (unsigned)vm_n_retain, param_store_status());
     CHECK(!(param_store_status() & PSTAT_TABLE_ERROR));
     CHECK(st.payload_usr > 0);
     CHECK(st.payload_usr <= 14848u);
@@ -528,6 +538,8 @@ static void t_vm_modbus_run_and_link_loss(void)
     CHECK(!ValveSelectionErrorModbus);
     CHECK_EQ(bsp_host.out.do_bits, (1u << 1) | (1u << 3));
     uint32_t open_bits = bsp_host.out.do_bits;
+    /* F8 fixed: the time-left register the master reads follows the Modbus run's timer */
+    CHECK(ProcessTimer.Preset > 3590000u && ProcessTimer.Preset <= 3600000u);
 
     /* the PLC goes quiet: link lost after 10 s, valves held for vm_link_close_min, then closed */
     scans(1100 + 3000);
@@ -646,11 +658,13 @@ static void t_record_checks(void)
     v.Inlets[1] = 4;
     CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);
     CHECK(strcmp(why, "Period 2: inlet 4 is not fitted (interconnection 1 has 3)") == 0);
-    v.Inlets[1] = 3; v.NumberArray[1] = 5;
-    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);   /* S10: a wrong row number stalls the run */
-    v.NumberArray[1] = 2; v.Outlets[5] = 1;
-    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);   /* rung 1 checks every row */
-    v.Outlets[5] = 0; memset(v.Name[0], 'x', 13);
+    v.Inlets[1] = 3; v.NumberArray[1] = 5; v.Outlets[5] = 1; v.Inlets[7] = 9;
+    CHECK_EQ(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why), 0);  /* rows renumbered, rows past n cleared */
+    CHECK_EQ(v.NumberArray[1], 2); CHECK_EQ(v.NumberArray[2], 0);         /* (S10: a wrong number stalls the run) */
+    CHECK_EQ(v.Outlets[5], 0); CHECK_EQ(v.Inlets[7], 0);                  /* (rung 1 checks every row) */
+    v.NumberOfPeriods = 21;
+    CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);
+    v.NumberOfPeriods = 2; memset(v.Name[0], 'x', 13);
     CHECK(vm_check_record(VMP_SEQUENCE1, &v, why, sizeof why) != 0);   /* unterminated name */
     strcpy(v.Name[0], "Zero air");
     CHECK(vm_check_record(VMP_SEQUENCE2, &v, why, sizeof why) != 0);   /* interconnection 2 has no valves */
@@ -678,11 +692,93 @@ static void t_record_checks(void)
     CHECK(vm_check_record(VMP_SCHEDULE2, &c, why, sizeof why) != 0);
     CHECK(vm_check_record(9999, &c, why, sizeof why) != 0);
 
-    /* the descriptions cover each record exactly */
-    CHECK_EQ(vm_n_records, 6);
-    for (size_t r = 0; r < vm_n_records; r++)
-        for (unsigned f = 0; f < vm_records[r].n_fields; f++)
-            CHECK(vm_records[r].fields[f].offset + vm_records[r].fields[f].size <= vm_records[r].size);
+    /* the screens and editors name only existing IDs and every field fits its record */
+    CHECK_EQ(ui_app_check(&vm_ui), 0);
+    CHECK(ui_app_record(VMP_SEQUENCE1) != NULL);
+
+    /* a whole write through the platform: refused with the reason, then accepted and applied */
+    memset(&v, 0, sizeof v);
+    v.NumberOfPeriods = 2; v.Inlets[0] = 1; v.Inlets[1] = 4; v.Outlets[0] = 1; v.Outlets[1] = 2;
+    v.Timers[0] = v.Timers[1] = 30000;
+    uint32_t ticket = 0; param_err_t e = PERR_OK;
+    CHECK_EQ(param_record_post(VMP_SEQUENCE1, &v, sizeof v, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR, &ticket), PERR_OK);
+    scans(1);
+    CHECK(param_record_result(ticket, &e, why, sizeof why));
+    CHECK_EQ(e, PERR_INTERLOCK);
+    CHECK(strcmp(why, "Period 2: inlet 4 is not fitted (interconnection 1 has 3)") == 0);
+    CHECK_EQ(Sequence1.NumberOfPeriods, 0);
+    v.Inlets[1] = 3;
+    CHECK_EQ(param_record_post(VMP_SEQUENCE1, &v, sizeof v, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR, &ticket), PERR_OK);
+    scans(1);
+    CHECK(param_record_result(ticket, &e, why, sizeof why));
+    CHECK_EQ(e, PERR_OK);
+    CHECK_EQ(Sequence1.NumberOfPeriods, 2); CHECK_EQ(Sequence1.NumberArray[1], 2); CHECK_EQ(Sequence1.Inlets[1], 3);
+    /* records are whole-only and never on Modbus */
+    const param_def_t *d = param_find(VMP_SEQUENCE1);
+    CHECK(d && (d->flags & PF_RECORD) && (d->flags & PF_NO_MODBUS));
+}
+
+static void t_screen_values(void)
+{
+    /* the valve row the grids draw: tube 1 from the left, tube 2 from the right (4F1) */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 3), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_SECONDINLETS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_SECONDOUTLETS, 1), PERR_OK);
+    scans(3);
+    int64_t x = 0;
+    CHECK(ui_param_value(VMU_POSITIONS, UW_NO_INDEX, &x)); CHECK_EQ(x, 9);
+    for (unsigned i = 0; i < 9; i++) {
+        CHECK(ui_param_value(VMU_IN_SHOWN, (uint16_t)i, &x));
+        CHECK_EQ(x, (i < 3 || i >= 7) ? 1 : 0);
+    }
+    /* one numbering, inlets first: DOOutlet[5 + k] for the outlets (43c); the others to DO11 */
+    const int16_t din[5] = { 0, 1, 2, 3, 4 }, dout[8] = { 10, 10, 10, 10, 10, 5, 6, 7 };
+    write_i16_array(VMP_DOINLET, din, 5);
+    write_i16_array(VMP_DOOUTLET, dout, 8);
+    scans(2);
+    /* manual mode (V21 fixed, I-12): touch tube 1 inlet 2 and tube 2 inlet 1 (the last position) */
+    CHECK_EQ(press(VMC_VM_MANUAL, 1), PERR_OK);
+    CHECK_EQ(press(VMC_VM_MANUAL_YES, 1), PERR_OK);
+    CHECK_EQ(press(VMC_VM_MANUAL_START, 1), PERR_OK);
+    CHECK_EQ(press(VMC_VM_INLET, 2), PERR_OK);
+    CHECK_EQ(press(VMC_VM_INLET, 9), PERR_OK);
+    CHECK_EQ(press(VMC_VM_OUTLET, 1), PERR_OK);
+    CHECK_EQ(press(VMC_VM_OUTLET, 9), PERR_OK);
+    scans(2);
+    scans(50);                                                  /* held, not one scan only */
+    /* the grid reads the driven outputs back (the selections themselves are not kept by the logic) */
+    CHECK(ui_param_value(VMU_IN_OPEN, 1, &x)); CHECK_EQ(x, 1);
+    CHECK(ui_param_value(VMU_IN_OPEN, 8, &x)); CHECK_EQ(x, 1);   /* tube 2 inlet 1 = last position */
+    CHECK(ui_param_value(VMU_IN_OPEN, 0, &x)); CHECK_EQ(x, 0);
+    CHECK(ui_param_value(VMU_OUT_OPEN, 0, &x)); CHECK_EQ(x, 1);   /* tube 1 outlet 1 */
+    CHECK(ui_param_value(VMU_OUT_OPEN, 8, &x)); CHECK_EQ(x, 1);   /* tube 2 outlet 1 */
+    /* tube 1 inlet 2 = DO2, tube 2 inlet 1 = DO4 (legacy 3 + 2 - 1), outlets DO6 / DO8 */
+    CHECK_EQ(bsp_host.out.do_bits, (1u << 1) | (1u << 4) | (1u << 5) | (1u << 7));
+    /* grid labels: names_id + position - 1 must be that position's name */
+    for (unsigned i = 0; i < 19; i++) {
+        const param_def_t *ni = param_find((uint16_t)(VMP_INLETNAME0 + i));
+        const param_def_t *no = param_find((uint16_t)(VMP_OUTLETNAME0 + i));
+        const param_def_t *nm = param_find((uint16_t)(VMP_SINGULARINLET0 + i));
+        CHECK(ni && ni->ptr == InletName[i]); CHECK(no && no->ptr == OutletName[i]);
+        CHECK(nm && nm->ptr == SingularInlet[i]);
+    }
+    plat_val_t pv;
+    CHECK(param_read(VMU_RTD1, &pv)); CHECK(pv.f == TemperatureSensor[0] / 10.0f);
+    CHECK_EQ(press(VMC_VM_MANUAL, 1), PERR_OK);     /* manual off: the held route is released */
+    scans(3);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);
+    /* nothing of the application's table was cut off by the merge into one array */
+    CHECK_EQ(vmmux_app()->n_params, vm_n_params + vm_n_hmi_params + vm_n_ui_params);
+    printf("  table: %zu application entries (%zu settings and records, %zu screen, %zu display) of %d with the platform's\n",
+           vmmux_app()->n_params, vm_n_params, vm_n_hmi_params, vm_n_ui_params, PARAM_MAX);
+    /* display values are read-only from every source */
+    CHECK_EQ(write_i(VMU_POSITIONS, 19), PERR_READONLY);
 }
 
 static void t_mux_repeated_inlet(void)
@@ -819,6 +915,116 @@ static void t_mux_digital_stop(void)
     DI_FunctionMUX[4] = 0;
 }
 
+/* ---------------- the touchscreen: the application's screens on the simulated panel ---------------- */
+
+static eve_sim_t sim;
+static eve_t eve;
+static void frame(void) { ui_draw(&eve, bsp_ms()); }
+static void ptap_tag(uint8_t t) { ui_input(t, bsp_ms()); scans(6); ui_input(0, bsp_ms()); scans(2); frame(); }
+static bool ptap(const char *label)
+{
+    int t = eve_sim_tag_of(&sim, label);
+    for (int k = 0; k < 8 && t == 0; k++) {     /* the same words in a toast: let it go first */
+        scans(100); frame(); t = eve_sim_tag_of(&sim, label);
+    }
+    if (t <= 0) { printf("  (no button \"%s\" on the panel)\n", label); return false; }
+    ptap_tag((uint8_t)t);
+    return true;
+}
+static bool pshows(const char *txt) { return eve_sim_has_text(&sim, txt); }
+static void ptype(const char *k) { for (; *k; ++k) ptap_tag((uint8_t)*k); }
+static void pdump(const char *name)
+{
+    const char *dir = getenv("UI_DUMP");
+    if (!dir) return;
+    char p[256]; snprintf(p, sizeof p, "%s/%s.eve", dir, name);
+    FILE *f = fopen(p, "wb"); if (f) { eve_sim_dump(&sim, f); fclose(f); }
+}
+
+static void t_panel(void)
+{
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(2);
+    CHECK_EQ(write_i(VMP_MAXNUMBEROFVALVES, 10), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMINTERCONNECTIONS, 1), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTINLETS, 3), PERR_OK);
+    CHECK_EQ(write_i(VMP_FIRSTOUTLETS, 2), PERR_OK);
+    CHECK_EQ(write_i(VMP_NUMBEROFMUXVALVES, 4), PERR_OK);
+    scans(2);
+    const int16_t din[3] = { 0, 1, 2 }, dout[5] = { 0, 0, 0, 3, 4 };   /* BAT 2.3 */
+    write_i16_array(VMP_DOINLET, din, 3);
+    write_i16_array(VMP_DOOUTLET, dout, 5);
+    strcpy(InletName[0], "Zero gas"); strcpy(InletName[1], "Span gas"); strcpy(InletName[2], "Stack");
+    strcpy(OutletName[0], "Analyser"); strcpy(OutletName[1], "Vent");
+    strcpy(SingularInlet[0], "Stack A"); strcpy(SingularInlet[1], "Stack B");
+    scans(3);
+
+    static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = VM_APP_REVISION };
+    auth_init();
+    eve_sim_init(&sim);
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    ui_init(&cfg, bsp_ms());
+    frame();
+
+    /* the application's tabs come first, beside the platform's Status */
+    CHECK_EQ(ui_screen(), UI_APP);
+    CHECK(pshows("Valve Mgr")); CHECK(pshows("Multiplexor")); CHECK(pshows("Sequences"));
+    CHECK(pshows("Names")); CHECK(pshows("Status"));
+    CHECK(pshows("Zero gas")); CHECK(pshows("Span gas")); CHECK(pshows("Analyser"));
+    CHECK(!pshows("Vent2"));
+    pdump("vm_valves");
+
+    /* BAT 5.1 on the panel: Manual, Yes, Start, inlet 2, outlet 1 -> DO2 and DO4, held */
+    ptap("Log in"); ptap("Operator"); ptype("1111"); ptap("Enter");
+    CHECK_EQ(ui_level(), PLAT_LVL_OPERATOR);
+    CHECK_EQ(ui_screen(), UI_APP);
+    ptap("Manual mode");
+    CHECK(pshows("Manual mode: valves are opened by touching"));   /* wrapped on two lines */
+    pdump("vm_manual_dialog");
+    ptap("Yes");
+    CHECK(ptap("Start"));
+    if (pshows("Start?")) ptap("Yes");                         /* PF_CONFIRM */
+    CHECK_EQ(CurrentMode, 3);
+    CHECK(ptap("Span gas")); if (pshows("Yes")) ptap("Yes");
+    CHECK(ptap("Analyser")); if (pshows("Yes")) ptap("Yes");
+    scans(100);
+    frame();
+    CHECK_EQ(bsp_host.out.do_bits, (1u << 1) | (1u << 3));
+    pdump("vm_manual_route");
+    int64_t left = 0;                                           /* F8: the run's own timer, not 0 */
+    CHECK(ui_param_value(VMU_LEFT1_S, UW_NO_INDEX, &left)); CHECK(left > 7000 && left <= 7200);
+    CHECK(pshows("7198 s") || pshows("7197 s") || pshows("7199 s"));
+    ptap("Manual mode");
+    scans(3);
+    CHECK_EQ(bsp_host.out.do_bits, 0u);
+
+    /* Multiplexor tab */
+    CHECK(ptap("Multiplexor"));
+    CHECK(pshows("Stack A")); CHECK(pshows("Stack B")); CHECK(pshows("Purge"));
+    pdump("vm_mux");
+
+    /* Sequences: the editor refuses a period with no inlet, with the check's reason */
+    CHECK(ptap("Sequences"));
+    pdump("vm_sequences");
+    CHECK(ptap("Sequence 1"));
+    CHECK_EQ(ui_screen(), UI_REC);
+    CHECK(ptap("+"));
+    pdump("vm_seq_edit");
+    CHECK(ptap("Save"));
+    scans(2); frame();
+    CHECK(!strncmp(ui_toast(), "Period 1: inlet 0 is not fitted", 31));
+    pdump("vm_seq_refused");
+    ptap("Cancel");
+    CHECK_EQ(ui_screen(), UI_APP);
+
+    CHECK(ptap("Layout"));  CHECK(pshows("Interconnections")); pdump("vm_layout");
+    CHECK(ptap("Process")); CHECK(pshows("Flow validation"));  pdump("vm_process");
+    CHECK(ptap("Inputs"));  CHECK(pshows("Analog input 1"));   pdump("vm_inputs");
+    CHECK(ptap("Names"));   CHECK(pshows("Inlet 1"));          pdump("vm_names");
+    CHECK(ui_last_touch_ms != 0);
+}
+
 int main(void)
 {
     RUN(t_ai_conversion);
@@ -841,6 +1047,8 @@ int main(void)
     RUN(t_mux_schedule_run);
     RUN(t_mux_master_enable);
     RUN(t_record_checks);
+    RUN(t_screen_values);
+    RUN(t_panel);
     RUN(t_mux_repeated_inlet);
     RUN(t_vm_v7_long_tube2_sequence);
     RUN(t_vm_schedule_repeat);

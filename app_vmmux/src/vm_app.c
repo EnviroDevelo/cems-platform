@@ -13,6 +13,7 @@
 #include "vm_params.h"
 #include "vm_alarms.h"
 #include "vm_hmi.h"
+#include "vm_ui.h"
 
 uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];
 
@@ -31,6 +32,7 @@ static void remote_link_pre_logic(void);
 
 static void vm_logic(void)
 {
+    vm_ui_pre_logic();         /* Touched_Bit from the panel's last touch (R3) */
     vm_hmi_pre_logic();        /* the old panel's button presses and EntryOK bits, between scans */
     remote_link_pre_logic();   /* Q1: may end a VM Modbus run before Function1 sees it */
     Function1();
@@ -99,6 +101,7 @@ void vm_after_logic(void)
 {
     vm_alarms_scan();
     vm_compat_scan();
+    vm_ui_scan();
     log_channels();
 }
 
@@ -133,6 +136,7 @@ const plat_app_t *vmmux_app(void)
         size_t n = 0;
         for (size_t k = 0; k < vm_n_params && n < PARAM_MAX; k++) all[n++] = vm_params[k];
         for (size_t k = 0; k < vm_n_hmi_params && n < PARAM_MAX; k++) all[n++] = vm_hmi_params[k];
+        for (size_t k = 0; k < vm_n_ui_params && n < PARAM_MAX; k++) all[n++] = vm_ui_params[k];
         a.params = all;                a.n_params = n;
         a.retain = vm_retain;          a.n_retain = vm_n_retain;
         a.layout_version = 1;          a.migrate = NULL;
@@ -143,6 +147,7 @@ const plat_app_t *vmmux_app(void)
         a.ui_home_ids = vm_home_ids;   a.n_ui_home = vm_n_home;
         a.alarms = vm_alarm_defs;      a.n_alarms = vm_n_alarms;
         a.fw_safe = vm_fw_safe;
+        a.ui = &vm_ui;                 /* screens and record editors (vm_ui.c) */
     }
     return &a;
 }

@@ -155,6 +155,7 @@ static void set_from_slot(const int16_t *slotmap, const int16_t *domap, int lega
         if (configuredDO >= 0 && configuredDO <= 19) InitialDO[configuredDO] = true;
     }
 }
+void (*vm_do_assign_hook)(void);   /* app_vmmux I-13: sees the route DO_Assign used (display only; NULL in Stage 4) */
 void DO_Assign(void)
 {
     for (int i = 0; i <= 19; i++) InitialDO[i] = false;                                          /* L2 */
@@ -169,6 +170,7 @@ void DO_Assign(void)
             set_from_slot(OutletSlotByLegacyDO, DOOutlet,
                           FirstInlets + SecondInlets + FirstOutlets + SecondOutlets - SelectedSecondOutlet);
     }
+    if (vm_do_assign_hook) vm_do_assign_hook();
 }
 
 /* =========================== DO_AssignMUX (MUX, ST) =========================== */

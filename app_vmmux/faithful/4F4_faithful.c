@@ -257,9 +257,16 @@ void Function1(void) {
     Analog_signals();
     if (vm_mux_enable) MUX(); else vm_mux_off();   /* app_vmmux: the MUX feature's master enable (Gary 20 Oct) */
     /* R37: all four selections set to 0, unconditionally, every scan (V21) */
-    SelectedFirstInlet = 0; SelectedFirstOutlet = 0; SelectedSecondInlet = 0; SelectedSecondOutlet = 0;
+#if VM_FIX_VM_MANUAL_HOLD
+    if (!ManualModeStart)   /* app_vmmux I-12: a manual route is held while the manual run is on */
+#endif
+    { SelectedFirstInlet = 0; SelectedFirstOutlet = 0; SelectedSecondInlet = 0; SelectedSecondOutlet = 0; }
     /* R38: MUX pause while a VM route is selected. Runs right after R37, so it is always OFF (V22). */
+#if VM_FIX_VM_MANUAL_HOLD
+    PauseMUX = false;       /* I-12: what the original always computed here (V22 not changed) */
+#else
     PauseMUX = ModeIsActive && ((SelectedFirstInlet != 0 && SelectedFirstOutlet != 0)
                              || (NumInterconnections == 2 && SelectedSecondInlet != 0 && SelectedSecondOutlet != 0));
+#endif
     /* R39 empty */
 }

@@ -26,6 +26,7 @@ extern int8_t  AlarmStatus[22], AlarmStatusMUX[22];
 /* ---- DO ---- */
 extern bool    DOList[20], InitialDO[20], DOFinal[20], DOListMUX[20], InitialDOMUX[20], DOFinalMUX[20];
 extern int16_t DOInlet[19], DOOutlet[19], InletSlotByLegacyDO[19], OutletSlotByLegacyDO[19];
+extern void (*vm_do_assign_hook)(void);   /* I-13: called at the end of DO_Assign (NULL = none) */
 extern int16_t FirstInlets, FirstOutlets, SecondInlets, SecondOutlets, NumInterconnections;
 extern int16_t SelectedFirstInlet, SelectedFirstOutlet, SelectedSecondInlet, SelectedSecondOutlet;
 extern int16_t ActiveInletIdx, DOSingularInlet[19], DOPurgeInlet, SingularInletState[19], PurgeInletState;
