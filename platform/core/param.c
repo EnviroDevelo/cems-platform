@@ -125,7 +125,7 @@ static const param_def_t plat_defs[] = {
                PLAT_LVL_VIEW, PF_RO, NULL),
     /* I/O boards on RS-485 (iobus.h, D27): settings at admin (technician) level, LOCAL only */
     PARAM_UINT(PARAM_ID_IOB_TIMEOUT, "iob_timeout", iob_timeout_ms, CT_U16, 100, 5000, 500, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
-    PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 3, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
+    PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 8, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])

@@ -653,7 +653,7 @@ supply A, the inputs). Inputs report a wire break where the check is on.
 Every change goes to the event log as "I/O board": board 2: online / not responding /
 out 3 open circuit / in 5 wire break / field A 24V missing / restarted / watchdog reset.
 
-**Settings** (admin level, parameters 100-101 and 110-139): `iob_timeout`, `iob_filter`, and
+**Settings** (admin level, parameters 100-101 and 110-139): `iob_timeout` (500 ms), `iob_filter` (8 ms, as the old panel), and
 per board `enable` (off by default), `address`, `first_do`, `first_di`, `open_check`
 (bits: bank A outputs with a valve fitted), `wire_check` (bits: inputs with the wire-break
 resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, and 140-145

@@ -153,7 +153,7 @@ static void t_connect_and_io(void) {
     CHECK_EQ(v.state, IOB_S_RUN);
     CHECK(v.status & IOBS_ONLINE);
     CHECK(!n1.config_needed);
-    CHECK_EQ(n1.timeout_ms, 500u); CHECK_EQ(n1.ol_en, 0xFFu); CHECK_EQ(n1.wb_en, 0u); CHECK_EQ(n1.filter_ms, 3u);
+    CHECK_EQ(n1.timeout_ms, 500u); CHECK_EQ(n1.ol_en, 0xFFu); CHECK_EQ(n1.wb_en, 0u); CHECK_EQ(n1.filter_ms, 8u);
     CHECK_EQ(n1.out_cmd, 0x0201u);
     CHECK_EQ(n1.relay_cmd, 1u);
     CHECK_EQ(v.outputs, 0x10201u);

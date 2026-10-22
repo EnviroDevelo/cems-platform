@@ -66,7 +66,7 @@ enum {
     IOB_R_RESETS      = 27,  /* node resets since its own last power-up count clear (wraps) */
     /* configuration, written after connecting and whenever a setting changes */
     IOB_R_TIMEOUT_MS  = 32,  /* comms timeout, 100..5000 ms (default 500) */
-    IOB_R_FILTER_MS   = 33,  /* input filter, 0..100 ms (the node uses the nearest it supports at or above) */
+    IOB_R_FILTER_MS   = 33,  /* input filter, 0..100 ms (default 8, as the old panel; the node uses the nearest it supports at or above) */
     IOB_R_WB_ENABLE   = 34,  /* wire-break check per input, bits 0-7 (default 0: off) */
     IOB_R_OL_ENABLE   = 35,  /* open-circuit check per bank A output, bits 0-7 (default 0xFF) */
     IOB_R_FAULT_CLEAR = 36,  /* write 1: clear the latched IOB_ST_* bits; reads 0 */

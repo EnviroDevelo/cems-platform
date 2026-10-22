@@ -19,7 +19,7 @@ iob_board_tags_t iob_tags[IOB_BOARDS] = {
     { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF },
 };
 uint16_t iob_timeout_ms = 500;
-uint8_t  iob_filter_ms = 3;
+uint8_t  iob_filter_ms = 8;
 
 typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; } cfg_t;
 

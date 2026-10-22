@@ -21,7 +21,7 @@ void iob_node_init(iob_node_t *n, uint8_t address) {
 
 void iob_node_restart(iob_node_t *n, bool wdg, uint32_t now) {
     n->out_cmd = n->relay_cmd = n->seq = n->echo = 0;
-    n->timeout_ms = 500; n->filter_ms = 3; n->wb_en = 0; n->ol_en = 0xFF;
+    n->timeout_ms = 500; n->filter_ms = 8; n->wb_en = 0; n->ol_en = 0xFF;
     n->config_needed = true;
     n->timeout_latched = false;
     n->wdg_latched = wdg;
