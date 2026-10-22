@@ -603,8 +603,8 @@ description naming a missing parameter or a field past the end of its record.
 `APP=<dir>` with that directory's `app_vars.mk` links it into `make netsim` and
 `make target` (R1). `ui_last_touch_ms` is the uptime of the last touch, for the old
 screen-saver logic (R3). The target check and the memory report include `app_vmmux` when
-its directory is present (R5): with it the firmware is 454 KB of flash (45 %) and 435 KB
-of RAM (68 %).
+its directory is present (R5): with it (and the I/O bus, 5k) the firmware is 472 KB of flash
+(46 %) and 439 KB of RAM (69 %).
 
 ## 5k. I/O boards on RS-485 (D27)
 

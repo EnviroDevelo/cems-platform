@@ -8,34 +8,46 @@ module, and before choosing hardware. Last run: 2026-10-22.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 385.1 KB | 1016.0 KB | 38 % | 630.9 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 391.1 KB | 1016.0 KB | 38 % | 624.9 KB |
 | RAM (STM32H573/H563, 640 KB) | 391.7 KB | 640.0 KB | 61 % | 248.3 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 17.3 | 0.1 |
-| Parameter table | 9.5 | 25.7 |
+| Scan engine, queue, watchdog, diag | 18.9 | 0.1 |
+| Parameter table | 9.4 | 25.7 |
 | Parameter store (FRAM) | 5.3 | 57.2 |
 | Event log / data logger | 14.5 | 6.8 |
-| Alarm manager | 5.0 | 2.9 |
+| Alarm manager | 4.9 | 2.9 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 1.7 | 0.1 |
 | Firmware update, signatures, serial | 6.0 | 1.6 |
+| I/O boards (RS-485 master) | 6.5 | 0.4 |
 | Modbus TCP | 6.0 | 17.5 |
-| Web server + page + logins | 40.6 | 72.9 |
-| HTTPS (tls.c + mbedTLS) | 96.5 | 46.9 |
-| Touch UI + EVE driver | 50.9 | 2.5 |
+| Web server + page + logins | 41.9 | 72.9 |
+| HTTPS (tls.c + mbedTLS) | 96.3 | 46.9 |
+| Touch UI + EVE driver | 52.1 | 2.5 |
 | Task layer (FreeRTOS glue) | 2.6 | 54.8 |
 | Board support (BSP) | 0.9 | 0.7 |
-| lwIP + Ethernet driver | 53.4 | 48.5 |
-| FreeRTOS kernel + heap | 9.8 | 48.8 |
+| lwIP + Ethernet driver | 54.4 | 48.5 |
+| FreeRTOS kernel + heap | 10.0 | 48.8 |
 | ST HAL + startup | 21.2 | 0.0 |
 | Application | 2.1 | 0.2 |
 | C library | 27.6 | 0.8 |
-| Other | 8.1 | 0.5 |
+| Other | 2.5 | 0.0 |
 | Main stack (interrupts, start-up) | 0.0 | 1.0 |
+
+## With the VM/MUX application (app_vmmux)
+
+The same build with the real application linked in (`make target APP=...`).
+
+| Resource | Used | Limit | Used % | Free |
+|---|---|---|---|---|
+| Flash | 471.9 KB | 1016.0 KB | 46 % | 544.1 KB |
+| RAM | 439.2 KB | 640.0 KB | 69 % | 200.8 KB |
+
+The application itself: 72.6 KB of flash, 47.1 KB of RAM (its tags, timers and tables).
 
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
