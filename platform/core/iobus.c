@@ -88,6 +88,7 @@ int iob_fault_lines(const iob_view_t *v, uint8_t ol, uint8_t wbm, char lines[][I
     case IOB_S_RUN: break;
     default: return 0;
     }
+    if ((v->status & IOBS_COMMS_LATCHED) && n < max) snprintf(lines[n++], IOB_LINE, "Link was lost: acknowledge");
     for (unsigned i = 0; i < 8 && n < max; ++i) {
         uint8_t m = (uint8_t)(1u << i);
         const char *k = (v->a_overload & m) ? "short or overload" : (v->a_overtemp & m) ? "overheating" :
@@ -232,8 +233,18 @@ static void log_changes(unsigned b, uint16_t st, uint8_t open, uint8_t ovl, uint
     if (chg & IOB_ST_FIELD_B_OK) ev(b, (st & IOB_ST_FIELD_B_OK) ? "field B 24V ok" : "field B 24V missing");
     if ((st & IOB_ST_IN_CHIP) && !(pst & IOB_ST_IN_CHIP)) ev(b, "input chip fault");
     if ((st & IOB_ST_OUT_A_CHIP) && !(pst & IOB_ST_OUT_A_CHIP)) ev(b, "outs 1-8 chip fault");
+    if ((st & IOB_ST_COMMS_LOST) && !(pst & IOB_ST_COMMS_LOST)) ev(b, "link lost (board)");
+    else if (!(st & IOB_ST_COMMS_LOST) && (pst & IOB_ST_COMMS_LOST)) ev(b, "link fault cleared");
     x->st = st; x->a_open = open; x->a_ovl = ovl; x->a_otemp = otemp; x->wb = wb; x->bf = bf;
     x->have_raw = true;
+}
+
+/* IOB_LOST has been acknowledged (or is switched off), so a board's latched comms fault may go */
+static bool lost_acknowledged(void) {
+    alarm_view_t a;
+    memset(&a, 0, sizeof a);
+    if (!alarm_get(ALARM_ID_IOB_LOST, &a)) return true;
+    return !a.enabled || (a.active && !a.unacked);
 }
 
 static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32_t now) {
@@ -279,15 +290,21 @@ static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32
     if (st & IOB_ST_FIELD_B_OK) s |= IOBS_FIELD_B_OK;
     if (st & IOB_ST_WDG_RESET) { s |= IOBS_WDG_SEEN; wdg_events[b]++; clear = true; }
     if (st & IOB_ST_TIMEOUT) { s |= IOBS_TIMEOUT_SEEN; clear = true; }
+    if (st & IOB_ST_COMMS_LOST) s |= IOBS_COMMS_LATCHED;
     v->status = s;
     PLAT_CRIT_EXIT();
 
     if (st & IOB_ST_WDG_RESET) ev(b, "watchdog reset");
     if (st & IOB_ST_TIMEOUT) ev(b, "outputs timed out");
     if (st & IOB_ST_CONFIG_NEEDED) { ev(b, "restarted"); x->cfg_sent = false; }   /* send the settings again next cycle */
-    if (clear) {
+    /* TIMEOUT and WDG_RESET are events, taken in at once. COMMS_LOST stays on the node (its comms
+     * LED double-flashes) until someone acknowledges IOB_LOST here, which the node's bit also
+     * raises; only then is it cleared on the node (node requirements FW-58). */
+    uint16_t fc = clear ? IOB_FC_EVENTS : 0u;
+    if ((st & IOB_ST_COMMS_LOST) && lost_acknowledged()) fc |= IOB_FC_COMMS;
+    if (fc) {
         uint8_t f2[MBR_FRAME_MAX];
-        (void)transact(b, f2, mbr_req_write1(f2, c->addr, IOB_R_FAULT_CLEAR, 1), NULL, 0);
+        (void)transact(b, f2, mbr_req_write1(f2, c->addr, IOB_R_FAULT_CLEAR, fc), NULL, 0);
     }
 }
 
@@ -390,6 +407,7 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
         t->outputs = v[b].outputs;
         if (!t->enable) { wdg_seen[b] = wd[b]; continue; }
         if (v[b].state == IOB_S_LOST) lost = true;
+        if (v[b].state == IOB_S_RUN && (v[b].status & IOBS_COMMS_LATCHED)) lost = true;   /* the board saw a loss */
         if (v[b].state == IOB_S_WRONG_TYPE || v[b].state == IOB_S_BAD_SETTINGS) conf = true;
         if (v[b].state == IOB_S_RUN) {
             if (v[b].out_faults) of = true;

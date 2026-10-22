@@ -5,6 +5,8 @@
 #include "bsp.h"
 
 #define REG_SPACE 80u
+#define COMMS_TIMEOUT_MS 1000u
+
 
 void iob_node_init(iob_node_t *n, uint8_t address) {
     memset(n, 0, sizeof *n);
@@ -27,6 +29,8 @@ void iob_node_restart(iob_node_t *n, bool wdg, uint32_t now) {
     n->wdg_latched = wdg;
     n->gate = false;                   /* closed until the first valid output write */
     n->last_write_ms = now;
+    n->comms_seen = n->comms_lost = false;
+    n->in_rep = n->in_pend = 0;
     n->resets++;
 }
 
@@ -35,6 +39,9 @@ void iob_node_tick(iob_node_t *n, uint32_t now) {
         n->gate = false;
         n->timeout_latched = true;
     }
+    if (n->comms_seen && (uint32_t)(now - n->last_comms_ms) >= COMMS_TIMEOUT_MS) n->comms_lost = true;
+    if (n->field_a) n->in_pend |= (uint8_t)(n->inputs ^ n->in_rep);
+    else n->in_pend = n->in_rep;      /* no field supply: 0 at once, whatever was pending */
 }
 
 uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
@@ -52,8 +59,9 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
         if (n->config_needed) st |= IOB_ST_CONFIG_NEEDED;
         if (n->in_chip_fault) st |= IOB_ST_IN_CHIP;
         if (n->out_a_chip_fault) st |= IOB_ST_OUT_A_CHIP;
+        if (n->comms_lost) st |= IOB_ST_COMMS_LOST;
         return st;
-    case IOB_R_INPUTS: return n->field_a ? n->inputs : 0;
+    case IOB_R_INPUTS: return (uint8_t)(n->in_rep ^ n->in_pend);
     case IOB_R_OUT_APPLIED: {
         if (!n->gate) return 0;
         uint16_t v = n->out_cmd;
@@ -97,7 +105,7 @@ static bool value_ok(uint16_t r, uint16_t v) {
     case IOB_R_HOLD_DS: return v >= 1 && v <= 6000;
     case IOB_R_FILTER_MS: return v <= 100;
     case IOB_R_WB_ENABLE: case IOB_R_OL_ENABLE: return v <= 255;
-    case IOB_R_FAULT_CLEAR: return v <= 1;
+    case IOB_R_FAULT_CLEAR: return v <= 3;
     default: return true;
     }
 }
@@ -124,7 +132,10 @@ static void write_apply(iob_node_t *n, uint32_t now, uint16_t start, uint16_t cn
         case IOB_R_FILTER_MS: n->filter_ms = v; n->config_needed = false; break;
         case IOB_R_WB_ENABLE: n->wb_en = v; n->config_needed = false; break;
         case IOB_R_OL_ENABLE: n->ol_en = v; n->config_needed = false; break;
-        case IOB_R_FAULT_CLEAR: if (v) { n->timeout_latched = false; n->wdg_latched = false; } break;
+        case IOB_R_FAULT_CLEAR:
+            if (v & IOB_FC_EVENTS) { n->timeout_latched = false; n->wdg_latched = false; }
+            if (v & IOB_FC_COMMS) n->comms_lost = false;
+            break;
         default: break;
         }
     }
@@ -162,6 +173,8 @@ uint16_t iob_node_frame(iob_node_t *n, uint32_t now, const uint8_t *rx, uint16_t
     if (len < 4) { n->rx_errors++; return 0; }
     if (mbr_crc16(rx, len - 2u) != (uint16_t)(rx[len - 2] | rx[len - 1] << 8)) { n->rx_errors++; return 0; }
     if (rx[0] != n->address) return 0;          /* another node, or a broadcast (not used) */
+    n->comms_seen = true;
+    n->last_comms_ms = now;
     uint8_t fc = rx[1];
     uint16_t a = 0, c = 0;
     if (len >= 6) { a = (uint16_t)((unsigned)rx[2] << 8 | rx[3]); c = (uint16_t)((unsigned)rx[4] << 8 | rx[5]); }
@@ -202,6 +215,11 @@ uint16_t iob_node_frame(iob_node_t *n, uint32_t now, const uint8_t *rx, uint16_t
     }
     default:
         out = exception(tx, n->address, fc, 1);
+    }
+    if (out > 5 && (fc == 3 || fc == 4 || fc == 23) && !(tx[1] & 0x80u) && a <= IOB_R_INPUTS &&
+        (uint32_t)a + c > IOB_R_INPUTS) {       /* the master has seen these changes */
+        n->in_rep = (uint8_t)(n->in_rep ^ n->in_pend);
+        n->in_pend = 0;
     }
     if (out) n->replies++;
     return out;

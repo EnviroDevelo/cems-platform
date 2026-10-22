@@ -11,6 +11,7 @@
 #include "param.h"
 #include "plat_alarm.h"
 #include "plat_config.h"
+#include "plat_cmdq.h"
 
 static iob_simbus_t bus;
 static iob_node_t n1, n2, n3;
@@ -248,8 +249,93 @@ static void t_lost_and_back(void) {
     run(20, true);
     CHECK_EQ(last_in.di, 0x0Fu);
     CHECK_EQ(last_in.do_fault, 0u);
-    run(20, true);
+    run(2000, true);
+    CHECK(alarm_on(ALARM_ID_IOB_LOST));  /* latched: stays until acknowledged */
+    alarm_ack(ALARM_ID_IOB_LOST, PLAT_SRC_LOCAL, 0);
+    run(40, true);
     CHECK(!alarm_on(ALARM_ID_IOB_LOST));
+}
+
+static bool alarm_unacked(uint16_t id) { alarm_view_t v; memset(&v, 0, sizeof v); return alarm_get(id, &v) && v.unacked; }
+
+/* the node's latched comms fault (node requirements FW-58): neither end clears it by itself */
+static void t_comms_latch(void) {
+    setup();
+    iob_tags[0].enable = true;
+    run(60, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK(!n1.comms_lost);
+    /* 1: the link breaks for 2 s and comes back: both ends hold the fault until acknowledged */
+    n1.powered = false;
+    run(2000, true);
+    CHECK_EQ(view(0).state, IOB_S_LOST);
+    CHECK(alarm_on(ALARM_ID_IOB_LOST));
+    n1.powered = true;
+    run(1500, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK(n1.comms_lost);                        /* the board saw it too */
+    CHECK(view(0).status & IOBS_COMMS_LATCHED);
+    run(5000, true);
+    CHECK(n1.comms_lost);                        /* not cleared by healthy traffic */
+    CHECK(alarm_on(ALARM_ID_IOB_LOST));
+    CHECK(alarm_unacked(ALARM_ID_IOB_LOST));
+    char lines[4][IOB_LINE];
+    iob_view_t v = view(0);
+    CHECK(iob_fault_lines(&v, 0xFF, 0, lines, 4) >= 1);
+    CHECK(strcmp(lines[0], "Link was lost: acknowledge") == 0);
+    alarm_ack(ALARM_ID_IOB_LOST, PLAT_SRC_LOCAL, 0);
+    run(100, true);
+    CHECK(!n1.comms_lost);                       /* cleared on the board by the master */
+    CHECK(!(view(0).status & IOBS_COMMS_LATCHED));
+    run(40, true);
+    CHECK(!alarm_on(ALARM_ID_IOB_LOST));
+    /* 2: acknowledged while still lost: cleared on both ends when the link returns */
+    n1.powered = false;
+    run(2000, true);
+    CHECK(alarm_on(ALARM_ID_IOB_LOST));
+    alarm_ack(ALARM_ID_IOB_LOST, PLAT_SRC_LOCAL, 0);
+    run(100, true);
+    CHECK(alarm_on(ALARM_ID_IOB_LOST));          /* still lost */
+    n1.powered = true;
+    run(1500, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK(!n1.comms_lost);
+    run(40, true);
+    CHECK(!alarm_on(ALARM_ID_IOB_LOST));
+    /* 3: only the board saw it (the main board stopped polling, as in its own restart):
+     * the board's bit raises IOB_LOST, which then waits for an acknowledge as well */
+    iob_tags[0].enable = false;
+    run(2000, true);
+    iob_tags[0].enable = true;
+    run(1500, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK(n1.comms_lost);
+    CHECK(alarm_on(ALARM_ID_IOB_LOST));
+    CHECK(alarm_unacked(ALARM_ID_IOB_LOST));
+    run(3000, true);
+    CHECK(n1.comms_lost);
+    alarm_ack(ALARM_ID_IOB_LOST, PLAT_SRC_LOCAL, 0);
+    run(100, true);
+    CHECK(!n1.comms_lost);
+    run(40, true);
+    CHECK(!alarm_on(ALARM_ID_IOB_LOST));
+}
+
+/* a short opening of an alarm contact between two polls still reaches the image (FW-33) */
+static void t_input_pulse(void) {
+    setup();
+    iob_tags[0].enable = true;
+    n1.inputs = 0x01;                            /* healthy contact closed */
+    run(60, true);
+    CHECK_EQ(last_in.di & 1u, 1u);
+    n1.inputs = 0x00;                            /* opens for 3 ms, between two polls */
+    for (uint32_t t = 1; t <= 3; t++) iob_node_tick(&n1, bsp_host.ms + t);
+    n1.inputs = 0x01;
+    for (uint32_t t = 4; t <= 6; t++) iob_node_tick(&n1, bsp_host.ms + t);
+    run(40, true);                               /* the scan sees each poll one cycle later */
+    CHECK_EQ(last_in.di & 1u, 0u);               /* seen open once */
+    run(20, true);
+    CHECK_EQ(last_in.di & 1u, 1u);
 }
 
 static void t_node_restart(void) {
@@ -404,6 +490,8 @@ static void t_no_port(void) {
 }
 
 void test_iobus_all(void) {
+    t_comms_latch();
+    t_input_pulse();
     RUN(t_rtu_frames);
     RUN(t_node_rules);
     RUN(t_off_by_default);

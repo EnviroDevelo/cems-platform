@@ -56,7 +56,10 @@ enum {
     IOB_R_CMD_SEQ     = 2,   /* the master's write counter; echoed in IOB_R_CMD_ECHO once applied */
     /* status block, read every cycle (FC23 read part) */
     IOB_R_STATUS      = 16,  /* IOB_ST_* */
-    IOB_R_INPUTS      = 17,  /* bits 0-7: inputs 1-8 after the filter (1 = active) */
+    IOB_R_INPUTS      = 17,  /* bits 0-7: inputs 1-8 after the filter (1 = active: current flowing, contact
+                                closed). Every change is shown at least once to the RS-485 master: a read
+                                returns, for an input that changed since the master's previous read, the
+                                other state from the one it last saw (so a short opening is not missed) */
     IOB_R_OUT_APPLIED = 18,  /* outputs as driven now (0 while the gate is closed) */
     IOB_R_RELAY_APPLIED = 19,
     IOB_R_A_OPEN      = 20,  /* bank A open circuit, bits 0-7 */
@@ -72,7 +75,8 @@ enum {
     IOB_R_FILTER_MS   = 33,  /* input filter, 0..100 ms (default 8, as the old panel; the node uses the nearest it supports at or above) */
     IOB_R_WB_ENABLE   = 34,  /* wire-break check per input, bits 0-7 (default 0: off) */
     IOB_R_OL_ENABLE   = 35,  /* open-circuit check per bank A output, bits 0-7 (default 0xFF) */
-    IOB_R_FAULT_CLEAR = 36,  /* write 1: clear the latched IOB_ST_* bits; reads 0 */
+    IOB_R_FAULT_CLEAR = 36,  /* write bit 0: clear TIMEOUT and WDG_RESET; bit 1: clear COMMS_LOST
+                                (sent when IOB_LOST is acknowledged); 0..3, reads 0 */
     IOB_R_BOOTLOADER  = 37,  /* USB only (the node's USB-C port): write 0xB007 to start ST's USB bootloader;
                                 refused over RS-485 (exception 02), never written by this master */
     /* identification, read once after connecting */
@@ -100,6 +104,10 @@ enum {
 #define IOB_ST_CONFIG_NEEDED 0x0020u  /* configuration not written since the node started */
 #define IOB_ST_IN_CHIP       0x0040u  /* the input chip does not answer or reports a fault */
 #define IOB_ST_OUT_A_CHIP    0x0080u  /* the bank A chip does not answer or reports a fault */
+#define IOB_ST_COMMS_LOST    0x0100u  /* latched: the node lost its link to the master (no valid request
+                                         for 1 s) since the last FAULT_CLEAR bit 1 */
+#define IOB_FC_EVENTS        0x0001u  /* IOB_R_FAULT_CLEAR bits */
+#define IOB_FC_COMMS         0x0002u
 /* IOB_R_B_FAULT bits */
 #define IOB_BF_FAULT         0x0001u  /* bank B fault line: overload or over-temperature on a channel */
 #define IOB_BF_WDG           0x0002u  /* bank B's own watchdog turned its outputs off */
@@ -132,6 +140,7 @@ enum { IOB_S_OFF = 0,        /* not enabled */
 #define IOBS_CONNECTING  0x0080u
 #define IOBS_WDG_SEEN    0x0100u  /* the node restarted from its watchdog since this unit started */
 #define IOBS_TIMEOUT_SEEN 0x0200u /* the node's hold time ran out since this unit started */
+#define IOBS_COMMS_LATCHED 0x0400u /* the node holds IOB_ST_COMMS_LOST: its link was lost, not yet acknowledged */
 
 typedef struct {
     uint8_t  state;          /* IOB_S_* */

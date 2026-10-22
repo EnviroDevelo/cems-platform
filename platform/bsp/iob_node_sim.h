@@ -14,7 +14,12 @@
  *    gate stays closed until the next valid write of register 0
  *  - CONFIG_NEEDED is set at every start and cleared by any write to 32..35
  *  - open-circuit and wire-break bits are reported only for channels enabled in 35/34
- *  - no reply to another address, a bad CRC or a broadcast (address 0) */
+ *  - no reply to another address, a bad CRC or a broadcast (address 0)
+ *  - the link is up while a valid request to this node came within 1 s; once it has been
+ *    up, losing it latches IOB_ST_COMMS_LOST until FAULT_CLEAR bit 1 or a restart
+ *  - every change of an input is shown at least once to the master: a read of INPUTS
+ *    returns, for an input that changed since the previous read, the other state from the
+ *    one last shown (the outside world is sampled at every tick and frame) */
 #ifndef IOB_NODE_SIM_H
 #define IOB_NODE_SIM_H
 #include <stdint.h>
@@ -30,6 +35,9 @@ typedef struct {
     /* node state */
     bool     config_needed, timeout_latched, wdg_latched, gate;
     uint32_t last_write_ms;
+    bool     comms_seen, comms_lost; /* link watchdog (FW-58) */
+    uint32_t last_comms_ms;
+    uint8_t  in_rep, in_pend;    /* inputs last shown to the master, changes since (FW-33) */
     uint16_t rx_errors, resets;
     /* the outside world (tests set these) */
     uint8_t  inputs;             /* raw input states */
