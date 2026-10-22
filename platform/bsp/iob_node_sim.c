@@ -30,7 +30,6 @@ void iob_node_restart(iob_node_t *n, bool wdg, uint32_t now) {
     n->gate = false;                   /* closed until the first valid output write */
     n->last_write_ms = now;
     n->comms_seen = n->comms_lost = false;
-    n->cfg_challenge = 0; n->cfg_fails = 0; n->cfg_locked_out = false;
     n->in_rep = n->in_pend = 0;
     n->resets++;
 }
@@ -41,8 +40,6 @@ void iob_node_tick(iob_node_t *n, uint32_t now) {
         n->timeout_latched = true;
     }
     if (n->comms_seen && (uint32_t)(now - n->last_comms_ms) >= COMMS_TIMEOUT_MS) n->comms_lost = true;
-    if (n->cfg_challenge && (int32_t)(now - n->cfg_until) >= 0) n->cfg_challenge = 0;
-    if (n->cfg_locked_out && (int32_t)(now - n->cfg_lock_until) >= 0) n->cfg_locked_out = false;
     if (n->field_a) n->in_pend |= (uint8_t)(n->inputs ^ n->in_rep);
     else n->in_pend = n->in_rep;      /* no field supply: 0 at once, whatever was pending */
 }
@@ -86,7 +83,6 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     case IOB_R_OL_ENABLE: return n->ol_en;
     case IOB_R_FAULT_CLEAR: return 0;
     case IOB_R_NODE_ADDR: return n->address;
-    case IOB_R_CFG_UNLOCK: return n->cfg_challenge;
     case IOB_R_MAGIC: return n->magic;
     case IOB_R_MAP_VERSION: return n->map_version;
     case IOB_R_HW_REV: return n->hw_rev;
@@ -153,29 +149,10 @@ static void write_apply(iob_node_t *n, uint32_t now, uint16_t start, uint16_t cn
 
 static uint16_t get16(const uint8_t *p) { return (uint16_t)((unsigned)p[0] << 8 | p[1]); }
 
-/* the address handshake (iobus.h, FW-61): 0 or an exception code */
-static uint8_t cfg_unlock(iob_node_t *n, uint32_t now, const uint8_t *d) {
-    if (n->cfg_locked_out) { n->cfg_challenge = 0; return 4; }
-    bool ok = get16(d) == IOB_CFG_UNLOCK_KEY;
-    for (unsigned i = 0; i < 6; ++i) ok = ok && get16(d + 2 + 2 * i) == n->uid[i];
-    if (!ok) { n->cfg_challenge = 0; return 3; }
-    n->cfg_unlocks++;
-    n->cfg_challenge = iob_cfg_challenge(n->uid, n->cfg_unlocks, now, n->cfg_challenge);
-    n->cfg_until = now + IOB_CFG_WINDOW_MS;
-    return 0;
-}
-static uint8_t cfg_commit(iob_node_t *n, uint32_t now, const uint8_t *d, uint8_t *addr) {
-    uint16_t a = get16(d), ch = get16(d + 2);
-    uint32_t chk = (uint32_t)get16(d + 4) << 16 | get16(d + 6);
-    uint16_t want = n->cfg_challenge;
-    n->cfg_challenge = 0;
-    if (a == 0 || a > IOB_ADDR_MAX) return 3;
-    if (!want || ch != want) return 4;
-    if (chk != iob_cfg_check(n->uid, ch, a)) {
-        if (++n->cfg_fails >= 3) { n->cfg_fails = 0; n->cfg_locked_out = true; n->cfg_lock_until = now + IOB_CFG_LOCKOUT_MS; }
-        return 4;
-    }
-    n->cfg_fails = 0;
+/* the address change (iobus.h, FW-61): key, address, address XOR 0xFFFF; 0 or an exception code */
+static uint8_t addr_set(const uint8_t *d, uint8_t *addr) {
+    uint16_t k = get16(d), a = get16(d + 2), inv = get16(d + 4);
+    if (k != IOB_ADDR_SET_KEY || inv != (uint16_t)(a ^ 0xFFFFu) || a == 0 || a > IOB_ADDR_MAX) return 3;
     *addr = (uint8_t)a;
     return 0;
 }
@@ -217,12 +194,10 @@ uint16_t iob_node_frame(iob_node_t *n, uint32_t now, const uint8_t *rx, uint16_t
     uint16_t a = 0, c = 0;
     if (len >= 6) { a = (uint16_t)((unsigned)rx[2] << 8 | rx[3]); c = (uint16_t)((unsigned)rx[4] << 8 | rx[5]); }
     uint16_t out = 0;
-    if (fc == 16 && len >= 9 && ((a == IOB_R_CFG_UNLOCK && c == 7) || (a == IOB_R_CFG_ADDR && c == 4) ||
-                                 (a == IOB_R_SERIAL && c == IOB_SERIAL_REGS))) {
+    if (fc == 16 && len >= 9 && ((a == IOB_R_ADDR_SET && c == 3) || (a == IOB_R_SERIAL && c == IOB_SERIAL_REGS))) {
         uint8_t e, new_addr = 0;
         if (rx[6] != 2u * c || len != 9u + 2u * c) e = 3;
-        else if (a == IOB_R_CFG_UNLOCK) e = cfg_unlock(n, now, rx + 7);
-        else if (a == IOB_R_CFG_ADDR) e = cfg_commit(n, now, rx + 7, &new_addr);
+        else if (a == IOB_R_ADDR_SET) e = addr_set(rx + 7, &new_addr);
         else e = 2;                       /* the serial number is written over USB only */
         if (e) out = exception(tx, ra, fc, e);
         else { memcpy(tx, rx, 6); out = finish(tx, 6); }

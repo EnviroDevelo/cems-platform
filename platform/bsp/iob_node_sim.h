@@ -20,9 +20,8 @@
  *    up, losing it latches IOB_ST_COMMS_LOST until FAULT_CLEAR bit 1 or a restart
  *  - address 0 = not set: answers only at IOB_COMMISSION_ADDR, reads and the address handshake
  *    only (other writes: exception 04), not counted as the link
- *  - the address handshake (iobus.h, FW-61): unlock with the key and the UID, read the challenge,
- *    commit with iob_cfg_check; the serial number (52..59) reads back serial[]; writing it is USB
- *    only, so exception 02 here
+ *  - the address change (iobus.h, FW-61): one FC16 of 40-42 = key, address, address XOR 0xFFFF;
+ *    the serial number (52..59) reads back serial[]; writing it is USB only, so exception 02 here
  *  - every change of an input is shown at least once to the master: a read of INPUTS
  *    returns, for an input that changed since the previous read, the other state from the
  *    one last shown (the outside world is sampled at every tick and frame) */
@@ -44,10 +43,6 @@ typedef struct {
     bool     comms_seen, comms_lost; /* link watchdog (FW-58) */
     uint32_t last_comms_ms;
     uint8_t  in_rep, in_pend;    /* inputs last shown to the master, changes since (FW-33) */
-    uint16_t cfg_challenge;      /* address handshake (FW-61): 0 = locked */
-    uint32_t cfg_until, cfg_lock_until, cfg_unlocks;
-    uint8_t  cfg_fails;
-    bool     cfg_locked_out;
     uint8_t  serial[16];         /* the board's serial number (tests set it), NUL padded */
     uint16_t rx_errors, resets;
     /* the outside world (tests set these) */

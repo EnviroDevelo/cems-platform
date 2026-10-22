@@ -50,9 +50,7 @@
 #define IOB_ADDR_MAX     245u      /* node addresses 1..245 */
 #define IOB_COMMISSION_ADDR 246u   /* an RS-485 node without an address answers here (one new board at a time) */
 #define IOB_USB_ADDR     247u      /* the node's USB port answers here whatever its address */
-#define IOB_CFG_UNLOCK_KEY 0xC0F1u /* first word of the unlock (FW-61) */
-#define IOB_CFG_WINDOW_MS  10000u  /* the challenge is valid this long after the unlock */
-#define IOB_CFG_LOCKOUT_MS 60000u  /* after 3 bad checks in a row */
+#define IOB_ADDR_SET_KEY 0xA55Au   /* first word of the address change (FW-61) */
 #define IOB_SERIAL_REGS  8u        /* 16 characters */
 
 /* ---------------- node register map (one register space; FC03 and FC04 read it) ---------------- */
@@ -89,20 +87,14 @@ enum {
     IOB_R_NODE_ADDR   = 38,  /* the node's own Modbus address, 0..IOB_ADDR_MAX (0 = not set: on RS-485 it then
                                 answers only at IOB_COMMISSION_ADDR). Kept in the board's F-RAM, so a firmware
                                 update never changes it. Written directly over USB only (factory); over RS-485
-                                only through the handshake below (a direct write is exception 02) */
-    /* address change over RS-485 (node requirements FW-61): a three-step handshake, so no other Modbus
-     * master can change an address by accident.
-     *  1. FC16 to IOB_R_CFG_UNLOCK, 7 registers: IOB_CFG_UNLOCK_KEY, then the board's 6 UID words (69..74).
-     *     Wrong key or UID: exception 03. Locked out (3 bad checks in a row, 60 s): 04.
-     *  2. FC03/04 read IOB_R_CFG_UNLOCK: the challenge (1..65535), for IOB_CFG_WINDOW_MS; 0 while locked.
-     *  3. FC16 to IOB_R_CFG_ADDR, 4 registers: new address (1..IOB_ADDR_MAX), the challenge, then the
-     *     32-bit iob_cfg_check(uid, challenge, address), high word first. Not unlocked, expired or a wrong
-     *     challenge: 04; a wrong check: 04 and counted; out of range: 03. Every outcome ends the unlock.
-     *     On success the node saves the address (and reads it back) before replying (save failed: 04,
-     *     nothing changed). The reply comes from the old address; the node uses the new one at once.
-     * Any other write to 40..51 (another function, length or start) is exception 02. */
-    IOB_R_CFG_UNLOCK  = 40,  /* 7 registers written; reads: the challenge while unlocked, else 0 (41..47 read 0) */
-    IOB_R_CFG_ADDR    = 48,  /* 4 registers written; read 0 */
+                                only through IOB_R_ADDR_SET below (a direct write is exception 02) */
+    /* address change over RS-485 or USB (node requirements FW-61): ONE FC16 write of the 3 registers
+     * 40-42 = IOB_ADDR_SET_KEY, the new address (1..IOB_ADDR_MAX), the new address XOR 0xFFFF.
+     * Wrong key, wrong complement or out of range: exception 03, nothing changed. The node saves the
+     * address (and reads it back) before replying (save failed: 04, nothing changed). The reply comes
+     * from the old address; the node answers at the new one from the next request. Any other write
+     * into 40-42 (FC06, FC23, another start or length) is exception 02; the registers read 0. */
+    IOB_R_ADDR_SET    = 40,
     /* the board's serial number (FW-62): IOB_SERIAL_REGS registers, 2 ASCII characters each, high byte
      * first, NUL padded; all 0 = not set. Read from anywhere. Written over USB only (factory), FC16 to all
      * 8 registers, printable ASCII; once set it cannot be changed after the board has been powered off
@@ -140,35 +132,6 @@ enum {
 /* IOB_R_B_FAULT bits */
 #define IOB_BF_FAULT         0x0001u  /* bank B fault line: overload or over-temperature on a channel */
 #define IOB_BF_WDG           0x0002u  /* bank B's own watchdog turned its outputs off */
-
-/* ---------------- the address handshake's check value and challenge (FW-61) ----------------
- * Shared by the node firmware, the simulated node and the main board, so all three agree. The key
- * is not a defence against someone with this source; it means that no Modbus master other than
- * CEMS firmware can produce a valid address change, by accident or by a scan. FNV-1a, 32 bit,
- * over the key, the 6 UID words, the challenge and the new address (each high byte first). */
-static inline uint32_t iob_cfg_fnv(uint32_t h, uint16_t w)
-{
-    h = (h ^ (uint8_t)(w >> 8)) * 16777619u;
-    return (h ^ (uint8_t)w) * 16777619u;
-}
-static inline uint32_t iob_cfg_check(const uint16_t uid[6], uint16_t challenge, uint16_t address)
-{
-    static const uint8_t key[16] = { 0xB7, 0x2A, 0x6E, 0xA6, 0xB9, 0x96, 0x8A, 0x20,
-                                     0x32, 0x09, 0x55, 0x9A, 0x43, 0x39, 0xF2, 0x4E };
-    uint32_t h = 2166136261u;
-    for (unsigned i = 0; i < 16u; i += 2u) h = iob_cfg_fnv(h, (uint16_t)(key[i] << 8 | key[i + 1u]));
-    for (unsigned i = 0; i < 6u; i++) h = iob_cfg_fnv(h, uid[i]);
-    h = iob_cfg_fnv(h, challenge);
-    return iob_cfg_fnv(h, address);
-}
-/* The node's challenge for its n-th unlock at time now_ms: never 0, never the same twice in a row. */
-static inline uint16_t iob_cfg_challenge(const uint16_t uid[6], uint32_t n, uint32_t now_ms, uint16_t last)
-{
-    uint32_t h = iob_cfg_check(uid, (uint16_t)n, (uint16_t)(now_ms ^ (now_ms >> 16)));
-    uint16_t c = (uint16_t)(h ^ (h >> 16));
-    if (c == 0u || c == last) c = (uint16_t)(c + 0x9E37u);
-    return c ? c : 1u;
-}
 
 /* ---------------- master ---------------- */
 typedef struct iob_port {
