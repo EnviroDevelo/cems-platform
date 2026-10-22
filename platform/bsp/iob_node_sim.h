@@ -18,7 +18,7 @@
  *  - no reply to another address, a bad CRC or a broadcast (address 0)
  *  - the link is up while a valid request to this node came within 1 s; once it has been
  *    up, losing it latches IOB_ST_COMMS_LOST until FAULT_CLEAR bit 1 or a restart
- *  - address 0 = not set: answers only at IOB_COMMISSION_ADDR, reads and the address handshake
+ *  - address 0 = not set: answers only at IOB_COMMISSION_ADDR, reads and the address change
  *    only (other writes: exception 04), not counted as the link
  *  - the address change (iobus.h, FW-61): one FC16 of 40-42 = key, address, address XOR 0xFFFF;
  *    the serial number (52..59) reads back serial[]; writing it is USB only, so exception 02 here
