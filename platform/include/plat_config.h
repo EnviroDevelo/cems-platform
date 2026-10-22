@@ -88,6 +88,7 @@
 #endif
 #define PLAT_IOB_REPLY_MS         15u    /* wait this long for a node's reply (about 3 frames' time) */
 #define PLAT_IOB_RETRY_MS         1000u  /* a board that is not answering is tried this often */
+#define PLAT_IOB_LOST_MS          1000u  /* no valid reply this long: the board is "not responding" */
 #define PLAT_IOB_STALE_MS         250u   /* outputs not refreshed by the scan this long: send all-off */
 #define PLAT_IOB_BAUD             115200u
 

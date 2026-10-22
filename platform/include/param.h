@@ -143,7 +143,7 @@ enum {
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
-    PARAM_ID_IOB_TIMEOUT      = 100, /* I/O boards (iobus.h): comms timeout, ms; a node turns its outputs off after it */
+    PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
     PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
     /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,

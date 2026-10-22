@@ -473,10 +473,10 @@ static void t_iob_screen(void) {
     CHECK(shows("Firmware 1.0, hardware 1"));
     dump("iob");
     nd.powered = false;
-    iob_run(700);
+    iob_run(1100);
     frame();
     CHECK(shows("not responding"));
-    CHECK(shows("No reply: outputs are off"));
+    CHECK(shows("No reply: outputs off after the hold"));
     dump("iob_lost");
     CHECK(tap("Home"));
     CHECK_EQ(ui_screen(), UI_HOME);

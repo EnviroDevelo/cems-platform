@@ -99,11 +99,11 @@ static void t_node_rules(void) {
     len = mbr_req_write1(f, 5, IOB_R_STATUS, 1);
     got = iob_node_frame(&n, 0, f, (uint16_t)len, rx, sizeof rx);
     CHECK_EQ(mbr_check_reply(f, len, rx, got, NULL, 0, &code), MBR_EXCEPTION); CHECK_EQ(code, 2);
-    uint16_t cfg[4] = { 50, 3, 0, 0xFF };                 /* timeout below 100 ms */
-    len = mbr_req_write(f, 5, IOB_R_TIMEOUT_MS, cfg, 4);
+    uint16_t cfg[4] = { 6001, 3, 0, 0xFF };               /* hold time over 10 min */
+    len = mbr_req_write(f, 5, IOB_R_HOLD_DS, cfg, 4);
     got = iob_node_frame(&n, 0, f, (uint16_t)len, rx, sizeof rx);
     CHECK_EQ(mbr_check_reply(f, len, rx, got, NULL, 0, &code), MBR_EXCEPTION); CHECK_EQ(code, 3);
-    CHECK_EQ(n.timeout_ms, 500u);
+    CHECK_EQ(n.hold_ds, 3000u);
     CHECK(n.config_needed);
     /* gate opens on the first output write and closes after the timeout */
     CHECK(!(iob_node_reg(&n, IOB_R_STATUS) & IOB_ST_OUT_ENABLED));
@@ -115,13 +115,13 @@ static void t_node_rules(void) {
     CHECK(st[0] & IOB_ST_OUT_ENABLED);
     CHECK_EQ(st[IOB_R_OUT_APPLIED - IOB_R_STATUS], 0x0101);
     CHECK_EQ(st[IOB_R_CMD_ECHO - IOB_R_STATUS], 7);        /* write before read */
-    iob_node_tick(&n, 599); CHECK(n.gate);
-    iob_node_tick(&n, 600); CHECK(!n.gate);
+    iob_node_tick(&n, 300099); CHECK(n.gate);       /* holds for 5 minutes by default */
+    iob_node_tick(&n, 300100); CHECK(!n.gate);
     CHECK_EQ(iob_node_reg(&n, IOB_R_OUT_APPLIED), 0u);
     CHECK(iob_node_reg(&n, IOB_R_STATUS) & IOB_ST_TIMEOUT);
     /* unknown function */
     f[0] = 5; f[1] = 0x2B; f[2] = 0x0E; f[3] = 1; uint16_t c = mbr_crc16(f, 4); f[4] = (uint8_t)c; f[5] = (uint8_t)(c >> 8);
-    got = iob_node_frame(&n, 700, f, 6, rx, sizeof rx);
+    got = iob_node_frame(&n, 300200, f, 6, rx, sizeof rx);
     CHECK_EQ(got, 5u); CHECK_EQ(rx[1], 0xABu); CHECK_EQ(rx[2], 1u);
 }
 
@@ -153,7 +153,7 @@ static void t_connect_and_io(void) {
     CHECK_EQ(v.state, IOB_S_RUN);
     CHECK(v.status & IOBS_ONLINE);
     CHECK(!n1.config_needed);
-    CHECK_EQ(n1.timeout_ms, 500u); CHECK_EQ(n1.ol_en, 0xFFu); CHECK_EQ(n1.wb_en, 0u); CHECK_EQ(n1.filter_ms, 8u);
+    CHECK_EQ(n1.hold_ds, 3000u); CHECK_EQ(n1.ol_en, 0xFFu); CHECK_EQ(n1.wb_en, 0u); CHECK_EQ(n1.filter_ms, 8u);
     CHECK_EQ(n1.out_cmd, 0x0201u);
     CHECK_EQ(n1.relay_cmd, 1u);
     CHECK_EQ(v.outputs, 0x10201u);
@@ -224,7 +224,7 @@ static void t_lost_and_back(void) {
     run(60, true);
     CHECK_EQ(view(0).state, IOB_S_RUN);
     n1.powered = false;
-    run(400, true);                      /* inside the 500 ms timeout: last inputs held */
+    run(900, true);                      /* inside PLAT_IOB_LOST_MS: last inputs held */
     CHECK_EQ(view(0).state, IOB_S_RUN);
     CHECK_EQ(last_in.di, 0x0Fu);
     run(200, true);
@@ -258,7 +258,6 @@ static void t_node_restart(void) {
     run(60, true);
     CHECK_EQ(view(0).state, IOB_S_RUN);
     iob_node_restart(&n1, true, bsp_host.ms);   /* watchdog reset: settings lost */
-    n1.timeout_ms = 500;
     iob_tags[0].wb_mask = 0x0F;                 /* (a settings change on the way) */
     run(60, true);
     CHECK(!n1.config_needed);                   /* settings sent again */
@@ -376,7 +375,13 @@ static void t_node_timeout(void) {
     plat_do_set(&cur_out, 0, true);
     run(60, true);
     CHECK(n1.gate);
-    bsp_host_advance_ms(700);                   /* the master falls silent (task stalled) */
+    iob_hold_s = 2;                             /* a short hold, to see it run out */
+    run(60, true);
+    CHECK_EQ(n1.hold_ds, 20u);
+    bsp_host_advance_ms(1900);                  /* the master falls silent (main board restarting) */
+    iob_node_tick(&n1, bsp_host.ms);
+    CHECK(n1.gate);                             /* still holding */
+    bsp_host_advance_ms(200);
     iob_node_tick(&n1, bsp_host.ms);
     CHECK(!n1.gate);                            /* the node turned its outputs off */
     CHECK_EQ(iob_node_reg(&n1, IOB_R_OUT_APPLIED), 0u);
@@ -384,17 +389,16 @@ static void t_node_timeout(void) {
     CHECK(n1.gate);                             /* the next write re-opens it */
     CHECK(view(0).status & IOBS_TIMEOUT_SEEN);
     CHECK(!n1.timeout_latched);                 /* cleared by the master once seen */
-    /* a shorter timeout setting goes to the node */
-    iob_timeout_ms = 200;
+    iob_hold_s = 300;
     run(60, true);
-    CHECK_EQ(n1.timeout_ms, 200u);
+    CHECK_EQ(n1.hold_ds, 3000u);
 }
 
 static void t_no_port(void) {
     setup();
     iob_init(NULL);
     iob_tags[0].enable = true;
-    run(700, true);
+    run(1100, true);
     CHECK_EQ(view(0).state, IOB_S_LOST);
     iob_init(&bus.port);
 }

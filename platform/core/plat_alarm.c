@@ -51,7 +51,7 @@ static const alarm_def_t core_defs[] = {
     { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "DISPLAY_FAULT",
       .text = "Touchscreen not responding", .on_delay_ms = 5000 },
     { .id = ALARM_ID_IOB_LOST, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_LOST",
-      .text = "I/O board not responding: its outputs are off" },
+      .text = "I/O board not responding" },
     { .id = ALARM_ID_IOB_CONFIG, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_CONFIG",
       .text = "I/O board wrong type or channel settings conflict" },
     { .id = ALARM_ID_IOB_OUT_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_OUT_FAULT",

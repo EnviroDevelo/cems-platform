@@ -9,9 +9,9 @@
  *    FC06, FC16 and FC23 write registers 0..2 and 32..36 only (else exception 02);
  *    out-of-range values give exception 03 and change nothing; other functions 01
  *  - FC23 writes before it reads; a request with any error changes nothing
- *  - a valid write that includes register 0 restarts the comms timer; when the timer
- *    runs out every output and relay goes off, IOB_ST_TIMEOUT latches and the gate
- *    stays closed until the next valid write of register 0
+ *  - a valid write that includes register 0 restarts the hold timer; when it runs out
+ *    (HOLD_DS x 0.1 s) every output and relay goes off, IOB_ST_TIMEOUT latches and the
+ *    gate stays closed until the next valid write of register 0
  *  - CONFIG_NEEDED is set at every start and cleared by any write to 32..35
  *  - open-circuit and wire-break bits are reported only for channels enabled in 35/34
  *  - no reply to another address, a bad CRC or a broadcast (address 0) */
@@ -26,7 +26,7 @@ typedef struct {
     bool     powered;            /* false: never answers */
     /* registers the master writes */
     uint16_t out_cmd, relay_cmd, seq, echo;
-    uint16_t timeout_ms, filter_ms, wb_en, ol_en;
+    uint16_t hold_ds, filter_ms, wb_en, ol_en;
     /* node state */
     bool     config_needed, timeout_latched, wdg_latched, gate;
     uint32_t last_write_ms;

@@ -19,14 +19,16 @@
  * 115200 baud that takes about 5 ms per board.
  *
  * Safe state, three layers:
- *   - the node turns every output off when no valid write has come for its comms
- *     timeout (parameter iob_timeout, default 500 ms), and its hardware gate does the
- *     same if the node firmware stops;
+ *   - the node holds its outputs when the link goes quiet, and turns every output off
+ *     when no valid write has come for its hold time (parameter iob_hold, default
+ *     5 min: a short break or a main-board restart does not drop the valves); its
+ *     hardware gate turns them off within about 50 ms if the node firmware stops;
  *   - this master sends all-off when the scan has not produced outputs for
  *     PLAT_IOB_STALE_MS, so a stopped scan cannot keep valves open over the bus;
  *   - plat_io_safe_state() (fatal errors) sends all-off at once.
- * A board that does not answer for the comms timeout is "not responding": its inputs
- * read 0 and every channel is marked faulty (di_fault / do_fault), alarm IOB_LOST.
+ * A board that gives no valid reply for PLAT_IOB_LOST_MS (1 s, whatever the hold time)
+ * is "not responding": its inputs read 0 and every channel is marked faulty
+ * (di_fault / do_fault), alarm IOB_LOST; the node may still be holding its outputs.
  *
  * Threading
  *   iob_cycle()                         the iobus task, every PLAT_IOB_PERIOD_MS
@@ -65,7 +67,7 @@ enum {
     IOB_R_RX_ERRORS   = 26,  /* frames with CRC or framing errors since reset (wraps) */
     IOB_R_RESETS      = 27,  /* node resets since its own last power-up count clear (wraps) */
     /* configuration, written after connecting and whenever a setting changes */
-    IOB_R_TIMEOUT_MS  = 32,  /* comms timeout, 100..5000 ms (default 500) */
+    IOB_R_HOLD_DS     = 32,  /* hold time without a valid output write, 0.1 s units: 1..6000 (0.1 s to 10 min; default 3000 = 5 min) */
     IOB_R_FILTER_MS   = 33,  /* input filter, 0..100 ms (default 8, as the old panel; the node uses the nearest it supports at or above) */
     IOB_R_WB_ENABLE   = 34,  /* wire-break check per input, bits 0-7 (default 0: off) */
     IOB_R_OL_ENABLE   = 35,  /* open-circuit check per bank A output, bits 0-7 (default 0xFF) */
@@ -83,12 +85,12 @@ enum {
     IOB_R_N_INPUTS    = 78,  /* 8 */
     IOB_R_STATUS_N    = 12,  /* registers in the status block */
     IOB_R_IDENT_N     = 15,
-    IOB_R_CONFIG_N    = 4    /* TIMEOUT_MS .. OL_ENABLE */
+    IOB_R_CONFIG_N    = 4    /* HOLD_DS .. OL_ENABLE */
 };
 
 /* IOB_R_STATUS bits */
 #define IOB_ST_OUT_ENABLED   0x0001u  /* the safe-state gate is open: outputs can switch */
-#define IOB_ST_TIMEOUT       0x0002u  /* latched: the comms timeout turned the outputs off */
+#define IOB_ST_TIMEOUT       0x0002u  /* latched: the hold time ran out and turned the outputs off */
 #define IOB_ST_FIELD_A_OK    0x0004u  /* field 24 V for bank A and the inputs is present */
 #define IOB_ST_FIELD_B_OK    0x0008u  /* field 24 V for bank B is present */
 #define IOB_ST_WDG_RESET     0x0010u  /* latched: the last reset was the node's watchdog */
@@ -126,7 +128,7 @@ enum { IOB_S_OFF = 0,        /* not enabled */
 #define IOBS_FIELD_B_OK  0x0040u
 #define IOBS_CONNECTING  0x0080u
 #define IOBS_WDG_SEEN    0x0100u  /* the node restarted from its watchdog since this unit started */
-#define IOBS_TIMEOUT_SEEN 0x0200u /* the node's comms timeout tripped since this unit started */
+#define IOBS_TIMEOUT_SEEN 0x0200u /* the node's hold time ran out since this unit started */
 
 typedef struct {
     uint8_t  state;          /* IOB_S_* */
@@ -179,7 +181,7 @@ typedef struct {
     uint32_t outputs;
 } iob_board_tags_t;
 extern iob_board_tags_t iob_tags[IOB_BOARDS];
-extern uint16_t iob_timeout_ms;      /* parameter 100 */
+extern uint16_t iob_hold_s;          /* parameter 100: node hold time, s (1..600) */
 extern uint8_t  iob_filter_ms;       /* parameter 101 */
 
 /* Test hook: forget all state (boards back to OFF, safe state cleared). */

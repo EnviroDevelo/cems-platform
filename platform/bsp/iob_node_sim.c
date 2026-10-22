@@ -21,7 +21,7 @@ void iob_node_init(iob_node_t *n, uint8_t address) {
 
 void iob_node_restart(iob_node_t *n, bool wdg, uint32_t now) {
     n->out_cmd = n->relay_cmd = n->seq = n->echo = 0;
-    n->timeout_ms = 500; n->filter_ms = 8; n->wb_en = 0; n->ol_en = 0xFF;
+    n->hold_ds = 3000; n->filter_ms = 8; n->wb_en = 0; n->ol_en = 0xFF;
     n->config_needed = true;
     n->timeout_latched = false;
     n->wdg_latched = wdg;
@@ -31,7 +31,7 @@ void iob_node_restart(iob_node_t *n, bool wdg, uint32_t now) {
 }
 
 void iob_node_tick(iob_node_t *n, uint32_t now) {
-    if (n->gate && (uint32_t)(now - n->last_write_ms) >= n->timeout_ms) {
+    if (n->gate && (uint32_t)(now - n->last_write_ms) >= (uint32_t)n->hold_ds * 100u) {
         n->gate = false;
         n->timeout_latched = true;
     }
@@ -69,7 +69,7 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     case IOB_R_CMD_ECHO: return n->echo;
     case IOB_R_RX_ERRORS: return n->rx_errors;
     case IOB_R_RESETS: return n->resets;
-    case IOB_R_TIMEOUT_MS: return n->timeout_ms;
+    case IOB_R_HOLD_DS: return n->hold_ds;
     case IOB_R_FILTER_MS: return n->filter_ms;
     case IOB_R_WB_ENABLE: return n->wb_en;
     case IOB_R_OL_ENABLE: return n->ol_en;
@@ -89,12 +89,12 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     }
 }
 
-static bool writable(uint16_t r) { return r <= IOB_R_CMD_SEQ || (r >= IOB_R_TIMEOUT_MS && r <= IOB_R_FAULT_CLEAR); }
+static bool writable(uint16_t r) { return r <= IOB_R_CMD_SEQ || (r >= IOB_R_HOLD_DS && r <= IOB_R_FAULT_CLEAR); }
 
 static bool value_ok(uint16_t r, uint16_t v) {
     switch (r) {
     case IOB_R_RELAY_CMD: return v <= 3;
-    case IOB_R_TIMEOUT_MS: return v >= 100 && v <= 5000;
+    case IOB_R_HOLD_DS: return v >= 1 && v <= 6000;
     case IOB_R_FILTER_MS: return v <= 100;
     case IOB_R_WB_ENABLE: case IOB_R_OL_ENABLE: return v <= 255;
     case IOB_R_FAULT_CLEAR: return v <= 1;
@@ -120,7 +120,7 @@ static void write_apply(iob_node_t *n, uint32_t now, uint16_t start, uint16_t cn
         case IOB_R_OUT_CMD: n->out_cmd = v; w0 = true; break;
         case IOB_R_RELAY_CMD: n->relay_cmd = v; break;
         case IOB_R_CMD_SEQ: n->seq = v; break;
-        case IOB_R_TIMEOUT_MS: n->timeout_ms = v; n->config_needed = false; break;
+        case IOB_R_HOLD_DS: n->hold_ds = v; n->config_needed = false; break;
         case IOB_R_FILTER_MS: n->filter_ms = v; n->config_needed = false; break;
         case IOB_R_WB_ENABLE: n->wb_en = v; n->config_needed = false; break;
         case IOB_R_OL_ENABLE: n->ol_en = v; n->config_needed = false; break;

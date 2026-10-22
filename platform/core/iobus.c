@@ -18,7 +18,7 @@ iob_board_tags_t iob_tags[IOB_BOARDS] = {
     { .address = 2, .first_do = 19, .first_di = 9,  .ol_mask = 0xFF },
     { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF },
 };
-uint16_t iob_timeout_ms = 500;
+uint16_t iob_hold_s = 300;
 uint8_t  iob_filter_ms = 8;
 
 typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; } cfg_t;
@@ -26,7 +26,7 @@ typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; } cfg_t;
 /* scan -> bus (under PLAT_CRIT) */
 static struct {
     cfg_t    cfg[IOB_BOARDS];
-    uint16_t timeout_ms;
+    uint16_t hold_s;
     uint8_t  filter_ms;
     bool     cfg_valid;                 /* the scan has copied the settings at least once */
     uint16_t out[IOB_BOARDS];
@@ -82,7 +82,7 @@ int iob_fault_lines(const iob_view_t *v, uint8_t ol, uint8_t wbm, char lines[][I
     int n = 0;
     if (max <= 0) return 0;
     switch (v->state) {
-    case IOB_S_LOST:         snprintf(lines[0], IOB_LINE, "No reply: outputs are off"); return 1;
+    case IOB_S_LOST:         snprintf(lines[0], IOB_LINE, "No reply: outputs off after the hold"); return 1;
     case IOB_S_WRONG_TYPE:   snprintf(lines[0], IOB_LINE, "Not a CEMS I/O board"); return 1;
     case IOB_S_BAD_SETTINGS: snprintf(lines[0], IOB_LINE, "Channels or address overlap"); return 1;
     case IOB_S_RUN: break;
@@ -165,12 +165,12 @@ static void set_state(unsigned b, uint8_t s, uint32_t now) {
     (void)was;
 }
 
-/* A request failed. The board stays as it is until nothing good has come for the comms
- * timeout (the node has turned its outputs off by then), then it is "not responding". */
-static void failed(unsigned b, uint32_t now, uint16_t timeout) {
+/* A request failed. The board stays as it is until nothing good has come for
+ * PLAT_IOB_LOST_MS, then it is "not responding". */
+static void failed(unsigned b, uint32_t now) {
     bstate_t *x = &B[b];
     if (x->state == IOB_S_LOST || x->state == IOB_S_WRONG_TYPE) { x->next_try = now + PLAT_IOB_RETRY_MS; return; }
-    if ((uint32_t)(now - x->last_ok) >= timeout) set_state(b, IOB_S_LOST, now);
+    if ((uint32_t)(now - x->last_ok) >= PLAT_IOB_LOST_MS) set_state(b, IOB_S_LOST, now);
 }
 
 static bool ident(unsigned b, uint8_t addr) {
@@ -192,8 +192,8 @@ static bool ident(unsigned b, uint8_t addr) {
 
 static bool write_cfg(unsigned b, const cfg_t *c, uint16_t timeout, uint8_t filter) {
     uint8_t f[MBR_FRAME_MAX];
-    uint16_t v[IOB_R_CONFIG_N] = { timeout, filter, c->wb, c->ol };
-    if (transact(b, f, mbr_req_write(f, c->addr, IOB_R_TIMEOUT_MS, v, IOB_R_CONFIG_N), NULL, 0) != MBR_OK) return false;
+    uint16_t v[IOB_R_CONFIG_N] = { (uint16_t)(timeout * 10u), filter, c->wb, c->ol };
+    if (transact(b, f, mbr_req_write(f, c->addr, IOB_R_HOLD_DS, v, IOB_R_CONFIG_N), NULL, 0) != MBR_OK) return false;
     B[b].cfg_sent = true;
     B[b].sent = *c;
     B[b].sent_timeout = timeout;
@@ -236,7 +236,7 @@ static void log_changes(unsigned b, uint16_t st, uint8_t open, uint8_t ovl, uint
     x->have_raw = true;
 }
 
-static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32_t now, uint16_t timeout) {
+static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32_t now) {
     bstate_t *x = &B[b];
     uint8_t f[MBR_FRAME_MAX];
     uint16_t r[IOB_R_STATUS_N];
@@ -247,7 +247,7 @@ static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32
         rc = MBR_BAD_FORMAT;                     /* the node did not apply this write */
         PLAT_CRIT_ENTER(); view[b].errors++; view[b].last_error = MBR_BAD_FORMAT; PLAT_CRIT_EXIT();
     }
-    if (rc != MBR_OK) { failed(b, now, timeout); return; }
+    if (rc != MBR_OK) { failed(b, now); return; }
     x->last_ok = now;
 
     uint16_t st = r[0];
@@ -319,14 +319,15 @@ void iob_cycle(uint32_t now) {
     memcpy(c, cmd.cfg, sizeof c);
     memcpy(out, cmd.out, sizeof out);
     memcpy(rel, cmd.rel, sizeof rel);
-    timeout = cmd.timeout_ms;
+    timeout = cmd.hold_s;
     filter = cmd.filter_ms;
     valid = cmd.cfg_valid;
     fresh = cmd.out_valid && (uint32_t)(now - cmd.stamp) <= PLAT_IOB_STALE_MS;
     PLAT_CRIT_EXIT();
     if (!valid) return;                          /* the scan has not run yet */
     if (safe || !fresh) { memset(out, 0, sizeof out); memset(rel, 0, sizeof rel); }
-    if (timeout < 100u) timeout = 100u;
+    if (timeout < 1u) timeout = 1u;
+    if (timeout > 600u) timeout = 600u;
     uint8_t bad = bad_settings(c);
 
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
@@ -337,15 +338,15 @@ void iob_cycle(uint32_t now) {
         if ((x->state == IOB_S_LOST || x->state == IOB_S_WRONG_TYPE) && (int32_t)(now - x->next_try) < 0) { publish_state(b); continue; }
 
         if (x->state != IOB_S_RUN) {
-            if (!ident(b, c[b].addr)) { failed(b, now, timeout); publish_state(b); continue; }
+            if (!ident(b, c[b].addr)) { failed(b, now); publish_state(b); continue; }
             if (!x->ident_ok) { set_state(b, IOB_S_WRONG_TYPE, now); publish_state(b); continue; }
             x->cfg_sent = false;
         }
         if (cfg_changed(x, &c[b], timeout, filter) && !write_cfg(b, &c[b], timeout, filter)) {
-            failed(b, now, timeout); publish_state(b); continue;
+            failed(b, now); publish_state(b); continue;
         }
         if (x->state != IOB_S_RUN) { x->last_ok = now; set_state(b, IOB_S_RUN, now); }
-        cyclic(b, &c[b], out[b], rel[b], now, timeout);
+        cyclic(b, &c[b], out[b], rel[b], now);
         publish_state(b);
     }
 }
@@ -363,7 +364,7 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
         cmd.cfg[b] = (cfg_t){ .en = t->enable, .addr = t->address, .first_do = t->first_do,
                               .first_di = t->first_di, .ol = t->ol_mask, .wb = t->wb_mask };
     }
-    cmd.timeout_ms = iob_timeout_ms;
+    cmd.hold_s = iob_hold_s;
     cmd.filter_ms = iob_filter_ms;
     cmd.cfg_valid = true;
     memcpy(v, view, sizeof v);
