@@ -46,6 +46,7 @@
 #define IOB_INS          8u
 #define IOB_MAP_VERSION  1u
 #define IOB_MAGIC        0x494Fu   /* "IO" */
+#define IOB_BOOT_KEY     0xB007u   /* IOB_R_BOOTLOADER, over USB only */
 
 /* ---------------- node register map (one register space; FC03 and FC04 read it) ---------------- */
 enum {
@@ -72,6 +73,8 @@ enum {
     IOB_R_WB_ENABLE   = 34,  /* wire-break check per input, bits 0-7 (default 0: off) */
     IOB_R_OL_ENABLE   = 35,  /* open-circuit check per bank A output, bits 0-7 (default 0xFF) */
     IOB_R_FAULT_CLEAR = 36,  /* write 1: clear the latched IOB_ST_* bits; reads 0 */
+    IOB_R_BOOTLOADER  = 37,  /* USB only (the node's USB-C port): write 0xB007 to start ST's USB bootloader;
+                                refused over RS-485 (exception 02), never written by this master */
     /* identification, read once after connecting */
     IOB_R_MAGIC       = 64,  /* IOB_MAGIC */
     IOB_R_MAP_VERSION = 65,  /* IOB_MAP_VERSION */
