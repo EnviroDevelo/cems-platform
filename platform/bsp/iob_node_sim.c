@@ -30,6 +30,7 @@ void iob_node_restart(iob_node_t *n, bool wdg, uint32_t now) {
     n->gate = false;                   /* closed until the first valid output write */
     n->last_write_ms = now;
     n->comms_seen = n->comms_lost = false;
+    n->cfg_challenge = 0; n->cfg_fails = 0; n->cfg_locked_out = false;
     n->in_rep = n->in_pend = 0;
     n->resets++;
 }
@@ -40,6 +41,8 @@ void iob_node_tick(iob_node_t *n, uint32_t now) {
         n->timeout_latched = true;
     }
     if (n->comms_seen && (uint32_t)(now - n->last_comms_ms) >= COMMS_TIMEOUT_MS) n->comms_lost = true;
+    if (n->cfg_challenge && (int32_t)(now - n->cfg_until) >= 0) n->cfg_challenge = 0;
+    if (n->cfg_locked_out && (int32_t)(now - n->cfg_lock_until) >= 0) n->cfg_locked_out = false;
     if (n->field_a) n->in_pend |= (uint8_t)(n->inputs ^ n->in_rep);
     else n->in_pend = n->in_rep;      /* no field supply: 0 at once, whatever was pending */
 }
@@ -83,6 +86,7 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     case IOB_R_OL_ENABLE: return n->ol_en;
     case IOB_R_FAULT_CLEAR: return 0;
     case IOB_R_NODE_ADDR: return n->address;
+    case IOB_R_CFG_UNLOCK: return n->cfg_challenge;
     case IOB_R_MAGIC: return n->magic;
     case IOB_R_MAP_VERSION: return n->map_version;
     case IOB_R_HW_REV: return n->hw_rev;
@@ -94,6 +98,8 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     case IOB_R_N_INPUTS: return n->n_inputs;
     default:
         if (r >= IOB_R_UID && r < IOB_R_UID + 6) return n->uid[r - IOB_R_UID];
+        if (r >= IOB_R_SERIAL && r < IOB_R_SERIAL + IOB_SERIAL_REGS)
+            return (uint16_t)(n->serial[2u * (r - IOB_R_SERIAL)] << 8 | n->serial[2u * (r - IOB_R_SERIAL) + 1u]);
         return 0;                         /* reserved */
     }
 }
@@ -112,7 +118,8 @@ static bool value_ok(uint16_t r, uint16_t v) {
 }
 
 /* check a whole write first (exception code, 0 = fine), then apply it */
-static uint8_t write_check(uint16_t start, uint16_t cnt, const uint8_t *data) {
+static uint8_t write_check(const iob_node_t *n, uint16_t start, uint16_t cnt, const uint8_t *data) {
+    if (n->address == 0) return 4;        /* commissioning: nothing switches */
     for (uint16_t i = 0; i < cnt; ++i) {
         uint16_t r = (uint16_t)(start + i), v = (uint16_t)(data[2u * i] << 8 | data[2u * i + 1]);
         if (!writable(r)) return 2;
@@ -144,6 +151,35 @@ static void write_apply(iob_node_t *n, uint32_t now, uint16_t start, uint16_t cn
     n->echo = n->seq;                     /* the write is applied */
 }
 
+static uint16_t get16(const uint8_t *p) { return (uint16_t)((unsigned)p[0] << 8 | p[1]); }
+
+/* the address handshake (iobus.h, FW-61): 0 or an exception code */
+static uint8_t cfg_unlock(iob_node_t *n, uint32_t now, const uint8_t *d) {
+    if (n->cfg_locked_out) { n->cfg_challenge = 0; return 4; }
+    bool ok = get16(d) == IOB_CFG_UNLOCK_KEY;
+    for (unsigned i = 0; i < 6; ++i) ok = ok && get16(d + 2 + 2 * i) == n->uid[i];
+    if (!ok) { n->cfg_challenge = 0; return 3; }
+    n->cfg_unlocks++;
+    n->cfg_challenge = iob_cfg_challenge(n->uid, n->cfg_unlocks, now, n->cfg_challenge);
+    n->cfg_until = now + IOB_CFG_WINDOW_MS;
+    return 0;
+}
+static uint8_t cfg_commit(iob_node_t *n, uint32_t now, const uint8_t *d, uint8_t *addr) {
+    uint16_t a = get16(d), ch = get16(d + 2);
+    uint32_t chk = (uint32_t)get16(d + 4) << 16 | get16(d + 6);
+    uint16_t want = n->cfg_challenge;
+    n->cfg_challenge = 0;
+    if (a == 0 || a > IOB_ADDR_MAX) return 3;
+    if (!want || ch != want) return 4;
+    if (chk != iob_cfg_check(n->uid, ch, a)) {
+        if (++n->cfg_fails >= 3) { n->cfg_fails = 0; n->cfg_locked_out = true; n->cfg_lock_until = now + IOB_CFG_LOCKOUT_MS; }
+        return 4;
+    }
+    n->cfg_fails = 0;
+    *addr = (uint8_t)a;
+    return 0;
+}
+
 static uint16_t finish(uint8_t *tx, uint16_t len) {
     uint16_t c = mbr_crc16(tx, len);
     tx[len] = (uint8_t)c; tx[len + 1] = (uint8_t)(c >> 8);
@@ -155,10 +191,10 @@ static uint16_t exception(uint8_t *tx, uint8_t addr, uint8_t fc, uint8_t code) {
     return finish(tx, 3);
 }
 
-static uint16_t read_regs(const iob_node_t *n, uint8_t *tx, uint8_t fc, uint16_t start, uint16_t cnt) {
-    if (cnt == 0 || cnt > 125) return exception(tx, n->address, fc, 3);
-    if ((uint32_t)start + cnt > REG_SPACE) return exception(tx, n->address, fc, 2);
-    tx[0] = n->address; tx[1] = fc; tx[2] = (uint8_t)(2u * cnt);
+static uint16_t read_regs(const iob_node_t *n, uint8_t *tx, uint8_t ra, uint8_t fc, uint16_t start, uint16_t cnt) {
+    if (cnt == 0 || cnt > 125) return exception(tx, ra, fc, 3);
+    if ((uint32_t)start + cnt > REG_SPACE) return exception(tx, ra, fc, 2);
+    tx[0] = ra; tx[1] = fc; tx[2] = (uint8_t)(2u * cnt);
     for (uint16_t i = 0; i < cnt; ++i) {
         uint16_t v = iob_node_reg(n, (uint16_t)(start + i));
         tx[3 + 2u * i] = (uint8_t)(v >> 8); tx[4 + 2u * i] = (uint8_t)v;
@@ -173,49 +209,63 @@ uint16_t iob_node_frame(iob_node_t *n, uint32_t now, const uint8_t *rx, uint16_t
     n->frames++;
     if (len < 4) { n->rx_errors++; return 0; }
     if (mbr_crc16(rx, len - 2u) != (uint16_t)(rx[len - 2] | rx[len - 1] << 8)) { n->rx_errors++; return 0; }
-    if (rx[0] != n->address) return 0;          /* another node, or a broadcast (not used) */
-    n->comms_seen = true;
-    n->last_comms_ms = now;
+    bool commissioning = n->address == 0;
+    if (rx[0] != (commissioning ? IOB_COMMISSION_ADDR : n->address)) return 0;   /* another node, or a broadcast */
+    if (!commissioning) { n->comms_seen = true; n->last_comms_ms = now; }
+    uint8_t ra = rx[0];
     uint8_t fc = rx[1];
     uint16_t a = 0, c = 0;
     if (len >= 6) { a = (uint16_t)((unsigned)rx[2] << 8 | rx[3]); c = (uint16_t)((unsigned)rx[4] << 8 | rx[5]); }
     uint16_t out = 0;
+    if (fc == 16 && len >= 9 && ((a == IOB_R_CFG_UNLOCK && c == 7) || (a == IOB_R_CFG_ADDR && c == 4) ||
+                                 (a == IOB_R_SERIAL && c == IOB_SERIAL_REGS))) {
+        uint8_t e, new_addr = 0;
+        if (rx[6] != 2u * c || len != 9u + 2u * c) e = 3;
+        else if (a == IOB_R_CFG_UNLOCK) e = cfg_unlock(n, now, rx + 7);
+        else if (a == IOB_R_CFG_ADDR) e = cfg_commit(n, now, rx + 7, &new_addr);
+        else e = 2;                       /* the serial number is written over USB only */
+        if (e) out = exception(tx, ra, fc, e);
+        else { memcpy(tx, rx, 6); out = finish(tx, 6); }
+        if (new_addr) n->address = new_addr;
+        n->replies++;
+        return out;
+    }
     switch (fc) {
     case 3: case 4:
-        out = len == 8 ? read_regs(n, tx, fc, a, c) : exception(tx, n->address, fc, 3);
+        out = len == 8 ? read_regs(n, tx, ra, fc, a, c) : exception(tx, ra, fc, 3);
         break;
     case 6: {
-        if (len != 8) { out = exception(tx, n->address, fc, 3); break; }
-        uint8_t e = write_check(a, 1, rx + 4);
-        if (e) { out = exception(tx, n->address, fc, e); break; }
+        if (len != 8) { out = exception(tx, ra, fc, 3); break; }
+        uint8_t e = write_check(n, a, 1, rx + 4);
+        if (e) { out = exception(tx, ra, fc, e); break; }
         write_apply(n, now, a, 1, rx + 4);
         memcpy(tx, rx, 6);
         out = finish(tx, 6);
         break;
     }
     case 16: {
-        if (len < 9 || c == 0 || c > 123 || rx[6] != 2u * c || len != 9u + 2u * c) { out = exception(tx, n->address, fc, 3); break; }
-        uint8_t e = (uint32_t)a + c > REG_SPACE ? 2 : write_check(a, c, rx + 7);
-        if (e) { out = exception(tx, n->address, fc, e); break; }
+        if (len < 9 || c == 0 || c > 123 || rx[6] != 2u * c || len != 9u + 2u * c) { out = exception(tx, ra, fc, 3); break; }
+        uint8_t e = (uint32_t)a + c > REG_SPACE ? 2 : write_check(n, a, c, rx + 7);
+        if (e) { out = exception(tx, ra, fc, e); break; }
         write_apply(n, now, a, c, rx + 7);
         memcpy(tx, rx, 6);
         out = finish(tx, 6);
         break;
     }
     case 23: {
-        if (len < 13) { out = exception(tx, n->address, fc, 3); break; }
+        if (len < 13) { out = exception(tx, ra, fc, 3); break; }
         uint16_t wa = (uint16_t)(rx[6] << 8 | rx[7]), wc = (uint16_t)(rx[8] << 8 | rx[9]);
         if (wc == 0 || wc > 121 || rx[10] != 2u * wc || len != 13u + 2u * wc || c == 0 || c > 125) {
-            out = exception(tx, n->address, fc, 3); break;
+            out = exception(tx, ra, fc, 3); break;
         }
-        uint8_t e = ((uint32_t)wa + wc > REG_SPACE || (uint32_t)a + c > REG_SPACE) ? 2 : write_check(wa, wc, rx + 11);
-        if (e) { out = exception(tx, n->address, fc, e); break; }
+        uint8_t e = ((uint32_t)wa + wc > REG_SPACE || (uint32_t)a + c > REG_SPACE) ? 2 : write_check(n, wa, wc, rx + 11);
+        if (e) { out = exception(tx, ra, fc, e); break; }
         write_apply(n, now, wa, wc, rx + 11);
-        out = read_regs(n, tx, fc, a, c);
+        out = read_regs(n, tx, ra, fc, a, c);
         break;
     }
     default:
-        out = exception(tx, n->address, fc, 1);
+        out = exception(tx, ra, fc, 1);
     }
     if (out > 5 && (fc == 3 || fc == 4 || fc == 23) && !(tx[1] & 0x80u) && a <= IOB_R_INPUTS &&
         (uint32_t)a + c > IOB_R_INPUTS) {       /* the master has seen these changes */

@@ -217,6 +217,60 @@ static void t_stale_and_safe(void) {
     CHECK(bsp_host.safe_states > 0);
 }
 
+/* the simulated node's address handshake, commissioning address and serial (iobus.h, node FW-61/62):
+ * the main board's address change and "add I/O board" pages are built against these rules */
+static uint16_t sim_x(iob_node_t *n, uint32_t now, const uint8_t *f, size_t len, uint8_t *rx, uint16_t *r, uint16_t nr, uint8_t *code) {
+    uint16_t got = iob_node_frame(n, now, f, (uint16_t)len, rx, MBR_FRAME_MAX);
+    *code = 0;
+    return (uint16_t)mbr_check_reply(f, len, rx, got, r, nr, code);
+}
+static void t_node_cfg(void) {
+    iob_node_t n; iob_node_init(&n, 0);                    /* a new board: no address */
+    memcpy(n.serial, "CIO-26-00042", 12);
+    uint8_t f[MBR_FRAME_MAX], rx[MBR_FRAME_MAX], code;
+    uint16_t r[8];
+    size_t len = mbr_req_read(f, IOB_COMMISSION_ADDR, IOB_R_UID, 6);
+    CHECK_EQ(sim_x(&n, 0, f, len, rx, r, 6, &code), MBR_OK);
+    CHECK_EQ(r[0], n.uid[0]);
+    len = mbr_req_read(f, IOB_COMMISSION_ADDR, IOB_R_SERIAL, IOB_SERIAL_REGS);
+    CHECK_EQ(sim_x(&n, 0, f, len, rx, r, 8, &code), MBR_OK);
+    CHECK_EQ(r[0], 0x4349u); CHECK_EQ(r[6], 0u);
+    uint16_t w[3] = { 1, 0, 1 };
+    len = mbr_req_rw(f, IOB_COMMISSION_ADDR, IOB_R_STATUS, 1, 0, w, 3);
+    CHECK_EQ(sim_x(&n, 0, f, len, rx, r, 1, &code), MBR_EXCEPTION); CHECK_EQ(code, 4);   /* nothing switches */
+    /* unlock, challenge, commit */
+    uint16_t u[7] = { IOB_CFG_UNLOCK_KEY, n.uid[0], n.uid[1], n.uid[2], n.uid[3], n.uid[4], n.uid[5] };
+    len = mbr_req_write(f, IOB_COMMISSION_ADDR, IOB_R_CFG_UNLOCK, u, 7);
+    CHECK_EQ(sim_x(&n, 10, f, len, rx, NULL, 0, &code), MBR_OK);
+    len = mbr_req_read(f, IOB_COMMISSION_ADDR, IOB_R_CFG_UNLOCK, 1);
+    CHECK_EQ(sim_x(&n, 20, f, len, rx, r, 1, &code), MBR_OK);
+    uint16_t ch = r[0];
+    CHECK(ch != 0u);
+    uint32_t chk = iob_cfg_check(n.uid, ch, 4);
+    uint16_t c[4] = { 4, ch, (uint16_t)(chk >> 16), (uint16_t)chk };
+    len = mbr_req_write(f, IOB_COMMISSION_ADDR, IOB_R_CFG_ADDR, c, 4);
+    CHECK_EQ(sim_x(&n, 30, f, len, rx, NULL, 0, &code), MBR_OK);
+    CHECK_EQ(n.address, 4u);
+    /* a wrong check is refused and ends the unlock; a direct write of 38 is refused */
+    u[0] = IOB_CFG_UNLOCK_KEY;
+    len = mbr_req_write(f, 4, IOB_R_CFG_UNLOCK, u, 7);
+    CHECK_EQ(sim_x(&n, 40, f, len, rx, NULL, 0, &code), MBR_OK);
+    len = mbr_req_read(f, 4, IOB_R_CFG_UNLOCK, 1);
+    CHECK_EQ(sim_x(&n, 50, f, len, rx, r, 1, &code), MBR_OK);
+    ch = r[0];
+    chk = iob_cfg_check(n.uid, ch, 7) ^ 1u;
+    uint16_t c2[4] = { 7, ch, (uint16_t)(chk >> 16), (uint16_t)chk };
+    len = mbr_req_write(f, 4, IOB_R_CFG_ADDR, c2, 4);
+    CHECK_EQ(sim_x(&n, 60, f, len, rx, NULL, 0, &code), MBR_EXCEPTION); CHECK_EQ(code, 4);
+    CHECK_EQ(n.address, 4u);
+    CHECK_EQ(n.cfg_challenge, 0u);
+    len = mbr_req_write1(f, 4, IOB_R_NODE_ADDR, 7);
+    CHECK_EQ(sim_x(&n, 70, f, len, rx, NULL, 0, &code), MBR_EXCEPTION); CHECK_EQ(code, 2);
+    uint16_t sn[8] = { 0x4142 };
+    len = mbr_req_write(f, 4, IOB_R_SERIAL, sn, 8);
+    CHECK_EQ(sim_x(&n, 80, f, len, rx, NULL, 0, &code), MBR_EXCEPTION); CHECK_EQ(code, 2);   /* USB only */
+}
+
 static void t_lost_and_back(void) {
     setup();
     iob_tags[0].enable = true;
@@ -490,6 +544,7 @@ static void t_no_port(void) {
 }
 
 void test_iobus_all(void) {
+    t_node_cfg();
     t_comms_latch();
     t_input_pulse();
     RUN(t_rtu_frames);
