@@ -44,10 +44,10 @@ The same build with the real application linked in (`make target APP=...`).
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash | 471.9 KB | 1016.0 KB | 46 % | 544.1 KB |
-| RAM | 439.2 KB | 640.0 KB | 69 % | 200.8 KB |
+| Flash | 485.3 KB | 1016.0 KB | 48 % | 530.7 KB |
+| RAM | 438.2 KB | 640.0 KB | 68 % | 201.8 KB |
 
-The application itself: 72.6 KB of flash, 47.1 KB of RAM (its tags, timers and tables).
+The application itself: 83.5 KB of flash, 46.1 KB of RAM (its tags, timers and tables).
 
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
