@@ -79,6 +79,9 @@ enum {
                                 (sent when IOB_LOST is acknowledged); 0..3, reads 0 */
     IOB_R_BOOTLOADER  = 37,  /* USB only (the node's USB-C port): write 0xB007 to start ST's USB bootloader;
                                 refused over RS-485 (exception 02), never written by this master */
+    IOB_R_NODE_ADDR   = 38,  /* the node's own Modbus address, 0..247 (0 = not set: silent on RS-485). Kept in
+                                the board's F-RAM, so a firmware update never changes it. Written over USB
+                                only (RS-485: exception 02), never while the RS-485 master is in control (04) */
     /* identification, read once after connecting */
     IOB_R_MAGIC       = 64,  /* IOB_MAGIC */
     IOB_R_MAP_VERSION = 65,  /* IOB_MAP_VERSION */

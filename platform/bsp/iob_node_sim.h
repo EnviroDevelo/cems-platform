@@ -6,6 +6,7 @@
  *
  * Behaviour (the node requirements, in code):
  *  - one register space 0..79; FC03 and FC04 read it, reserved addresses read 0;
+ *    register 38 reads the node's address (set over the node's USB port only, so read-only here);
  *    FC06, FC16 and FC23 write registers 0..2 and 32..36 only (else exception 02);
  *    out-of-range values give exception 03 and change nothing; other functions 01
  *  - FC23 writes before it reads; a request with any error changes nothing

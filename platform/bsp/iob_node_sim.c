@@ -82,6 +82,7 @@ uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     case IOB_R_WB_ENABLE: return n->wb_en;
     case IOB_R_OL_ENABLE: return n->ol_en;
     case IOB_R_FAULT_CLEAR: return 0;
+    case IOB_R_NODE_ADDR: return n->address;
     case IOB_R_MAGIC: return n->magic;
     case IOB_R_MAP_VERSION: return n->map_version;
     case IOB_R_HW_REV: return n->hw_rev;
