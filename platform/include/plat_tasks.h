@@ -8,6 +8,7 @@
  * ctrl           14        PLAT_CTRL_PERIOD_MS      PLAT_SILENCE_CTRL_MS
  * scan           13        PLAT_SCAN_PERIOD_MS      PLAT_SILENCE_SCAN_MS
  * supervisor     12        PLAT_SUPERVISOR_PERIOD_MS (kicks the IWDG)
+ * iobus          11        PLAT_IOB_PERIOD_MS (RS-485 I/O boards) PLAT_SILENCE_IOBUS_MS
  * store          10        every 20 ms (param store + logger) PLAT_SILENCE_STORE_MS
  * (lwIP tcpip)   8         created by tcpip_init    (not monitored directly)
  * modbus         7         socket events            PLAT_SILENCE_MODBUS_MS
@@ -57,6 +58,7 @@ typedef enum {
     PLAT_TASK_HTTP,
     PLAT_TASK_UI,
     PLAT_TASK_NET,
+    PLAT_TASK_IOBUS,
     PLAT_TASK_COUNT
 } plat_task_id_t;
 
@@ -85,6 +87,7 @@ void plat_checkin(plat_task_id_t id);
  *   plat_modbus_task_body() - Modbus TCP server
  *   plat_http_task_body()   - HTTP server
  *   plat_ui_task_body()     - EVE touch UI
+ *   plat_iobus_task_body()  - RS-485 I/O bus master (plat_iobus_task.c)
  * A body must call plat_checkin() at least once per its silence limit and never return. */
 void plat_ctrl_tick(void);
 void plat_store_task_body(void);
@@ -92,6 +95,7 @@ void plat_modbus_task_body(void);
 void plat_http_task_body(void);
 void plat_ui_task_body(void);
 void plat_net_task_body(void);           /* network bring-up and upkeep (port) */
+void plat_iobus_task_body(void);         /* RS-485 I/O boards (iobus.h) */
 bool plat_ui_healthy(void);              /* display working or not fitted (plat_ui_task.c; weak default true) */
 
 #endif

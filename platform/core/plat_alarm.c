@@ -50,6 +50,18 @@ static const alarm_def_t core_defs[] = {
       .name = "RESOURCE_LOW", .text = "Memory running low: tell the manufacturer", .on_delay_ms = 10000 },
     { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "DISPLAY_FAULT",
       .text = "Touchscreen not responding", .on_delay_ms = 5000 },
+    { .id = ALARM_ID_IOB_LOST, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_LOST",
+      .text = "I/O board not responding: its outputs are off" },
+    { .id = ALARM_ID_IOB_CONFIG, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_CONFIG",
+      .text = "I/O board wrong type or channel settings conflict" },
+    { .id = ALARM_ID_IOB_OUT_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_OUT_FAULT",
+      .text = "Output fault: open circuit, short or overheating", .on_delay_ms = 1000 },
+    { .id = ALARM_ID_IOB_IN_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_IN_FAULT",
+      .text = "Input fault: wire break", .on_delay_ms = 1000 },
+    { .id = ALARM_ID_IOB_SUPPLY, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_SUPPLY",
+      .text = "I/O board field 24 V supply missing", .on_delay_ms = 500 },
+    { .id = ALARM_ID_IOB_NODE_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "IOB_NODE_RESET",
+      .text = "I/O board restarted by its watchdog" },
 };
 #define N_CORE (sizeof core_defs / sizeof core_defs[0])
 

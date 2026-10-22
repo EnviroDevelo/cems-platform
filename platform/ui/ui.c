@@ -20,6 +20,7 @@
 #include "plat_clock.h"
 #include "plat_health.h"
 #include "ui_app.h"
+#include "iobus.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -54,7 +55,7 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
-    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK,
+    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB,
     T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
     /* application screens and record editors (no keyboard there, so 1..126 are free):
      * 1..8 tabs, T_W0.. widgets and cells (looked up in U.tmap), T_DLG_* the dialog */
@@ -551,7 +552,8 @@ static void tap(uint8_t t, uint32_t now) {
             if (U.level < PLAT_LVL_FACTORY) { toast(true, now, "Log in at factory (tech) level to change firmware"); break; }
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
             ask(ACT_FW, m);
-        } else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
+        } else if (t == T_IOB) goto_scr(UI_IOB);
+        else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
         break;
     default:
@@ -648,7 +650,8 @@ static void nav(void) {
     static const int scr_of[] = { UI_HOME, UI_PARAMS, UI_EVENTS, UI_SYSTEM };
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
     for (int k = 0; k < 4; ++k) {
-        bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC));
+        bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
+                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK));
         button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
     char b[32];
@@ -929,6 +932,62 @@ static void draw_system(uint32_t now) {
     if (plat_clock_now(&ct)) log_fmt_time(b, sizeof b, ct, true); else snprintf(b, sizeof b, "NOT SET");
     kv(544, BODY_Y + 364, "Clock", b);
     button(T_CLOCK, 868, BODY_Y + 318, 128, 64, "Set clock", C_ACCENT, true);
+    button(T_IOB, 868, BODY_Y + 244, 128, 64, "I/O boards", C_ACCENT, true);
+}
+
+/* I/O boards (iobus.h): one card per board, outputs and inputs as lit squares, faults in words */
+static void draw_iob(void) {
+    char b[64];
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        int16_t x = (int16_t)(16 + k * 334), y = BODY_Y;
+        const iob_board_tags_t *t = &iob_tags[k];
+        iob_view_t v; memset(&v, 0, sizeof v); (void)iob_board_view(k, &v);
+        box(x, y, 324, 392, C_CARD, 8);
+        snprintf(b, sizeof b, "Board %u", k + 1u);
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 10), F_TEXT, 0, b);
+        uint32_t sc = !t->enable ? C_GREY : v.state == IOB_S_RUN ? C_OK : v.state == IOB_S_CONNECTING ? C_WARN : C_BAD;
+        color(sc); text((int16_t)(x + 310), (int16_t)(y + 14), F_SMALL, OPT_RIGHTX, t->enable ? iob_state_name(v.state) : "not fitted");
+        if (!t->enable) {
+            color(C_MUTE);
+            text((int16_t)(x + 14), (int16_t)(y + 50), F_SMALL, 0, "Enable it in Settings:");
+            snprintf(b, sizeof b, "iob%u_enable (%u)", k + 1u, (unsigned)(PARAM_ID_IOB_FIRST + 10u * k));
+            text((int16_t)(x + 14), (int16_t)(y + 72), F_SMALL, 0, b);
+            continue;
+        }
+        snprintf(b, sizeof b, "Address %u, out %u-%u, in %u-%u", t->address, t->first_do, t->first_do + IOB_OUTS - 1u,
+                 t->first_di, t->first_di + IOB_INS - 1u);
+        color(C_MUTE); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
+        /* outputs: bank A, bank B and the relays, one row each */
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 66), F_SMALL, 0, "Outputs");
+        static const char *const bank[] = { "0.6 A", "1 A", "relay" };
+        color(C_MUTE);
+        for (unsigned r = 0; r < 3; ++r) text((int16_t)(x + 310), (int16_t)(y + 103 + r * 34), F_SMALL, OPT_CENTERY | OPT_RIGHTX, bank[r]);
+        for (unsigned i = 0; i < IOB_OUTS; ++i) {
+            int16_t bx = (int16_t)(x + 14 + (i % 8) * 31), by = (int16_t)(y + 89 + (i / 8) * 34);
+            bool on = (v.outputs >> i) & 1u, f = (v.out_faults >> i) & 1u;
+            box(bx, by, 28, 28, f ? C_BAD : on ? C_OK : C_LINE, 4);
+            snprintf(b, sizeof b, "%u", i + 1u);
+            color(f || on ? 0xFFFFFFu : C_INK); text((int16_t)(bx + 14), (int16_t)(by + 14), F_SMALL, OPT_CENTER, b);
+        }
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 196), F_SMALL, 0, "Inputs");
+        for (unsigned i = 0; i < IOB_INS; ++i) {
+            int16_t bx = (int16_t)(x + 14 + i * 31), by = (int16_t)(y + 219);
+            bool on = (v.inputs >> i) & 1u, f = (v.in_faults >> i) & 1u;
+            box(bx, by, 28, 28, f ? C_BAD : on ? C_ACCENT : C_LINE, 4);
+            snprintf(b, sizeof b, "%u", i + 1u);
+            color(f || on ? 0xFFFFFFu : C_INK); text((int16_t)(bx + 14), (int16_t)(by + 14), F_SMALL, OPT_CENTER, b);
+        }
+        char lines[4][IOB_LINE];
+        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, 4);
+        color(n ? C_BAD : C_OK);
+        if (!n) text((int16_t)(x + 14), (int16_t)(y + 262), F_SMALL, 0, v.state == IOB_S_RUN ? "No faults" : "");
+        for (int i = 0; i < n; ++i) text((int16_t)(x + 14), (int16_t)(y + 262 + i * 18), F_SMALL, 0, lines[i]);
+        color(C_MUTE);
+        snprintf(b, sizeof b, "Firmware %u.%u, hardware %u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u), (unsigned)v.hw_rev);
+        if (v.fw_version) text((int16_t)(x + 14), (int16_t)(y + 352), F_SMALL, 0, b);
+        snprintf(b, sizeof b, "Requests %lu, failed %lu", (unsigned long)v.requests, (unsigned long)v.errors);
+        text((int16_t)(x + 14), (int16_t)(y + 372), F_SMALL, 0, b);
+    }
 }
 
 /* set the clock: digits in the order year, month, day, hour, minute, second */
@@ -1590,6 +1649,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_CLOCK: draw_clock(); break;
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;
+    case UI_IOB:   draw_iob(); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {

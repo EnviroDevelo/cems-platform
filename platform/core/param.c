@@ -5,6 +5,7 @@
 #include "plat_clock.h"
 #include "plat_port.h"
 #include "plat_seqlock.h"
+#include "iobus.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -52,6 +53,20 @@ extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_
 extern bool     plat_alarm_relay_inv[4];
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 
+#define IOB_DEFS(K, N) \
+    PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 1, "iob" N "_address", iob_tags[K].address, CT_U8, 1, 247, K + 1, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 2, "iob" N "_first_do", iob_tags[K].first_do, CT_U8, 1, PLAT_DO_MAX - IOB_OUTS + 1, 1 + IOB_OUTS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 3, "iob" N "_first_di", iob_tags[K].first_di, CT_U8, 1, PLAT_DI_MAX - IOB_INS + 1, 1 + IOB_INS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 4, "iob" N "_open_check", iob_tags[K].ol_mask, CT_U8, 0, 255, 255, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 5, "iob" N "_wire_check", iob_tags[K].wb_mask, CT_U8, 0, 255, 0, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 6, "iob" N "_status", iob_tags[K].status, CT_U16, 0, 0xFFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 7, "iob" N "_out_faults", iob_tags[K].out_faults, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 8, "iob" N "_in_faults", iob_tags[K].in_faults, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 9, "iob" N "_errors", iob_tags[K].errors, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K, "iob" N "_inputs", iob_tags[K].inputs, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K + 1, "iob" N "_outputs", iob_tags[K].outputs, CT_U32, 0, 0x3FFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL)
+
 static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
                PLAT_LVL_OPERATOR, PF_LOCAL_ONLY | PF_ANY_MODE, NULL),
@@ -80,7 +95,7 @@ static const param_def_t plat_defs[] = {
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_ALARM_COMMON, "alarm_common", plat_alarm_common, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_ROUTE, "alarm_route", plat_alarm_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
-    PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, 32, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, PLAT_DO_MAX, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_MODE, "alarm_relay_mode", plat_alarm_relay_mode, CT_U8, 0, 2, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_BOOL(PARAM_ID_ALARM_RELAY_INV, "alarm_relay_inv", plat_alarm_relay_inv, PLAT_LVL_ADMIN, NET),
     PARAM_BIT (PARAM_ID_MAIL_ENABLE, "mail_enable", p_mail_en, PLAT_LVL_ADMIN, MAILF),
@@ -108,6 +123,10 @@ static const param_def_t plat_defs[] = {
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_STORE_STATUS, "store_status", param_store_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
+    /* I/O boards on RS-485 (iobus.h, D27): settings at admin (technician) level, LOCAL only */
+    PARAM_UINT(PARAM_ID_IOB_TIMEOUT, "iob_timeout", iob_timeout_ms, CT_U16, 100, 5000, 500, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
+    PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 3, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
+    IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
 

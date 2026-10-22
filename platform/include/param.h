@@ -118,7 +118,7 @@ enum {
     PARAM_ID_ALARM_UNACK_BITS = 44,  /* RO: same layout, alarm ID unacknowledged */
     PARAM_ID_ALARM_COMMON     = 45,  /* RO: ACOM_* bits (Modbus common alarm, relay states) */
     PARAM_ID_ALARM_ROUTE      = 46,  /* 256 bytes, one per alarm ID: AR_* actions (plat_alarm.h) */
-    PARAM_ID_ALARM_RELAY_DO   = 47,  /* 4 bytes: digital output 1..32 for alarm relay 1..4 (0 = not used) */
+    PARAM_ID_ALARM_RELAY_DO   = 47,  /* 4 bytes: digital output 1..64 for alarm relay 1..4 (0 = not used) */
     PARAM_ID_ALARM_RELAY_MODE = 48,  /* 4 bytes: AR_MODE_* */
     PARAM_ID_ALARM_RELAY_INV  = 49,  /* 4 bools: fail-safe (energised when there is no alarm) */
     PARAM_ID_MAIL_ENABLE      = 70,  /* alarm email on/off (off: the instrument makes no outbound connection) */
@@ -143,6 +143,13 @@ enum {
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
+    PARAM_ID_IOB_TIMEOUT      = 100, /* I/O boards (iobus.h): comms timeout, ms; a node turns its outputs off after it */
+    PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
+    PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
+    /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,
+         +4 open-circuit check (bank A outputs 1-8, bits), +5 wire-break check (inputs 1-8, bits),
+         +6 RO status (IOBS_*), +7 RO output faults (bits 1-18), +8 RO input faults, +9 RO failed requests */
+    PARAM_ID_IOB_LIVE_FIRST   = 140, /* board k at 140 + 2k: +0 RO inputs (bits), +1 RO outputs as driven (bits) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

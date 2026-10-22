@@ -37,6 +37,7 @@ runs on top of it.
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
+| I/O boards on RS-485 (D27): Modbus RTU master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, six platform alarms, events, the I/O boards screen and web section; a simulated node that implements the register map | `iobus.h`, `platform/core/iobus.c`, `mb_rtu.h/.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob` | Done; host-tested against simulated boards (`tests/test_iobus.c`, `t_iob_screen`), end to end over netsim with two simulated boards (`tests/integration/iob_test.py`). UART driver compiled and linked for the H5, not yet run on hardware; the I/O board itself is specified in the *I/O Module Requirements* document |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -54,6 +55,7 @@ then networking, and the UI last. Nothing below the scan can delay it.
 | scan | 13 | every 10 ms (`PLAT_SCAN_PERIOD_MS`) | 200 ms | `scan_step()`: the VM/MUX program |
 | supervisor | 12 | every 100 ms | n/a | kicks the IWDG only if every task is alive |
 | FreeRTOS timer service | 11 | on demand | n/a | kernel |
+| iobus | 11 | every 20 ms (`PLAT_IOB_PERIOD_MS`) | 1 s | `plat_iobus_task_body()`: the RS-485 I/O boards; sleeps on the UART while it waits for replies |
 | store | 10 | every 20 ms | 2 s | `plat_store_task_body()`: parameter store and logger (sole owner of the FRAM and the log flash) |
 | lwIP tcpip_thread | 8 | event-driven | via modbus/http | lwIP |
 | modbus | 7 | socket events | 5 s | `plat_modbus_task_body()` |
@@ -77,10 +79,10 @@ One `scan_step()` is one UniLogic scan (11_UniLogic_Semantics E1, E10, E11):
 
 1. `g_dt_ms` = ms since the previous scan started, **measured**. It is 0 on the first scan. A late scan reports the real gap, so timers never lose time.
 2. `RTC_Date` / `RTC_Time` = one clock snapshot for the whole scan. `Day_Of_Week` uses UniLogic's convention (1 = Sunday); the STM32 RTC uses 1 = Monday, and the conversion is tested for all 7 days. If the RTC is invalid, the previous snapshot is kept and the scan counts it.
-3. Inputs: `bsp_io_read()` fills a `plat_io_in_t`, then `app->io_in()` maps it onto application tags (`TA30_DI[]`, `UID_DI[]` …). Inputs stay frozen for the whole scan.
+3. Inputs: `bsp_io_read()` fills a `plat_io_in_t` from the main board's pins, the I/O boards' latest inputs replace their channel ranges (`iobus.h`), then `app->io_in()` maps it onto application tags (`TA30_DI[]`, `UID_DI[]` …). Inputs stay frozen for the whole scan. There are 64 digital input and 64 output channels; `di_fault` / `do_fault` mark channels that are not to be trusted (a wire break, an open-circuit valve, a board not answering), and `plat_di_fault()` / `plat_do_fault()` read them.
 4. External writes: up to 16 queued commands (from UI, web or Modbus) go through `app->apply_cmd()`. The logic never sees a value change half way through a scan.
 5. Logic: `Ladder_Initial_Cycle` is true for the first scan only, then `app->logic()` runs (that is `Function1`).
-6. Outputs: the image starts **all off**, `app->io_out()` sets what it drives, and then `bsp_io_write()` runs. An unmapped output can never be left on.
+6. Outputs: the image starts **all off**, `app->io_out()` sets what it drives, the alarm relays are added, and then `bsp_io_write()` and the I/O bus take it. An unmapped output can never be left on.
 7. Publish: `app->publish()` copies display values into the application's snapshot, inside the seqlock.
 8. Statistics: scan count, late starts, max `g_dt_ms`, execution time (from the DWT cycle counter) and overruns.
 
@@ -604,6 +606,71 @@ screen-saver logic (R3). The target check and the memory report include `app_vmm
 its directory is present (R5): with it the firmware is 454 KB of flash (45 %) and 435 KB
 of RAM (68 %).
 
+## 5k. I/O boards on RS-485 (D27)
+
+The valves, loads, relays and digital inputs sit on separate I/O boards, up to 100 m from
+the main board on one isolated RS-485 pair (the *I/O Board Design Specification* and the
+*I/O Module Requirements* documents). Each board is a Modbus RTU slave with 8 outputs of
+0.6 A with per-channel diagnostics (bank A), 8 outputs of 1 A (bank B), 2 socketed relays
+and 8 isolated inputs with wire-break detection. The main board is the master.
+
+**The application does not change.** Board k fills the platform's generic channels: its
+18 outputs from `iobK_first_do` and its 8 inputs from `iobK_first_di` (defaults: board 1
+outputs 1-18 / inputs 1-8, board 2 19-36 / 9-16, board 3 37-54 / 17-24). The image grew to
+64 inputs and 64 outputs for this. A board's inputs replace those channels; its outputs are
+taken after the application and the alarm relays, so an alarm relay can be a board's relay.
+
+**The bus.** 115200 baud, 8N1. Every 20 ms each running board gets one function 23
+request that writes its outputs (with a sequence number the node echoes once it has applied
+them) and reads its 12-register status block: about 5 ms per board, so three boards fit the
+cycle. A new or returning board is first identified (magic number, register-map version,
+channel counts: anything else is "wrong type" and is never written to), then sent its
+settings (comms timeout, input filter, wire-break and open-circuit checks per channel). A
+node that restarts says so (CONFIG_NEEDED) and gets its settings again.
+
+**Safe state.** The node turns everything off when no output write has come for its comms
+timeout (parameter 100, default 500 ms), and its hardware gate does the same if its firmware
+stops. The master sends all-off when the scan has not produced outputs for 250 ms, so a
+stopped scan cannot hold valves open over the bus, and `plat_io_safe_state()` (every fatal
+path) sends all-off at once. A board with no good reply for the comms timeout is "not
+responding": its inputs read 0 and all its channels are marked faulty. A few lost or
+damaged frames are only counted.
+
+**Faults.** Bank A reports open circuit (only for channels with the check on, so a channel
+with no valve fitted does not alarm), overload/short and over-temperature per channel. Bank
+B has one fault line for its 8 channels. A missing field supply marks its bank (and, for
+supply A, the inputs). Inputs report a wire break where the check is on.
+
+| Alarm | ID | Raised when |
+|---|---|---|
+| IOB_LOST | 12 | an enabled board does not answer (fault, email) |
+| IOB_CONFIG | 13 | a board is the wrong type, or its channels or address overlap another's |
+| IOB_OUT_FAULT | 14 | any output fault for 1 s |
+| IOB_IN_FAULT | 15 | any input wire break for 1 s |
+| IOB_SUPPLY | 16 | a field 24 V supply missing for 0.5 s |
+| IOB_NODE_RESET | 17 | a node was restarted by its own watchdog (latched until acknowledged) |
+
+Every change goes to the event log as "I/O board": board 2: online / not responding /
+out 3 open circuit / in 5 wire break / field A 24V missing / restarted / watchdog reset.
+
+**Settings** (admin level, parameters 100-101 and 110-139): `iob_timeout`, `iob_filter`, and
+per board `enable` (off by default), `address`, `first_do`, `first_di`, `open_check`
+(bits: bank A outputs with a valve fitted), `wire_check` (bits: inputs with the wire-break
+resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, and 140-145
+`inputs` / `outputs`.
+
+**Screens.** System → I/O boards on the touchscreen (`docs/ui/iob.png`) and the I/O boards
+section of the web page (`docs/web_iob.png`, `/api/iob`): each board's state, its
+outputs and inputs as lit squares, faults in words, firmware version and request counts.
+
+**Hardware.** One USART in RS-485 mode (the USART drives DE) and an isolated transceiver
+(`docs/CUBEMX_SETUP.md` 3f, `docs/HARDWARE.md` H11). `rs485_stm32h5.c` sends with
+interrupts and receives to line idle; the task sleeps meanwhile.
+
+**The simulated board** (`platform/bsp/iob_node_sim.c`) implements the register map exactly
+as the node firmware must; it is the master's test partner, and netsim runs two of them
+(console: `node 1 open 4`, `node 2 power 0`, `node 1 wdg` ...).
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
@@ -631,7 +698,7 @@ work before integration.
 | Alarm email end to end (`tests/integration/mail_test.py`): netsim against a mail server written in the test (plain, STARTTLS, TLS; certificates from openssl, signed with SHA-384) | 23 checks: test email to two recipients; an alarm emailed with its line and what is active, its clear emailed, two alarms in one email; a login refused on plain SMTP; STARTTLS with an RSA-2048 certificate and AUTH PLAIN; the fingerprint reported and pinned; a changed certificate refused before logging in, three tries, NOTIFY_FAIL; TLS with an ECDSA certificate, NOTIFY_FAIL cleared; the password unreadable and absent from the backup file; "nothing" sends nothing; sends and failures in the event log; TLS pool within its 44 KB (also run with RSA-4096: 38 KB) |
 | Clock (`tests/test_clock.c`, `tests/test_ui.c`; `tests/integration/clock_test.py` against a test SNTP server) | Range refused; applied by the scan only, once; calendar and weekday (a leap day, a Sunday); through parameter 85 from Modbus in REMOTE; the logger told not to log the step twice; UTC offset. Touchscreen: Set clock, incomplete entry refused, set. End to end (14 checks): login and admin level needed, a set from the web, SNTP finds the clock an hour fast and steps it, no step when in step, an unsynchronised server ignored, no answer reported, following the server back 30 s, each step logged once with its source |
 | Alarm manager (`make test`, `tests/test_alarm.c`) | Table errors; raise, acknowledge (through the parameter, any mode, no login), clear; cleared-but-unacknowledged kept; on- and off-delays with restarts; the delay parameter; latch held until acknowledged, or cleared later if acknowledged while active; status alarms; suppression at once and delays again after; range deadband on both sides and a value sitting on a limit raising once; UTF-16 descriptions; order and paging; acknowledge all; the watchdog-reset and IP-conflict platform alarms; routes: defaults, the user's choice and "nothing", relays in all three modes and fail-safe, overriding the application's output, the common-alarm word |
-| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 12,494 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
+| Host unit tests (`make test`): scan order, first-scan bit, dt including 2^32 wrap and late scans, RTC snapshot and all 7 weekday conversions, frozen inputs, outputs default off, command order/limit/reject, seqlock retry and bounded failure, monitor grace/limits/wrap/re-enable, diag record across warm reset and after corruption; parameter definitions, every check, arbitration in both modes, interlocks, the remote-link watchdog; the store tests in section 4; the logger: calendar, averaging and quality, interval and schema changes, clock steps, wrap-around and even wear, FRAM pointer missing or stale, worn cells, failed erases, queue overflow, CSV and JSON export, and 400 random power cuts (during writes and erases, with the FRAM pointer current, stale or lost; also run with 20 seeds) after each of which every complete record is still there and in order | 13,926 checks, 0 failures, run with both memory maps, gcc -Werror with AddressSanitizer and UBSan |
 | PC simulation (`make sim`): demo app on the parameter table and store, blank FRAM, writes from touchscreen/web/Modbus, power cycle | Modbus refused in LOCAL; web refused below min, then accepted in REMOTE; IP change refused over Modbus; setting and retained string survive the power cycle; mode back to LOCAL; calibration alarm stays on an uncalibrated unit |
 | FreeRTOS POSIX run of the real task file (`make rtos`) | 280 scans in 2.8 s, ctrl 1 kHz, IWDG kicked every 100 ms; the real store task saves a queued web write; a UI task that hangs at 2 s gives a recorded "ui" fault, outputs to safe state, and a reset at 7.0 s |
 | Firmware update end to end (`tests/integration/fw_test.py`): image from `tools/mkfwimage.py`, netsim with file-backed banks; a swap exits the process as a reset | 41 checks (incl. the stored update date and time, and the rollback in the history): login needed; 300 KB upload; damaged file and other-hardware image refused; activate, restart as the new version on trial, confirmed after the trial, events logged; second update "hangs" in its trial, watchdog reset rolls it back, the old version runs with `rolled_back`, the failed image stays available; with a product key (`CEMS_FW_PUBKEY`): unsigned and other-key images refused, the product-signed image accepted; gates: refused with the application's reason while a sequence runs, held for the touchscreen (refused, then confirmed and restarted), an image older than the minimum refused, every step logged |
@@ -640,6 +707,7 @@ work before integration.
 | Network integration (`make netsim` + `tests/integration/net_test.py`): real sockets, threads, file-backed FRAM, pymodbus 3.6.9 as the Modbus client, plain HTTP with JSON parsing | 88 checks: reads of every shape, mode refusals, range/half-value/read-only exceptions, text through registers, coils, web sessions and batch writes (all or nothing), client eviction, IP filter, 3 Modbus clients + 1 browser for 4 s with no errors, remote-link watchdog in real time, backup/restore and a damaged file refused; the event log records the mode change, Modbus and web writes with old/new value and login level, logins, the password change and the restore, and its CSV matches; after a restart: settings and the changed password kept, mode back to LOCAL, the event log continues with contiguous sequence numbers from the FRAM pointer; alarms: the platform's calibration alarm, a latching application alarm raised and held, the counts and per-alarm bits read over Modbus, acknowledged over Modbus (and logged as such), a range alarm waiting out its 2 s on-delay with its edited description, acknowledge refused without a login, acknowledge all, suppression, the Modbus common-alarm word following each alarm's Modbus action |
 | Web page in headless Chromium (`tests/integration/web_ui_test.py`) | Admin firmware upload with progress, "Ready in the spare bank" and the restart button (`docs/web_firmware.png`); login, an out-of-range value refused with a plain message, an accepted change shown within a second and listed in the event log ("start_delay (1001): 2000 → 1500"), the connection-lost banner when the unit stops, no script errors; the alarm badge and list, one alarm acknowledged from its row; an alarm's relay action ticked, a relay given an output, the email set-up saved with the password left blank on reload |
 | Target compile and link (`make target`, `make -f port/stm32h5/check.mk link`) with arm-none-eabi-gcc 13.3.1, FreeRTOS V11.2.0, STM32H5 HAL and CMSIS from ST's GitHub | Clean with -Werror (`tools/check_target.sh`: no FRAM/no NOR, I2C FRAM, SPI FRAM, and each FRAM with the SPI NOR), each linked with lwIP 2.2.1, the Ethernet driver, both servers and the logger. With everything fitted, flash and RAM by module are in `docs/MEMORY.md` (now 34 % of the 1 MB bank and 51 % of the RAM); the RAM stand-ins add 33 KB when no FRAM or NOR is fitted. `plat_diag` is in the NOLOAD `.noinit` section |
+| I/O boards (`tests/test_iobus.c`, `tests/test_ui.c` `t_iob_screen`; `tests/integration/iob_test.py`) | RTU frames and CRC against the textbook frame, replies of every kind; the simulated node's rules (addresses, CRC, read-only and out-of-range writes, write-before-read, gate and comms timeout, unknown function); off by default with a quiet bus; connect, settings sent, outputs and relays out and inputs in, one request per board per cycle; channel ranges and main-board inputs kept outside them; stale scan outputs and safe state send all-off; a board lost (inputs held for the timeout, then 0 and all faulty, alarm, retried once a second) and back on its own; a node restart (settings again, watchdog latch cleared, latched alarm); open circuit only where checked, overload, over-temperature, bank B, field supply, wire break; wrong type never written to; overlapping channels, duplicate address, range past 64; lost and damaged replies counted only; the node's own timeout and the master clearing it; no port. The touchscreen screen online and not responding. End to end over netsim (26 checks): enable from the console, inputs following the simulated sensor, open circuit, supply, power off and back, node watchdog, overlapping channels, alarms and event log, the web section in Chromium |
 | Soak (`tests/integration/soak_test.py 15`) on the PC build | 15 minutes: no request failed; open sockets steady; memory flat after warm-up; no sanitizer errors or leaks |
 | On the STM32H573I-DK | **Not done yet.** Needs the CubeIDE project (`docs/CUBEMX_SETUP.md`) |
 
@@ -672,6 +740,7 @@ work before integration.
 | D24 | Display assets | Own fonts (DejaVu, L4) compressed in the firmware, inflated into RAM_G at start-up and CRC-checked; nothing in the module's flash yet; link stays single SPI | Versioned with the firmware with no extra step; the units the instrument shows need ° ² ³ µ; the module's flash is kept for big images if ever needed |
 | D26 | Application screens and records | The application describes its screens and record editors by parameter ID (`ui_app.h`); the platform draws them on the touchscreen and the web page the same way, and every press is a write through the table. Sequences and schedules are records: whole C structures, written only whole and applied in one scan after the application's check of the complete new image (`PARAM_RECORD`) | One description serves both screens; no half-edited sequence can reach the logic; the old 7-row editor bits and copies are not needed |
 | D25 | Serial number authority | **Gary, 20 Oct: developer level authority to change it at all.** No login level can write it; only a token signed by a separate developer key, bound to the chip's unique ID and the current serial (single use, single unit); not restored from backups; every change and refusal logged; no key built in = cannot be changed | The serial is the unit's identity for the customer, certificates and records; a tech login or a copied backup must not be able to change or clone it |
+| D27 | Field I/O | **Gary, 22 Oct:** valves on 24 VDC (SMC VX21 class) switched by isolated solid-state outputs, not relays; the I/O on separate boards linked by RS-485 Modbus RTU (deployable up to 100 m away); per board 8 × 0.6 A with diagnostics, 8 × 1 A, 2 socketed relays for 230 VAC, 8 inputs. Built: the master here; the boards follow the *I/O Board Design Specification* and the *I/O Module Requirements* | Sockets and relay contacts were the reliability worry; per-channel diagnostics tell a technician which valve is open-circuit; the bus keeps the main board small and the I/O near the valves |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout
@@ -681,7 +750,7 @@ platform/include/   public headers (no HAL, no FreeRTOS except plat_port.h on ta
 platform/core/      portable logic: scan engine, queue, monitor, diag
 platform/os/        FreeRTOS binding (tasks, hooks)
 platform/net/       Modbus TCP, HTTP server, web API, logins (socket API: POSIX or lwIP)
-platform/bsp/       simulated board, RAM FRAM and RAM NOR (also the target's stand-ins)
+platform/bsp/       simulated board, RAM FRAM and RAM NOR (also the target's stand-ins), simulated I/O board
 port/stm32h5/       STM32H5 BSP, FRAM and NOR drivers, FreeRTOSConfig.h, linker snippet, compile/link check
 port/stm32h5/lwip/  lwipopts.h, Ethernet driver (from ST, SLA0044), network bring-up
 platform/ui/         EVE display driver and the touch UI
@@ -689,6 +758,6 @@ web/                the web page source (embedded by tools/embed_web.py)
 app_demo/           example application on the scan contract
 host/               PC simulation, FreeRTOS POSIX run, networked simulation (netsim), BT817 simulator
 tools/              web page embedding, firmware image tool, screen previews, target compile check
-tests/              host unit tests; tests/integration: network and browser tests
+tests/              host unit tests; tests/integration: network, browser and I/O bus tests
 docs/               this file, CUBEMX_SETUP.md
 ```

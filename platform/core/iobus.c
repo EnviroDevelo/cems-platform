@@ -1,0 +1,439 @@
+/* iobus.c - RS-485 I/O bus master (iobus.h). Pure C: the port is passed in, so the
+ * host tests run it against a simulated node (platform/bsp/iob_node_sim.c). */
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "iobus.h"
+#include "mb_rtu.h"
+#include "bsp.h"
+#include "plat_alarm.h"
+#include "plat_cmdq.h"
+#include "plat_config.h"
+#include "plat_log.h"
+#include "plat_port.h"
+
+/* ---------------- settings (parameter tags, owned by the scan) ---------------- */
+iob_board_tags_t iob_tags[IOB_BOARDS] = {
+    { .address = 1, .first_do = 1,  .first_di = 1,  .ol_mask = 0xFF },
+    { .address = 2, .first_do = 19, .first_di = 9,  .ol_mask = 0xFF },
+    { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF },
+};
+uint16_t iob_timeout_ms = 500;
+uint8_t  iob_filter_ms = 3;
+
+typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; } cfg_t;
+
+/* scan -> bus (under PLAT_CRIT) */
+static struct {
+    cfg_t    cfg[IOB_BOARDS];
+    uint16_t timeout_ms;
+    uint8_t  filter_ms;
+    bool     cfg_valid;                 /* the scan has copied the settings at least once */
+    uint16_t out[IOB_BOARDS];
+    uint8_t  rel[IOB_BOARDS];
+    uint32_t stamp;                     /* bsp ms when the scan last wrote outputs */
+    bool     out_valid;
+} cmd;
+
+/* bus -> everyone (under PLAT_CRIT) */
+static iob_view_t view[IOB_BOARDS];
+static uint32_t   wdg_events[IOB_BOARDS];   /* node watchdog resets seen (the scan raises the alarm) */
+
+static volatile bool safe;
+static iob_port_t   *port;
+
+/* bus task private */
+typedef struct {
+    uint8_t  state;
+    uint32_t next_try, last_ok;
+    uint16_t seq;
+    bool     cfg_sent;
+    cfg_t    sent;
+    uint16_t sent_timeout;
+    uint8_t  sent_filter;
+    bool     ident_ok;
+    /* last raw values, for the event log */
+    uint16_t st;
+    uint8_t  a_open, a_ovl, a_otemp, wb, bf;
+    bool     have_raw;
+} bstate_t;
+static bstate_t B[IOB_BOARDS];
+
+void iob_init(iob_port_t *p) { port = p; }
+
+void iob_reset(void) {
+    PLAT_CRIT_ENTER();
+    memset(&cmd, 0, sizeof cmd);
+    memset(view, 0, sizeof view);
+    memset(wdg_events, 0, sizeof wdg_events);
+    PLAT_CRIT_EXIT();
+    memset(B, 0, sizeof B);
+    safe = false;
+}
+
+void iob_safe_state(void) { safe = true; }
+
+const char *iob_state_name(uint8_t s) {
+    static const char *const n[] = { "off", "connecting", "online", "not responding", "wrong type", "settings conflict" };
+    return s <= IOB_S_BAD_SETTINGS ? n[s] : "?";
+}
+
+int iob_fault_lines(const iob_view_t *v, uint8_t ol, uint8_t wbm, char lines[][IOB_LINE], int max) {
+    int n = 0;
+    if (max <= 0) return 0;
+    switch (v->state) {
+    case IOB_S_LOST:         snprintf(lines[0], IOB_LINE, "No reply: outputs are off"); return 1;
+    case IOB_S_WRONG_TYPE:   snprintf(lines[0], IOB_LINE, "Not a CEMS I/O board"); return 1;
+    case IOB_S_BAD_SETTINGS: snprintf(lines[0], IOB_LINE, "Channels or address overlap"); return 1;
+    case IOB_S_RUN: break;
+    default: return 0;
+    }
+    for (unsigned i = 0; i < 8 && n < max; ++i) {
+        uint8_t m = (uint8_t)(1u << i);
+        const char *k = (v->a_overload & m) ? "short or overload" : (v->a_overtemp & m) ? "overheating" :
+                        (v->a_open & ol & m) ? "open circuit" : NULL;
+        if (k) snprintf(lines[n++], IOB_LINE, "Out %u: %s", i + 1u, k);
+    }
+    if ((v->b_fault & IOB_BF_FAULT) && n < max) snprintf(lines[n++], IOB_LINE, "Outs 9-16: overload or hot");
+    if ((v->b_fault & IOB_BF_WDG) && n < max) snprintf(lines[n++], IOB_LINE, "Outs 9-16: off (own watchdog)");
+    for (unsigned i = 0; i < 8 && n < max; ++i)
+        if (v->wirebreak & wbm & (1u << i)) snprintf(lines[n++], IOB_LINE, "In %u: wire break", i + 1u);
+    if (!(v->status & IOBS_FIELD_A_OK) && n < max) snprintf(lines[n++], IOB_LINE, "Field 24 V A missing");
+    if (!(v->status & IOBS_FIELD_B_OK) && n < max) snprintf(lines[n++], IOB_LINE, "Field 24 V B missing");
+    return n;
+}
+
+bool iob_board_view(unsigned b, iob_view_t *v) {
+    if (b >= IOB_BOARDS) return false;
+    PLAT_CRIT_ENTER();
+    *v = view[b];
+    PLAT_CRIT_EXIT();
+    return true;
+}
+
+/* Boards whose channel range does not fit the image or overlaps an earlier enabled
+ * board's (bit k = board k). */
+static uint8_t bad_settings(const cfg_t *c) {
+    uint8_t bad = 0;
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        if (!c[k].en) continue;
+        if (c[k].addr < 1 || c[k].addr > 247 || c[k].first_do < 1 || c[k].first_di < 1 ||
+            c[k].first_do - 1u + IOB_OUTS > PLAT_DO_MAX || c[k].first_di - 1u + IOB_INS > PLAT_DI_MAX) { bad |= (uint8_t)(1u << k); continue; }
+        for (unsigned j = 0; j < k; ++j) {
+            if (!c[j].en || (bad & (1u << j))) continue;
+            bool o_do = c[k].first_do < c[j].first_do + IOB_OUTS && c[j].first_do < c[k].first_do + IOB_OUTS;
+            bool o_di = c[k].first_di < c[j].first_di + IOB_INS && c[j].first_di < c[k].first_di + IOB_INS;
+            if (o_do || o_di || c[k].addr == c[j].addr) { bad |= (uint8_t)(1u << k); break; }
+        }
+    }
+    return bad;
+}
+
+static void ev(unsigned b, const char *text) {
+    plat_log_event(LOG_EV_IOB, PLAT_SRC_INTERNAL, 0, b + 1u, NAN, NAN, text);
+}
+
+/* ---------------- one request ---------------- */
+static int transact(unsigned b, const uint8_t *tx, size_t n, uint16_t *regs, uint16_t n_regs) {
+    uint8_t rx[MBR_FRAME_MAX];
+    uint16_t got = 0;
+    if (n == 0) return MBR_BAD_FORMAT;
+    if (port && port->xfer) got = port->xfer(port, tx, (uint16_t)n, rx, sizeof rx, PLAT_IOB_REPLY_MS);
+    uint8_t exc = 0;
+    int r = mbr_check_reply(tx, n, rx, got, regs, n_regs, &exc);
+    PLAT_CRIT_ENTER();
+    view[b].requests++;
+    if (r != MBR_OK) { view[b].errors++; view[b].last_error = (uint8_t)r; view[b].last_exception = exc; }
+    PLAT_CRIT_EXIT();
+    return r;
+}
+
+static void set_state(unsigned b, uint8_t s, uint32_t now) {
+    bstate_t *x = &B[b];
+    if (x->state == s) return;
+    uint8_t was = x->state;
+    x->state = s;
+    switch (s) {
+    case IOB_S_RUN:          ev(b, "online"); break;
+    case IOB_S_LOST:         ev(b, "not responding"); x->next_try = now + PLAT_IOB_RETRY_MS; break;
+    case IOB_S_WRONG_TYPE:   ev(b, "wrong type"); x->next_try = now + PLAT_IOB_RETRY_MS; break;
+    case IOB_S_BAD_SETTINGS: ev(b, "settings conflict"); break;
+    case IOB_S_CONNECTING:   x->last_ok = now; x->ident_ok = false; x->cfg_sent = false; break;
+    default: break;
+    }
+    if (s != IOB_S_RUN) x->have_raw = false;
+    (void)was;
+}
+
+/* A request failed. The board stays as it is until nothing good has come for the comms
+ * timeout (the node has turned its outputs off by then), then it is "not responding". */
+static void failed(unsigned b, uint32_t now, uint16_t timeout) {
+    bstate_t *x = &B[b];
+    if (x->state == IOB_S_LOST || x->state == IOB_S_WRONG_TYPE) { x->next_try = now + PLAT_IOB_RETRY_MS; return; }
+    if ((uint32_t)(now - x->last_ok) >= timeout) set_state(b, IOB_S_LOST, now);
+}
+
+static bool ident(unsigned b, uint8_t addr) {
+    uint8_t f[MBR_FRAME_MAX];
+    uint16_t r[IOB_R_IDENT_N];
+    int rc = transact(b, f, mbr_req_read(f, addr, IOB_R_MAGIC, IOB_R_IDENT_N), r, IOB_R_IDENT_N);
+    if (rc != MBR_OK) return false;
+    PLAT_CRIT_ENTER();
+    view[b].hw_rev = r[IOB_R_HW_REV - IOB_R_MAGIC];
+    view[b].fw_version = r[IOB_R_FW_VERSION - IOB_R_MAGIC];
+    memcpy(view[b].uid, &r[IOB_R_UID - IOB_R_MAGIC], sizeof view[b].uid);
+    PLAT_CRIT_EXIT();
+    bool match = r[0] == IOB_MAGIC && r[1] == IOB_MAP_VERSION &&
+                 r[IOB_R_N_OUT_A - IOB_R_MAGIC] == 8 && r[IOB_R_N_OUT_B - IOB_R_MAGIC] == 8 &&
+                 r[IOB_R_N_RELAYS - IOB_R_MAGIC] == 2 && r[IOB_R_N_INPUTS - IOB_R_MAGIC] == 8;
+    B[b].ident_ok = match;
+    return true;
+}
+
+static bool write_cfg(unsigned b, const cfg_t *c, uint16_t timeout, uint8_t filter) {
+    uint8_t f[MBR_FRAME_MAX];
+    uint16_t v[IOB_R_CONFIG_N] = { timeout, filter, c->wb, c->ol };
+    if (transact(b, f, mbr_req_write(f, c->addr, IOB_R_TIMEOUT_MS, v, IOB_R_CONFIG_N), NULL, 0) != MBR_OK) return false;
+    B[b].cfg_sent = true;
+    B[b].sent = *c;
+    B[b].sent_timeout = timeout;
+    B[b].sent_filter = filter;
+    return true;
+}
+
+static bool cfg_changed(const bstate_t *x, const cfg_t *c, uint16_t timeout, uint8_t filter) {
+    return !x->cfg_sent || x->sent.ol != c->ol || x->sent.wb != c->wb || x->sent.addr != c->addr ||
+           x->sent_timeout != timeout || x->sent_filter != filter;
+}
+
+/* event-log lines for what changed in the status block */
+static void log_changes(unsigned b, uint16_t st, uint8_t open, uint8_t ovl, uint8_t otemp, uint8_t wb, uint8_t bf, const cfg_t *c) {
+    bstate_t *x = &B[b];
+    char t[24];
+    uint16_t pst = x->have_raw ? x->st : (IOB_ST_FIELD_A_OK | IOB_ST_FIELD_B_OK);
+    uint8_t pa = x->have_raw ? (uint8_t)((x->a_open & c->ol) | x->a_ovl | x->a_otemp) : 0;
+    uint8_t na = (uint8_t)((open & c->ol) | ovl | otemp);
+    for (unsigned i = 0; i < 8; ++i) {
+        uint8_t m = (uint8_t)(1u << i);
+        if ((na & m) && !(pa & m)) {
+            snprintf(t, sizeof t, "out %u %s", i + 1u, (ovl & m) ? "short/overload" : (otemp & m) ? "overheating" : "open circuit");
+            ev(b, t);
+        } else if (!(na & m) && (pa & m)) { snprintf(t, sizeof t, "out %u ok", i + 1u); ev(b, t); }
+        uint8_t pw = x->have_raw ? (uint8_t)(x->wb & c->wb) : 0, nw = (uint8_t)(wb & c->wb);
+        if ((nw & m) && !(pw & m)) { snprintf(t, sizeof t, "in %u wire break", i + 1u); ev(b, t); }
+        else if (!(nw & m) && (pw & m)) { snprintf(t, sizeof t, "in %u ok", i + 1u); ev(b, t); }
+    }
+    uint8_t pb = x->have_raw ? x->bf : 0;
+    if ((bf & IOB_BF_FAULT) && !(pb & IOB_BF_FAULT)) ev(b, "outs 9-16 fault");
+    else if (!(bf & IOB_BF_FAULT) && (pb & IOB_BF_FAULT)) ev(b, "outs 9-16 ok");
+    if ((bf & IOB_BF_WDG) && !(pb & IOB_BF_WDG)) ev(b, "outs 9-16 watchdog off");
+    uint16_t chg = (uint16_t)(st ^ pst);
+    if (chg & IOB_ST_FIELD_A_OK) ev(b, (st & IOB_ST_FIELD_A_OK) ? "field A 24V ok" : "field A 24V missing");
+    if (chg & IOB_ST_FIELD_B_OK) ev(b, (st & IOB_ST_FIELD_B_OK) ? "field B 24V ok" : "field B 24V missing");
+    if ((st & IOB_ST_IN_CHIP) && !(pst & IOB_ST_IN_CHIP)) ev(b, "input chip fault");
+    if ((st & IOB_ST_OUT_A_CHIP) && !(pst & IOB_ST_OUT_A_CHIP)) ev(b, "outs 1-8 chip fault");
+    x->st = st; x->a_open = open; x->a_ovl = ovl; x->a_otemp = otemp; x->wb = wb; x->bf = bf;
+    x->have_raw = true;
+}
+
+static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32_t now, uint16_t timeout) {
+    bstate_t *x = &B[b];
+    uint8_t f[MBR_FRAME_MAX];
+    uint16_t r[IOB_R_STATUS_N];
+    x->seq++;
+    uint16_t w[3] = { out, rel, x->seq };
+    int rc = transact(b, f, mbr_req_rw(f, c->addr, IOB_R_STATUS, IOB_R_STATUS_N, IOB_R_OUT_CMD, w, 3), r, IOB_R_STATUS_N);
+    if (rc == MBR_OK && r[IOB_R_CMD_ECHO - IOB_R_STATUS] != x->seq) {
+        rc = MBR_BAD_FORMAT;                     /* the node did not apply this write */
+        PLAT_CRIT_ENTER(); view[b].errors++; view[b].last_error = MBR_BAD_FORMAT; PLAT_CRIT_EXIT();
+    }
+    if (rc != MBR_OK) { failed(b, now, timeout); return; }
+    x->last_ok = now;
+
+    uint16_t st = r[0];
+    uint8_t open = (uint8_t)r[IOB_R_A_OPEN - IOB_R_STATUS], ovl = (uint8_t)r[IOB_R_A_OVERLOAD - IOB_R_STATUS];
+    uint8_t otemp = (uint8_t)r[IOB_R_A_OVERTEMP - IOB_R_STATUS], bf = (uint8_t)r[IOB_R_B_FAULT - IOB_R_STATUS];
+    uint8_t wb = (uint8_t)r[IOB_R_WIREBREAK - IOB_R_STATUS];
+    log_changes(b, st, open, ovl, otemp, wb, bf, c);
+
+    uint32_t of = (uint32_t)((open & c->ol) | ovl | otemp);
+    if (!(st & IOB_ST_FIELD_A_OK) || (st & IOB_ST_OUT_A_CHIP)) of |= 0x00FFu;
+    if ((bf & (IOB_BF_FAULT | IOB_BF_WDG)) || !(st & IOB_ST_FIELD_B_OK)) of |= 0xFF00u;
+    uint8_t inf = (uint8_t)(wb & c->wb);
+    if ((st & IOB_ST_IN_CHIP) || !(st & IOB_ST_FIELD_A_OK)) inf = 0xFF;
+
+    bool clear = false;
+    PLAT_CRIT_ENTER();
+    iob_view_t *v = &view[b];
+    v->inputs = (uint8_t)r[IOB_R_INPUTS - IOB_R_STATUS];
+    v->outputs = (uint32_t)r[IOB_R_OUT_APPLIED - IOB_R_STATUS] | (uint32_t)(r[IOB_R_RELAY_APPLIED - IOB_R_STATUS] & 3u) << 16;
+    v->out_faults = of;
+    v->in_faults = inf;
+    v->a_open = open; v->a_overload = ovl; v->a_overtemp = otemp; v->b_fault = bf; v->wirebreak = wb;
+    v->node_rx_errors = r[IOB_R_RX_ERRORS - IOB_R_STATUS];
+    v->node_resets = r[IOB_R_RESETS - IOB_R_STATUS];
+    uint16_t s = (uint16_t)(v->status & (IOBS_WDG_SEEN | IOBS_TIMEOUT_SEEN));
+    s |= IOBS_ONLINE;
+    if (st & IOB_ST_OUT_ENABLED) s |= IOBS_GATE_OPEN;
+    if (st & IOB_ST_FIELD_A_OK) s |= IOBS_FIELD_A_OK;
+    if (st & IOB_ST_FIELD_B_OK) s |= IOBS_FIELD_B_OK;
+    if (st & IOB_ST_WDG_RESET) { s |= IOBS_WDG_SEEN; wdg_events[b]++; clear = true; }
+    if (st & IOB_ST_TIMEOUT) { s |= IOBS_TIMEOUT_SEEN; clear = true; }
+    v->status = s;
+    PLAT_CRIT_EXIT();
+
+    if (st & IOB_ST_WDG_RESET) ev(b, "watchdog reset");
+    if (st & IOB_ST_TIMEOUT) ev(b, "outputs timed out");
+    if (st & IOB_ST_CONFIG_NEEDED) { ev(b, "restarted"); x->cfg_sent = false; }   /* send the settings again next cycle */
+    if (clear) {
+        uint8_t f2[MBR_FRAME_MAX];
+        (void)transact(b, f2, mbr_req_write1(f2, c->addr, IOB_R_FAULT_CLEAR, 1), NULL, 0);
+    }
+}
+
+static void publish_state(unsigned b) {
+    uint8_t s = B[b].state;
+    PLAT_CRIT_ENTER();
+    iob_view_t *v = &view[b];
+    v->state = s;
+    if (s != IOB_S_RUN) {
+        v->status = (uint16_t)(v->status & (IOBS_WDG_SEEN | IOBS_TIMEOUT_SEEN));
+        if (s == IOB_S_LOST) v->status |= IOBS_LOST;
+        if (s == IOB_S_WRONG_TYPE) v->status |= IOBS_WRONG_TYPE;
+        if (s == IOB_S_BAD_SETTINGS) v->status |= IOBS_BAD_SET;
+        if (s == IOB_S_CONNECTING) v->status |= IOBS_CONNECTING;
+        v->inputs = 0;
+        v->outputs = 0;
+        v->out_faults = s == IOB_S_OFF ? 0u : (1u << IOB_OUTS) - 1u;
+        v->in_faults = s == IOB_S_OFF ? 0u : 0xFFu;
+    }
+    PLAT_CRIT_EXIT();
+}
+
+void iob_cycle(uint32_t now) {
+    cfg_t c[IOB_BOARDS];
+    uint16_t out[IOB_BOARDS], timeout;
+    uint8_t rel[IOB_BOARDS], filter;
+    bool fresh, valid;
+    PLAT_CRIT_ENTER();
+    memcpy(c, cmd.cfg, sizeof c);
+    memcpy(out, cmd.out, sizeof out);
+    memcpy(rel, cmd.rel, sizeof rel);
+    timeout = cmd.timeout_ms;
+    filter = cmd.filter_ms;
+    valid = cmd.cfg_valid;
+    fresh = cmd.out_valid && (uint32_t)(now - cmd.stamp) <= PLAT_IOB_STALE_MS;
+    PLAT_CRIT_EXIT();
+    if (!valid) return;                          /* the scan has not run yet */
+    if (safe || !fresh) { memset(out, 0, sizeof out); memset(rel, 0, sizeof rel); }
+    if (timeout < 100u) timeout = 100u;
+    uint8_t bad = bad_settings(c);
+
+    for (unsigned b = 0; b < IOB_BOARDS; ++b) {
+        bstate_t *x = &B[b];
+        if (!c[b].en) { set_state(b, IOB_S_OFF, now); publish_state(b); continue; }
+        if (bad & (1u << b)) { set_state(b, IOB_S_BAD_SETTINGS, now); publish_state(b); continue; }
+        if (x->state == IOB_S_OFF || x->state == IOB_S_BAD_SETTINGS) set_state(b, IOB_S_CONNECTING, now);
+        if ((x->state == IOB_S_LOST || x->state == IOB_S_WRONG_TYPE) && (int32_t)(now - x->next_try) < 0) { publish_state(b); continue; }
+
+        if (x->state != IOB_S_RUN) {
+            if (!ident(b, c[b].addr)) { failed(b, now, timeout); publish_state(b); continue; }
+            if (!x->ident_ok) { set_state(b, IOB_S_WRONG_TYPE, now); publish_state(b); continue; }
+            x->cfg_sent = false;
+        }
+        if (cfg_changed(x, &c[b], timeout, filter) && !write_cfg(b, &c[b], timeout, filter)) {
+            failed(b, now, timeout); publish_state(b); continue;
+        }
+        if (x->state != IOB_S_RUN) { x->last_ok = now; set_state(b, IOB_S_RUN, now); }
+        cyclic(b, &c[b], out[b], rel[b], now, timeout);
+        publish_state(b);
+    }
+}
+
+/* ---------------- scan side ---------------- */
+static uint32_t wdg_seen[IOB_BOARDS];
+
+void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
+    (void)now_ms;
+    iob_view_t v[IOB_BOARDS];
+    uint32_t wd[IOB_BOARDS];
+    PLAT_CRIT_ENTER();
+    for (unsigned b = 0; b < IOB_BOARDS; ++b) {
+        const iob_board_tags_t *t = &iob_tags[b];
+        cmd.cfg[b] = (cfg_t){ .en = t->enable, .addr = t->address, .first_do = t->first_do,
+                              .first_di = t->first_di, .ol = t->ol_mask, .wb = t->wb_mask };
+    }
+    cmd.timeout_ms = iob_timeout_ms;
+    cmd.filter_ms = iob_filter_ms;
+    cmd.cfg_valid = true;
+    memcpy(v, view, sizeof v);
+    memcpy(wd, wdg_events, sizeof wd);
+    PLAT_CRIT_EXIT();
+
+    bool lost = false, conf = false, of = false, inf = false, sup = false, wdg = false;
+    for (unsigned b = 0; b < IOB_BOARDS; ++b) {
+        iob_board_tags_t *t = &iob_tags[b];
+        bool on = t->enable && v[b].state != IOB_S_OFF && v[b].state != IOB_S_BAD_SETTINGS;
+        if (on) {
+            unsigned d0 = t->first_di - 1u, o0 = t->first_do - 1u;
+            uint64_t dm = (uint64_t)0xFFu << d0, om = (uint64_t)((1u << IOB_OUTS) - 1u) << o0;
+            in->di = (in->di & ~dm) | ((uint64_t)v[b].inputs << d0);
+            in->di_fault = (in->di_fault & ~dm) | ((uint64_t)v[b].in_faults << d0);
+            in->do_fault = (in->do_fault & ~om) | ((uint64_t)v[b].out_faults << o0);
+        }
+        t->status = v[b].status;
+        t->out_faults = v[b].out_faults;
+        t->in_faults = v[b].in_faults;
+        t->errors = v[b].errors;
+        t->inputs = v[b].inputs;
+        t->outputs = v[b].outputs;
+        if (!t->enable) { wdg_seen[b] = wd[b]; continue; }
+        if (v[b].state == IOB_S_LOST) lost = true;
+        if (v[b].state == IOB_S_WRONG_TYPE || v[b].state == IOB_S_BAD_SETTINGS) conf = true;
+        if (v[b].state == IOB_S_RUN) {
+            if (v[b].out_faults) of = true;
+            if (v[b].in_faults) inf = true;
+            if ((v[b].status & (IOBS_FIELD_A_OK | IOBS_FIELD_B_OK)) != (IOBS_FIELD_A_OK | IOBS_FIELD_B_OK)) sup = true;
+        }
+        if (wd[b] != wdg_seen[b]) { wdg = true; wdg_seen[b] = wd[b]; }
+    }
+    alarm_set(ALARM_ID_IOB_LOST, lost);
+    alarm_set(ALARM_ID_IOB_CONFIG, conf);
+    alarm_set(ALARM_ID_IOB_OUT_FAULT, of);
+    alarm_set(ALARM_ID_IOB_IN_FAULT, inf);
+    alarm_set(ALARM_ID_IOB_SUPPLY, sup);
+    alarm_set(ALARM_ID_IOB_NODE_RESET, wdg);
+}
+
+void iob_scan_out(const plat_io_out_t *o, uint32_t now_ms) {
+    uint16_t out[IOB_BOARDS] = { 0 };
+    uint8_t rel[IOB_BOARDS] = { 0 };
+    for (unsigned b = 0; b < IOB_BOARDS; ++b) {
+        const iob_board_tags_t *t = &iob_tags[b];
+        if (!t->enable || t->first_do < 1 || t->first_do - 1u + IOB_OUTS > PLAT_DO_MAX) continue;
+        uint32_t bits = (uint32_t)(o->do_bits >> (t->first_do - 1u)) & ((1u << IOB_OUTS) - 1u);
+        out[b] = (uint16_t)bits;
+        rel[b] = (uint8_t)(bits >> 16);
+    }
+    PLAT_CRIT_ENTER();
+    memcpy(cmd.out, out, sizeof out);
+    memcpy(cmd.rel, rel, sizeof rel);
+    cmd.stamp = now_ms;
+    cmd.out_valid = true;
+    PLAT_CRIT_EXIT();
+}
+
+void plat_hw_io_read(plat_io_in_t *in) {
+    bsp_io_read(in);
+    iob_scan_in(in, bsp_ms());
+}
+
+void plat_hw_io_write(const plat_io_out_t *out) {
+    bsp_io_write(out);
+    iob_scan_out(out, bsp_ms());
+}
+
+void plat_io_safe_state(void) {
+    iob_safe_state();
+    bsp_io_safe_state();
+}

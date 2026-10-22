@@ -22,6 +22,8 @@
 #include "log_csv.h"
 #include "plat_alarm.h"
 #include "plat_clock.h"
+#include "iobus.h"
+#include "iob_node_sim.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -64,8 +66,8 @@ static bool tap(const char *label) {
 static bool shows(const char *s) { return eve_sim_has_text(&sim, s); }
 /* page the settings list until the row shows, then tap it */
 static bool row(const char *name) {
-    for (int k = 0; k < 10 && eve_sim_tag_of(&sim, "Up") > 0 && !shows(name); ++k) tap("Up");
-    if (!shows(name)) for (int k = 0; k < 10 && !shows(name); ++k) if (!tap("Down")) break;
+    for (int k = 0; k < 40 && eve_sim_tag_of(&sim, "Up") > 0 && !shows(name); ++k) tap("Up");
+    if (!shows(name)) for (int k = 0; k < 40 && !shows(name); ++k) if (!tap("Down")) break;
     return tap(name);
 }
 static void type(const char *s) { for (; *s; ++s) press((uint8_t)*s); }
@@ -438,10 +440,56 @@ static void t_ui(void) {
     fw_reset_for_test();
 }
 
+/* System -> I/O boards: board states, lit outputs and inputs, faults in words */
+static void iob_run(uint32_t ms) {
+    for (uint32_t t = 0; t < ms; t += 20) {
+        plat_io_in_t in; memset(&in, 0, sizeof in);
+        plat_io_out_t out; memset(&out, 0, sizeof out);
+        plat_do_set(&out, 1, true); plat_do_set(&out, 17, true);   /* output 2 and relay 2 on */
+        iob_scan_in(&in, bsp_host.ms); iob_scan_out(&out, bsp_host.ms);
+        iob_cycle(bsp_host.ms);
+        bsp_host_advance_ms(20);
+    }
+}
+static void t_iob_screen(void) {
+    static iob_simbus_t bus; static iob_node_t nd;
+    setup();
+    iob_reset();
+    iob_simbus_init(&bus); iob_node_init(&nd, 1); iob_simbus_add(&bus, &nd);
+    iob_init(&bus.port);
+    CHECK(tap("System"));
+    CHECK(tap("I/O boards"));
+    CHECK_EQ(ui_screen(), UI_IOB);
+    CHECK(shows("Board 1")); CHECK(shows("Board 3")); CHECK(shows("not fitted"));
+    CHECK(shows("iob1_enable (110)"));
+    iob_tags[0].enable = true;
+    nd.inputs = 0x09;
+    nd.a_open = 0x04;
+    iob_run(100);
+    frame();
+    CHECK(shows("online"));
+    CHECK(shows("Address 1, out 1-18, in 1-8"));
+    CHECK(shows("Out 3: open circuit"));
+    CHECK(shows("Firmware 1.0, hardware 1"));
+    dump("iob");
+    nd.powered = false;
+    iob_run(700);
+    frame();
+    CHECK(shows("not responding"));
+    CHECK(shows("No reply: outputs are off"));
+    dump("iob_lost");
+    CHECK(tap("Home"));
+    CHECK_EQ(ui_screen(), UI_HOME);
+    iob_tags[0].enable = false;
+    iob_reset();
+    iob_init(NULL);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
     RUN(t_eve_driver);
     RUN(t_fonts);
     RUN(t_ui);
+    RUN(t_iob_screen);
 }

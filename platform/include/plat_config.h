@@ -48,6 +48,7 @@
 #define PLAT_PRIO_CTRL            14     /* Highest tier: fast control loops   */
 #define PLAT_PRIO_SCAN            13     /* Highest tier: VM/MUX sequence scan */
 #define PLAT_PRIO_SUPERVISOR      12     /* watchdog supervisor (short, periodic) */
+#define PLAT_PRIO_IOBUS           11     /* RS-485 I/O bus master (iobus.h): a fixed 20 ms cycle */
 #define PLAT_PRIO_STORE           10     /* High tier: parameter store + logger owner */
 #define PLAT_PRIO_ETH_RX          9      /* Ethernet receive (ST runs it highest; here below control) */
 #define PLAT_PRIO_TCPIP           8      /* Medium tier: lwIP tcpip_thread (TCPIP_THREAD_PRIO) */
@@ -66,6 +67,7 @@
 #define PLAT_STACK_UI             2048
 #define PLAT_STACK_ETH_RX         512
 #define PLAT_STACK_NET            768
+#define PLAT_STACK_IOBUS          768
 
 /* ---- network services ---- */
 #ifndef PLAT_MODBUS_PORT
@@ -78,5 +80,15 @@
 #define PLAT_HTTP_PORT            80     /* only redirects to https:// (parameter 6 turns it off) */
 #endif
 #define PLAT_SILENCE_NET_MS       5000u
+#define PLAT_SILENCE_IOBUS_MS     1000u
+
+/* ---- RS-485 I/O bus (iobus.h, D27) ---- */
+#ifndef PLAT_IOB_PERIOD_MS
+#define PLAT_IOB_PERIOD_MS        20u    /* one request per running board per cycle */
+#endif
+#define PLAT_IOB_REPLY_MS         15u    /* wait this long for a node's reply (about 3 frames' time) */
+#define PLAT_IOB_RETRY_MS         1000u  /* a board that is not answering is tried this often */
+#define PLAT_IOB_STALE_MS         250u   /* outputs not refreshed by the scan this long: send all-off */
+#define PLAT_IOB_BAUD             115200u
 
 #endif

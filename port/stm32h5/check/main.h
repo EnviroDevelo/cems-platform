@@ -25,6 +25,9 @@
 #define NOR_CS_Pin GPIO_PIN_5
 #define NOR_CS_GPIO_Port GPIOE
 #endif
+#ifdef CHECK_WITH_RS485
+#define BSP_RS485_HUART huart2
+#endif
 #ifdef CHECK_WITH_FRAM
 #define FRAM_CS_Pin GPIO_PIN_4
 #define FRAM_CS_GPIO_Port GPIOE
