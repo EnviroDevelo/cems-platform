@@ -12,7 +12,7 @@ CPPFLAGS = -DPLAT_HOST -Iplatform/include -Iplatform/bsp -Iapp_demo $(MBED_FLAGS
 
 CORE = platform/core/scan_engine.c platform/core/plat_cmdq.c \
        platform/core/task_monitor.c platform/core/plat_diag.c platform/core/param.c \
-       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iobus.c \
+       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c \
        platform/net/mbtcp.c platform/net/http_util.c platform/net/http_api.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/net/tls.c platform/net/mail.c platform/net/sntp.c platform/net/fw_sig.c platform/ui/eve.c platform/ui/eve_fonts.c platform/ui/ui.c platform/ui/ui_app.c \
        platform/bsp/nvm_ram.c platform/bsp/nor_sim.c platform/bsp/fw_flash_sim.c platform/bsp/iob_node_sim.c platform/bsp/bsp_host.c
 

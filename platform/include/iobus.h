@@ -40,6 +40,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "plat_io.h"
+#include "iob_net.h"
 
 #define IOB_BOARDS       3u
 #define IOB_OUTS         18u   /* per board: 8 bank A + 8 bank B + 2 relays */
@@ -136,11 +137,24 @@ enum {
 /* ---------------- master ---------------- */
 typedef struct iob_port {
     /* Send tx, then wait up to timeout_ms for a reply and return its length (0 = none).
-     * The reply ends when the line goes idle. */
+     * The reply ends when the line goes idle. Frames are RTU frames (address, PDU, CRC) on
+     * either link: the Ethernet port turns them into Modbus TCP and back (iob_net.h). */
     uint16_t (*xfer)(struct iob_port *p, const uint8_t *tx, uint16_t tx_len,
                      uint8_t *rx, uint16_t rx_cap, uint32_t timeout_ms);
+    /* Ethernet only (NULL on RS-485): the board the next xfer goes to, by its IP (host order) */
+    void (*target)(struct iob_port *p, uint32_t ip);
     void *ctx;
 } iob_port_t;
+
+/* Ethernet discovery (iob_net.h): UDP broadcasts on IOB_DISC_PORT. */
+typedef struct iob_dgram {
+    bool     (*send)(struct iob_dgram *d, const uint8_t *buf, uint16_t len);          /* broadcast */
+    uint16_t (*recv)(struct iob_dgram *d, uint8_t *buf, uint16_t cap, uint32_t timeout_ms);  /* 0 = none */
+    void *ctx;
+} iob_dgram_t;
+
+/* the link to the boards (parameter 102 iob_link) */
+enum { IOB_LINK_RS485 = 0, IOB_LINK_ETH = 1 };
 
 /* board states */
 enum { IOB_S_OFF = 0,        /* not enabled */
@@ -180,6 +194,7 @@ typedef struct {
 } iob_view_t;
 
 void iob_init(iob_port_t *port);       /* plat_start (NULL: no RS-485 port, boards report not responding) */
+void iob_init_eth(iob_port_t *tcp, iob_dgram_t *disc);   /* plat_start: the Ethernet link (NULL: none) */
 void iob_cycle(uint32_t now_ms);       /* iobus task */
 void iob_safe_state(void);             /* any task: send all-off from now on (until the next reset) */
 bool iob_board_view(unsigned board, iob_view_t *v);   /* board 0..IOB_BOARDS-1 */
@@ -201,7 +216,8 @@ void iob_scan_out(const plat_io_out_t *out, uint32_t now_ms);
 /* Settings (parameters 100..139, param.c). first_do/first_di are 1-based channel numbers. */
 typedef struct {
     bool     enable;
-    uint8_t  address;        /* 1..IOB_ADDR_MAX (246 and 247 are the commissioning and USB addresses) */
+    uint8_t  address;        /* 1..IOB_ADDR_MAX (246 and 247 are the commissioning and USB addresses); on Ethernet the unit id */
+    uint32_t ip;             /* Ethernet: the board's IP (host order) */
     uint8_t  first_do;       /* 1..PLAT_DO_MAX-17 */
     uint8_t  first_di;       /* 1..PLAT_DI_MAX-7 */
     uint8_t  ol_mask;        /* open-circuit check, bank A outputs 1-8 */
@@ -216,6 +232,7 @@ typedef struct {
 extern iob_board_tags_t iob_tags[IOB_BOARDS];
 extern uint16_t iob_hold_s;          /* parameter 100: node hold time, s (1..600) */
 extern uint8_t  iob_filter_ms;       /* parameter 101 */
+extern uint8_t  iob_link;            /* parameter 102: IOB_LINK_* (default Ethernet) */
 
 /* Commissioning from the web page: find a board and give it its address (node requirements FW-61).
  * A new board has no address and answers on RS-485 only at IOB_COMMISSION_ADDR, so only one new
@@ -242,6 +259,25 @@ bool iob_cm_find(uint8_t addr);
 bool iob_cm_assign(uint8_t from, uint8_t to);
 void iob_cm_view(iob_cm_view_t *v);
 const char *iob_cm_result_name(uint8_t r);
+
+/* Ethernet commissioning from the web page (iob_net.h): list the boards on the network, whatever
+ * their IP, and give one its IP and Modbus address. Same threading as iob_cm_*.
+ *   iob_dc_find()    broadcast FIND, collect the HERE answers for PLAT_IOB_DISC_WAIT_MS
+ *   iob_dc_set(...)  SET for the board with that UID: ip, the supervisor's mask, gateway and own IP,
+ *                    the Modbus address. Refused (IOB_CM_IN_USE) when another board in the last
+ *                    list, or the supervisor, has that IP; OK only when the board answers with
+ *                    the new settings. */
+#define IOB_DC_MAX 8
+typedef struct {
+    uint8_t    result;        /* IOB_CM_* of the last request */
+    uint8_t    op;            /* 1 find, 2 set */
+    uint8_t    n;             /* boards in the last list */
+    iob_disc_t boards[IOB_DC_MAX];
+    uint32_t   seq;           /* counts finished requests */
+} iob_dc_view_t;
+bool iob_dc_find(void);
+bool iob_dc_set(const uint16_t uid[6], uint32_t ip, uint32_t mask, uint32_t gw, uint32_t master_ip, uint8_t address);
+void iob_dc_view(iob_dc_view_t *v);
 
 /* Test hook: forget all state (boards back to OFF, safe state cleared). */
 void iob_reset(void);

@@ -1,4 +1,4 @@
-/* iobus.c - RS-485 I/O bus master (iobus.h). Pure C: the port is passed in, so the
+/* iobus.c - I/O bus master (iobus.h), over RS-485 or Ethernet (iob_net.h). Pure C: the port is passed in, so the
  * host tests run it against a simulated node (platform/bsp/iob_node_sim.c). */
 #include <math.h>
 #include <stdio.h>
@@ -14,20 +14,22 @@
 
 /* ---------------- settings (parameter tags, owned by the scan) ---------------- */
 iob_board_tags_t iob_tags[IOB_BOARDS] = {
-    { .address = 1, .first_do = 1,  .first_di = 1,  .ol_mask = 0xFF },
-    { .address = 2, .first_do = 19, .first_di = 9,  .ol_mask = 0xFF },
-    { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF },
+    { .address = 1, .first_do = 1,  .first_di = 1,  .ol_mask = 0xFF, .ip = 0xC0A8013Du },
+    { .address = 2, .first_do = 19, .first_di = 9,  .ol_mask = 0xFF, .ip = 0xC0A8013Eu },
+    { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF, .ip = 0xC0A8013Fu },
 };
 uint16_t iob_hold_s = 300;
 uint8_t  iob_filter_ms = 8;
+uint8_t  iob_link = IOB_LINK_ETH;
 
-typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; } cfg_t;
+typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; uint32_t ip; } cfg_t;
 
 /* scan -> bus (under PLAT_CRIT) */
 static struct {
     cfg_t    cfg[IOB_BOARDS];
     uint16_t hold_s;
     uint8_t  filter_ms;
+    uint8_t  link;                      /* IOB_LINK_* */
     bool     cfg_valid;                 /* the scan has copied the settings at least once */
     uint16_t out[IOB_BOARDS];
     uint8_t  rel[IOB_BOARDS];
@@ -43,8 +45,16 @@ static uint32_t   wdg_events[IOB_BOARDS];   /* node watchdog resets seen (the sc
 static struct { uint8_t op, from, to; } cm_req;        /* any task -> bus (under PLAT_CRIT); op 0 = none */
 static iob_cm_view_t cm_view;                          /* bus -> any task (under PLAT_CRIT) */
 
+/* Ethernet commissioning (iob_dc_*) */
+static struct { uint8_t op; iob_disc_t set; } dc_req;  /* any task -> bus (under PLAT_CRIT); op 0 = none */
+static iob_dc_view_t dc_view;                          /* bus -> any task (under PLAT_CRIT) */
+
 static volatile bool safe;
-static iob_port_t   *port;
+static iob_port_t   *port;                             /* RS-485 */
+static iob_port_t   *tcp;                              /* Ethernet: Modbus TCP */
+static iob_dgram_t  *disc;                             /* Ethernet: discovery */
+static iob_port_t   *bus;                              /* the link in use this cycle */
+static uint8_t       bus_link = 0xFF;
 
 /* bus task private */
 typedef struct {
@@ -64,6 +74,7 @@ typedef struct {
 static bstate_t B[IOB_BOARDS];
 
 void iob_init(iob_port_t *p) { port = p; }
+void iob_init_eth(iob_port_t *t, iob_dgram_t *d) { tcp = t; disc = d; }
 
 void iob_reset(void) {
     PLAT_CRIT_ENTER();
@@ -72,9 +83,12 @@ void iob_reset(void) {
     memset(wdg_events, 0, sizeof wdg_events);
     memset(&cm_req, 0, sizeof cm_req);
     memset(&cm_view, 0, sizeof cm_view);
+    memset(&dc_req, 0, sizeof dc_req);
+    memset(&dc_view, 0, sizeof dc_view);
     PLAT_CRIT_EXIT();
     memset(B, 0, sizeof B);
     safe = false;
+    bus_link = 0xFF;
 }
 
 void iob_safe_state(void) { safe = true; }
@@ -120,17 +134,24 @@ bool iob_board_view(unsigned b, iob_view_t *v) {
 
 /* Boards whose channel range does not fit the image or overlaps an earlier enabled
  * board's (bit k = board k). */
-static uint8_t bad_settings(const cfg_t *c) {
+static bool ip_ok(uint32_t ip) {
+    uint8_t top = (uint8_t)(ip >> 24), low = (uint8_t)ip;
+    return top != 0 && top != 127 && top < 224 && low != 0 && low != 255;
+}
+
+static uint8_t bad_settings(const cfg_t *c, uint8_t link) {
     uint8_t bad = 0;
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
         if (!c[k].en) continue;
+        if (link == IOB_LINK_ETH && !ip_ok(c[k].ip)) { bad |= (uint8_t)(1u << k); continue; }
         if (c[k].addr < 1 || c[k].addr > IOB_ADDR_MAX || c[k].first_do < 1 || c[k].first_di < 1 ||
             c[k].first_do - 1u + IOB_OUTS > PLAT_DO_MAX || c[k].first_di - 1u + IOB_INS > PLAT_DI_MAX) { bad |= (uint8_t)(1u << k); continue; }
         for (unsigned j = 0; j < k; ++j) {
             if (!c[j].en || (bad & (1u << j))) continue;
             bool o_do = c[k].first_do < c[j].first_do + IOB_OUTS && c[j].first_do < c[k].first_do + IOB_OUTS;
             bool o_di = c[k].first_di < c[j].first_di + IOB_INS && c[j].first_di < c[k].first_di + IOB_INS;
-            if (o_do || o_di || c[k].addr == c[j].addr) { bad |= (uint8_t)(1u << k); break; }
+            bool same = link == IOB_LINK_ETH ? c[k].ip == c[j].ip : c[k].addr == c[j].addr;
+            if (o_do || o_di || same) { bad |= (uint8_t)(1u << k); break; }
         }
     }
     return bad;
@@ -145,7 +166,7 @@ static int transact(unsigned b, const uint8_t *tx, size_t n, uint16_t *regs, uin
     uint8_t rx[MBR_FRAME_MAX];
     uint16_t got = 0;
     if (n == 0) return MBR_BAD_FORMAT;
-    if (port && port->xfer) got = port->xfer(port, tx, (uint16_t)n, rx, sizeof rx, PLAT_IOB_REPLY_MS);
+    if (bus && bus->xfer) got = bus->xfer(bus, tx, (uint16_t)n, rx, sizeof rx, PLAT_IOB_REPLY_MS);
     uint8_t exc = 0;
     int r = mbr_check_reply(tx, n, rx, got, regs, n_regs, &exc);
     PLAT_CRIT_ENTER();
@@ -334,9 +355,11 @@ static void publish_state(unsigned b) {
 }
 
 static void cm_run(void);
+static void dc_run(void);
 
 void iob_cycle(uint32_t now) {
     cm_run();                                    /* a commissioning request from the web page, if any */
+    dc_run();
     cfg_t c[IOB_BOARDS];
     uint16_t out[IOB_BOARDS], timeout;
     uint8_t rel[IOB_BOARDS], filter;
@@ -347,6 +370,7 @@ void iob_cycle(uint32_t now) {
     memcpy(rel, cmd.rel, sizeof rel);
     timeout = cmd.hold_s;
     filter = cmd.filter_ms;
+    uint8_t link = cmd.link;
     valid = cmd.cfg_valid;
     fresh = cmd.out_valid && (uint32_t)(now - cmd.stamp) <= PLAT_IOB_STALE_MS;
     PLAT_CRIT_EXIT();
@@ -354,7 +378,12 @@ void iob_cycle(uint32_t now) {
     if (safe || !fresh) { memset(out, 0, sizeof out); memset(rel, 0, sizeof rel); }
     if (timeout < 1u) timeout = 1u;
     if (timeout > 600u) timeout = 600u;
-    uint8_t bad = bad_settings(c);
+    if (link != bus_link) {                      /* a new link: every board connects again */
+        for (unsigned b = 0; b < IOB_BOARDS; ++b) if (B[b].state != IOB_S_OFF) set_state(b, IOB_S_CONNECTING, now);
+        bus_link = link;
+    }
+    bus = link == IOB_LINK_ETH ? tcp : port;
+    uint8_t bad = bad_settings(c, link);
 
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
         bstate_t *x = &B[b];
@@ -362,6 +391,8 @@ void iob_cycle(uint32_t now) {
         if (bad & (1u << b)) { set_state(b, IOB_S_BAD_SETTINGS, now); publish_state(b); continue; }
         if (x->state == IOB_S_OFF || x->state == IOB_S_BAD_SETTINGS) set_state(b, IOB_S_CONNECTING, now);
         if ((x->state == IOB_S_LOST || x->state == IOB_S_WRONG_TYPE) && (int32_t)(now - x->next_try) < 0) { publish_state(b); continue; }
+        if (x->state == IOB_S_RUN && x->cfg_sent && x->sent.ip != c[b].ip) set_state(b, IOB_S_CONNECTING, now);  /* another board now */
+        if (bus && bus->target) bus->target(bus, c[b].ip);
 
         if (x->state != IOB_S_RUN) {
             if (!ident(b, c[b].addr)) { failed(b, now); publish_state(b); continue; }
@@ -489,6 +520,125 @@ static void cm_run(void) {
     PLAT_CRIT_EXIT();
 }
 
+/* ---------------- Ethernet commissioning (iob_dc_*) ---------------- */
+static uint16_t dc_seq;
+
+bool iob_dc_find(void) {
+    bool ok = false;
+    PLAT_CRIT_ENTER();
+    if (!dc_req.op && dc_view.result != IOB_CM_BUSY) {
+        dc_req.op = 1;
+        dc_view.result = IOB_CM_BUSY; dc_view.op = 1;
+        ok = true;
+    }
+    PLAT_CRIT_EXIT();
+    return ok;
+}
+
+bool iob_dc_set(const uint16_t uid[6], uint32_t ip, uint32_t mask, uint32_t gw, uint32_t master_ip, uint8_t address) {
+    if (!iob_net_settings_ok(ip, mask, gw, master_ip, address)) return false;
+    bool ok = false;
+    PLAT_CRIT_ENTER();
+    if (!dc_req.op && dc_view.result != IOB_CM_BUSY) {
+        memset(&dc_req.set, 0, sizeof dc_req.set);
+        dc_req.op = 2;
+        dc_req.set.op = IOB_DISC_SET;
+        memcpy(dc_req.set.uid, uid, sizeof dc_req.set.uid);
+        dc_req.set.ip = ip; dc_req.set.mask = mask; dc_req.set.gw = gw;
+        dc_req.set.master_ip = master_ip; dc_req.set.address = address;
+        dc_view.result = IOB_CM_BUSY; dc_view.op = 2;
+        ok = true;
+    }
+    PLAT_CRIT_EXIT();
+    return ok;
+}
+
+void iob_dc_view(iob_dc_view_t *v) {
+    PLAT_CRIT_ENTER();
+    *v = dc_view;
+    PLAT_CRIT_EXIT();
+}
+
+/* send one message, then collect HERE answers to it for PLAT_IOB_DISC_WAIT_MS (or until want is seen) */
+static unsigned dc_exchange(const iob_disc_t *m, iob_disc_t *list, unsigned max, const uint16_t *want) {
+    uint8_t b[IOB_DISC_LEN];
+    (void)iob_disc_encode(m, b);
+    if (!disc || !disc->send || !disc->send(disc, b, IOB_DISC_LEN)) return 0;
+    unsigned n = 0;
+    uint32_t t0 = bsp_ms();
+    for (;;) {
+        uint32_t el = bsp_ms() - t0;
+        if (el >= PLAT_IOB_DISC_WAIT_MS) break;
+        uint16_t got = disc->recv(disc, b, sizeof b, PLAT_IOB_DISC_WAIT_MS - el);
+        iob_disc_t h;
+        if (!got) break;
+        if (!iob_disc_decode(b, got, &h) || h.op != IOB_DISC_HERE || h.seq != m->seq) continue;
+        bool dup = false;
+        for (unsigned k = 0; k < n; ++k) dup |= memcmp(list[k].uid, h.uid, sizeof h.uid) == 0;
+        if (dup) continue;
+        if (n < max) list[n++] = h;
+        if (want && memcmp(h.uid, want, sizeof h.uid) == 0) break;
+    }
+    return n;
+}
+
+static void dc_run(void) {
+    uint8_t op;
+    iob_disc_t set;
+    PLAT_CRIT_ENTER();
+    op = dc_req.op; set = dc_req.set;
+    PLAT_CRIT_EXIT();
+    if (!op) return;
+    iob_disc_t list[IOB_DC_MAX];
+    uint8_t result, n_list = 0;
+    if (op == 1) {
+        iob_disc_t f; memset(&f, 0, sizeof f);
+        f.op = IOB_DISC_FIND; f.seq = ++dc_seq;
+        n_list = (uint8_t)dc_exchange(&f, list, IOB_DC_MAX, NULL);
+        result = n_list ? IOB_CM_OK : IOB_CM_NO_REPLY;
+    } else {
+        /* the new IP must not be the supervisor's or another board's in the last list */
+        bool used = set.ip == set.master_ip;
+        PLAT_CRIT_ENTER();
+        for (unsigned k = 0; k < dc_view.n; ++k)
+            if (dc_view.boards[k].ip == set.ip && memcmp(dc_view.boards[k].uid, set.uid, sizeof set.uid) != 0) used = true;
+        PLAT_CRIT_EXIT();
+        if (used) result = IOB_CM_IN_USE;
+        else {
+            set.seq = ++dc_seq;
+            iob_disc_t got[IOB_DC_MAX];
+            unsigned m = dc_exchange(&set, got, IOB_DC_MAX, set.uid);
+            result = IOB_CM_NO_REPLY;
+            for (unsigned k = 0; k < m; ++k) {
+                if (memcmp(got[k].uid, set.uid, sizeof set.uid) != 0) continue;
+                bool same = got[k].ip == set.ip && got[k].mask == set.mask && got[k].gw == set.gw &&
+                            got[k].master_ip == set.master_ip && got[k].address == set.address;
+                result = same ? IOB_CM_OK : IOB_CM_REFUSED;
+                list[0] = got[k]; n_list = 1;
+            }
+            char t[23];
+            snprintf(t, sizeof t, "IP .%u.%u %s", (unsigned)((set.ip >> 8) & 255u), (unsigned)(set.ip & 255u),
+                     result == IOB_CM_OK ? "set" : "failed");
+            uint32_t board = 0;
+            PLAT_CRIT_ENTER();
+            for (unsigned b = 0; b < IOB_BOARDS; ++b) if (cmd.cfg[b].ip == set.ip) { board = b + 1u; break; }
+            PLAT_CRIT_EXIT();
+            plat_log_event(LOG_EV_IOB, PLAT_SRC_WEB, 0, board, NAN, NAN, t);
+        }
+    }
+    PLAT_CRIT_ENTER();
+    if (op == 1 || n_list) {                      /* a set keeps the list, with that board's new settings */
+        if (op == 1) { memcpy(dc_view.boards, list, sizeof(iob_disc_t) * n_list); dc_view.n = n_list; }
+        else for (unsigned k = 0; k < dc_view.n; ++k)
+            if (memcmp(dc_view.boards[k].uid, list[0].uid, sizeof list[0].uid) == 0) dc_view.boards[k] = list[0];
+    }
+    dc_view.result = result;
+    dc_view.op = op;
+    dc_view.seq++;
+    dc_req.op = 0;
+    PLAT_CRIT_EXIT();
+}
+
 /* ---------------- scan side ---------------- */
 static uint32_t wdg_seen[IOB_BOARDS];
 
@@ -499,11 +649,12 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
     PLAT_CRIT_ENTER();
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
         const iob_board_tags_t *t = &iob_tags[b];
-        cmd.cfg[b] = (cfg_t){ .en = t->enable, .addr = t->address, .first_do = t->first_do,
+        cmd.cfg[b] = (cfg_t){ .en = t->enable, .addr = t->address, .ip = t->ip, .first_do = t->first_do,
                               .first_di = t->first_di, .ol = t->ol_mask, .wb = t->wb_mask };
     }
     cmd.hold_s = iob_hold_s;
     cmd.filter_ms = iob_filter_ms;
+    cmd.link = iob_link;
     cmd.cfg_valid = true;
     memcpy(v, view, sizeof v);
     memcpy(wd, wdg_events, sizeof wd);

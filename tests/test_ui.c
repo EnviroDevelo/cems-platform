@@ -457,6 +457,7 @@ static void t_iob_screen(void) {
     iob_reset();
     iob_simbus_init(&bus); iob_node_init(&nd, 1); iob_simbus_add(&bus, &nd);
     iob_init(&bus.port);
+    iob_link = IOB_LINK_RS485;
     CHECK(tap("System"));
     CHECK(tap("I/O boards"));
     CHECK_EQ(ui_screen(), UI_IOB);
@@ -483,6 +484,7 @@ static void t_iob_screen(void) {
     iob_tags[0].enable = false;
     iob_reset();
     iob_init(NULL);
+    iob_link = IOB_LINK_ETH;
 }
 
 void test_ui_all(void) {

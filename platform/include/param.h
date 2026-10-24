@@ -145,11 +145,13 @@ enum {
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
     PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
+    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet (iob_net.h) */
     PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
     /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,
          +4 open-circuit check (bank A outputs 1-8, bits), +5 wire-break check (inputs 1-8, bits),
          +6 RO status (IOBS_*), +7 RO output faults (bits 1-18), +8 RO input faults, +9 RO failed requests */
     PARAM_ID_IOB_LIVE_FIRST   = 140, /* board k at 140 + 2k: +0 RO inputs (bits), +1 RO outputs as driven (bits) */
+    PARAM_ID_IOB_IP_FIRST     = 146, /* board k at 146 + k: its IP on Ethernet */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

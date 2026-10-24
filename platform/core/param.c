@@ -65,7 +65,8 @@ void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
     PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 8, "iob" N "_in_faults", iob_tags[K].in_faults, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
     PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 9, "iob" N "_errors", iob_tags[K].errors, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
     PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K, "iob" N "_inputs", iob_tags[K].inputs, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
-    PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K + 1, "iob" N "_outputs", iob_tags[K].outputs, CT_U32, 0, 0x3FFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL)
+    PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K + 1, "iob" N "_outputs", iob_tags[K].outputs, CT_U32, 0, 0x3FFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_IP_FIRST + K, "iob" N "_ip", iob_tags[K].ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Du + K, PLAT_LVL_ADMIN, PF_PERSIST, NULL)
 
 static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
@@ -126,6 +127,7 @@ static const param_def_t plat_defs[] = {
     /* I/O boards on RS-485 (iobus.h, D27): settings at admin (technician) level, LOCAL only */
     PARAM_UINT(PARAM_ID_IOB_HOLD, "iob_hold", iob_hold_s, CT_U16, 1, 600, 300, PLAT_LVL_ADMIN, PF_PERSIST, "s"),
     PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 8, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
+    PARAM_UINT(PARAM_ID_IOB_LINK, "iob_link", iob_link, CT_U8, 0, 1, IOB_LINK_ETH, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])

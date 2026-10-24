@@ -17,6 +17,8 @@ void iob_node_init(iob_node_t *n, uint8_t address) {
     n->fw_version = 0x0100; n->hw_rev = 1;
     for (unsigned i = 0; i < 6; ++i) n->uid[i] = (uint16_t)(0x1000u * address + i);
     n->field_a = n->field_b = true;
+    if (address >= 1 && address <= 3) { n->ip = 0xC0A8013Cu + address; n->mask = 0xFFFFFF00u; }
+    iob_mac_from_uid(n->uid, n->mac);
     iob_node_restart(n, false, 0);
     n->resets = 0;
 }
@@ -275,4 +277,87 @@ void iob_simbus_init(iob_simbus_t *b) {
 
 void iob_simbus_add(iob_simbus_t *b, iob_node_t *n) {
     if (b->n < 4) b->nodes[b->n++] = n;
+}
+
+/* ---------------- the simulated Ethernet ---------------- */
+static uint16_t net_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t timeout) {
+    (void)timeout;
+    iob_simnet_t *s = (iob_simnet_t *)p->ctx;
+    s->requests++;
+    uint32_t now = s->now ? s->now() : bsp_ms();
+    uint8_t mbap[IOB_MBAP_MAX], req[IOB_MBAP_MAX], rep[IOB_MBAP_MAX];
+    size_t m = iob_mbap_from_rtu(tx, n, (uint16_t)s->requests, mbap);
+    if (!m) return 0;
+    for (unsigned i = 0; i < s->n; ++i) {
+        iob_node_t *nd = s->nodes[i];
+        if (!nd->powered || nd->ip == 0 || nd->ip != s->target_ip) continue;
+        if (nd->master_ip && nd->master_ip != s->master_ip) continue;      /* another client: refused */
+        uint16_t tid;
+        size_t rl = iob_rtu_from_mbap(mbap, m, &tid, req);
+        uint16_t r = rl ? iob_node_frame(nd, now, req, (uint16_t)rl, rep, sizeof rep) : 0;
+        if (!r || s->drop_next) { if (s->drop_next) s->drop_next--; return 0; }
+        size_t back = iob_mbap_from_rtu(rep, r, tid, mbap);              /* the board's TCP reply */
+        uint8_t out[IOB_MBAP_MAX];
+        size_t ol = back ? iob_rtu_from_mbap(mbap, back, NULL, out) : 0;  /* and the master's side */
+        if (!ol || ol > cap) return 0;
+        memcpy(rx, out, ol);
+        return (uint16_t)ol;
+    }
+    return 0;
+}
+
+static void net_target(iob_port_t *p, uint32_t ip) { ((iob_simnet_t *)p->ctx)->target_ip = ip; }
+
+static void net_here(iob_simnet_t *s, const iob_node_t *nd, uint16_t seq) {
+    if (s->qn >= 8) return;
+    iob_disc_t h; memset(&h, 0, sizeof h);
+    h.op = IOB_DISC_HERE; h.seq = seq;
+    memcpy(h.uid, nd->uid, sizeof h.uid);
+    memcpy(h.mac, nd->mac, 6);
+    for (unsigned k = 0; k < 16 && nd->serial[k]; ++k) h.serial[k] = (char)nd->serial[k];
+    h.fw_version = nd->fw_version; h.hw_rev = nd->hw_rev; h.fw_build = 1;
+    h.flags = (uint16_t)((nd->ip ? 0u : IOB_DISC_F_NEW) | (nd->comms_seen && !nd->comms_lost ? IOB_DISC_F_CONTROLLED : 0u));
+    h.ip = nd->ip; h.mask = nd->mask; h.gw = nd->gw; h.master_ip = nd->master_ip; h.address = nd->address;
+    (void)iob_disc_encode(&h, s->q[s->qn++]);
+}
+
+static bool net_send(iob_dgram_t *d, const uint8_t *buf, uint16_t len) {
+    iob_simnet_t *s = (iob_simnet_t *)d->ctx;
+    iob_disc_t m;
+    s->datagrams++;
+    if (!iob_disc_decode(buf, len, &m)) return true;
+    s->qn = s->qi = 0;
+    for (unsigned i = 0; i < s->n; ++i) {
+        iob_node_t *nd = s->nodes[i];
+        if (!nd->powered) continue;
+        if (m.op == IOB_DISC_FIND) net_here(s, nd, m.seq);
+        else if (m.op == IOB_DISC_SET && iob_disc_set_accept(&m, nd->uid, nd->master_ip, s->master_ip)) {
+            nd->ip = m.ip; nd->mask = m.mask; nd->gw = m.gw; nd->master_ip = m.master_ip; nd->address = m.address;
+            net_here(s, nd, m.seq);
+        }
+    }
+    return true;
+}
+
+static uint16_t net_recv(iob_dgram_t *d, uint8_t *buf, uint16_t cap, uint32_t timeout) {
+    (void)timeout;
+    iob_simnet_t *s = (iob_simnet_t *)d->ctx;
+    if (s->qi >= s->qn || cap < IOB_DISC_LEN) return 0;
+    memcpy(buf, s->q[s->qi++], IOB_DISC_LEN);
+    return IOB_DISC_LEN;
+}
+
+void iob_simnet_init(iob_simnet_t *s, uint32_t master_ip) {
+    memset(s, 0, sizeof *s);
+    s->port.xfer = net_xfer;
+    s->port.target = net_target;
+    s->port.ctx = s;
+    s->disc.send = net_send;
+    s->disc.recv = net_recv;
+    s->disc.ctx = s;
+    s->master_ip = master_ip;
+}
+
+void iob_simnet_add(iob_simnet_t *s, iob_node_t *n) {
+    if (s->n < 4) s->nodes[s->n++] = n;
 }

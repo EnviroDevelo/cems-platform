@@ -53,6 +53,10 @@ typedef struct {
     /* identity (tests may change it to provoke a mismatch) */
     uint16_t magic, map_version, n_out_a, n_out_b, n_relays, n_inputs, fw_version, hw_rev;
     uint16_t uid[6];
+    /* Ethernet (iob_net.h): settings as the board keeps them; ip 0 = new, serves no Modbus TCP.
+     * iob_node_init gives address k the IP 192.168.1.(60 + k), mask /24, no supervisor IP yet. */
+    uint32_t ip, mask, gw, master_ip;
+    uint8_t  mac[6];
     /* statistics */
     uint32_t frames, replies, writes0;
 } iob_node_t;
@@ -76,6 +80,24 @@ typedef struct {
 } iob_simbus_t;
 
 void iob_simbus_init(iob_simbus_t *b);
+/* A simulated Ethernet of up to 4 nodes: Modbus TCP (every frame goes through the MBAP
+ * conversion both ways, and only the node with the targeted IP answers) and discovery. */
+typedef struct {
+    iob_port_t  port;
+    iob_dgram_t disc;
+    iob_node_t *nodes[4];
+    unsigned    n;
+    uint32_t  (*now)(void);
+    uint32_t    target_ip;
+    uint32_t    master_ip;       /* the supervisor's address, as the nodes see it */
+    uint8_t     q[8][IOB_DISC_LEN];
+    unsigned    qn, qi;          /* discovery answers waiting to be received */
+    unsigned    drop_next;
+    uint32_t    requests, datagrams;
+} iob_simnet_t;
+void iob_simnet_init(iob_simnet_t *s, uint32_t master_ip);
+void iob_simnet_add(iob_simnet_t *s, iob_node_t *n);
+
 void iob_simbus_add(iob_simbus_t *b, iob_node_t *n);
 
 #endif
