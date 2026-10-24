@@ -30,9 +30,9 @@
 #define PBUF_POOL_SIZE                  8
 #define PBUF_POOL_BUFSIZE               1536
 #define LWIP_SUPPORT_CUSTOM_PBUF        1             /* zero-copy RX in ethernetif.c */
-#define MEMP_NUM_TCP_PCB                12            /* 4 Modbus + 4 HTTP + spare */
+#define MEMP_NUM_TCP_PCB                16            /* 4 Modbus + 4 HTTP + 3 I/O boards + mail + spare */
 #define MEMP_NUM_TCP_PCB_LISTEN         4
-#define MEMP_NUM_NETCONN                16
+#define MEMP_NUM_NETCONN                20            /* + 3 I/O board connections and the discovery socket */
 #define MEMP_NUM_TCP_SEG                TCP_SND_QUEUELEN
 #define MEMP_NUM_SYS_TIMEOUT            (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 4)
 

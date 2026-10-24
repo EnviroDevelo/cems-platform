@@ -17,6 +17,7 @@
 #include "web_auth.h"
 #include "modbus.h"
 #include "iobus.h"
+#include "iob_tcp.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -25,6 +26,7 @@ task_monitor_t plat_monitor;
 
 static int tm_ids[PLAT_TASK_COUNT];
 static const plat_app_t *the_app;
+static iob_tcp_t iob_eth;                        /* the I/O boards on Ethernet (iobus task only) */
 const plat_app_t *plat_app(void) { return the_app; }
 
 void plat_checkin(plat_task_id_t id) {
@@ -212,6 +214,8 @@ void plat_start(const plat_app_t *app) {
     }
     scan_set_sys(&plat_scan, &plat_sys);
     iob_init(bsp_rs485());
+    iob_tcp_init(&iob_eth);                      /* the sockets open on first use, once the network is up */
+    iob_init_eth(&iob_eth.port, &iob_eth.disc);
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);
     MAKE(scan_task,       "scan",   PLAT_STACK_SCAN,       PLAT_PRIO_SCAN,       NULL, scan);

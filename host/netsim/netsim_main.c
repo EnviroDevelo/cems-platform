@@ -43,6 +43,7 @@
 #include "tls.h"
 #include "iobus.h"
 #include "iob_node_sim.h"
+#include "iob_tcp.h"
 #include <math.h>
 
 /* ---------------- critical sections ---------------- */
@@ -107,6 +108,55 @@ static uint16_t locked_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_
 }
 static iob_port_t sim_rs485 = { .xfer = locked_xfer };
 struct iob_port *bsp_rs485(void) { return &sim_rs485; }
+
+/* Ethernet: the same two boards on a simulated network, or real boards over sockets when
+ * CEMS_IOB_TCP is set (CEMS_IOB_TCP_PORT, CEMS_IOB_DISC_PORT and CEMS_IOB_DISC_TO=a.b.c.d change
+ * the ports and where discovery goes, e.g. to the io-node virtual board on 127.0.0.1) */
+static iob_simnet_t simnet;
+static iob_tcp_t    realnet;
+static uint16_t locked_net_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t t) {
+    (void)p;
+    plat_host_crit_enter();
+    uint16_t r = simnet.port.xfer(&simnet.port, tx, n, rx, cap, t);
+    plat_host_crit_exit();
+    return r;
+}
+static void locked_net_target(iob_port_t *p, uint32_t ip) { (void)p; plat_host_crit_enter(); simnet.port.target(&simnet.port, ip); plat_host_crit_exit(); }
+static bool locked_send(iob_dgram_t *d, const uint8_t *b, uint16_t n) {
+    (void)d;
+    plat_host_crit_enter();
+    bool r = simnet.disc.send(&simnet.disc, b, n);
+    plat_host_crit_exit();
+    return r;
+}
+static uint16_t locked_recv(iob_dgram_t *d, uint8_t *b, uint16_t cap, uint32_t t) {
+    (void)d;
+    plat_host_crit_enter();
+    uint16_t r = simnet.disc.recv(&simnet.disc, b, cap, t);
+    plat_host_crit_exit();
+    return r;
+}
+static iob_port_t  sim_tcp  = { .xfer = locked_net_xfer, .target = locked_net_target };
+static iob_dgram_t sim_disc = { .send = locked_send, .recv = locked_recv };
+static void eth_init(void) {
+    if (getenv("CEMS_IOB_TCP")) {
+        iob_tcp_init(&realnet);
+        const char *e;
+        if ((e = getenv("CEMS_IOB_TCP_PORT")) != NULL) realnet.tcp_port = (uint16_t)atoi(e);
+        if ((e = getenv("CEMS_IOB_DISC_PORT")) != NULL) realnet.disc_port = (uint16_t)atoi(e);
+        unsigned a, b, c, d;
+        if ((e = getenv("CEMS_IOB_DISC_TO")) != NULL && sscanf(e, "%u.%u.%u.%u", &a, &b, &c, &d) == 4)
+            realnet.disc_to = a << 24 | b << 16 | c << 8 | d;
+        iob_init_eth(&realnet.port, &realnet.disc);
+        fprintf(stderr, "netsim: I/O boards on Ethernet over sockets, Modbus TCP port %u, discovery port %u\n",
+                realnet.tcp_port, realnet.disc_port);
+        return;
+    }
+    iob_simnet_init(&simnet, param_tag_get(param_find(PARAM_ID_NET_IP)).u);
+    simnet.now = bsp_ms;
+    for (unsigned k = 0; k < 2; ++k) iob_simnet_add(&simnet, &simnode[k]);
+    iob_init_eth(&sim_tcp, &sim_disc);
+}
 
 /* FRAM: RAM image written through to a file */
 static int f_read(nvm_dev_t *d, uint32_t a, void *b, uint32_t n) { (void)d; if (a + n > sizeof fram) return -1; memcpy(b, fram + a, n); return 0; }
@@ -355,6 +405,7 @@ int main(int argc, char **argv) {
     simbus.now = bsp_ms;
     for (unsigned k = 0; k < 2; ++k) { iob_node_init(&simnode[k], (uint8_t)(k + 1)); iob_simbus_add(&simbus, &simnode[k]); }
     iob_init(bsp_rs485());
+    eth_init();
     auth_init();
     int bad = mb_init(app->modbus_map, app->n_modbus_map, &app->ident);
     if (bad) { fprintf(stderr, "modbus map error at entry %d\n", bad - 1); return 1; }

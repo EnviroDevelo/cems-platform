@@ -11,9 +11,10 @@
  * serves one connection at a time (a new one replaces the old: the supervisor restarted) and, once
  * it has been configured, only from the supervisor's IP.
  *
- * Discovery and IP settings: UDP, port IOB_DISC_PORT, IOB_DISC_LEN-byte messages, big-endian.
- *   FIND  supervisor -> broadcast        every board answers HERE (to the broadcast address, so the
- *                                        answer arrives whatever subnet the board is set to)
+ * Discovery and IP settings: UDP, IOB_DISC_LEN-byte messages, big-endian. The boards listen on
+ * IOB_DISC_PORT and answer to the limited broadcast address 255.255.255.255 at the port the request
+ * came from, so the answer arrives whatever subnet the board is set to.
+ *   FIND  supervisor -> broadcast        every board answers HERE
  *   HERE  board -> broadcast             its identity (UID, MAC, serial, firmware, hardware) and its
  *                                        settings (IP, mask, gateway, supervisor IP, Modbus address)
  *   SET   supervisor -> broadcast        new settings for the board whose UID matches; refused

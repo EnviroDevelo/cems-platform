@@ -48,7 +48,7 @@
 #define PLAT_PRIO_CTRL            14     /* Highest tier: fast control loops   */
 #define PLAT_PRIO_SCAN            13     /* Highest tier: VM/MUX sequence scan */
 #define PLAT_PRIO_SUPERVISOR      12     /* watchdog supervisor (short, periodic) */
-#define PLAT_PRIO_IOBUS           11     /* RS-485 I/O bus master (iobus.h): a fixed 20 ms cycle */
+#define PLAT_PRIO_IOBUS           11     /* I/O bus master (iobus.h): a fixed 20 ms cycle */
 #define PLAT_PRIO_STORE           10     /* High tier: parameter store + logger owner */
 #define PLAT_PRIO_ETH_RX          9      /* Ethernet receive (ST runs it highest; here below control) */
 #define PLAT_PRIO_TCPIP           8      /* Medium tier: lwIP tcpip_thread (TCPIP_THREAD_PRIO) */
@@ -67,7 +67,7 @@
 #define PLAT_STACK_UI             2048
 #define PLAT_STACK_ETH_RX         512
 #define PLAT_STACK_NET            768
-#define PLAT_STACK_IOBUS          768
+#define PLAT_STACK_IOBUS          1024   /* Modbus TCP and discovery buffers (iob_tcp.c) */
 
 /* ---- network services ---- */
 #ifndef PLAT_MODBUS_PORT
@@ -82,7 +82,7 @@
 #define PLAT_SILENCE_NET_MS       5000u
 #define PLAT_SILENCE_IOBUS_MS     1000u
 
-/* ---- RS-485 I/O bus (iobus.h, D27) ---- */
+/* ---- I/O bus, RS-485 or Ethernet (iobus.h, D27) ---- */
 #ifndef PLAT_IOB_PERIOD_MS
 #define PLAT_IOB_PERIOD_MS        20u    /* one request per running board per cycle */
 #endif

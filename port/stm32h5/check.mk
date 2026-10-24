@@ -27,10 +27,10 @@ INC     = -DMBEDTLS_CONFIG_FILE='"tls_config.h"' -Iplatform/net -I$(MBED)/includ
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-          platform/core/plat_sys.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iobus.c platform/os/plat_iobus_task.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
+          platform/core/plat_sys.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/os/plat_iobus_task.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
           port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c port/stm32h5/fw_flash_stm32h5.c port/stm32h5/rs485_stm32h5.c \
-          platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/http_util.c \
+          platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/iob_tcp.c platform/net/http_util.c \
           platform/net/http_api.c platform/net/http_server.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/net/tls.c platform/net/mail.c platform/net/sntp.c platform/net/fw_sig.c \
           platform/os/plat_net_tasks.c platform/os/plat_ui_task.c platform/ui/eve.c platform/ui/eve_fonts.c platform/ui/ui.c platform/ui/ui_app.c port/stm32h5/eve_bus_stm32h5.c port/stm32h5/lwip/plat_net_lwip.c port/stm32h5/lwip/ethernetif.c \
           $(EXT)/lan8742/lan8742.c $(LWIP_SRC) $(MBED_SRC) \
