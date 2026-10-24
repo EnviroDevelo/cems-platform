@@ -17,6 +17,7 @@ typedef struct {
     uint32_t safe_states;
     uint32_t resets;
     bsp_reset_cause_t reset_cause;
+    struct iob_port *rs485;      /* returned by bsp_rs485 (a simulated bus, iob_node_sim.h) */
 } bsp_host_t;
 
 extern bsp_host_t bsp_host;

@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "http_api.h"
+#include "iobus.h"
+#include "mb_rtu.h"
 #include "param.h"
 #include "param_store.h"
 #include "plat_diag.h"
@@ -1047,6 +1049,42 @@ static void hex32(http_out_t *o, const uint8_t *b) {
     json_str(o, h);
 }
 
+/* I/O boards on RS-485 (iobus.h): state, channels, faults in words */
+static void get_iob(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"boards\":[");
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        const iob_board_tags_t *t = &iob_tags[k];
+        iob_view_t v; memset(&v, 0, sizeof v); (void)iob_board_view(k, &v);
+        char lines[8][IOB_LINE];
+        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, 8);
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"enabled\":"); json_bool(o, t->enable);
+        out_str(o, ",\"state\":"); json_str(o, t->enable ? iob_state_name(v.state) : "not fitted");
+        out_str(o, ",\"address\":"); json_uint(o, t->address);
+        out_str(o, ",\"first_do\":"); json_uint(o, t->first_do);
+        out_str(o, ",\"first_di\":"); json_uint(o, t->first_di);
+        out_str(o, ",\"outputs\":"); json_uint(o, v.outputs);
+        out_str(o, ",\"out_faults\":"); json_uint(o, v.out_faults);
+        out_str(o, ",\"inputs\":"); json_uint(o, v.inputs);
+        out_str(o, ",\"in_faults\":"); json_uint(o, v.in_faults);
+        out_str(o, ",\"gate_open\":"); json_bool(o, (v.status & IOBS_GATE_OPEN) != 0);
+        out_str(o, ",\"faults\":[");
+        for (int i = 0; i < n; ++i) { if (i) out_str(o, ","); json_str(o, lines[i]); }
+        out_str(o, "],\"fw\":");
+        if (v.fw_version) { char b[16]; snprintf(b, sizeof b, "%u.%u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u)); json_str(o, b); }
+        else out_str(o, "null");
+        out_str(o, ",\"hw\":"); json_uint(o, v.hw_rev);
+        out_str(o, ",\"requests\":"); json_uint(o, v.requests);
+        out_str(o, ",\"errors\":"); json_uint(o, v.errors);
+        out_str(o, ",\"last_error\":"); json_str(o, v.errors ? mbr_result_name(v.last_error) : "");
+        out_str(o, ",\"node_rx_errors\":"); json_uint(o, v.node_rx_errors);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
 static void get_mail(http_out_t *o) {
     mail_status_t s;
     mail_status(&s);
@@ -1185,6 +1223,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
+    else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
     else if (get && !strcmp(r->path, "/api/ui")) get_ui(o);
     else if (get && !strcmp(r->path, "/api/record")) get_record(r, o, lvl);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);

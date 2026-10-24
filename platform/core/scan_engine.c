@@ -3,6 +3,7 @@
 #include "scan_engine.h"
 #include "ul_system.h"
 #include "plat_config.h"
+#include "iobus.h"
 
 /* The single definitions of the UniLogic system tags (ul_system.h). */
 uint32_t   g_dt_ms;
@@ -12,7 +13,7 @@ rtc_time_t RTC_Time;
 
 const scan_hw_t scan_hw_bsp = {
     .ms = bsp_ms, .cycles = bsp_cycles, .cycles_per_us = bsp_cycles_per_us, .rtc_read = bsp_rtc_read,
-    .io_read = bsp_io_read, .io_write = bsp_io_write,
+    .io_read = plat_hw_io_read, .io_write = plat_hw_io_write,   /* main-board pins + I/O boards (iobus.h) */
 };
 
 uint8_t scan_dow_iso_to_ul(uint8_t dow_iso) {

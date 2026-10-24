@@ -34,6 +34,7 @@ int16_t vm_ai_status_to_ta30(uint8_t plat_status);
 int16_t vm_rtd_to_ta30(int32_t cdeg, uint8_t plat_status);
 void    vm_io_in(const plat_io_in_t *in);
 void    vm_io_out(plat_io_out_t *out);
+extern const uint8_t vm_valve_do[20];   /* VM_VALVE_DO_MAP: the output channel of VALVE_OUT_01..20 */
 extern uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];   /* plat_ain_status_t, this scan */
 
 /* ---- application events (plat_log_event codes >= LOG_EV_APP) ---- */

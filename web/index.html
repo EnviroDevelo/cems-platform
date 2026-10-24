@@ -50,6 +50,13 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 .dlg{border:2px solid var(--warn);background:#fdecd2;border-radius:8px;padding:10px;margin:8px 0}
 .wsec{font-weight:600;color:var(--mute);border-bottom:1px solid var(--line);margin:10px 0 4px;padding-bottom:2px}
 #recbox input[type=number]{width:90px}#recbox input.t{width:140px}
+.iobgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+.iob{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.iob .hd{display:flex;justify-content:space-between;align-items:baseline}
+.sqs{display:flex;flex-wrap:wrap;gap:3px;margin:3px 0;align-items:center}
+.sq{width:26px;height:24px;border-radius:4px;background:#e4e7ec;font-size:11px;display:inline-flex;align-items:center;justify-content:center}
+.sq.on{background:var(--ok);color:#fff}.sq.in{background:var(--accent);color:#fff}.sq.f{background:var(--bad);color:#fff}
+.sqs .k{font-size:11px;color:var(--mute);margin-left:4px}
 @media (max-width:640px){td.lim,th.lim{display:none}}
 </style>
 </head>
@@ -94,6 +101,12 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <thead><tr><th>Since</th><th>Alarm</th><th>State</th><th></th></tr></thead>
       <tbody id="alarmrows"></tbody>
     </table>
+  </section>
+
+  <section id="iobsec" style="display:none">
+    <h2>I/O boards</h2>
+    <div class="iobgrid" id="iobcards"></div>
+    <p class="note">Green: output on. Blue: input active. Red: fault. Settings are the iob parameters (filter "iob", admin level).</p>
   </section>
 
   <section>
@@ -821,6 +834,45 @@ $("clocksync").onclick = async () => {
   catch (e) { $("clockerr").textContent = e.message; }
 };
 setInterval(() => { if ($("clocksec").style.display !== "none") refreshClock(); }, 5000);
+
+/* I/O boards (RS-485): shown once any board is enabled */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function sqRow(n0, n, on, flt, cls, label) {
+  let h = '<div class="sqs">';
+  for (let i = 0; i < n; i++) {
+    const b = 1 << (n0 + i), c = (flt & b) ? "f" : (on & b) ? cls : "";
+    h += `<span class="sq ${c}">${n0 + i + 1}</span>`;
+  }
+  return h + (label ? `<span class="k">${label}</span>` : "") + "</div>";
+}
+async function pollIob() {
+  try {
+    const j = await api("/api/iob");
+    const any = j.boards.some(b => b.enabled);
+    $("iobsec").style.display = any ? "block" : "none";
+    if (any) {
+      const box = $("iobcards"); box.textContent = "";
+      for (const b of j.boards) {
+        const d = document.createElement("div"); d.className = "iob";
+        const st = b.state === "online" ? "b-ok" : b.state === "not fitted" ? "" : b.state === "connecting" ? "b-warn" : "b-bad";
+        let h = `<div class="hd"><b>Board ${b.n}</b><span class="badge ${st}">${esc(b.state)}</span></div>`;
+        if (b.enabled) {
+          h += `<div class="note">Address ${b.address}, outputs ${b.first_do}-${b.first_do + 17}, inputs ${b.first_di}-${b.first_di + 7}</div>`;
+          h += sqRow(0, 8, b.outputs, b.out_faults, "on", "0.6 A") + sqRow(8, 8, b.outputs, b.out_faults, "on", "1 A") +
+               sqRow(16, 2, b.outputs, b.out_faults, "on", "relays");
+          h += '<div class="note" style="margin-top:4px">Inputs</div>' + sqRow(0, 8, b.inputs, b.in_faults, "in", "");
+          h += b.faults.length ? b.faults.map(f => `<div class="err">${esc(f)}</div>`).join("")
+                               : (b.state === "online" ? '<div class="note" style="color:var(--ok)">No faults</div>' : "");
+          h += `<div class="note">${b.fw ? "Firmware " + esc(b.fw) + ", hardware " + b.hw + ". " : ""}Requests ${b.requests}, failed ${b.errors}` +
+               (b.errors ? ` (last: ${esc(b.last_error)})` : "") + "</div>";
+        } else h += '<div class="note">Not fitted</div>';
+        d.innerHTML = h; box.appendChild(d);
+      }
+    }
+  } catch (e) { /* the value poll shows the connection state */ }
+  setTimeout(pollIob, 1000);
+}
+pollIob();
 
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 

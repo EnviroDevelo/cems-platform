@@ -119,4 +119,14 @@
 #define VM_MUX_CONTINUOUS 1
 #endif
 
+/* Which platform output channel (0-based) each valve output drives, VALVE_OUT_01..20 in order.
+ * The I/O boards (iobus.h) give 18 channels each: 1-8 bank A (0.6 A, diagnostics), 9-16 bank B
+ * (1 A), 17-18 the 230 VAC relays. Default (24 Oct): valves 1-16 on board 1's solid-state
+ * outputs (channels 0-15), valves 17-20 on board 2's bank A outputs 1-4 (channels 18-21), so no
+ * valve lands on a relay and the relays stay free for the alarm relays. Valves 1-10 were TA30_DO,
+ * 11-20 UID_DO. To change it, define VM_VALVE_DO_MAP in the build (20 channel numbers, 0..63). */
+#ifndef VM_VALVE_DO_MAP
+#define VM_VALVE_DO_MAP { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 18, 19, 20, 21 }
+#endif
+
 #endif

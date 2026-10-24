@@ -3,12 +3,15 @@
  * Channel numbers follow 10_IO_Map.md (APP_INTEGRATION.md section 3):
  *   DI  0..13  TA30_DI[0..13]   (On_board_IO_1.Digital_Inputs)  DIG_IN_01..14
  *   DI 14..29  UID_DI[0..15]    (UID_W1616R_0.Inputs)           DIG_IN_15..20 used (UID I0..I5)
- *   DO  0..9   TA30_DO[0..9]    (On_board_IO_1.Digital_Outputs) VALVE_OUT_01..10
- *   DO 10..19  UID_DO[0..9]     (UID_W1616R_0.Outputs)          VALVE_OUT_11..20
+ *   DO         TA30_DO[0..9]    (On_board_IO_1.Digital_Outputs) VALVE_OUT_01..10
+ *   DO         UID_DO[0..9]     (UID_W1616R_0.Outputs)          VALVE_OUT_11..20
+ *              each valve on the channel VM_VALVE_DO_MAP gives it (vm_config.h): by default
+ *              valves 1-16 on channels 0-15 (I/O board 1's solid-state outputs) and 17-20 on
+ *              18-21 (board 2's bank A), never on a board's relays
  *   AI  0..1   TA30_AI[0..1] + TA30_AI_Status[0..1]             AIN_1, AIN_2 (4-20 mA)
  *   RTD 0..1   TA30_TEMP[0..1]                                  RTD_1, RTD_2 (PT100)
- * UID_DO[10..15] are never written by the original (10_IO_Map section 6), so DO 20..25
- * are not driven; the platform starts the output image all off every scan.
+ * UID_DO[10..15] are never written by the original (10_IO_Map section 6), so they drive
+ * nothing; the platform starts the output image all off every scan.
  *
  * Value conversions, so the faithful logic sees what the TA30 would have given it:
  *   AI   TA30 range 0..16383 (14-bit, 4-20 mA). The platform gives raw counts of a
@@ -73,8 +76,10 @@ void vm_io_in(const plat_io_in_t *in)
     }
 }
 
+const uint8_t vm_valve_do[20] = VM_VALVE_DO_MAP;
+
 void vm_io_out(plat_io_out_t *out)
 {
-    for (unsigned i = 0; i < 10; i++) plat_do_set(out, i, TA30_DO[i]);
-    for (unsigned i = 0; i < 10; i++) plat_do_set(out, 10u + i, UID_DO[i]);
+    for (unsigned i = 0; i < 10; i++) plat_do_set(out, vm_valve_do[i], TA30_DO[i]);
+    for (unsigned i = 0; i < 10; i++) plat_do_set(out, vm_valve_do[10u + i], UID_DO[i]);
 }

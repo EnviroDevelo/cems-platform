@@ -102,6 +102,12 @@ enum {
     ALARM_ID_DISPLAY_FAULT     = 8,   /* the touchscreen stopped responding */
     ALARM_ID_NOTIFY_FAIL       = 10,  /* an alarm email could not be sent (after retries) */
     ALARM_ID_RESOURCE_LOW      = 11,  /* memory running low (plat_health.h) */
+    ALARM_ID_IOB_LOST          = 12,  /* an enabled I/O board does not answer on RS-485 (iobus.h) */
+    ALARM_ID_IOB_CONFIG        = 13,  /* an I/O board is the wrong type, or its channel settings conflict */
+    ALARM_ID_IOB_OUT_FAULT     = 14,  /* an I/O board output: open circuit, short, overheating, no field supply */
+    ALARM_ID_IOB_IN_FAULT      = 15,  /* an I/O board input: wire break or input chip fault */
+    ALARM_ID_IOB_SUPPLY        = 16,  /* an I/O board's field 24 V supply is missing */
+    ALARM_ID_IOB_NODE_RESET    = 17,  /* an I/O board was restarted by its watchdog */
 };
 
 /* A copy of one alarm, for lists. */

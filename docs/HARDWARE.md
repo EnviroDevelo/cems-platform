@@ -17,6 +17,7 @@ Keep it current; tick items off at schematic review.
 | H8 | STM32H563/H573 with 2 MB flash (dual-bank) and Ethernet MAC; the H573 if hardware crypto/secure boot is wanted | Firmware update by bank swap (D14, D15): an image may use at most half the flash. Memory record: `docs/MEMORY.md` | |
 | H9 | SWD connector (and BOOT0 access) on the product board | First programming, recovery if an image can't start (see 5b limits) | |
 | H10 | Brown-out/supply supervision as ST recommends for the chosen part | Brown-out resets are reported as UNEXPECTED_RESET (alarm 6) | |
+| H11 | **RS-485 to the I/O boards:** one USART with its DE pin (TX, RX, DE) to an isolated transceiver with its own isolated supply (ISO3082/ADM2587E class, 3.3 V logic side), TVS on A/B sized for a 1 kV line-to-earth surge, switchable 120 Ohm termination, a 4-way pluggable terminal (A, B, isolated ground, shield). Receiver disabled while transmitting (/RE with DE). Fail-safe biasing on the bus (the transceiver's own, or 560 Ohm pull-up/down at the main board) | I/O bus (D27, `PLATFORM.md` 5k): runs up to 100 m; the master assumes it does not hear its own request | **Decided (Gary, 22 Oct)**: RS-485 Modbus RTU, 100 m |
 
 ## To check on the DK before relying on it
 
