@@ -37,7 +37,7 @@ runs on top of it.
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
-| I/O boards on RS-485 (D27): Modbus RTU master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, six platform alarms, events, the I/O boards screen and web section; a simulated node that implements the register map | `iobus.h`, `platform/core/iobus.c`, `mb_rtu.h/.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob` | Done; host-tested against simulated boards (`tests/test_iobus.c`, `t_iob_screen`), end to end over netsim with two simulated boards (`tests/integration/iob_test.py`). UART driver compiled and linked for the H5, not yet run on hardware; the I/O board itself is specified in the *I/O Module Requirements* document |
+| I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, six platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -606,13 +606,25 @@ screen-saver logic (R3). The target check and the memory report include `app_vmm
 its directory is present (R5): with it (and the I/O bus, 5k) the firmware is 485 KB of flash
 (48 %) and 438 KB of RAM (68 %).
 
-## 5k. I/O boards on RS-485 (D27)
+## 5k. I/O boards on Ethernet or RS-485 (D27)
 
-The valves, loads, relays and digital inputs sit on separate I/O boards, up to 100 m from
-the main board on one isolated RS-485 pair (the *I/O Board Design Specification* and the
-*I/O Module Requirements* documents). Each board is a Modbus RTU slave with 8 outputs of
-0.6 A with per-channel diagnostics (bank A), 8 outputs of 1 A (bank B), 2 socketed relays
+The valves, loads, relays and digital inputs sit on separate I/O boards (the *I/O Board
+Design Specification* and the *I/O Module Requirements* documents). Each board has 8 outputs
+of 0.6 A with per-channel diagnostics (bank A), 8 outputs of 1 A (bank B), 2 socketed relays
 and 8 isolated inputs with wire-break detection. The main board is the master.
+
+**The link (Gary, 24 Oct).** The boards are on **Ethernet** with **Modbus TCP** (an STM32H563
+with a LAN8742A on each board, the same chip as the main board): parameter 102 `iob_link`,
+Ethernet by default. The single RS-485 pair (Modbus RTU, up to 100 m) stays as the other
+setting, for the bench and older boards. The register map, the requests and every rule
+below are the same on both: the master builds the same RTU frames and, on Ethernet,
+`iob_net.c` turns each into a Modbus TCP frame (MBAP header, unit id = the board's address,
+no CRC) and the reply back (`iob_net.h`). Each board has an IP (`iobN_ip`, parameters
+146-148, default 192.168.1.61-63) as well as its address; the master keeps one TCP
+connection per board on port 502 (`platform/net/iob_tcp.c`, sockets: lwIP on the H5, POSIX on
+the PC), opened on first use, with a 50 ms connect timeout and 15 ms for each reply, so three
+boards still fit the 20 ms cycle. A board's settings conflict if two enabled boards have the
+same IP (on RS-485: the same address) or an IP is not a usable one.
 
 **The application does not change.** Board k fills the platform's generic channels: its
 18 outputs from `iobK_first_do` and its 8 inputs from `iobK_first_di` (defaults: board 1
@@ -657,13 +669,31 @@ supply A, the inputs). Inputs report a wire break where the check is on.
 Every change goes to the event log as "I/O board": board 2: online / not responding /
 out 3 open circuit / in 5 wire break / field A 24V missing / restarted / watchdog reset.
 
-**Settings** (admin level, parameters 100-101 and 110-139): `iob_hold` (300 s), `iob_filter` (8 ms, as the old panel), and
-per board `enable` (off by default), `address`, `first_do`, `first_di`, `open_check`
+**Settings** (admin level, parameters 100-102, 110-139 and 146-148): `iob_hold` (300 s), `iob_filter` (8 ms, as the old panel), `iob_link` (Ethernet), and
+per board `enable` (off by default), `address`, `ip`, `first_do`, `first_di`, `open_check`
 (bits: bank A outputs with a valve fitted), `wire_check` (bits: inputs with the wire-break
 resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, and 140-145
 `inputs` / `outputs`.
 
-**Addresses (commissioning).** A new board has no address and answers only at 246
+**IP and address on Ethernet (commissioning).** A new board has no IP and no address: it
+serves no Modbus TCP, but answers discovery (UDP port 50223, `iob_net.h`), whatever subnet
+it is on. Administration → I/O boards on the network on the web page (admin login,
+`docs/web_iob_net.png`) → *Find boards* broadcasts FIND and lists every board that answers:
+serial, chip ID, MAC, IP, address, and whether it is running or belongs to another
+supervisor. *Give it* Board 1, 2 or 3 sends SET to that board's chip ID with the slot's IP
+(`iobN_ip`) and address (`iobN_address`) and this supervisor's own IP, mask and gateway (the
+supervisor needs a fixed IP for this: refused while `net_dhcp` is on). The board saves them,
+reads them back and answers with what it saved, then changes over to the new IP; the master
+reports OK only when the answer matches, and the board comes online by itself within a
+second ("IP .1.62 set" in the event log). From then on the board takes settings and Modbus
+TCP connections only from that supervisor's IP, so a second supervisor on the network can
+neither take it over nor drive it. Setting its address to 0 over USB makes it a new board
+again. An IP already used by another listed board, or by the supervisor, is refused before
+anything is sent (`iob_dc_find` / `iob_dc_set`, `POST /api/iob/net/find`,
+`POST /api/iob/net/set` with `uid` and `board` (and `ip` to change the slot's IP at the same
+time), result on `GET /api/iob/net`).
+
+**Addresses on RS-485 (commissioning).** A new board has no address and answers only at 246
 (`IOB_COMMISSION_ADDR`), for reads and the address change. Administration → I/O board
 addresses on the web page (admin login, `docs/web_iob_commission.png`) finds it ("Find new
 board", or "Read board at address" for any address), shows its serial number, chip ID and
@@ -757,7 +787,7 @@ work before integration.
 | D24 | Display assets | Own fonts (DejaVu, L4) compressed in the firmware, inflated into RAM_G at start-up and CRC-checked; nothing in the module's flash yet; link stays single SPI | Versioned with the firmware with no extra step; the units the instrument shows need ° ² ³ µ; the module's flash is kept for big images if ever needed |
 | D26 | Application screens and records | The application describes its screens and record editors by parameter ID (`ui_app.h`); the platform draws them on the touchscreen and the web page the same way, and every press is a write through the table. Sequences and schedules are records: whole C structures, written only whole and applied in one scan after the application's check of the complete new image (`PARAM_RECORD`) | One description serves both screens; no half-edited sequence can reach the logic; the old 7-row editor bits and copies are not needed |
 | D25 | Serial number authority | **Gary, 20 Oct: developer level authority to change it at all.** No login level can write it; only a token signed by a separate developer key, bound to the chip's unique ID and the current serial (single use, single unit); not restored from backups; every change and refusal logged; no key built in = cannot be changed | The serial is the unit's identity for the customer, certificates and records; a tech login or a copied backup must not be able to change or clone it |
-| D27 | Field I/O | **Gary, 22 Oct:** valves on 24 VDC (SMC VX21 class) switched by isolated solid-state outputs, not relays; the I/O on separate boards linked by RS-485 Modbus RTU (deployable up to 100 m away); per board 8 × 0.6 A with diagnostics, 8 × 1 A, 2 socketed relays for 230 VAC, 8 inputs. A board holds its outputs for 5 min (setting) when the link goes quiet. Built: the master here; the boards follow the *I/O Board Design Specification* and the *I/O Module Requirements* | Sockets and relay contacts were the reliability worry; per-channel diagnostics tell a technician which valve is open-circuit; the bus keeps the main board small and the I/O near the valves |
+| D27 | Field I/O | **Gary, 22 Oct:** valves on 24 VDC (SMC VX21 class) switched by isolated solid-state outputs, not relays; the I/O on separate boards linked by RS-485 Modbus RTU (deployable up to 100 m away); per board 8 × 0.6 A with diagnostics, 8 × 1 A, 2 socketed relays for 230 VAC, 8 inputs. A board holds its outputs for 5 min (setting) when the link goes quiet. Built: the master here; the boards follow the *I/O Board Design Specification* and the *I/O Module Requirements* | Sockets and relay contacts were the reliability worry; per-channel diagnostics tell a technician which valve is open-circuit; the bus keeps the main board small and the I/O near the valves **Revised (Gary, 24 Oct):** the boards move to the STM32H563 (the H5 is the standard for all development) with a LAN8742A, and **Ethernet with Modbus TCP replaces the RS-485 pair**; each board's IP is set from the HTTPS page like its address (5k). RS-485 stays as a setting (`iob_link`) |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout

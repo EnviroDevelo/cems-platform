@@ -155,7 +155,12 @@ Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor). 
 enabled (3b). Browse to `https://192.168.1.50/` and accept the certificate once, after
 comparing its fingerprint with the touchscreen's System screen.
 
-## 3g. RS-485 to the I/O boards (D27)
+## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
+
+The I/O boards are on Ethernet by default (`iob_link`, `PLATFORM.md` 5k): nothing to set up in
+CubeMX for that, the boards share the Ethernet port and lwIP above. lwIP's pools are sized for
+the three board connections and the discovery socket (`port/stm32h5/lwip/lwipopts.h`). Only
+for the RS-485 setting:
 
 | CubeMX | Setting |
 |---|---|

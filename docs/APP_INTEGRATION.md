@@ -83,7 +83,7 @@ Timers (TON/TP/TA) are modelled in the application from `g_dt_ms`. `ul_timer_t` 
 ### I/O image (`plat_io.h`)
 - `di` (64 bits), `do_bits` (64 bits) since D27; `plat_di()` / `plat_do_set()` as before.
 - `di_fault`, `do_fault` (64 bits each): a channel not to be trusted (input wire break; output open circuit, short or overheating; no field supply; the I/O board not answering). Read them with `plat_di_fault()` / `plat_do_fault()` if the logic should act on them; the platform already raises the alarms (IOB_*, PLATFORM.md 5k).
-- The valves and digital inputs come from the RS-485 I/O boards (D27): board 1 fills outputs 1-18 (bank A 0.6 A, bank B 1 A, relays 17-18) and inputs 1-8, board 2 outputs 19-36 and inputs 9-16, board 3 outputs 37-54 and inputs 17-24 (settings `iobN_first_do` / `iobN_first_di` move them). The application's channel numbers stay as they are; the site's wiring decides which board channel is which valve.
+- The valves and digital inputs come from the I/O boards (D27; on Ethernet with Modbus TCP since 24 Oct, RS-485 as a setting): board 1 fills outputs 1-18 (bank A 0.6 A, bank B 1 A, relays 17-18) and inputs 1-8, board 2 outputs 19-36 and inputs 9-16, board 3 outputs 37-54 and inputs 17-24 (settings `iobN_first_do` / `iobN_first_di` move them). The application's channel numbers stay as they are; the site's wiring decides which board channel is which valve.
 - `ai_raw[8]` with `ai_status[]` (`PLAT_AIN_OK/UNDER/OVER/FAULT/NOT_FITTED`).
 - `rtd_cdeg[4]` (0.01 °C) with status.
 - `ao_raw[4]`.
