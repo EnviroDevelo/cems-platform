@@ -20,6 +20,7 @@ void test_alarm_all(void);
 void test_clock_all(void);
 void test_serial_all(void);
 void test_ui_app_all(void);
+void test_iobus_all(void);
 
 int main(void) {
     test_scan_all();
@@ -39,6 +40,7 @@ int main(void) {
     test_fw_all();
     test_ui_all();
     test_ui_app_all();
+    test_iobus_all();
     test_tls_all();
     printf("\n%d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;

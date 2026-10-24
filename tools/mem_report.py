@@ -25,6 +25,7 @@ MODULES = [  # (module, object-name patterns)
     ("Alarm email (SMTP client)", r"^mail\.o"),
     ("Clock + SNTP", r"plat_clock|^sntp\.o"),
     ("Firmware update, signatures, serial", r"fw_update|fw_flash|fw_sig|fw_pubkey|plat_serial|dev_pubkey"),
+    ("I/O boards (RS-485 master)", r"iobus|mb_rtu|rs485"),
     ("Modbus TCP", r"modbus|mbtcp"),
     ("Web server + page + logins", r"http_|web_|plat_sha256|plat_net_tasks"),
     ("HTTPS (tls.c + mbedTLS)", r"^tls\.o|^(aes|asn1parse|asn1write|bignum|bignum_core|cipher|cipher_wrap|constant_time|ctr_drbg|ecdh|ecdsa|ecp|ecp_curves|entropy|gcm|hmac_drbg|md|memory_buffer_alloc|oid|pk|pk_ecc|pk_wrap|pkparse|pkwrite|platform|platform_util|sha256|sha512|rsa|rsa_alt_helpers|base64|ssl_\w+|x509\w*)\.o"),

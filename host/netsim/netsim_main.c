@@ -11,6 +11,9 @@
  * CEMS_RESET_CAUSE (power, software, iwdg), CEMS_FW_TRIAL_MS (trial length),
  * CEMS_FW_PUBKEY (hex P-256 public key: acts as a signed production build).
  * Console (the touchscreen's stand-in): remote, local, set <id> <v>, fwyes / fwno (answer a held firmware restart).
+ * Two simulated I/O boards sit on a simulated RS-485 bus at addresses 1 and 2 (enable
+ * them with set 110 1 / set 120 1). Console: node <n> power|in|open|short|hot|wire|bfault|fielda|fieldb <value>
+ * (n = 1 or 2; in/open/short/hot/wire take a bit mask, the rest 0 or 1), node <n> restart|wdg.
  *
  * DI0 is driven by a pattern (8 s on, 4 s off) so values change on their own. */
 #define _POSIX_C_SOURCE 200809L
@@ -37,6 +40,8 @@
 #include "fw_update.h"
 #include "plat_serial.h"
 #include "tls.h"
+#include "iobus.h"
+#include "iob_node_sim.h"
 #include <math.h>
 
 /* ---------------- critical sections ---------------- */
@@ -88,6 +93,19 @@ void bsp_random(void *buf, uint32_t len) {
     if (!f || fread(buf, 1, len, f) != len) abort();
     fclose(f);
 }
+
+/* RS-485: two simulated I/O boards, guarded by the critical-section lock (the console changes them) */
+static iob_simbus_t simbus;
+static iob_node_t   simnode[2];
+static uint16_t locked_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t t) {
+    (void)p;
+    plat_host_crit_enter();
+    uint16_t r = simbus.port.xfer(&simbus.port, tx, n, rx, cap, t);
+    plat_host_crit_exit();
+    return r;
+}
+static iob_port_t sim_rs485 = { .xfer = locked_xfer };
+struct iob_port *bsp_rs485(void) { return &sim_rs485; }
 
 /* FRAM: RAM image written through to a file */
 static int f_read(nvm_dev_t *d, uint32_t a, void *b, uint32_t n) { (void)d; if (a + n > sizeof fram) return -1; memcpy(b, fram + a, n); return 0; }
@@ -208,6 +226,40 @@ static void *store_thread(void *a) {
     }
     return NULL;
 }
+static void *iobus_thread(void *a) {
+    (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    while (running) {
+        sleep_until(&t, PLAT_IOB_PERIOD_MS);
+        plat_host_crit_enter();
+        simnode[0].inputs = (uint8_t)(((bsp_ms() / 1000u) % 12u) < 8u ? 0x01u : 0x00u) | (simnode[0].inputs & 0xFEu);
+        plat_host_crit_exit();
+        iob_cycle(bsp_ms());
+    }
+    return NULL;
+}
+/* console: node <n> <what> [value] */
+static bool node_cmd(const char *line) {
+    unsigned k; char what[16]; unsigned v = 0;
+    int got = sscanf(line, "node %u %15s %i", &k, what, (int *)&v);
+    if (got < 2 || k < 1 || k > 2) return false;
+    iob_node_t *n = &simnode[k - 1];
+    plat_host_crit_enter();
+    if (!strcmp(what, "power")) n->powered = v != 0;
+    else if (!strcmp(what, "restart")) iob_node_restart(n, false, bsp_ms());
+    else if (!strcmp(what, "wdg")) iob_node_restart(n, true, bsp_ms());
+    else if (!strcmp(what, "in")) n->inputs = (uint8_t)v;
+    else if (!strcmp(what, "open")) n->a_open = (uint8_t)v;
+    else if (!strcmp(what, "short")) n->a_overload = (uint8_t)v;
+    else if (!strcmp(what, "hot")) n->a_overtemp = (uint8_t)v;
+    else if (!strcmp(what, "wire")) n->wirebreak = (uint8_t)v;
+    else if (!strcmp(what, "bfault")) n->b_fault = v ? IOB_BF_FAULT : 0;
+    else if (!strcmp(what, "fielda")) n->field_a = v != 0;
+    else if (!strcmp(what, "fieldb")) n->field_b = v != 0;
+    else { plat_host_crit_exit(); return false; }
+    plat_host_crit_exit();
+    fprintf(stderr, "I/O board %u: %s %u\n", k, what, v);
+    return true;
+}
 static void *modbus_thread(void *a) { (void)a; while (running) mbtcp_poll(&mbs, 100); return NULL; }
 static void *sntp_thread(void *a) {
     (void)a;
@@ -235,6 +287,7 @@ static void *console_thread(void *a) {
         if (!strncmp(line, "remote", 6)) { val.u = 1; e = param_post(PARAM_ID_CTRL_MODE, PLAT_VAL_U32, val, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR); }
         else if (!strncmp(line, "fwyes", 5)) { fw_local_answer(true, 0); continue; }   /* the touchscreen's answer */
         else if (!strncmp(line, "fwno", 4)) { fw_local_answer(false, 0); continue; }
+        else if (!strncmp(line, "node ", 5)) { if (!node_cmd(line)) fprintf(stderr, "node: ?\n"); continue; }
         else if (!strncmp(line, "local", 5)) { val.u = 0; e = param_post(PARAM_ID_CTRL_MODE, PLAT_VAL_U32, val, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR); }
         else if (sscanf(line, "set %u %ld", &id, &v) == 2) { val.i = (int32_t)v; e = param_post((uint16_t)id, PLAT_VAL_I32, val, PLAT_SRC_LOCAL, PLAT_LVL_FACTORY); }
         else continue;
@@ -296,6 +349,10 @@ int main(int argc, char **argv) {
       if (ae) { fprintf(stderr, "alarm table error at id %d\n", ae); return 1; } }
     param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
+    iob_simbus_init(&simbus);
+    simbus.now = bsp_ms;
+    for (unsigned k = 0; k < 2; ++k) { iob_node_init(&simnode[k], (uint8_t)(k + 1)); iob_simbus_add(&simbus, &simnode[k]); }
+    iob_init(bsp_rs485());
     auth_init();
     int bad = mb_init(app->modbus_map, app->n_modbus_map, &app->ident);
     if (bad) { fprintf(stderr, "modbus map error at entry %d\n", bad - 1); return 1; }
@@ -318,7 +375,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "netsim: Modbus TCP on %u, web on https://127.0.0.1:%u/ (http on the next port redirects), store status 0x%04x\n",
             mport, hport, param_store_status());
 
-    pthread_t th[6];
+    pthread_t th[7];
     pthread_create(&th[4], NULL, console_thread, NULL);
     pthread_detach(th[4]);
     pthread_create(&th[0], NULL, scan_thread, NULL);
@@ -326,8 +383,10 @@ int main(int argc, char **argv) {
     pthread_create(&th[2], NULL, modbus_thread, NULL);
     pthread_create(&th[3], NULL, http_thread, NULL);
     pthread_create(&th[5], NULL, sntp_thread, NULL);
+    pthread_create(&th[6], NULL, iobus_thread, NULL);
     for (int k = 0; k < 4; ++k) pthread_join(th[k], NULL);
     pthread_join(th[5], NULL);
+    pthread_join(th[6], NULL);
     param_store_poll(bsp_ms() + 5000); param_store_scan_service(); param_store_poll(bsp_ms() + 5000);   /* last save */
     plat_log_poll(bsp_ms());
     scan_stats_t ss = scan_stats(&plat_scan);

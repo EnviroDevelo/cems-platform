@@ -155,6 +155,30 @@ Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor). 
 enabled (3b). Browse to `https://192.168.1.50/` and accept the certificate once, after
 comparing its fingerprint with the touchscreen's System screen.
 
+## 3g. RS-485 to the I/O boards (D27)
+
+| CubeMX | Setting |
+|---|---|
+| USARTx (any free one; on the DK one brought out to the Arduino or STMod+ header) | Mode **Asynchronous**, Hardware Flow Control (RS485) **enabled**: the USART drives the transceiver's DE pin itself. 115200 baud, 8 bits, no parity, 1 stop bit, oversampling 16. Driver Enable polarity high; assertion and deassertion time 8 (sample times) |
+| NVIC | USARTx global interrupt **enabled**, preemption priority 5 or higher number (FreeRTOS calls from the callback) |
+| DMA | none needed |
+
+In `main.h` (USER CODE section):
+
+```c
+#define BSP_RS485_HUART huart2      /* the handle CubeMX generated for that USART */
+```
+
+Add `port/stm32h5/rs485_stm32h5.c`, `platform/core/iobus.c`, `platform/core/mb_rtu.c` and
+`platform/os/plat_iobus_task.c`. The driver defines `HAL_UART_TxCpltCallback`,
+`HAL_UARTEx_RxEventCallback` and `HAL_UART_ErrorCallback`; if `main.c` defines any of them
+too, move the body into one function that checks the handle. Without `BSP_RS485_HUART`
+the build has no port and an enabled board reports "not responding".
+
+On the DK, a 3.3 V RS-485 module (MAX3485 class: DI = TX, RO = RX, DE and /RE together on
+the DE pin) is enough to talk to an I/O board or to a PC with a USB-RS485 adapter running
+a Modbus slave simulator. To try it: Settings → `iob1_enable` = 1, then System → I/O boards.
+
 ## 3d. Firmware update
 
 Nothing to configure in CubeMX beyond the HAL modules: FLASH and ICACHE (on by default).

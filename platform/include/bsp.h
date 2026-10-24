@@ -61,6 +61,10 @@ struct eve_bus;
 struct eve_bus *bsp_eve_bus(void);
 
 /* Random bytes for password salts and web session tokens (hardware RNG on the H5). */
+/* The RS-485 port for the I/O boards (iobus.h); NULL if this hardware has none. */
+struct iob_port;
+struct iob_port *bsp_rs485(void);
+
 void bsp_random(void *buf, uint32_t len);
 void bsp_chip_uid(uint8_t uid[12]);       /* the MCU's 96-bit unique ID (serial-number tokens, D25) */
 
