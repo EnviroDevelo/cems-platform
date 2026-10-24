@@ -537,7 +537,7 @@ static void t_vm_modbus_run_and_link_loss(void)
      * shows only in the outputs: inlet 2 = DO2, outlet 1 = DO4 (0-based 1 and 3) */
     CHECK(!ValveSelectionErrorModbus);
     CHECK_EQ(bsp_host.out.do_bits, (1u << 1) | (1u << 3));
-    uint32_t open_bits = bsp_host.out.do_bits;
+    uint64_t open_bits = bsp_host.out.do_bits;
     /* F8 fixed: the time-left register the master reads follows the Modbus run's timer */
     CHECK(ProcessTimer.Preset > 3590000u && ProcessTimer.Preset <= 3600000u);
 
@@ -576,7 +576,7 @@ static void t_mux_schedule_run(void)
 #endif   /* continuous (Gary 20 Oct): the calendar is not used; an empty window must not matter */
     scans(2);
     CHECK_EQ(press(VMC_MUX_SCHEDULE, 1), PERR_OK);
-    uint32_t seen[8]; int when[8], n = 0; uint32_t last = 0xFFFFFFFFu;
+    uint64_t seen[8]; int when[8], n = 0; uint64_t last = ~(uint64_t)0;
     for (int t = 0; t < 2500; t++) {
         scans(1);
         if (bsp_host.out.do_bits != last && n < 8) { last = bsp_host.out.do_bits; seen[n] = last; when[n++] = t * 10; }
@@ -798,7 +798,7 @@ static void t_mux_repeated_inlet(void)
     char why[96]; CHECK_EQ(vm_check_record(VMP_SEQUENCEMUX, &SequenceMUX, why, sizeof why), 0);
     scans(2);
     CHECK_EQ(press(VMC_MUX_SCHEDULE, 1), PERR_OK);
-    uint32_t at[3]; scans(100); at[0] = bsp_host.out.do_bits; scans(200); at[1] = bsp_host.out.do_bits; scans(200); at[2] = bsp_host.out.do_bits;
+    uint64_t at[3]; scans(100); at[0] = bsp_host.out.do_bits; scans(200); at[1] = bsp_host.out.do_bits; scans(200); at[2] = bsp_host.out.do_bits;
 #if VM_FIX_MUX_VALVE_ASSIGN
     CHECK_EQ(at[0], 1u << 4);    /* channel 1: inlet 1 (DO5) */
     CHECK_EQ(at[1], 1u << 5);    /* channel 2: inlet 2 (DO6) */
@@ -862,7 +862,7 @@ static void t_vm_schedule_repeat(void)
     memset(&Schedule1, 0, sizeof Schedule1); Schedule1.To_Hour[2] = 23;
     scans(2);
     CHECK_EQ(press(VMC_VM_SCHEDULE, 1), PERR_OK);
-    uint32_t seen[10]; int when[10], n = 0; uint32_t last = 0xFFFFFFFFu;
+    uint64_t seen[10]; int when[10], n = 0; uint64_t last = ~(uint64_t)0;
     for (int t = 0; t < 1000; t++) {
         scans(1);
         if (bsp_host.out.do_bits != last && n < 10) { last = bsp_host.out.do_bits; seen[n] = last; when[n++] = t * 10; }
