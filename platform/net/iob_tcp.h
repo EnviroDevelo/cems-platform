@@ -16,6 +16,7 @@ typedef struct {
     uint16_t    tcp_port;          /* IOB_TCP_PORT (tests change it) */
     uint16_t    disc_port;         /* IOB_DISC_PORT (tests change it) */
     uint32_t    disc_to;           /* where FIND and SET go: 0xFFFFFFFF, the limited broadcast (tests: 127.0.0.1) */
+    uint32_t    host;              /* 0: connect to the board's IP; else always here (a virtual board on the PC) */
     uint32_t    target;            /* the board the next xfer goes to */
     struct { uint32_t ip; int fd; uint32_t used; } conn[IOB_BOARDS];
     int         udp;

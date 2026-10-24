@@ -111,7 +111,8 @@ struct iob_port *bsp_rs485(void) { return &sim_rs485; }
 
 /* Ethernet: the same two boards on a simulated network, or real boards over sockets when
  * CEMS_IOB_TCP is set (CEMS_IOB_TCP_PORT, CEMS_IOB_DISC_PORT and CEMS_IOB_DISC_TO=a.b.c.d change
- * the ports and where discovery goes, e.g. to the io-node virtual board on 127.0.0.1) */
+ * the ports and where discovery goes; CEMS_IOB_TCP_HOST=a.b.c.d connects there whatever the
+ * board's IP: the io-node virtual board, build/vnode_net, on 127.0.0.1) */
 static iob_simnet_t simnet;
 static iob_tcp_t    realnet;
 static uint16_t locked_net_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t t) {
@@ -147,6 +148,8 @@ static void eth_init(void) {
         unsigned a, b, c, d;
         if ((e = getenv("CEMS_IOB_DISC_TO")) != NULL && sscanf(e, "%u.%u.%u.%u", &a, &b, &c, &d) == 4)
             realnet.disc_to = a << 24 | b << 16 | c << 8 | d;
+        if ((e = getenv("CEMS_IOB_TCP_HOST")) != NULL && sscanf(e, "%u.%u.%u.%u", &a, &b, &c, &d) == 4)
+            realnet.host = a << 24 | b << 16 | c << 8 | d;
         iob_init_eth(&realnet.port, &realnet.disc);
         fprintf(stderr, "netsim: I/O boards on Ethernet over sockets, Modbus TCP port %u, discovery port %u\n",
                 realnet.tcp_port, realnet.disc_port);

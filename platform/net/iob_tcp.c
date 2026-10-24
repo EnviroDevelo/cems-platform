@@ -45,7 +45,7 @@ static int conn_for(iob_tcp_t *t, uint32_t ip) {
         if (t->conn[pick].fd >= 0 && (t->conn[k].fd < 0 || t->conn[k].used < t->conn[pick].used)) pick = k;
     }
     drop(t, pick);
-    int fd = tcp_connect(ip, t->tcp_port);
+    int fd = tcp_connect(t->host ? t->host : ip, t->tcp_port);
     if (fd < 0) { t->failures++; return -1; }
     t->connects++;
     t->conn[pick].fd = fd; t->conn[pick].ip = ip; t->conn[pick].used = ++t->use;
