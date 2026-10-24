@@ -469,6 +469,16 @@ static void t_wrong_type_and_conflicts(void) {
     iob_tags[1].address = 1;                    /* same address as board 1 */
     run(40, true);
     CHECK_EQ(view(1).state, IOB_S_BAD_SETTINGS);
+    plat_val_t a = { .i = IOB_ADDR_MAX };       /* the setting stops below the reserved addresses */
+    CHECK_EQ(param_check(PARAM_ID_IOB_FIRST + 11, PLAT_VAL_I32, a, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK);
+    a.i = IOB_COMMISSION_ADDR;
+    CHECK_EQ(param_check(PARAM_ID_IOB_FIRST + 11, PLAT_VAL_I32, a, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_RANGE);
+    iob_tags[1].address = IOB_COMMISSION_ADDR;  /* reserved: a board without an address */
+    run(40, true);
+    CHECK_EQ(view(1).state, IOB_S_BAD_SETTINGS);
+    iob_tags[1].address = IOB_USB_ADDR;         /* reserved: the node's USB port */
+    run(40, true);
+    CHECK_EQ(view(1).state, IOB_S_BAD_SETTINGS);
     iob_tags[1].address = 2;
     iob_tags[2].enable = true;
     iob_tags[2].first_do = 50;                  /* 50 + 17 > 64 */

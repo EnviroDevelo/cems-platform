@@ -201,7 +201,7 @@ void iob_scan_out(const plat_io_out_t *out, uint32_t now_ms);
 /* Settings (parameters 100..139, param.c). first_do/first_di are 1-based channel numbers. */
 typedef struct {
     bool     enable;
-    uint8_t  address;        /* 1..247 */
+    uint8_t  address;        /* 1..IOB_ADDR_MAX (246 and 247 are the commissioning and USB addresses) */
     uint8_t  first_do;       /* 1..PLAT_DO_MAX-17 */
     uint8_t  first_di;       /* 1..PLAT_DI_MAX-7 */
     uint8_t  ol_mask;        /* open-circuit check, bank A outputs 1-8 */

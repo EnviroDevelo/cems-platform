@@ -118,7 +118,7 @@ static uint8_t bad_settings(const cfg_t *c) {
     uint8_t bad = 0;
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
         if (!c[k].en) continue;
-        if (c[k].addr < 1 || c[k].addr > 247 || c[k].first_do < 1 || c[k].first_di < 1 ||
+        if (c[k].addr < 1 || c[k].addr > IOB_ADDR_MAX || c[k].first_do < 1 || c[k].first_di < 1 ||
             c[k].first_do - 1u + IOB_OUTS > PLAT_DO_MAX || c[k].first_di - 1u + IOB_INS > PLAT_DI_MAX) { bad |= (uint8_t)(1u << k); continue; }
         for (unsigned j = 0; j < k; ++j) {
             if (!c[j].en || (bad & (1u << j))) continue;

@@ -55,7 +55,7 @@ void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 
 #define IOB_DEFS(K, N) \
     PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
-    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 1, "iob" N "_address", iob_tags[K].address, CT_U8, 1, 247, K + 1, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 1, "iob" N "_address", iob_tags[K].address, CT_U8, 1, IOB_ADDR_MAX, K + 1, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
     PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 2, "iob" N "_first_do", iob_tags[K].first_do, CT_U8, 1, PLAT_DO_MAX - IOB_OUTS + 1, 1 + IOB_OUTS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
     PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 3, "iob" N "_first_di", iob_tags[K].first_di, CT_U8, 1, PLAT_DI_MAX - IOB_INS + 1, 1 + IOB_INS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
     PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 4, "iob" N "_open_check", iob_tags[K].ol_mask, CT_U8, 0, 255, 255, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
