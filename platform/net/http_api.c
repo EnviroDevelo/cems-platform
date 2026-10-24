@@ -1147,6 +1147,119 @@ static void post_iob_cm(const http_req_t *r, http_out_t *o, uint8_t lvl, bool as
     out_str(o, "{\"ok\":true}");
 }
 
+/* I/O boards on Ethernet (iob_dc_*): list the boards on the network, give one the IP and address of a
+ * board slot. The supervisor's own fixed IP, mask and gateway go with it (not with DHCP: the
+ * boards must always find the supervisor at the same address). */
+static void json_ip(http_out_t *o, uint32_t ip) {
+    char b[16];
+    snprintf(b, sizeof b, "%u.%u.%u.%u", (unsigned)(ip >> 24), (unsigned)(ip >> 16 & 255u), (unsigned)(ip >> 8 & 255u), (unsigned)(ip & 255u));
+    json_str(o, b);
+}
+static void uid_text(const uint16_t uid[6], char b[25]) {
+    for (unsigned k = 0; k < 6; ++k) snprintf(b + 4 * k, 5, "%04X", (unsigned)uid[5 - k]);
+}
+static void get_iob_net(http_out_t *o) {
+    static iob_dc_view_t v;                      /* large: not on the HTTP task's stack */
+    iob_dc_view(&v);
+    plat_val_t pv;
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"result\":"); json_str(o, iob_cm_result_name(v.result));
+    out_str(o, ",\"busy\":"); json_bool(o, v.result == IOB_CM_BUSY);
+    out_str(o, ",\"ok\":"); json_bool(o, v.result == IOB_CM_OK);
+    out_str(o, ",\"op\":"); json_str(o, v.op == 1 ? "find" : v.op == 2 ? "set" : "");
+    out_str(o, ",\"seq\":"); json_uint(o, v.seq);
+    out_str(o, ",\"link\":"); json_str(o, iob_link == IOB_LINK_ETH ? "ethernet" : "rs485");
+    out_str(o, ",\"supervisor\":{\"dhcp\":"); json_bool(o, param_read(PARAM_ID_NET_DHCP, &pv) && pv.b);
+    out_str(o, ",\"ip\":"); json_ip(o, param_read(PARAM_ID_NET_IP, &pv) ? pv.u : 0);
+    out_str(o, ",\"mask\":"); json_ip(o, param_read(PARAM_ID_NET_MASK, &pv) ? pv.u : 0);
+    out_str(o, ",\"gw\":"); json_ip(o, param_read(PARAM_ID_NET_GW, &pv) ? pv.u : 0);
+    out_str(o, "},\"configured\":[");
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"enabled\":"); json_bool(o, iob_tags[k].enable);
+        out_str(o, ",\"address\":"); json_uint(o, iob_tags[k].address);
+        out_str(o, ",\"ip\":"); json_ip(o, iob_tags[k].ip); out_str(o, "}");
+    }
+    out_str(o, "],\"boards\":[");
+    for (unsigned i = 0; i < v.n; ++i) {
+        const iob_disc_t *b = &v.boards[i];
+        char t[32];
+        if (i) out_str(o, ",");
+        uid_text(b->uid, t);
+        out_str(o, "{\"uid\":"); json_str(o, t);
+        snprintf(t, sizeof t, "%02X:%02X:%02X:%02X:%02X:%02X", b->mac[0], b->mac[1], b->mac[2], b->mac[3], b->mac[4], b->mac[5]);
+        out_str(o, ",\"mac\":"); json_str(o, t);
+        out_str(o, ",\"serial\":"); json_str(o, b->serial);
+        snprintf(t, sizeof t, "%u.%u", (unsigned)(b->fw_version >> 8), (unsigned)(b->fw_version & 255u));
+        out_str(o, ",\"fw\":"); json_str(o, t);
+        out_str(o, ",\"build\":"); json_uint(o, b->fw_build);
+        out_str(o, ",\"hw\":"); json_uint(o, b->hw_rev);
+        out_str(o, ",\"new\":"); json_bool(o, (b->flags & IOB_DISC_F_NEW) != 0);
+        out_str(o, ",\"controlled\":"); json_bool(o, (b->flags & IOB_DISC_F_CONTROLLED) != 0);
+        out_str(o, ",\"ip\":"); json_ip(o, b->ip);
+        out_str(o, ",\"mask\":"); json_ip(o, b->mask);
+        out_str(o, ",\"gw\":"); json_ip(o, b->gw);
+        out_str(o, ",\"master_ip\":"); json_ip(o, b->master_ip);
+        out_str(o, ",\"address\":"); json_uint(o, b->address);
+        unsigned slot = 0;                       /* the board slot whose settings it has */
+        for (unsigned k = 0; k < IOB_BOARDS && !slot; ++k)
+            if (b->ip && b->ip == iob_tags[k].ip && b->address == iob_tags[k].address) slot = k + 1u;
+        out_str(o, ",\"slot\":"); json_uint(o, slot);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+static bool parse_uid(const char *s, uint16_t uid[6]) {
+    if (strlen(s) != 24) return false;
+    for (unsigned k = 0; k < 6; ++k) {
+        char w[5]; memcpy(w, s + 4 * k, 4); w[4] = 0;
+        char *e; unsigned long n = strtoul(w, &e, 16);
+        if (*e || !isxdigit((unsigned char)w[0])) return false;
+        uid[5 - k] = (uint16_t)n;
+    }
+    return true;
+}
+
+/* find: no fields. set: uid=<as listed>&board=<1..IOB_BOARDS>[&ip=a.b.c.d]: the board gets that slot's
+ * address and IP (ip= changes the slot's IP setting first). Admin; the result comes on GET /api/iob/net */
+static void post_iob_net(const http_req_t *r, http_out_t *o, uint8_t lvl, bool set) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    bool ok;
+    if (!set) ok = iob_dc_find();
+    else {
+        char v[32] = "";
+        uint16_t uid[6];
+        uint32_t board, ip;
+        plat_val_t pv, mask, gw;
+        if (!form_get((const char *)r->body, r->body_len, "uid", v, sizeof v) || !parse_uid(v, uid)) { json_error(o, 400, "uid", -1); return; }
+        if (!form_get((const char *)r->body, r->body_len, "board", v, sizeof v) || !parse_u32(v, &board) || board < 1 || board > IOB_BOARDS) {
+            json_error(o, 400, "board", -1); return;
+        }
+        if (param_read(PARAM_ID_NET_DHCP, &pv) && pv.b) { json_error(o, 409, "the supervisor needs a fixed IP (net_dhcp off) for the I/O boards", -1); return; }
+        plat_val_t me;
+        if (!param_read(PARAM_ID_NET_IP, &me) || !param_read(PARAM_ID_NET_MASK, &mask) || !param_read(PARAM_ID_NET_GW, &gw)) { json_error(o, 500, "settings", -1); return; }
+        ip = iob_tags[board - 1].ip;
+        if (form_get((const char *)r->body, r->body_len, "ip", v, sizeof v) && !parse_ipv4(v, &ip)) { json_error(o, 400, "ip", -1); return; }
+        uint8_t addr = iob_tags[board - 1].address;
+        uint32_t g = (gw.u & mask.u) == (ip & mask.u) ? gw.u : 0;
+        if (!iob_net_settings_ok(ip, mask.u, g, me.u, addr)) { json_error(o, 400, "ip", -1); return; }
+        for (unsigned k = 0; k < IOB_BOARDS; ++k)
+            if (k != board - 1 && iob_tags[k].enable && iob_tags[k].ip == ip) { json_error(o, 409, "another board slot has that IP", -1); return; }
+        uint16_t pid = (uint16_t)(PARAM_ID_IOB_IP_FIRST + board - 1);
+        plat_val_t nv = { .u = ip };
+        bool change = ip != iob_tags[board - 1].ip;
+        param_err_t e = change ? param_check(pid, PLAT_VAL_U32, nv, PLAT_SRC_WEB, lvl) : PERR_OK;
+        if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), pid); return; }
+        ok = iob_dc_set(uid, ip, mask.u, g, me.u, addr);
+        if (ok && change) (void)param_post(pid, PLAT_VAL_U32, nv, PLAT_SRC_WEB, lvl);   /* the slot follows the board */
+    }
+    if (!ok) { json_error(o, 409, "busy", -1); return; }
+    head(o, 202, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 static void get_mail(http_out_t *o) {
     mail_status_t s;
     mail_status(&s);
@@ -1287,6 +1400,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
     else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
+    else if (get && !strcmp(r->path, "/api/iob/net")) get_iob_net(o);
     else if (get && !strcmp(r->path, "/api/ui")) get_ui(o);
     else if (get && !strcmp(r->path, "/api/record")) get_record(r, o, lvl);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
@@ -1313,6 +1427,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
         else if (!strcmp(r->path, "/api/iob/find")) post_iob_cm(r, o, lvl, false);
         else if (!strcmp(r->path, "/api/iob/assign")) post_iob_cm(r, o, lvl, true);
+        else if (!strcmp(r->path, "/api/iob/net/find")) post_iob_net(r, o, lvl, false);
+        else if (!strcmp(r->path, "/api/iob/net/set")) post_iob_net(r, o, lvl, true);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

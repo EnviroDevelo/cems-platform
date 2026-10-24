@@ -307,6 +307,7 @@ static bool node_cmd(const char *line) {
     else if (!strcmp(what, "fielda")) n->field_a = v != 0;
     else if (!strcmp(what, "fieldb")) n->field_b = v != 0;
     else if (!strcmp(what, "addr") && v <= IOB_ADDR_MAX) n->address = (uint8_t)v;
+    else if (!strcmp(what, "new")) { n->address = 0; n->ip = n->mask = n->gw = n->master_ip = 0; }   /* a new board: no address, no IP */
     else { plat_host_crit_exit(); return false; }
     plat_host_crit_exit();
     fprintf(stderr, "I/O board %u: %s %u\n", k, what, v);

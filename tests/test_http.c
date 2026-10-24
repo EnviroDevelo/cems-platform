@@ -12,6 +12,7 @@
 #include "param_store.h"
 #include "bsp_host.h"
 #include "iobus.h"
+#include "iob_node_sim.h"
 
 
 /* ---------------- primitives ---------------- */
@@ -275,6 +276,7 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 403);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 403);   /* operator session */
     CHECK_EQ(call("POST", "/api/iob/find", "addr=246", true), 403);              /* operator session */
+    CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 403);
     CHECK_EQ(call("POST", "/api/login", "level=admin&password=2222", true), 200);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 200);
     /* I/O board commissioning: requests are queued for the bus task, results read back */
@@ -287,6 +289,36 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/iob/commission", NULL, false), 200);
     CHECK(has("\"busy\":true")); CHECK(has("\"op\":\"find\"")); CHECK(has("\"board\":null"));
     iob_reset();
+    /* on Ethernet: list the boards on the network, give one a board slot's IP and address */
+    {
+        static iob_simnet_t net; static iob_node_t nd;
+        iob_simnet_init(&net, 0xC0A80132u);
+        iob_node_init(&nd, 0);                                   /* new: no IP, no address */
+        memcpy(nd.serial, "CIO-26-00007", 12);
+        iob_simnet_add(&net, &nd);
+        iob_init_eth(&net.port, &net.disc);
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=00&board=1", true), 400);
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=4", true), 400);
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=1&ip=10.0.0.5", true), 400);   /* not the supervisor's subnet */
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 202);
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 409);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"busy\":true")); CHECK(has("\"link\":\"ethernet\"")); CHECK(has("\"ip\":\"192.168.1.50\""));
+        CHECK(has("{\"n\":2,\"enabled\":false,\"address\":2,\"ip\":\"192.168.1.62\"}"));
+        iob_cycle(0);                                            /* the bus task does it */
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"result\":\"OK\"") || has("\"ok\":true"));
+        CHECK(has("\"uid\":\"000500040003000200010000\"")); CHECK(has("\"serial\":\"CIO-26-00007\""));
+        CHECK(has("\"new\":true")); CHECK(has("\"slot\":0"));
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=2", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(nd.ip, 0xC0A8013Eu); CHECK_EQ(nd.address, 2u); CHECK_EQ(nd.master_ip, 0xC0A80132u);
+        CHECK_EQ(nd.mask, 0xFFFFFF00u); CHECK_EQ(nd.gw, 0xC0A80101u);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"op\":\"set\"")); CHECK(has("\"new\":false")); CHECK(has("\"slot\":2"));
+        iob_init_eth(NULL, NULL);
+        iob_reset();
+    }
     CHECK(auth_check(PLAT_LVL_ADMIN, "newpass1"));
     tnow += 2000; store_tick(); store_tick();                    /* let the store save */
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 200);

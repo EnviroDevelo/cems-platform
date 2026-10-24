@@ -148,6 +148,20 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <button id="pwbtn">Change password</button>
       <span class="err" id="pwerr"></span>
     </div>
+    <div id="dcsec">
+    <h2 style="margin-top:14px">I/O boards on the network</h2>
+    <p class="note">The I/O boards are on Ethernet. Find lists every board on the network, whatever its IP.
+      Give a new board the board slot it is (Board 1, 2 or 3: its IP and Modbus address are the iob settings);
+      it gets this supervisor's mask and gateway and then talks only to this supervisor.</p>
+    <div class="row"><button class="ghost" id="dcfind">Find boards</button></div>
+    <p class="note" id="dcinfo"></p>
+    <table id="dctab" style="display:none">
+      <thead><tr><th>Serial</th><th>Chip ID / MAC</th><th>IP</th><th>Address</th><th>State</th><th>Give it</th></tr></thead>
+      <tbody id="dcrows"></tbody>
+    </table>
+    <span class="err" id="dcerr"></span>
+    </div>
+    <div id="cmsec">
     <h2 style="margin-top:14px">I/O board addresses</h2>
     <p class="note">A new I/O board has no address and answers only at 246. Connect one new board at a time,
       find it, then give it the address of the board it is (Board 1, 2 or 3 below), or any free address.</p>
@@ -163,6 +177,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <button id="cmbtn">Set address</button>
     </div>
     <span class="err" id="cmerr"></span>
+    </div>
     <h2 style="margin-top:14px">Firmware</h2>
     <p id="fwinfo" class="note">-</p>
     <table id="fwhisttab" style="display:none">
@@ -598,7 +613,7 @@ async function refreshInfo() {
     $("clocksec").style.display = adm ? "block" : "none";
     $("actions").style.display = adm ? "block" : "none";
     $("mailsec").style.display = adm ? "block" : "none";
-    if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); } }
+    if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); refreshDc(); } }
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
@@ -817,6 +832,61 @@ $("cmbtn").onclick = () => {
   if (!confirm(`Give the board at ${cmAt} the address ${to}?`)) return;
   cmAsk("/api/iob/assign", { from: cmAt, to });
 };
+
+/* ---- I/O boards on Ethernet: list them, give one a board slot ---- */
+function dcShow(j) {
+  $("dcsec").style.display = j.link === "ethernet" ? "" : "none";
+  $("cmsec").style.display = j.link === "ethernet" ? "none" : "";
+  let t = "";
+  if (j.busy) t = j.op === "set" ? "Setting the board..." : "Looking for boards...";
+  else if (j.op === "find") t = j.ok ? `${j.boards.length} board${j.boards.length === 1 ? "" : "s"} found.` : "No board answered.";
+  else if (j.op === "set") t = j.ok ? "Done: the board has its new settings and comes online by itself." :
+    j.result === "address in use" ? "Not set: another board has that IP." : `Not set: ${j.result}.`;
+  if (j.supervisor.dhcp) t += " This supervisor uses DHCP: give it a fixed IP (net_dhcp off) before setting up I/O boards.";
+  $("dcinfo").textContent = t;
+  const rows = $("dcrows"); rows.textContent = "";
+  $("dctab").style.display = j.boards.length ? "" : "none";
+  for (const b of j.boards) {
+    const tr = document.createElement("tr");
+    const cell = (x) => { const td = document.createElement("td"); td.textContent = x; tr.appendChild(td); return td; };
+    cell(b.serial || "not set").style.whiteSpace = "nowrap";
+    cell(`${b.uid} / ${b.mac}`).style.fontSize = "12px";
+    cell(b.new ? "none (new)" : b.ip);
+    cell(b.address || "-");
+    cell(b.slot ? `Board ${b.slot}${b.controlled ? ", running" : ""}` :
+         b.new ? "new" : b.master_ip !== j.supervisor.ip && b.master_ip !== "0.0.0.0" ? `belongs to ${b.master_ip}` : "not in use");
+    const td = cell(""), sel = document.createElement("select"), btn = document.createElement("button");
+    for (const c of j.configured) {
+      const o = document.createElement("option"); o.value = c.n;
+      o.textContent = `Board ${c.n}: ${c.ip}, address ${c.address}${c.enabled ? "" : " (not enabled)"}`;
+      sel.appendChild(o);
+    }
+    if (b.slot) sel.value = b.slot;
+    btn.textContent = "Set"; btn.disabled = j.busy;
+    btn.onclick = () => {
+      const c = j.configured[+sel.value - 1];
+      if (!confirm(`Give board ${b.serial || b.uid} the IP ${c.ip} and address ${c.address} (Board ${c.n})?`)) return;
+      dcAsk("/api/iob/net/set", { uid: b.uid, board: c.n });
+    };
+    td.style.whiteSpace = "nowrap"; btn.style.marginLeft = "6px";
+    td.appendChild(sel); td.appendChild(btn);
+    rows.appendChild(tr);
+  }
+}
+async function refreshDc() { try { dcShow(await api("/api/iob/net")); } catch (e) { } }
+async function dcAsk(path, body) {
+  $("dcerr").textContent = "";
+  try {
+    await api(path, form(body));
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 250));
+      const j = await api("/api/iob/net");
+      dcShow(j);
+      if (!j.busy) break;
+    }
+  } catch (e) { $("dcerr").textContent = e.message === "busy" ? "Busy with the last request, try again" : explain(e); }
+}
+$("dcfind").onclick = () => dcAsk("/api/iob/net/find", {});
 
 /* ---- serial number (developer token) ---- */
 let serKey = false, serNow = 0;
