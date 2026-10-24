@@ -148,6 +148,21 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <button id="pwbtn">Change password</button>
       <span class="err" id="pwerr"></span>
     </div>
+    <h2 style="margin-top:14px">I/O board addresses</h2>
+    <p class="note">A new I/O board has no address and answers only at 246. Connect one new board at a time,
+      find it, then give it the address of the board it is (Board 1, 2 or 3 below), or any free address.</p>
+    <div class="row">
+      <button class="ghost" id="cmfind">Find new board</button>
+      <input id="cmfrom" type="number" min="1" max="246" placeholder="or address" style="width:110px">
+      <button class="ghost" id="cmread">Read board at address</button>
+    </div>
+    <p class="note" id="cminfo"></p>
+    <div class="row" id="cmset" style="display:none">
+      <select id="cmto"></select>
+      <input id="cmtonum" type="number" min="1" max="245" placeholder="address" style="width:110px;display:none">
+      <button id="cmbtn">Set address</button>
+    </div>
+    <span class="err" id="cmerr"></span>
     <h2 style="margin-top:14px">Firmware</h2>
     <p id="fwinfo" class="note">-</p>
     <table id="fwhisttab" style="display:none">
@@ -583,7 +598,7 @@ async function refreshInfo() {
     $("clocksec").style.display = adm ? "block" : "none";
     $("actions").style.display = adm ? "block" : "none";
     $("mailsec").style.display = adm ? "block" : "none";
-    if (level >= 2) { refreshFw(); if (changed) refreshSerial(); }
+    if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); } }
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
@@ -746,6 +761,62 @@ $("mailtest").onclick = async () => {
 };
 $("mailtrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 1 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
 $("mailuntrust").onclick = async () => { await api("/api/mail/trust", form({ trust: 0 })).catch(e => $("mailerr").textContent = e.message); setTimeout(refreshMail, 300); };
+
+/* ---- I/O board addresses (commissioning over RS-485) ---- */
+let cmAt = 0;
+function cmShow(j) {
+  const at = j.op === "assign" ? j.to : j.from;
+  let t = "";
+  if (j.busy) t = j.op === "assign" ? `Setting address ${j.to}...` : `Asking address ${j.from}...`;
+  else if (j.op === "find" && j.ok) t = `Found at ${j.from === j.commission_addr ? "246 (new board, no address yet)" : "address " + j.from}: `;
+  else if (j.op === "assign" && j.ok) t = `Address ${j.from} changed to ${j.to}. Read back at ${j.to}: `;
+  else if (j.op === "find") t = `Address ${j.from}: ${j.result}.`;
+  else if (j.op === "assign") t = `Address ${j.from} to ${j.to}: ${j.result}` +
+    (j.result === "address in use" ? " (something already answers there)." : ".");
+  if (j.ok && j.board) t += `serial ${j.board.serial || "not set"}, chip ID ${j.board.uid}, firmware ${j.board.fw} (build ${j.board.build}), hardware ${j.board.hw}.`;
+  $("cminfo").textContent = t;
+  cmAt = j.ok && j.board && !j.busy ? at : 0;
+  $("cmset").style.display = cmAt ? "flex" : "none";
+  if (cmAt) {
+    const sel = $("cmto"), keep = sel.value; sel.textContent = "";
+    for (const b of j.configured) {
+      const o = document.createElement("option"); o.value = b.address;
+      o.textContent = `Board ${b.n}: address ${b.address}${b.enabled ? "" : " (not enabled)"}`;
+      sel.appendChild(o);
+    }
+    const o = document.createElement("option"); o.value = "other"; o.textContent = "Other address"; sel.appendChild(o);
+    if (keep) sel.value = keep;
+    $("cmtonum").style.display = sel.value === "other" ? "" : "none";
+  }
+}
+async function refreshCm() { try { cmShow(await api("/api/iob/commission")); } catch (e) { } }
+async function cmWait() {
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 250));
+    const j = await api("/api/iob/commission");
+    cmShow(j);
+    if (!j.busy) return j;
+  }
+}
+async function cmAsk(path, body) {
+  $("cmerr").textContent = "";
+  try { await api(path, form(body)); await cmWait(); }
+  catch (e) { $("cmerr").textContent = e.message === "busy" ? "Busy with the last request, try again" : explain(e); }
+}
+$("cmfind").onclick = () => cmAsk("/api/iob/find", { addr: 246 });
+$("cmread").onclick = () => {
+  const a = +$("cmfrom").value;
+  if (!(a >= 1 && a <= 246)) { $("cmerr").textContent = "Enter an address 1-246"; return; }
+  cmAsk("/api/iob/find", { addr: a });
+};
+$("cmto").onchange = () => { $("cmtonum").style.display = $("cmto").value === "other" ? "" : "none"; };
+$("cmbtn").onclick = () => {
+  const to = $("cmto").value === "other" ? +$("cmtonum").value : +$("cmto").value;
+  if (!(to >= 1 && to <= 245)) { $("cmerr").textContent = "Enter an address 1-245"; return; }
+  if (to === cmAt) { $("cmerr").textContent = "The board already has that address"; return; }
+  if (!confirm(`Give the board at ${cmAt} the address ${to}?`)) return;
+  cmAsk("/api/iob/assign", { from: cmAt, to });
+};
 
 /* ---- serial number (developer token) ---- */
 let serKey = false, serNow = 0;

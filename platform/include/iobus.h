@@ -217,6 +217,32 @@ extern iob_board_tags_t iob_tags[IOB_BOARDS];
 extern uint16_t iob_hold_s;          /* parameter 100: node hold time, s (1..600) */
 extern uint8_t  iob_filter_ms;       /* parameter 101 */
 
+/* Commissioning from the web page: find a board and give it its address (node requirements FW-61).
+ * A new board has no address and answers on RS-485 only at IOB_COMMISSION_ADDR, so only one new
+ * board may be on the bus at a time. Asked from any task (one request at a time, else false); the
+ * bus task does it in its next cycle, between the boards' own requests.
+ *   iob_cm_find(addr)      read the identification and serial number of whatever answers at addr
+ *   iob_cm_assign(from,to) the guarded FC16 of 40-42: the board at from (1..246) takes to (1..245).
+ *                          Refused (IOB_CM_IN_USE) when something already answers at to; the master
+ *                          reads the board back at to before it reports IOB_CM_OK. */
+enum { IOB_CM_IDLE = 0, IOB_CM_BUSY, IOB_CM_OK, IOB_CM_NO_REPLY, IOB_CM_WRONG_TYPE,
+       IOB_CM_IN_USE, IOB_CM_REFUSED, IOB_CM_NOT_CONFIRMED };
+typedef struct {
+    uint8_t  result;          /* IOB_CM_* of the last request */
+    uint8_t  op;              /* 1 find, 2 assign */
+    uint8_t  from, to;        /* addresses of the last request (find: from) */
+    uint8_t  exception;       /* IOB_CM_REFUSED: the node's exception code */
+    bool     found;           /* the identification was read (find, and assign's read-back) */
+    uint16_t hw_rev, fw_version, fw_build;
+    uint16_t uid[6];
+    char     serial[2 * IOB_SERIAL_REGS + 1];
+    uint32_t seq;             /* counts finished requests */
+} iob_cm_view_t;
+bool iob_cm_find(uint8_t addr);
+bool iob_cm_assign(uint8_t from, uint8_t to);
+void iob_cm_view(iob_cm_view_t *v);
+const char *iob_cm_result_name(uint8_t r);
+
 /* Test hook: forget all state (boards back to OFF, safe state cleared). */
 void iob_reset(void);
 

@@ -13,7 +13,8 @@
  * Console (the touchscreen's stand-in): remote, local, set <id> <v>, fwyes / fwno (answer a held firmware restart).
  * Two simulated I/O boards sit on a simulated RS-485 bus at addresses 1 and 2 (enable
  * them with set 110 1 / set 120 1). Console: node <n> power|in|open|short|hot|wire|bfault|fielda|fieldb <value>
- * (n = 1 or 2; in/open/short/hot/wire take a bit mask, the rest 0 or 1), node <n> restart|wdg.
+ * (n = 1 or 2; in/open/short/hot/wire take a bit mask, the rest 0 or 1), node <n> restart|wdg,
+ * node <n> addr <a> (the board's own address; 0 = a new board, answering at 246).
  *
  * DI0 is driven by a pattern (8 s on, 4 s off) so values change on their own. */
 #define _POSIX_C_SOURCE 200809L
@@ -255,6 +256,7 @@ static bool node_cmd(const char *line) {
     else if (!strcmp(what, "bfault")) n->b_fault = v ? IOB_BF_FAULT : 0;
     else if (!strcmp(what, "fielda")) n->field_a = v != 0;
     else if (!strcmp(what, "fieldb")) n->field_b = v != 0;
+    else if (!strcmp(what, "addr") && v <= IOB_ADDR_MAX) n->address = (uint8_t)v;
     else { plat_host_crit_exit(); return false; }
     plat_host_crit_exit();
     fprintf(stderr, "I/O board %u: %s %u\n", k, what, v);

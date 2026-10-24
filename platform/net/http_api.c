@@ -1085,6 +1085,68 @@ static void get_iob(http_out_t *o) {
     out_str(o, "]}");
 }
 
+/* I/O board commissioning (iob_cm_*): find a board at an address (246: a new board), give it an address */
+static void get_iob_cm(http_out_t *o) {
+    iob_cm_view_t v;
+    iob_cm_view(&v);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"result\":"); json_str(o, iob_cm_result_name(v.result));
+    out_str(o, ",\"busy\":"); json_bool(o, v.result == IOB_CM_BUSY);
+    out_str(o, ",\"ok\":"); json_bool(o, v.result == IOB_CM_OK);
+    out_str(o, ",\"op\":"); json_str(o, v.op == 1 ? "find" : v.op == 2 ? "assign" : "");
+    out_str(o, ",\"from\":"); json_uint(o, v.from);
+    out_str(o, ",\"to\":"); json_uint(o, v.to);
+    out_str(o, ",\"exception\":"); json_uint(o, v.exception);
+    out_str(o, ",\"seq\":"); json_uint(o, v.seq);
+    out_str(o, ",\"commission_addr\":"); json_uint(o, IOB_COMMISSION_ADDR);
+    out_str(o, ",\"addr_max\":"); json_uint(o, IOB_ADDR_MAX);
+    out_str(o, ",\"configured\":[");
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"enabled\":"); json_bool(o, iob_tags[k].enable);
+        out_str(o, ",\"address\":"); json_uint(o, iob_tags[k].address); out_str(o, "}");
+    }
+    out_str(o, "],\"board\":");
+    if (!v.found) { out_str(o, "null}"); return; }
+    char b[32];
+    snprintf(b, sizeof b, "%u.%u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u));
+    out_str(o, "{\"fw\":"); json_str(o, b);
+    out_str(o, ",\"build\":"); json_uint(o, v.fw_build);
+    out_str(o, ",\"hw\":"); json_uint(o, v.hw_rev);
+    for (unsigned k = 0; k < 6; ++k) snprintf(b + 4 * k, 5, "%04X", (unsigned)v.uid[5 - k]);
+    out_str(o, ",\"uid\":"); json_str(o, b);
+    out_str(o, ",\"serial\":"); json_str(o, v.serial);
+    out_str(o, "}}");
+}
+
+static bool form_addr(const http_req_t *r, const char *key, uint8_t *a) {
+    char v[8] = "";
+    uint32_t n;
+    if (!form_get((const char *)r->body, r->body_len, key, v, sizeof v) || !parse_u32(v, &n) || n > 255u) return false;
+    *a = (uint8_t)n;
+    return true;
+}
+
+/* find: addr=<1..246>; assign: from=<1..246>&to=<1..245>. Admin; the result comes on GET /api/iob/commission */
+static void post_iob_cm(const http_req_t *r, http_out_t *o, uint8_t lvl, bool assign) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    uint8_t from = 0, to = 0;
+    if (!form_addr(r, assign ? "from" : "addr", &from)) { json_error(o, 400, "address", -1); return; }
+    if (assign && !form_addr(r, "to", &to)) { json_error(o, 400, "address", -1); return; }
+    bool ok;
+    if (assign) {
+        if (from < 1 || from > IOB_COMMISSION_ADDR || to < 1 || to > IOB_ADDR_MAX || to == from) { json_error(o, 400, "address", -1); return; }
+        ok = iob_cm_assign(from, to);
+    } else {
+        if (from < 1 || from > IOB_COMMISSION_ADDR) { json_error(o, 400, "address", -1); return; }
+        ok = iob_cm_find(from);
+    }
+    if (!ok) { json_error(o, 409, "busy", -1); return; }
+    head(o, 202, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 static void get_mail(http_out_t *o) {
     mail_status_t s;
     mail_status(&s);
@@ -1224,6 +1286,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
+    else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
     else if (get && !strcmp(r->path, "/api/ui")) get_ui(o);
     else if (get && !strcmp(r->path, "/api/record")) get_record(r, o, lvl);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
@@ -1248,6 +1311,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
+        else if (!strcmp(r->path, "/api/iob/find")) post_iob_cm(r, o, lvl, false);
+        else if (!strcmp(r->path, "/api/iob/assign")) post_iob_cm(r, o, lvl, true);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

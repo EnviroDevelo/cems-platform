@@ -663,6 +663,19 @@ per board `enable` (off by default), `address`, `first_do`, `first_di`, `open_ch
 resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, and 140-145
 `inputs` / `outputs`.
 
+**Addresses (commissioning).** A new board has no address and answers only at 246
+(`IOB_COMMISSION_ADDR`), for reads and the address change. Administration → I/O board
+addresses on the web page (admin login, `docs/web_iob_commission.png`) finds it ("Find new
+board", or "Read board at address" for any address), shows its serial number, chip ID and
+firmware, and gives it the address of Board 1, 2 or 3 or any free address: one guarded FC16
+of registers 40-42 (key 0xA55A, address, complement; node requirements FW-61). The master
+first checks that nothing answers at the new address, and reads the board back there before
+it reports success; the change goes to the event log ("addr 246->2 set"). Connect one new
+board at a time. The bus task does the request between the boards' own cycles
+(`iob_cm_find` / `iob_cm_assign`, `POST /api/iob/find`, `POST /api/iob/assign`, result on
+`GET /api/iob/commission`). The setting `iobN_address` is 1-245: 246 and 247 (the node's USB
+port) are never a running board's address.
+
 **Screens.** System → I/O boards on the touchscreen (`docs/ui/iob.png`) and the I/O boards
 section of the web page (`docs/web_iob.png`, `/api/iob`): each board's state, its
 outputs and inputs as lit squares, faults in words, firmware version and request counts.

@@ -11,6 +11,7 @@
 #include "param.h"
 #include "param_store.h"
 #include "bsp_host.h"
+#include "iobus.h"
 
 
 /* ---------------- primitives ---------------- */
@@ -273,8 +274,19 @@ static void t_api(void) {
     /* admin: password change, backup, restore */
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 403);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 403);   /* operator session */
+    CHECK_EQ(call("POST", "/api/iob/find", "addr=246", true), 403);              /* operator session */
     CHECK_EQ(call("POST", "/api/login", "level=admin&password=2222", true), 200);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 200);
+    /* I/O board commissioning: requests are queued for the bus task, results read back */
+    iob_reset();
+    CHECK_EQ(call("POST", "/api/iob/find", "addr=247", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/assign", "from=246&to=246", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/assign", "from=246&to=x", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/find", "addr=246", true), 202);
+    CHECK_EQ(call("POST", "/api/iob/assign", "from=246&to=3", true), 409); CHECK(has("busy"));
+    CHECK_EQ(call("GET", "/api/iob/commission", NULL, false), 200);
+    CHECK(has("\"busy\":true")); CHECK(has("\"op\":\"find\"")); CHECK(has("\"board\":null"));
+    iob_reset();
     CHECK(auth_check(PLAT_LVL_ADMIN, "newpass1"));
     tnow += 2000; store_tick(); store_tick();                    /* let the store save */
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 200);

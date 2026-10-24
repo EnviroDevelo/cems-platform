@@ -39,6 +39,10 @@ static struct {
 static iob_view_t view[IOB_BOARDS];
 static uint32_t   wdg_events[IOB_BOARDS];   /* node watchdog resets seen (the scan raises the alarm) */
 
+/* commissioning (iob_cm_*) */
+static struct { uint8_t op, from, to; } cm_req;        /* any task -> bus (under PLAT_CRIT); op 0 = none */
+static iob_cm_view_t cm_view;                          /* bus -> any task (under PLAT_CRIT) */
+
 static volatile bool safe;
 static iob_port_t   *port;
 
@@ -66,6 +70,8 @@ void iob_reset(void) {
     memset(&cmd, 0, sizeof cmd);
     memset(view, 0, sizeof view);
     memset(wdg_events, 0, sizeof wdg_events);
+    memset(&cm_req, 0, sizeof cm_req);
+    memset(&cm_view, 0, sizeof cm_view);
     PLAT_CRIT_EXIT();
     memset(B, 0, sizeof B);
     safe = false;
@@ -327,7 +333,10 @@ static void publish_state(unsigned b) {
     PLAT_CRIT_EXIT();
 }
 
+static void cm_run(void);
+
 void iob_cycle(uint32_t now) {
+    cm_run();                                    /* a commissioning request from the web page, if any */
     cfg_t c[IOB_BOARDS];
     uint16_t out[IOB_BOARDS], timeout;
     uint8_t rel[IOB_BOARDS], filter;
@@ -366,6 +375,118 @@ void iob_cycle(uint32_t now) {
         cyclic(b, &c[b], out[b], rel[b], now);
         publish_state(b);
     }
+}
+
+/* ---------------- commissioning (web page) ---------------- */
+
+const char *iob_cm_result_name(uint8_t r) {
+    static const char *const n[] = { "idle", "busy", "ok", "no reply", "not a CEMS I/O board",
+                                     "address in use", "refused by the board", "not found at the new address" };
+    return r <= IOB_CM_NOT_CONFIRMED ? n[r] : "?";
+}
+
+static bool cm_ask(uint8_t op, uint8_t from, uint8_t to) {
+    bool ok = false;
+    PLAT_CRIT_ENTER();
+    if (!cm_req.op && cm_view.result != IOB_CM_BUSY) {
+        cm_req.op = op; cm_req.from = from; cm_req.to = to;
+        cm_view.result = IOB_CM_BUSY; cm_view.op = op; cm_view.from = from; cm_view.to = to;
+        ok = true;
+    }
+    PLAT_CRIT_EXIT();
+    return ok;
+}
+
+bool iob_cm_find(uint8_t a) {
+    return a >= 1 && a <= IOB_COMMISSION_ADDR && cm_ask(1, a, 0);
+}
+
+bool iob_cm_assign(uint8_t from, uint8_t to) {
+    return from >= 1 && from <= IOB_COMMISSION_ADDR && to >= 1 && to <= IOB_ADDR_MAX && to != from && cm_ask(2, from, to);
+}
+
+void iob_cm_view(iob_cm_view_t *v) {
+    PLAT_CRIT_ENTER();
+    *v = cm_view;
+    PLAT_CRIT_EXIT();
+}
+
+/* one request outside the boards' own (their counters are not touched) */
+static int cm_xfer(const uint8_t *tx, size_t n, uint16_t *regs, uint16_t n_regs, uint8_t *exc) {
+    uint8_t rx[MBR_FRAME_MAX];
+    uint16_t got = 0;
+    if (n == 0) return MBR_BAD_FORMAT;
+    if (port && port->xfer) got = port->xfer(port, tx, (uint16_t)n, rx, sizeof rx, PLAT_IOB_REPLY_MS);
+    return mbr_check_reply(tx, n, rx, got, regs, n_regs, exc);
+}
+
+/* identification and serial number of whatever answers at a; IOB_CM_OK, NO_REPLY or WRONG_TYPE */
+static uint8_t cm_read(uint8_t a, iob_cm_view_t *v) {
+    uint8_t f[MBR_FRAME_MAX];
+    uint16_t r[IOB_R_IDENT_N], s[IOB_SERIAL_REGS];
+    int rc = MBR_NO_REPLY;
+    for (int t = 0; t < 2 && rc != MBR_OK && rc != MBR_EXCEPTION; ++t)   /* one retry for a damaged frame */
+        rc = cm_xfer(f, mbr_req_read(f, a, IOB_R_MAGIC, IOB_R_IDENT_N), r, IOB_R_IDENT_N, NULL);
+    if (rc == MBR_EXCEPTION) return IOB_CM_WRONG_TYPE;
+    if (rc != MBR_OK) return IOB_CM_NO_REPLY;
+    if (r[0] != IOB_MAGIC || r[1] != IOB_MAP_VERSION) return IOB_CM_WRONG_TYPE;
+    v->found = true;
+    v->hw_rev = r[IOB_R_HW_REV - IOB_R_MAGIC];
+    v->fw_version = r[IOB_R_FW_VERSION - IOB_R_MAGIC];
+    v->fw_build = r[IOB_R_FW_BUILD - IOB_R_MAGIC];
+    memcpy(v->uid, &r[IOB_R_UID - IOB_R_MAGIC], sizeof v->uid);
+    if (cm_xfer(f, mbr_req_read(f, a, IOB_R_SERIAL, IOB_SERIAL_REGS), s, IOB_SERIAL_REGS, NULL) == MBR_OK) {
+        for (unsigned k = 0; k < IOB_SERIAL_REGS; ++k) {
+            v->serial[2 * k] = (char)(s[k] >> 8);
+            v->serial[2 * k + 1] = (char)(s[k] & 0xFFu);
+        }
+        for (unsigned k = 0; k < 2 * IOB_SERIAL_REGS; ++k)
+            if (v->serial[k] < 0x20 || v->serial[k] > 0x7E) { v->serial[k] = 0; break; }
+    }
+    return IOB_CM_OK;
+}
+
+static void cm_log(uint8_t to, const char *text) {
+    uint32_t board = 0;
+    PLAT_CRIT_ENTER();
+    for (unsigned b = 0; b < IOB_BOARDS; ++b) if (cmd.cfg[b].addr == to) { board = b + 1u; break; }
+    PLAT_CRIT_EXIT();
+    plat_log_event(LOG_EV_IOB, PLAT_SRC_WEB, 0, board, NAN, NAN, text);
+}
+
+static void cm_run(void) {
+    uint8_t op, from, to;
+    PLAT_CRIT_ENTER();
+    op = cm_req.op; from = cm_req.from; to = cm_req.to;
+    PLAT_CRIT_EXIT();
+    if (!op) return;
+    iob_cm_view_t v;
+    memset(&v, 0, sizeof v);
+    v.op = op; v.from = from; v.to = to;
+    if (op == 1) v.result = cm_read(from, &v);
+    else {
+        iob_cm_view_t other;
+        memset(&other, 0, sizeof other);
+        uint8_t at_to = cm_read(to, &other);
+        if (at_to != IOB_CM_NO_REPLY) v.result = IOB_CM_IN_USE;   /* never two devices at one address */
+        else {
+            uint8_t f[MBR_FRAME_MAX];
+            uint16_t w[3] = { IOB_ADDR_SET_KEY, to, (uint16_t)(to ^ 0xFFFFu) };
+            uint8_t exc = 0;
+            int rc = cm_xfer(f, mbr_req_write(f, from, IOB_R_ADDR_SET, w, 3), NULL, 0, &exc);
+            if (rc == MBR_EXCEPTION) { v.result = IOB_CM_REFUSED; v.exception = exc; }
+            else if (rc != MBR_OK) v.result = IOB_CM_NO_REPLY;
+            else v.result = cm_read(to, &v) == IOB_CM_OK ? IOB_CM_OK : IOB_CM_NOT_CONFIRMED;
+            char t[23];
+            snprintf(t, sizeof t, "addr %u->%u %s", (unsigned)from, (unsigned)to, v.result == IOB_CM_OK ? "set" : "failed");
+            cm_log(to, t);
+        }
+    }
+    PLAT_CRIT_ENTER();
+    v.seq = cm_view.seq + 1u;
+    cm_view = v;
+    cm_req.op = 0;
+    PLAT_CRIT_EXIT();
 }
 
 /* ---------------- scan side ---------------- */

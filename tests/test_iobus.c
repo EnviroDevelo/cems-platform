@@ -493,6 +493,63 @@ static void t_wrong_type_and_conflicts(void) {
     CHECK_EQ(bus.requests - r0, 30u);           /* three boards, one request each per cycle */
 }
 
+/* commissioning from the web page: find a new board at 246, give it an address, never a used one */
+static iob_cm_view_t cm_wait(void) {
+    iob_cm_view_t v;
+    for (int i = 0; i < 10; ++i) { run(20, true); iob_cm_view(&v); if (v.result != IOB_CM_BUSY) break; }
+    return v;
+}
+static void t_commission(void) {
+    setup();
+    iob_node_init(&n3, 0);                      /* a new board: no address */
+    memcpy(n3.serial, "CIO-26-00042", 12);
+    iob_tags[0].enable = iob_tags[1].enable = iob_tags[2].enable = true;
+    run(60, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK(view(2).state != IOB_S_RUN);         /* nothing answers at 3 yet */
+
+    CHECK(iob_cm_find(IOB_COMMISSION_ADDR));
+    CHECK(!iob_cm_find(IOB_COMMISSION_ADDR));   /* one request at a time */
+    CHECK(!iob_cm_assign(IOB_COMMISSION_ADDR, 3));
+    iob_cm_view_t v = cm_wait();
+    CHECK_EQ(v.result, IOB_CM_OK);
+    CHECK(v.found);
+    CHECK_EQ(v.uid[0], n3.uid[0]); CHECK_EQ(v.uid[5], n3.uid[5]);
+    CHECK(!strcmp(v.serial, "CIO-26-00042"));
+    CHECK_EQ(v.fw_version, n3.fw_version);
+    CHECK_EQ(n3.writes0, 0u);                   /* nothing switched on the new board */
+
+    CHECK(!iob_cm_assign(IOB_COMMISSION_ADDR, IOB_COMMISSION_ADDR));   /* out of range */
+    CHECK(!iob_cm_assign(IOB_COMMISSION_ADDR, 0));
+    CHECK(!iob_cm_assign(3, 3));
+    CHECK(iob_cm_assign(IOB_COMMISSION_ADDR, 1));                       /* board 1 is at 1 */
+    v = cm_wait();
+    CHECK_EQ(v.result, IOB_CM_IN_USE);
+    CHECK_EQ(n3.address, 0u);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+
+    CHECK(iob_cm_assign(IOB_COMMISSION_ADDR, 3));
+    v = cm_wait();
+    CHECK_EQ(v.result, IOB_CM_OK);
+    CHECK_EQ(n3.address, 3u);
+    CHECK(!strcmp(v.serial, "CIO-26-00042"));   /* read back at the new address */
+    run(PLAT_IOB_RETRY_MS + 100, true);
+    CHECK_EQ(view(2).state, IOB_S_RUN);         /* board 3 comes online by itself */
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK_EQ(view(1).state, IOB_S_RUN);
+
+    CHECK(iob_cm_find(IOB_COMMISSION_ADDR));    /* no new board left */
+    CHECK_EQ(cm_wait().result, IOB_CM_NO_REPLY);
+    CHECK(iob_cm_assign(200, 9));               /* nothing at 200 */
+    CHECK_EQ(cm_wait().result, IOB_CM_NO_REPLY);
+    n1.magic = 0x1234;                          /* some other Modbus device at 1 */
+    CHECK(iob_cm_find(1));
+    CHECK_EQ(cm_wait().result, IOB_CM_WRONG_TYPE);
+    n1.magic = IOB_MAGIC;
+    iob_cm_view(&v);
+    CHECK_EQ(v.seq, 6u);
+}
+
 static void t_lost_replies(void) {
     setup();
     iob_tags[0].enable = true;
@@ -558,6 +615,7 @@ void test_iobus_all(void) {
     RUN(t_node_restart);
     RUN(t_faults);
     RUN(t_wrong_type_and_conflicts);
+    RUN(t_commission);
     RUN(t_lost_replies);
     RUN(t_node_timeout);
     RUN(t_no_port);
