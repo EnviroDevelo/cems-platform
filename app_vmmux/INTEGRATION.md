@@ -96,6 +96,7 @@ After I-1 to I-9 every Stage 4 test passes with exactly its 18 Oct check count.
 | `VM_MUX_CONTINUOUS` | 1 | Q8: the MUX loops its sequence until stopped (no calendar window) |
 | `VM_FIX_MUX_RESTART` | 1 | Finding F5: reset the MUX period timers when a run ends, so a restart in the window begins at period 1 (Gary: the MUX is the automated loop) |
 | `ENABLE_DISABLED_RUNGS` | off | every other DISABLED IN ORIGINAL rung, kept in full, off |
+| `VM_VALVE_DO_MAP` | valves 1-16 → channels 0-15, 17-20 → 18-21 | Valve outputs on the RS-485 I/O boards (24 Oct): VALVE_OUT_01..16 on board 1's solid-state outputs, 17-20 on board 2's bank A outputs 1-4, so no valve is on a board's 230 VAC relays (they would have been valves 17-18 with channels 1-20 straight through). `vm_io.c`; test `t_do_mapping` |
 | `VM_MB_BYTE_FLAGS` / `VM_MB_WORD_FLAGS` | 0 | Modbus byte / word order: Modbus convention (Q3) |
 
 Other replacements: password screens -> platform logins; SN -> platform serial (param 50); ToEmail1..3 ->

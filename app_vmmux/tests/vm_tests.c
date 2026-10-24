@@ -133,7 +133,12 @@ static void t_do_mapping(void)
     memset(TA30_DO, 0, sizeof TA30_DO); memset(UID_DO, 0, sizeof UID_DO);
     TA30_DO[0] = true; TA30_DO[9] = true; UID_DO[0] = true; UID_DO[9] = true;
     vm_io_out(&out);
-    CHECK_EQ(out.do_bits, (1u << 0) | (1u << 9) | (1u << 10) | (1u << 19));
+    /* VM_VALVE_DO_MAP default: valves 1-16 on channels 0-15, 17-20 on 18-21 (I/O board 2's bank A) */
+    CHECK_EQ(out.do_bits, (1u << 0) | (1u << 9) | (1u << 10) | (1u << 21));
+    memset(&out, 0, sizeof out);
+    for (unsigned i = 0; i < 10; i++) { TA30_DO[i] = true; UID_DO[i] = true; }
+    vm_io_out(&out);
+    CHECK_EQ(out.do_bits, 0xFFFFu | (0xFu << 18));           /* every valve; board 1's relays (16, 17) never */
     memset(TA30_DO, 0, sizeof TA30_DO); memset(UID_DO, 0, sizeof UID_DO);
 }
 
