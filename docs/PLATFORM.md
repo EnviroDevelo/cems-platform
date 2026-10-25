@@ -204,6 +204,10 @@ same 0.5 s value polls, so it costs the instrument no requests, no RAM and no AP
 record is the data logger (5a). The chosen values are remembered by the browser.
 Screenshot: `docs/web_trend.png`.
 
+**Phones and tablets.** The page fits a phone's width (390 px) without sideways
+scrolling: the parameter and alarm lists stack into cards, and wider tables (alarm
+actions) scroll inside their own section. `web_ui_test.py` checks this.
+
 **Keep-alive.** The server handles one HTTPS connection at a time. After a GET the
 connection stays open (HTTP/1.1 keep-alive; bodies without a known length are sent
 chunked), so the page's polls reuse it instead of opening a TLS connection each time.

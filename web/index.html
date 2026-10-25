@@ -35,6 +35,7 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
 tr.unacked td{font-weight:600}
 .warnbox{background:#fdecd2;color:var(--warn);border-radius:6px;padding:8px;margin-bottom:8px;display:none}
 #filter{min-width:220px}
+#tlsfp,#mailfp{overflow-wrap:anywhere}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
 .grid label{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:2px}
 td.c{text-align:center}
@@ -62,7 +63,15 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 .pen{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:14px;padding:2px 4px 2px 10px;cursor:pointer;font-size:12px}
 .pen.cur{border-color:var(--ink)}.pen i{width:10px;height:10px;border-radius:5px;display:inline-block}
 .pen b{font-weight:600;font-variant-numeric:tabular-nums}.pen button{padding:0 6px;line-height:16px}
-@media (max-width:640px){td.lim,th.lim{display:none}}
+@media (max-width:640px){td.lim,th.lim{display:none}
+  main{padding:8px 8px 32px}section{padding:10px 8px;overflow-x:auto}
+  #partab thead{display:none}#rows tr{display:grid;grid-template-columns:auto 1fr auto;column-gap:8px;border-bottom:1px solid var(--line);padding:4px 0}
+  #rows td{border:0;padding:2px 4px}#rows td.val{grid-column:1/-1;max-width:none;word-break:normal;overflow-wrap:anywhere}
+  #rows td.acc{display:none}#rows td:last-child{grid-row:1;grid-column:3}#filter{min-width:0;flex:1}
+  #alarms thead{display:none}#alarmrows tr{display:grid;grid-template-columns:1fr auto;border-bottom:1px solid var(--line);padding:4px 0}
+  #alarmrows td{border:0;padding:2px 4px}#alarmrows td:nth-child(1){grid-row:2;grid-column:1;color:var(--mute);font-size:12px}
+  #alarmrows td:nth-child(2){grid-row:1;grid-column:1}#alarmrows td:nth-child(3){grid-row:3;grid-column:1}#alarmrows td:nth-child(4){grid-row:1/span 3;grid-column:2}
+  #actions th,#actions td{padding:6px 4px}}
 </style>
 </head>
 <body>
@@ -119,7 +128,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     </div>
     <div class="row" style="margin-bottom:8px"><select id="tradd"><option value="">Add a value to trend</option></select><span class="row" id="trpens"></span></div>
     <canvas class="trc" id="trc"></canvas>
-    <p class="note" id="trnote">Up to 4 values, each on its own scale; click a value's name for its scale. Recorded in this browser while the page is open (last 60 min). The data CSV above holds the instrument's own record.</p>
+    <p class="note" id="trnote">Up to 4 values, each on its own scale; click a value's name for its scale. Recorded in this browser while the page is open (last 60 min). The data CSV under Event log holds the instrument's own record.</p>
   </section>
 
   <section id="iobsec" style="display:none">
@@ -134,7 +143,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <h2>Parameters</h2>
       <input id="filter" placeholder="Filter by name or ID">
     </div>
-    <table>
+    <table id="partab">
       <thead><tr><th>ID</th><th>Name</th><th>Value</th><th class="lim">Range</th><th>Access</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -667,7 +676,7 @@ function trDraw() {
   const X = t => L + (t - t0) / span * pw;
   g.font = "11px system-ui,sans-serif"; g.strokeStyle = "#d9dde4"; g.fillStyle = "#667085"; g.lineWidth = 1;
   g.textAlign = "center"; g.textBaseline = "top";
-  const step = span <= 60000 ? 10000 : span <= 300000 ? 60000 : span <= 900000 ? 180000 : 600000;
+  const step = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800].map(x => x * 1000).find(x => x / span * pw >= (x < 60000 ? 80 : 60)) || 1800000;
   for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
     const x = Math.round(X(t)) + 0.5; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
     g.fillText(new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: step < 60000 ? "2-digit" : undefined }), x, T + ph + 4);
@@ -684,10 +693,11 @@ function trDraw() {
   });
   const fs = scales[trFocus], fd = byId[trPens[trFocus]];
   g.textAlign = "right"; g.textBaseline = "middle"; g.fillStyle = TR_COL[trFocus];
+  const dec = Math.min(6, Math.max(0, -Math.floor(Math.log10((fs[1] - fs[0]) / 4))));
   for (let k = 0; k <= 4; k++) {
     const y = T + ph - k / 4 * ph, val = fs[0] + k / 4 * (fs[1] - fs[0]);
     if (k > 0 && k < 4) { g.beginPath(); g.moveTo(L, Math.round(y) + 0.5); g.lineTo(L + pw, Math.round(y) + 0.5); g.stroke(); }
-    g.fillText(fd.type === "bool" ? (k === 0 ? "off" : k === 4 ? "on" : "") : trNum({ type: "float" }, val), L - 4, y);
+    g.fillText(fd.type === "bool" ? (k === 0 ? "off" : k === 4 ? "on" : "") : val.toFixed(dec), L - 4, y);
   }
   g.save(); g.beginPath(); g.rect(L, T, pw, ph); g.clip();
   trPens.forEach((id, k) => {

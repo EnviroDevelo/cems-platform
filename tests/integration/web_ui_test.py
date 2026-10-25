@@ -37,6 +37,15 @@ async def run(unit):
         print("trend legend:", repr(pens), "| line pixels:", inked, "| csv:", csv[0], len(csv) - 1, "rows")
         ok &= "run_seconds" in pens and inked > 20 and csv[0] == '"time","run_seconds (s)"' and len(csv) >= 5 \
               and all(len(r.split(",")) == 2 and r.split(",")[1].isdigit() for r in csv[1:])
+        # phone width: no sideways scrolling of the page (wide tables scroll inside their own section)
+        ph = await b.new_page(viewport={"width": 390, "height": 844}, ignore_https_errors=True, has_touch=True)
+        await ph.goto(URL)
+        await ph.wait_for_selector("#v1001")
+        await ph.wait_for_timeout(1500)
+        sw = await ph.evaluate("[document.documentElement.scrollWidth, innerWidth]")
+        await ph.screenshot(path=os.path.join(ROOT, "build", "web_phone.png"))
+        await ph.close()
+        print("phone width: page", sw[0], "px in a", sw[1], "px window"); ok &= sw[0] <= sw[1]
         await pg.fill("#pw", "1111")
         await pg.click("#loginbtn")
         await pg.wait_for_selector("#userrow", state="visible")
