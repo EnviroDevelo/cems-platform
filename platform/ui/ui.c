@@ -954,12 +954,13 @@ static void draw_iob(void) {
             text((int16_t)(x + 14), (int16_t)(y + 72), F_SMALL, 0, b);
             continue;
         }
-        /* how the board is reached: its IP and Modbus address on Ethernet (D27), the address on RS-485 */
-        if (iob_link == IOB_LINK_ETH) {
+        /* how the board is reached: its IP and Modbus address on any IP link (D27), the address on RS-485 */
+        bool by_ip = iob_link != IOB_LINK_RS485;
+        if (by_ip) {
             if (t->ip) { fmt_ip(c, sizeof c, t->ip); snprintf(b, sizeof b, "%s, address %u", c, t->address); }
             else snprintf(b, sizeof b, "No IP set (iob%u_ip)", k + 1u);
         } else snprintf(b, sizeof b, "RS-485, address %u", t->address);
-        color(t->ip || iob_link != IOB_LINK_ETH ? C_MUTE : C_BAD); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
+        color(t->ip || !by_ip ? C_MUTE : C_BAD); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
         /* outputs: bank A, bank B and the relays, one row each */
         snprintf(b, sizeof b, "Outputs %u-%u", t->first_do, t->first_do + IOB_OUTS - 1u);
         color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 66), F_SMALL, 0, b);
