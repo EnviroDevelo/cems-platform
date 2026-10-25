@@ -58,6 +58,10 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 .sq{width:26px;height:24px;border-radius:4px;background:#e4e7ec;font-size:11px;display:inline-flex;align-items:center;justify-content:center}
 .sq.on{background:var(--ok);color:#fff}.sq.in{background:var(--accent);color:#fff}.sq.f{background:var(--bad);color:#fff}
 .sqs .k{font-size:11px;color:var(--mute);margin-left:4px}
+.trc{width:100%;height:240px;display:block;border:1px solid var(--line);border-radius:6px;touch-action:none}
+.pen{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:14px;padding:2px 4px 2px 10px;cursor:pointer;font-size:12px}
+.pen.cur{border-color:var(--ink)}.pen i{width:10px;height:10px;border-radius:5px;display:inline-block}
+.pen b{font-weight:600;font-variant-numeric:tabular-nums}.pen button{padding:0 6px;line-height:16px}
 @media (max-width:640px){td.lim,th.lim{display:none}}
 </style>
 </head>
@@ -102,6 +106,20 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <thead><tr><th>Since</th><th>Alarm</th><th>State</th><th></th></tr></thead>
       <tbody id="alarmrows"></tbody>
     </table>
+  </section>
+
+  <section id="trendsec">
+    <div class="row" style="justify-content:space-between">
+      <h2>Trends</h2>
+      <span class="row">
+        <select id="trwin"><option value="60">1 min</option><option value="300" selected>5 min</option><option value="900">15 min</option><option value="3600">60 min</option></select>
+        <button class="ghost" id="trhold">Hold</button>
+        <button class="ghost" id="trcsv">Save CSV</button>
+      </span>
+    </div>
+    <div class="row" style="margin-bottom:8px"><select id="tradd"><option value="">Add a value to trend</option></select><span class="row" id="trpens"></span></div>
+    <canvas class="trc" id="trc"></canvas>
+    <p class="note" id="trnote">Up to 4 values, each on its own scale; click a value's name for its scale. Recorded in this browser while the page is open (last 60 min). The data CSV above holds the instrument's own record.</p>
   </section>
 
   <section id="iobsec" style="display:none">
@@ -576,12 +594,149 @@ async function recSave() {
   catch (e) { err.className = "err"; err.textContent = e.info && e.info.why ? e.info.why : explain(e); }
 }
 
+/* ---- live trends: recorded in the browser from the value polls, no extra requests ---- */
+const TR_MAX_S = 3600, TR_COL = ["#1f5fae", "#b42318", "#16794a", "#a15c00"];
+let trPens = [], trT = [], trV = {}, trFocus = 0, trHoldAt = 0, trHover = null;
+const trendable = d => ["bool", "int", "uint", "float"].includes(d.type) && !d.flags.includes("secret") &&
+  !((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint");
+function trSave() { try { localStorage.setItem("cems.trend", JSON.stringify(trPens)); } catch (e) {} }
+function trSetup() {
+  const sel = $("tradd");
+  for (const d of defs) if (trendable(d)) { const o = document.createElement("option"); o.value = d.id; o.textContent = d.id + " " + d.name; sel.appendChild(o); }
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem("cems.trend") || "[]"); } catch (e) {}
+  if (Array.isArray(saved)) saved.forEach(id => { if (byId[id] && trendable(byId[id])) trAdd(id); });
+  sel.onchange = () => { if (sel.value) trAdd(+sel.value); sel.value = ""; };
+  $("trwin").onchange = trDraw;
+  $("trhold").onclick = () => { trHoldAt = trHoldAt ? 0 : (trT[trT.length - 1] || Date.now()); $("trhold").textContent = trHoldAt ? "Follow live" : "Hold"; trDraw(); };
+  $("trcsv").onclick = trCsv;
+  const c = $("trc");
+  c.onpointermove = e => { const r = c.getBoundingClientRect(); trHover = (e.clientX - r.left) / r.width; trDraw(); };
+  c.onpointerleave = () => { trHover = null; trDraw(); };
+  window.addEventListener("resize", trDraw);
+  trPensShow(); trDraw();
+}
+function trAdd(id) {
+  if (trPens.includes(id) || trPens.length >= TR_COL.length) return;
+  trPens.push(id); trV[id] = new Array(trT.length).fill(null);
+  trSave(); trPensShow(); trDraw();
+}
+function trRemove(id) {
+  trPens = trPens.filter(x => x !== id); delete trV[id];
+  trFocus = Math.min(trFocus, Math.max(0, trPens.length - 1));
+  trSave(); trPensShow(); trDraw();
+}
+function trPensShow() {
+  const box = $("trpens"); box.textContent = "";
+  trPens.forEach((id, k) => {
+    const s = document.createElement("span"); s.className = "pen" + (k === trFocus ? " cur" : "");
+    s.innerHTML = `<i style="background:${TR_COL[k]}"></i><span></span><b id="trv${id}">-</b><button class="ghost" title="Remove">×</button>`;
+    s.children[1].textContent = byId[id].name;
+    s.onclick = () => { trFocus = k; trPensShow(); trDraw(); };
+    s.lastChild.onclick = e => { e.stopPropagation(); trRemove(id); };
+    box.appendChild(s);
+  });
+  $("tradd").disabled = trPens.length >= TR_COL.length;
+}
+function trRecord(v) {
+  const now = Date.now();
+  trT.push(now);
+  for (const id of trPens) { const x = v[id]; trV[id].push(typeof x === "boolean" ? (x ? 1 : 0) : (typeof x === "number" ? x : null)); }
+  let cut = 0;
+  while (cut < trT.length && trT[cut] < now - TR_MAX_S * 1000) cut++;
+  if (cut) { trT.splice(0, cut); for (const id of trPens) trV[id].splice(0, cut); }
+  trDraw();
+}
+function trNice(lo, hi) {
+  if (lo === hi) { const a = Math.abs(lo) || 1; lo -= a * 0.1; hi += a * 0.1; }
+  const pad = (hi - lo) * 0.05; return [lo - pad, hi + pad];
+}
+function trNum(d, x) {
+  if (x === null || x === undefined) return "-";
+  if (d.type === "bool") return x ? "on" : "off";
+  const t = Math.abs(x) >= 1000 || Number.isInteger(x) ? String(Math.round(x * 100) / 100) : x.toPrecision(4);
+  return t + (d.unit ? " " + d.unit : "");
+}
+function trDraw() {
+  const c = $("trc"); if (!c || !c.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const L = 64, R = 10, T = 8, B = 22, pw = W - L - R, ph = H - T - B;
+  const span = +$("trwin").value * 1000, t1 = trHoldAt || Date.now(), t0 = t1 - span;
+  const X = t => L + (t - t0) / span * pw;
+  g.font = "11px system-ui,sans-serif"; g.strokeStyle = "#d9dde4"; g.fillStyle = "#667085"; g.lineWidth = 1;
+  g.textAlign = "center"; g.textBaseline = "top";
+  const step = span <= 60000 ? 10000 : span <= 300000 ? 60000 : span <= 900000 ? 180000 : 600000;
+  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
+    const x = Math.round(X(t)) + 0.5; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
+    g.fillText(new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: step < 60000 ? "2-digit" : undefined }), x, T + ph + 4);
+  }
+  g.strokeRect(L + 0.5, T + 0.5, pw, ph);
+  if (!trPens.length) { g.fillText("Choose a value to trend", L + pw / 2, T + ph / 2 - 6); trCursor(); return; }
+  let i0 = 0; while (i0 < trT.length && trT[i0] < t0) i0++;
+  i0 = Math.max(0, i0 - 1);
+  const scales = trPens.map(id => {
+    if (byId[id].type === "bool") return [-0.1, 1.1];
+    let lo = Infinity, hi = -Infinity;
+    for (let i = i0; i < trT.length && trT[i] <= t1; i++) { const y = trV[id][i]; if (y !== null) { if (y < lo) lo = y; if (y > hi) hi = y; } }
+    return lo === Infinity ? [0, 1] : trNice(lo, hi);
+  });
+  const fs = scales[trFocus], fd = byId[trPens[trFocus]];
+  g.textAlign = "right"; g.textBaseline = "middle"; g.fillStyle = TR_COL[trFocus];
+  for (let k = 0; k <= 4; k++) {
+    const y = T + ph - k / 4 * ph, val = fs[0] + k / 4 * (fs[1] - fs[0]);
+    if (k > 0 && k < 4) { g.beginPath(); g.moveTo(L, Math.round(y) + 0.5); g.lineTo(L + pw, Math.round(y) + 0.5); g.stroke(); }
+    g.fillText(fd.type === "bool" ? (k === 0 ? "off" : k === 4 ? "on" : "") : trNum({ type: "float" }, val), L - 4, y);
+  }
+  g.save(); g.beginPath(); g.rect(L, T, pw, ph); g.clip();
+  trPens.forEach((id, k) => {
+    const [lo, hi] = scales[k], Y = y => T + ph - (y - lo) / (hi - lo) * ph, bool = byId[id].type === "bool";
+    g.strokeStyle = TR_COL[k]; g.lineWidth = k === trFocus ? 2 : 1.5; g.beginPath();
+    let pen = false, py = 0;
+    for (let i = i0; i < trT.length && trT[i] <= t1 + 1000; i++) {
+      const y = trV[id][i];
+      if (y === null || (i > 0 && trT[i] - trT[i - 1] > 3000)) pen = false;   /* gap: no data, or the link was down */
+      if (y === null) continue;
+      const x = X(trT[i]), yy = Y(y);
+      if (!pen) g.moveTo(x, yy); else { if (bool) g.lineTo(x, py); g.lineTo(x, yy); }
+      pen = true; py = yy;
+    }
+    g.stroke();
+  });
+  g.restore();
+  trCursor(t0, span, L, T, pw, ph, g);
+}
+function trCursor(t0, span, L, T, pw, ph, g) {
+  let idx = trT.length - 1;
+  if (trHover !== null && g) {
+    const x = Math.min(Math.max(trHover * $("trc").clientWidth, L), L + pw), t = t0 + (x - L) / pw * span;
+    let a = 0, b = trT.length - 1;
+    while (a < b) { const m = (a + b) >> 1; if (trT[m] < t) a = m + 1; else b = m; }
+    idx = a;
+    g.strokeStyle = "#1d2330"; g.lineWidth = 1; g.beginPath(); g.moveTo(Math.round(x) + 0.5, T); g.lineTo(Math.round(x) + 0.5, T + ph); g.stroke();
+    if (trT[idx]) { g.fillStyle = "#1d2330"; g.textAlign = x > L + pw - 80 ? "right" : "left"; g.textBaseline = "top"; g.fillText(new Date(trT[idx]).toLocaleTimeString(), x + (g.textAlign === "left" ? 4 : -4), T + 2); }
+  }
+  for (const id of trPens) { const c = $("trv" + id); if (c) c.textContent = idx < 0 ? "-" : trNum(byId[id], trV[id][idx]); }
+}
+function trCsv() {
+  const head = ["time"].concat(trPens.map(id => byId[id].name + (byId[id].unit ? " (" + byId[id].unit + ")" : "")));
+  const pad = n => String(n).padStart(2, "0"), ts = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}`; };
+  const lines = [head.map(h => '"' + h.replace(/"/g, '""') + '"').join(",")];
+  trT.forEach((t, i) => trPens.some(id => trV[id][i] !== null) && lines.push([ts(t)].concat(trPens.map(id => trV[id][i] === null ? "" : trV[id][i])).join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\r\n") + "\r\n"], { type: "text/csv" }));
+  a.download = "trend-" + ts(Date.now()).replace(/[ :]/g, "-").slice(0, 19) + ".csv";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 let lastValues = {};
 async function pollValues() {
   try {
     const j = await api("/api/values");
     lastValues = j.v; lastOk = Date.now();
     renderApp();
+    trRecord(j.v);
     for (const d of defs) { const c = $("v" + d.id); if (c) c.textContent = fmt(d, j.v[d.id]); }
     document.body.classList.remove("stale");
     $("conn").textContent = "live"; $("conn").className = "badge b-ok";
@@ -1173,7 +1328,7 @@ $("restorebtn").onclick = async () => {
   }
   defs.forEach(d => byId[d.id] = d);
   try { UI = await api("/api/ui"); } catch (e) { UI = { screens: [], records: [] }; }
-  build(); pollValues(); pollInfo(); pollEvents(); pollAlarms();
+  build(); trSetup(); pollValues(); pollInfo(); pollEvents(); pollAlarms();
 })();
 </script>
 </body>

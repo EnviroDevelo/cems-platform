@@ -21,6 +21,22 @@ async def run(unit):
         await pg.wait_for_selector("#v1001")
         await pg.wait_for_timeout(1200)
         await pg.screenshot(path=os.path.join(ROOT, "build", "web_view.png"), full_page=True)
+        # trends: pick a value, let it record, check the chart, the legend, the CSV and that the pick is remembered
+        await pg.select_option("#tradd", label="1002 run_seconds")
+        await pg.wait_for_timeout(3500)
+        pens = await pg.inner_text("#trpens")
+        inked = await pg.evaluate("""() => { const c = document.getElementById('trc'), d = c.getContext('2d')
+            .getImageData(0, 0, c.width, c.height).data; let n = 0;
+            for (let i = 0; i < d.length; i += 4) if (d[i] === 31 && d[i + 1] === 95 && d[i + 2] === 174) n++; return n; }""")
+        async with pg.expect_download() as dl:
+            await pg.click("#trcsv")
+        csv = open(await (await dl.value).path()).read().splitlines()
+        await pg.locator("#trendsec").screenshot(path=os.path.join(ROOT, "build", "web_trend.png"))
+        await pg.reload()
+        await pg.wait_for_selector("#trv1002")
+        print("trend legend:", repr(pens), "| line pixels:", inked, "| csv:", csv[0], len(csv) - 1, "rows")
+        ok &= "run_seconds" in pens and inked > 20 and csv[0] == '"time","run_seconds (s)"' and len(csv) >= 5 \
+              and all(len(r.split(",")) == 2 and r.split(",")[1].isdigit() for r in csv[1:])
         await pg.fill("#pw", "1111")
         await pg.click("#loginbtn")
         await pg.wait_for_selector("#userrow", state="visible")

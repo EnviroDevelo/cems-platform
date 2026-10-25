@@ -194,6 +194,16 @@ instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner
 and the values grey out until polling recovers. Admin users can download a parameter
 backup and restore it. Screenshots: `docs/web_ui.png`, `docs/web_ui_connection_lost.png`.
 
+**Trends.** The Trends section charts up to 4 values (any scalar bool, int, uint or float
+in the table) against time, over the last 1, 5, 15 or 60 minutes. Each value has its own
+scale (click its name to show that scale on the axis); a gap shows where the link was
+down; Hold freezes the view while recording carries on; hovering reads every value at
+that moment; Save CSV downloads what is recorded. It is recorded in the browser from the
+same 0.5 s value polls, so it costs the instrument no requests, no RAM and no API (about
+0.5 KB of page). It holds what was seen while the page was open; the instrument's own
+record is the data logger (5a). The chosen values are remembered by the browser.
+Screenshot: `docs/web_trend.png`.
+
 **Keep-alive.** The server handles one HTTPS connection at a time. After a GET the
 connection stays open (HTTP/1.1 keep-alive; bodies without a known length are sent
 chunked), so the page's polls reuse it instead of opening a TLS connection each time.
