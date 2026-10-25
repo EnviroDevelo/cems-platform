@@ -102,11 +102,10 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | BOOT0 | BOOT0 pin | 10 kΩ pull-down, test pad / jumper to 3.3 V (H9) |
 | 24 V supply sense | PC0 (ADC1_INP10) | divider 100 k / 10 k; early power-fail warning, supply shown on the System screen |
 | Status LEDs | PD12 (run), PD13 (fault) | `DO_01`, `DO_02` (labelled outputs, active high) |
-| System-OK relay (proposed) | PD14 | `DO_03`; see open question 3 |
 | Hardware revision straps | PE7, PE8 | read once at boot |
 
 Free for later: PA0, PA3, PA4, PA6, PA8, PA11, PA12, PB0-PB2, PB4, PB5, PB8-PB11, PC2,
-PC6-PC9, PC13, PD1, PD3, PD7-PD9, PD15, PE0, PE2-PE6, PE15.
+PC6-PC9, PC13, PD1, PD3, PD7-PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 
 ## 5. Power
 
@@ -124,8 +123,7 @@ buck would not survive one. Display figures are from the RVT70HSBNWC00 V1.1A dat
 VDD 3.0-3.6 V, 235 mA typ / 240 mA max (audio on at full volume); BLVDD 4.5-5.5 V (5.0 typ;
 it still lights from 2.7 V but not at full brightness), 10 / 310 / 400 mA at minimum / 50 % /
 100 % backlight. A 5 % 5 V rail is within range; keep the FFC's 5 V drop under 0.25 V. Brown-out: the MCU's BOR at the highest level
-plus the supply-sense pin (H10). Outputs off at reset (H7): the status relay driver has a
-pull-down on its gate.
+plus the supply-sense pin (H10). The core board drives no field outputs (H6 and H7 are on the I/O boards).
 
 ## 6. Connectors
 
@@ -138,7 +136,6 @@ pull-down on its gate.
 | J5 | SWD, 10-pin 1.27 mm Cortex debug | SWDIO, SWCLK, SWO, NRST, 3.3 V, GND |
 | J6 | Service UART, 6-pin 2.54 mm (FTDI-cable order) | 3.3 V levels |
 | J7 | RS-485, 4-way terminal (not fitted) | A, B, 0 V, shield; isolated transceiver, TVS, switchable 120 Ω (H11) |
-| J8 | System-OK relay contact, 3-way terminal (proposed) | NO / COM / NC |
 | BT1 | CR2032 holder | |
 | SW1 | Reset button | |
 
@@ -178,25 +175,30 @@ board's -40 to 85 °C parts, sets the instrument's rating.
   areas don't touch.
 - The W5500's SPI and the display's SPI are on opposite sides of the MCU (PE and PC/PD pins),
   which keeps the high-speed buses apart naturally.
-- The FFC connector at the board edge that lies under the display's own connector.
-  The module is 179.96 × 119.00 × 13.72 mm (cover glass), TFT 164.90 mm wide; the variant is
-  the one without the mounting metal frame, so the core board's standoffs and outline come from
-  the enclosure, with the FFC length set by where the board sits (open question 2).
+- **Mounting (Gary, 25 Oct): DIN rail, behind the display.** The board sits in a DIN-rail
+  enclosure on the rail inside the panel, and the display (179.96 × 119.00 × 13.72 mm,
+  without the mounting metal frame) is in the panel door or front, linked by the RiBUS FFC.
+  The outline follows the chosen DIN enclosure; the FFC connector goes on the board edge
+  that faces the display, with a slot in the enclosure for the cable.
+- FFC length: keep it as short as the panel allows, 150 mm or less. RiBUS has only three
+  ground pins (2, 19, 20) and no ground between the SPI lines, so a long cable limits the SPI
+  clock. The firmware's 30 MHz fast rate is to be proved on the real cable; it can drop to
+  15 MHz with no visible effect on the screens. Two BLVDD conductors carry the 400 mA with
+  well under 0.1 V drop at that length. If the door has to be further away, a small
+  buffer/adapter board at the display is the fallback (not planned).
 - Decoupling per ST's hardware getting-started application note for the STM32H5 **(check)**: 100 nF per VDD pin,
   4.7 µF bulk, and the VCAP capacitors at the values the datasheet gives.
 
-## 8. Open questions
+## 8. Decisions and open questions
 
-1. **Supply:** 24 VDC (18-32 V) assumed, the same as the I/O boards' field supply. Is
-   there a different panel supply, or a need for 230 VAC on board?
-2. **Board size and mounting:** behind the display on its standoffs, or a separate DIN-rail
-   carrier with the display on a longer FFC? This sets the outline.
-3. **System-OK relay:** a dry contact on the core board that drops when the firmware
-   stops healthy running (watchdog, fault, power loss), so the PLC knows even when the I/O
-   link is down. Recommended; costs one relay and a terminal.
-4. **RS-485:** keep the footprint (not fitted) for the bench and older boards, or drop it?
-5. **Ethernet magnetics:** integrated MagJacks (smaller, fewer parts) or discrete magnetics
-   with plain RJ45s (better isolation control)? MagJacks assumed.
+1. **Supply: 24 VDC (Gary, 25 Oct)**, 18-32 V range, the same as the I/O boards' field supply.
+2. **Mounting: DIN rail, behind the display (Gary, 25 Oct)**; see section 7.
+3. **No system-OK relay (Gary, 25 Oct):** the PLC's Modbus communication watchdog is
+   enough to detect a core board that has stopped.
+4. **RS-485 footprint:** open, explained to Gary.
+5. **Ethernet magnetics:** open. Gary answered "None"; being confirmed. Magnetics (or a
+   MagJack) can't be left out on a port that goes off the board: they give the 1500 Vrms
+   isolation and the common-mode rejection the client network needs.
 
 ## 9. BOM summary (main parts)
 
