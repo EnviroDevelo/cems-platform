@@ -11,6 +11,8 @@
 #include "param.h"
 #include "param_store.h"
 #include "plat_diag.h"
+#include "iob_w5500.h"
+#include "w5500_sim.h"
 #include "bsp_host.h"
 #include "iobus.h"
 #include "iob_node_sim.h"
@@ -311,6 +313,7 @@ static void t_api(void) {
         memcpy(nd.serial, "CIO-26-00007", 12);
         iob_simnet_add(&net, &nd);
         iob_init_eth(&net.port, &net.disc);
+        iob_link = IOB_LINK_ETH;                                 /* the main port */
         CHECK_EQ(call("POST", "/api/iob/net/set", "uid=00&board=1", true), 400);
         CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=4", true), 400);
         CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=1&ip=10.0.0.5", true), 400);   /* not the supervisor's subnet */
@@ -331,6 +334,36 @@ static void t_api(void) {
         CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
         CHECK(has("\"op\":\"set\"")); CHECK(has("\"new\":false")); CHECK(has("\"slot\":2"));
         iob_init_eth(NULL, NULL);
+        iob_reset();
+    }
+    /* the same on the I/O port (the product default): through the W5500, with the I/O port's own
+     * IP as the supervisor's, not the main port's */
+    {
+        static iob_simnet_t net; static iob_node_t nd; static w5500_sim_t chip; static iob_w5500_t io;
+        iob_simnet_init(&net, 0);
+        iob_node_init(&nd, 0);
+        memcpy(nd.serial, "CIO-26-00008", 12);
+        iob_simnet_add(&net, &nd);
+        w5500_sim_init(&chip);
+        w5500_sim_simnet(&chip, &net);
+        static const uint8_t mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
+        iob_w5500_init(&io, &chip.bus, mac);
+        iob_init_ioport(&io.port, &io.disc);
+        iob_link = IOB_LINK_IOPORT;
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"link\":\"ethernet\",\"port\":\"io\"")); CHECK(has("\"supervisor\":{\"dhcp\":false,\"ip\":\"192.168.1.60\",\"mask\":\"255.255.255.0\",\"gw\":\"0.0.0.0\"}"));
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"ok\":true")); CHECK(has("\"serial\":\"CIO-26-00008\"")); CHECK(has("\"new\":true"));
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=1&ip=192.168.1.60", true), 400);   /* the I/O port's own */
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=3", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(nd.ip, 0xC0A8013Fu); CHECK_EQ(nd.address, 3u); CHECK_EQ(nd.master_ip, 0xC0A8013Cu);
+        CHECK_EQ(nd.mask, 0xFFFFFF00u); CHECK_EQ(nd.gw, 0u);
+        CHECK(chip.connects == 0u && chip.commands > 0u);         /* discovery only: no Modbus TCP yet */
+        iob_init_ioport(NULL, NULL);
+        iob_link = IOB_LINK_IOPORT;
         iob_reset();
     }
     CHECK(auth_check(PLAT_LVL_ADMIN, "newpass1"));

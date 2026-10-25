@@ -157,11 +157,46 @@ Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor). 
 enabled (3b). Browse to `https://192.168.1.50/` and accept the certificate once, after
 comparing its fingerprint with the touchscreen's System screen.
 
+## 3h. The I/O port: W5500 for the I/O boards (HARDWARE.md H5, 25 Oct)
+
+The I/O boards are on their own network, on the I/O port: a WIZnet W5500 on its own SPI, which
+runs TCP/IP itself, so this traffic never enters lwIP (`iob_link` = 2, the default;
+`PLATFORM.md` 5k). Product board pins (PCB thread, `docs/CORE_PCB.md` 4):
+
+| CubeMX | Setting |
+|---|---|
+| SPI4 (PE12 SCK, PE13 MISO, PE14 MOSI) | Full-Duplex Master, 8 bits, Motorola, MSB first, CPOL low, CPHA 1 edge (mode 0), NSS **software**. Prescaler for **at most 33 MHz** from SPI4's kernel clock **(check against the clock tree)**. No DMA, no interrupt |
+| PE11 | GPIO output, label **W5500_CS**, initial level **high**, push-pull, speed high |
+| PE10 | GPIO output, label **W5500_RST**, initial level **high** (running), push-pull |
+| PE9 | GPIO input, label **W5500_INT**, pull-up (the chip's INTn; reserved for an interrupt-driven wait, not used yet) |
+
+In `main.h` (USER CODE section), only if the handle is not `hspi4`:
+
+```c
+#define W5500_SPI_HANDLE hspi2      /* the handle CubeMX generated for the W5500's SPI */
+```
+
+Add `port/stm32h5/w5500_stm32h5.c`, `platform/core/w5500.c` and `platform/core/iob_w5500.c`.
+Without the `W5500_CS` label there is no I/O port (`bsp_w5500()` returns NULL): with
+`iob_link` = 2, every enabled board then reports "not responding" and `iob_port_status`
+(parameter 105) reads 0.
+
+Settings: `iob_port_ip` (103, default 192.168.1.60) and `iob_port_prefix` (104, default 24) are
+the I/O port's own address. It is a separate network with its own stack, so it may use the same
+numbers as the client network without any clash; nothing routes between the two. The port's MAC
+is the main port's with bit 1 of the last byte flipped. `iob_port_status` shows the chip found
+(1) and the cable in (2).
+
+**On the DK** (no W5500 on the board): either wire a W5500 module (WIZ850io or any W5500
+breakout, 3.3 V) to a free SPI with the three GPIO labels above, or set `iob_link` = 1 to run the
+boards on the DK's own Ethernet port through lwIP (the same protocol; the boards then share the
+client network).
+
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 
-The I/O boards are on Ethernet by default (`iob_link`, `PLATFORM.md` 5k): nothing to set up in
-CubeMX for that, the boards share the Ethernet port and lwIP above. lwIP's pools are sized for
-the three board connections and the discovery socket (`port/stm32h5/lwip/lwipopts.h`). Only
+The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the
+main port through lwIP instead, with nothing more to set up in CubeMX (lwIP's pools are sized for
+the three board connections and the discovery socket, `port/stm32h5/lwip/lwipopts.h`). Only
 for the RS-485 setting:
 
 | CubeMX | Setting |

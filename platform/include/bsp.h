@@ -64,6 +64,9 @@ struct eve_bus *bsp_eve_bus(void);
 /* The RS-485 port for the I/O boards (iobus.h); NULL if this hardware has none. */
 struct iob_port;
 struct iob_port *bsp_rs485(void);
+/* The I/O port (a W5500 on its own SPI, w5500.h; HARDWARE.md H5); NULL if this hardware has none. */
+struct w5500_bus;
+struct w5500_bus *bsp_w5500(void);
 
 void bsp_random(void *buf, uint32_t len);
 void bsp_chip_uid(uint8_t uid[12]);       /* the MCU's 96-bit unique ID (serial-number tokens, D25) */

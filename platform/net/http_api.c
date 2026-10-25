@@ -1227,21 +1227,46 @@ static void json_ip(http_out_t *o, uint32_t ip) {
 static void uid_text(const uint16_t uid[6], char b[25]) {
     for (unsigned k = 0; k < 6; ++k) snprintf(b + 4 * k, 5, "%04X", (unsigned)uid[5 - k]);
 }
+/* The supervisor's address as the I/O boards see it: the I/O port's own (iob_port_ip, never DHCP)
+ * when the boards are on the I/O port, otherwise the main port's. */
+typedef struct { bool dhcp; uint32_t ip, mask, gw; } iob_me_t;
+static bool iob_me(iob_me_t *m) {
+    plat_val_t v;
+    memset(m, 0, sizeof *m);
+    if (iob_link == IOB_LINK_IOPORT) {
+        if (!param_read(PARAM_ID_IOB_PORT_IP, &v)) return false;
+        m->ip = v.u;
+        if (!param_read(PARAM_ID_IOB_PORT_PREFIX, &v)) return false;
+        m->mask = IOB_PORT_MASK(v.u);
+        return true;
+    }
+    m->dhcp = param_read(PARAM_ID_NET_DHCP, &v) && v.b;
+    if (!param_read(PARAM_ID_NET_IP, &v)) return false;
+    m->ip = v.u;
+    if (!param_read(PARAM_ID_NET_MASK, &v)) return false;
+    m->mask = v.u;
+    if (!param_read(PARAM_ID_NET_GW, &v)) return false;
+    m->gw = v.u;
+    return true;
+}
+
 static void get_iob_net(http_out_t *o) {
     static iob_dc_view_t v;                      /* large: not on the HTTP task's stack */
     iob_dc_view(&v);
-    plat_val_t pv;
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"result\":"); json_str(o, iob_cm_result_name(v.result));
     out_str(o, ",\"busy\":"); json_bool(o, v.result == IOB_CM_BUSY);
     out_str(o, ",\"ok\":"); json_bool(o, v.result == IOB_CM_OK);
     out_str(o, ",\"op\":"); json_str(o, v.op == 1 ? "find" : v.op == 2 ? "set" : "");
     out_str(o, ",\"seq\":"); json_uint(o, v.seq);
-    out_str(o, ",\"link\":"); json_str(o, iob_link == IOB_LINK_ETH ? "ethernet" : "rs485");
-    out_str(o, ",\"supervisor\":{\"dhcp\":"); json_bool(o, param_read(PARAM_ID_NET_DHCP, &pv) && pv.b);
-    out_str(o, ",\"ip\":"); json_ip(o, param_read(PARAM_ID_NET_IP, &pv) ? pv.u : 0);
-    out_str(o, ",\"mask\":"); json_ip(o, param_read(PARAM_ID_NET_MASK, &pv) ? pv.u : 0);
-    out_str(o, ",\"gw\":"); json_ip(o, param_read(PARAM_ID_NET_GW, &pv) ? pv.u : 0);
+    out_str(o, ",\"link\":"); json_str(o, IOB_LINK_IS_ETH(iob_link) ? "ethernet" : "rs485");
+    out_str(o, ",\"port\":"); json_str(o, iob_link == IOB_LINK_IOPORT ? "io" : iob_link == IOB_LINK_ETH ? "main" : "");
+    iob_me_t me;                    /* the supervisor as the boards see it: the I/O port, or the main port */
+    iob_me(&me);
+    out_str(o, ",\"supervisor\":{\"dhcp\":"); json_bool(o, me.dhcp);
+    out_str(o, ",\"ip\":"); json_ip(o, me.ip);
+    out_str(o, ",\"mask\":"); json_ip(o, me.mask);
+    out_str(o, ",\"gw\":"); json_ip(o, me.gw);
     out_str(o, "},\"configured\":[");
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
         if (k) out_str(o, ",");
@@ -1301,19 +1326,20 @@ static void post_iob_net(const http_req_t *r, http_out_t *o, uint8_t lvl, bool s
         char v[32] = "";
         uint16_t uid[6];
         uint32_t board, ip;
-        plat_val_t pv, mask, gw;
+        plat_val_t mask, gw;
         if (!form_get((const char *)r->body, r->body_len, "uid", v, sizeof v) || !parse_uid(v, uid)) { json_error(o, 400, "uid", -1); return; }
         if (!form_get((const char *)r->body, r->body_len, "board", v, sizeof v) || !parse_u32(v, &board) || board < 1 || board > IOB_BOARDS) {
             json_error(o, 400, "board", -1); return;
         }
-        if (param_read(PARAM_ID_NET_DHCP, &pv) && pv.b) { json_error(o, 409, "the supervisor needs a fixed IP (net_dhcp off) for the I/O boards", -1); return; }
-        plat_val_t me;
-        if (!param_read(PARAM_ID_NET_IP, &me) || !param_read(PARAM_ID_NET_MASK, &mask) || !param_read(PARAM_ID_NET_GW, &gw)) { json_error(o, 500, "settings", -1); return; }
+        iob_me_t me;
+        if (!iob_me(&me)) { json_error(o, 500, "settings", -1); return; }
+        if (me.dhcp) { json_error(o, 409, "the supervisor needs a fixed IP (net_dhcp off) for the I/O boards", -1); return; }
+        mask.u = me.mask; gw.u = me.gw;
         ip = iob_tags[board - 1].ip;
         if (form_get((const char *)r->body, r->body_len, "ip", v, sizeof v) && !parse_ipv4(v, &ip)) { json_error(o, 400, "ip", -1); return; }
         uint8_t addr = iob_tags[board - 1].address;
         uint32_t g = (gw.u & mask.u) == (ip & mask.u) ? gw.u : 0;
-        if (!iob_net_settings_ok(ip, mask.u, g, me.u, addr)) { json_error(o, 400, "ip", -1); return; }
+        if (!iob_net_settings_ok(ip, mask.u, g, me.ip, addr) || ip == me.ip) { json_error(o, 400, "ip", -1); return; }
         for (unsigned k = 0; k < IOB_BOARDS; ++k)
             if (k != board - 1 && iob_tags[k].enable && iob_tags[k].ip == ip) { json_error(o, 409, "another board slot has that IP", -1); return; }
         uint16_t pid = (uint16_t)(PARAM_ID_IOB_IP_FIRST + board - 1);
@@ -1321,7 +1347,7 @@ static void post_iob_net(const http_req_t *r, http_out_t *o, uint8_t lvl, bool s
         bool change = ip != iob_tags[board - 1].ip;
         param_err_t e = change ? param_check(pid, PLAT_VAL_U32, nv, PLAT_SRC_WEB, lvl) : PERR_OK;
         if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), pid); return; }
-        ok = iob_dc_set(uid, ip, mask.u, g, me.u, addr);
+        ok = iob_dc_set(uid, ip, mask.u, g, me.ip, addr);
         if (ok && change) (void)param_post(pid, PLAT_VAL_U32, nv, PLAT_SRC_WEB, lvl);   /* the slot follows the board */
     }
     if (!ok) { json_error(o, 409, "busy", -1); return; }

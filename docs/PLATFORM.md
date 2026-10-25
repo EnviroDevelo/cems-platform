@@ -39,6 +39,7 @@ runs on top of it.
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
 | I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
+| I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -615,9 +616,24 @@ of 0.6 A with per-channel diagnostics (bank A), 8 outputs of 1 A (bank B), 2 soc
 and 8 isolated inputs with wire-break detection. The main board is the master.
 
 **The link (Gary, 24 Oct).** The boards are on **Ethernet** with **Modbus TCP** (an STM32H563
-with a LAN8742A on each board, the same chip as the main board): parameter 102 `iob_link`,
-Ethernet by default. The single RS-485 pair (Modbus RTU, up to 100 m) stays as the other
-setting, for the bench and older boards. The register map, the requests and every rule
+with a LAN8742A on each board, the same chip as the main board). **Their own network (Gary,
+25 Oct):** the main board has two Ethernet ports, the client port (the H5's MAC, lwIP: HTTPS,
+Modbus TCP, email, SNTP) and the **I/O port**, a WIZnet W5500 on its own SPI (`w5500.h`,
+`port/stm32h5/w5500_stm32h5.c`, `CUBEMX_SETUP.md` 3h). The W5500 runs TCP/IP in its own hardware
+sockets, so the I/O traffic never enters lwIP and nothing can route between the plant network
+and the I/O boards. Parameter 102 `iob_link`: 2 = the I/O port (default), 1 = Ethernet on the
+main port through lwIP (the DK, which has no W5500), 0 = RS-485. The single RS-485 pair (Modbus
+RTU, up to 100 m) stays as a setting, for the bench and older boards.
+
+On the I/O port `iob_w5500.c` is the transport: sockets 0-2 are the three boards' connections,
+socket 3 discovery, 4-7 free. It sets the chip up on first use (its own IP `iob_port_ip`,
+parameter 103, default 192.168.1.60, and `iob_port_prefix`, 104, default /24; MAC: the main
+port's with bit 1 of the last byte flipped), tries again once a second while the chip does not
+answer, applies a new IP at once, and keeps `iob_port_status` (105: 1 chip found, 2 link up)
+current. ARP and TCP retries are 20 ms x 3, so a board that is not there fails within the
+cycle. Commissioning on the I/O port gives the boards the I/O port's IP as their supervisor
+(no gateway, and the main port's DHCP setting does not matter). A board's IP may not be the I/O
+port's own. The register map, the requests and every rule
 below are the same on both: the master builds the same RTU frames and, on Ethernet,
 `iob_net.c` turns each into a Modbus TCP frame (MBAP header, unit id = the board's address,
 no CRC) and the reply back (`iob_net.h`). Each board has an IP (`iobN_ip`, parameters
@@ -671,11 +687,11 @@ supply A, the inputs). Inputs report a wire break where the check is on.
 Every change goes to the event log as "I/O board": board 2: online / not responding /
 out 3 open circuit / in 5 wire break / field A 24V missing / restarted / watchdog reset.
 
-**Settings** (admin level, parameters 100-102, 110-139 and 146-148): `iob_hold` (300 s), `iob_filter` (8 ms, as the old panel), `iob_link` (Ethernet), and
+**Settings** (admin level, parameters 100-104, 110-139 and 146-148): `iob_hold` (300 s), `iob_filter` (8 ms, as the old panel), `iob_link` (the I/O port), `iob_port_ip`, `iob_port_prefix`, and
 per board `enable` (off by default), `address`, `ip`, `first_do`, `first_di`, `open_check`
 (bits: bank A outputs with a valve fitted), `wire_check` (bits: inputs with the wire-break
-resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, and 140-145
-`inputs` / `outputs`.
+resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, 140-145
+`inputs` / `outputs`, and 105 `iob_port_status`. `/api/iob/net` reports `"link":"ethernet"` for both Ethernet links, with `"port":"io"` or `"main"`, and its `supervisor` block is the address the boards see (the I/O port's on the I/O port).
 
 **IP and address on Ethernet (commissioning).** A new board has no IP and no address: it
 serves no Modbus TCP, but answers discovery (UDP port 50223, `iob_net.h`), whatever subnet

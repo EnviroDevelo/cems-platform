@@ -145,7 +145,10 @@ enum {
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
     PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
-    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet (iob_net.h) */
+    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet on the main port, 2 the I/O port (W5500, iob_w5500.h) */
+    PARAM_ID_IOB_PORT_IP      = 103, /* the I/O port's own IP (its own network, not the main port's) */
+    PARAM_ID_IOB_PORT_PREFIX  = 104, /* the I/O port's subnet, prefix length 8..30 */
+    PARAM_ID_IOB_PORT_STATUS  = 105, /* RO: IOBP_* bits (chip found, link up) */
     PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
     /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,
          +4 open-circuit check (bank A outputs 1-8, bits), +5 wire-break check (inputs 1-8, bits),

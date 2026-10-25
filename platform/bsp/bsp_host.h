@@ -18,6 +18,7 @@ typedef struct {
     uint32_t resets;
     bsp_reset_cause_t reset_cause;
     struct iob_port *rs485;      /* returned by bsp_rs485 (a simulated bus, iob_node_sim.h) */
+    struct w5500_bus *w5500;     /* returned by bsp_w5500 (a simulated chip, w5500_sim.h) */
 } bsp_host_t;
 
 extern bsp_host_t bsp_host;

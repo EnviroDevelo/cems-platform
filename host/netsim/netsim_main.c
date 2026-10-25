@@ -44,6 +44,8 @@
 #include "iobus.h"
 #include "iob_node_sim.h"
 #include "iob_tcp.h"
+#include "iob_w5500.h"
+#include "w5500_sim.h"
 #include <math.h>
 
 /* ---------------- critical sections ---------------- */
@@ -115,6 +117,11 @@ struct iob_port *bsp_rs485(void) { return &sim_rs485; }
  * board's IP: the io-node virtual board, build/vnode_net, on 127.0.0.1) */
 static iob_simnet_t simnet;
 static iob_tcp_t    realnet;
+/* the I/O port (iob_link 2, the default): a simulated W5500 in front of the same simulated network */
+static w5500_sim_t  iochip;
+static iob_w5500_t  ioport;
+static void io_lock(bool on) { if (on) plat_host_crit_enter(); else plat_host_crit_exit(); }
+static void io_wait(w5500_bus_t *b, uint32_t ms) { (void)b; struct timespec t = { 0, (long)ms * 1000000L }; nanosleep(&t, NULL); }
 static uint16_t locked_net_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t t) {
     (void)p;
     plat_host_crit_enter();
@@ -151,14 +158,24 @@ static void eth_init(void) {
         if ((e = getenv("CEMS_IOB_TCP_HOST")) != NULL && sscanf(e, "%u.%u.%u.%u", &a, &b, &c, &d) == 4)
             realnet.host = a << 24 | b << 16 | c << 8 | d;
         iob_init_eth(&realnet.port, &realnet.disc);
-        fprintf(stderr, "netsim: I/O boards on Ethernet over sockets, Modbus TCP port %u, discovery port %u\n",
-                realnet.tcp_port, realnet.disc_port);
+        fprintf(stderr, "netsim: I/O boards on Ethernet over sockets, Modbus TCP port %u, discovery port %u "
+                "(the main-port link: \"set 102 1\")\n", realnet.tcp_port, realnet.disc_port);
         return;
     }
     iob_simnet_init(&simnet, param_tag_get(param_find(PARAM_ID_NET_IP)).u);
     simnet.now = bsp_ms;
     for (unsigned k = 0; k < 2; ++k) iob_simnet_add(&simnet, &simnode[k]);
     iob_init_eth(&sim_tcp, &sim_disc);
+    w5500_sim_init(&iochip);
+    w5500_sim_simnet(&iochip, &simnet);
+    iochip.lock = io_lock;
+    iochip.bus.ms = bsp_ms;
+    iochip.bus.wait = io_wait;
+    uint8_t uid[12], mac[6];
+    bsp_chip_uid(uid);
+    iob_w5500_mac(uid, mac);
+    iob_w5500_init(&ioport, &iochip.bus, mac);
+    iob_init_ioport(&ioport.port, &ioport.disc);
 }
 
 /* FRAM: RAM image written through to a file */
