@@ -91,6 +91,7 @@
 #define PLAT_IOB_LOST_MS          1000u  /* no valid reply this long: the board is "not responding" */
 #define PLAT_IOB_STALE_MS         250u   /* outputs not refreshed by the scan this long: send all-off */
 #define PLAT_IOB_BAUD             115200u
+#define PLAT_IOB_TEMP_MS          500u   /* map 2: a board's temperatures are read this often (one board per cycle) */
 /* Ethernet link (iob_net.h) */
 #define PLAT_IOB_TCP_REPLY_MS     15u    /* a board's Modbus TCP reply (same budget as RS-485: 3 boards per cycle) */
 #define PLAT_IOB_TCP_CONNECT_MS   50u    /* a TCP connection to a board, tried once per retry */

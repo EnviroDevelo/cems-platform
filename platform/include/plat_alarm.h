@@ -108,6 +108,7 @@ enum {
     ALARM_ID_IOB_IN_FAULT      = 15,  /* an I/O board input: wire break or input chip fault */
     ALARM_ID_IOB_SUPPLY        = 16,  /* an I/O board's field 24 V supply is missing */
     ALARM_ID_IOB_NODE_RESET    = 17,  /* an I/O board was restarted by its watchdog */
+    ALARM_ID_IOB_TEMP_FAULT    = 18,  /* an I/O board temperature input: open, short, out of range, converter fault */
 };
 
 /* A copy of one alarm, for lists. */

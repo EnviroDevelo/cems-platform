@@ -1080,9 +1080,73 @@ static void get_iob(http_out_t *o) {
         out_str(o, ",\"errors\":"); json_uint(o, v.errors);
         out_str(o, ",\"last_error\":"); json_str(o, v.errors ? mbr_result_name(v.last_error) : "");
         out_str(o, ",\"node_rx_errors\":"); json_uint(o, v.node_rx_errors);
+        /* map 2: the configured temperature channels (calibrated), the cold junction, the pump */
+        out_str(o, ",\"map\":"); json_uint(o, v.map_version);
+        out_str(o, ",\"temps\":[");
+        bool first = true;
+        for (unsigned i = 0; i < IOB_TEMPS; ++i) {
+            if (t->temp_state[i] == IOB_TS_OFF) continue;
+            if (!first) out_str(o, ",");
+            first = false;
+            out_str(o, "{\"ch\":"); json_uint(o, i + 1u);
+            out_str(o, ",\"conn\":"); json_uint(o, i / 2u + 1u);
+            out_str(o, ",\"type\":"); json_str(o, iob_temp_type_name(t->temp_type[i / 2u]));
+            out_str(o, ",\"state\":"); json_str(o, iob_temp_state_name(t->temp_state[i]));
+            out_str(o, ",\"ok\":"); json_bool(o, t->temp_state[i] == IOB_TS_OK);
+            out_str(o, ",\"t\":");
+            if (t->temps[i] != IOB_TEMP_INVALID) { char b[16]; snprintf(b, sizeof b, "%.1f", t->temps[i] / 10.0); out_str(o, b); }
+            else out_str(o, "null");
+            out_str(o, ",\"offset\":"); { char b[16]; snprintf(b, sizeof b, "%.2f", t->temp_offset[i] / 100.0); out_str(o, b); }
+            out_str(o, ",\"channel\":"); json_uint(o, t->first_temp ? t->first_temp + i : 0u);
+            out_str(o, "}");
+        }
+        out_str(o, "],\"cj\":");
+        if (v.cj != IOB_TEMP_INVALID && v.n_temps) { char b[16]; snprintf(b, sizeof b, "%.1f", v.cj / 10.0); out_str(o, b); }
+        else out_str(o, "null");
+        out_str(o, ",\"pump\":");
+        if (v.n_pwm) {
+            out_str(o, "{\"ao\":"); json_uint(o, t->first_ao);
+            out_str(o, ",\"duty\":"); { char b[16]; snprintf(b, sizeof b, "%.1f", v.pwm_applied / 10.0); out_str(o, b); }
+            out_str(o, ",\"rpm\":"); json_uint(o, v.rpm);
+            out_str(o, ",\"hz\":"); json_uint(o, t->pwm_hz);
+            out_str(o, "}");
+        } else out_str(o, "null");
         out_str(o, "}");
     }
     out_str(o, "]}");
+}
+
+/* board=<1..>&ch=<1..6>&ref=<degC>: set the channel's calibration offset so it reads ref now (the
+ * reference thermometer's reading; the span stays). Admin; an ordinary, logged parameter write. */
+static void post_iob_zero(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    char v[24] = "";
+    uint32_t board, ch;
+    if (!form_get((const char *)r->body, r->body_len, "board", v, sizeof v) || !parse_u32(v, &board) || board < 1 || board > IOB_BOARDS) {
+        json_error(o, 400, "board", -1); return;
+    }
+    if (!form_get((const char *)r->body, r->body_len, "ch", v, sizeof v) || !parse_u32(v, &ch) || ch < 1 || ch > IOB_TEMPS) {
+        json_error(o, 400, "ch", -1); return;
+    }
+    char *e;
+    if (!form_get((const char *)r->body, r->body_len, "ref", v, sizeof v)) { json_error(o, 400, "ref", -1); return; }
+    double ref = strtod(v, &e);
+    if (!v[0] || *e || !isfinite(ref) || ref < -273.0 || ref > 2000.0) { json_error(o, 400, "ref", -1); return; }
+    iob_view_t bv; memset(&bv, 0, sizeof bv); (void)iob_board_view(board - 1u, &bv);
+    const iob_board_tags_t *t = &iob_tags[board - 1u];
+    if (bv.state != IOB_S_RUN || bv.temp_st[ch - 1u] != IOB_TS_OK || t->temp_state[ch - 1u] != IOB_TS_OK) {
+        json_error(o, 409, "the channel has no reading", -1); return;
+    }
+    int32_t now_cd = iob_temp_cal(bv.temp[ch - 1u], 0, t->temp_gain[ch - 1u]);
+    long off = lround(ref * 100.0) - now_cd;
+    if (off < -5000 || off > 5000) { json_error(o, 409, "more than 50 degC out: check the sensor and its type", -1); return; }
+    int16_t o16 = (int16_t)off;
+    uint16_t pid = (uint16_t)(PARAM_ID_IOB_T_FIRST + 16u * (board - 1u) + 5u);
+    param_err_t pe = param_blob_post(pid, (uint16_t)(2u * (ch - 1u)), &o16, 2, false, PLAT_SRC_WEB, lvl);
+    if (pe != PERR_OK) { json_error(o, perr_status(pe), perr_name(pe), pid); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"offset\":"); { char b[16]; snprintf(b, sizeof b, "%.2f", (double)off / 100.0); out_str(o, b); }
+    out_str(o, "}");
 }
 
 /* I/O board commissioning (iob_cm_*): find a board at an address (246: a new board), give it an address */
@@ -1429,6 +1493,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/iob/assign")) post_iob_cm(r, o, lvl, true);
         else if (!strcmp(r->path, "/api/iob/net/find")) post_iob_net(r, o, lvl, false);
         else if (!strcmp(r->path, "/api/iob/net/set")) post_iob_net(r, o, lvl, true);
+        else if (!strcmp(r->path, "/api/iob/temp/zero")) post_iob_zero(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

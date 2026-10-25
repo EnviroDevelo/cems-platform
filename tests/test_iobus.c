@@ -100,10 +100,10 @@ static void t_node_rules(void) {
     len = mbr_req_read(f, 5, 0, 1); f[len - 1] ^= 1u;
     CHECK_EQ(iob_node_frame(&n, 0, f, (uint16_t)len, rx, sizeof rx), 0u);
     CHECK_EQ(n.rx_errors, 1u);
-    len = mbr_req_read(f, 5, 70, 20);
+    len = mbr_req_read(f, 5, 100, 10);                     /* map 2 ends at 106 */
     got = iob_node_frame(&n, 0, f, (uint16_t)len, rx, sizeof rx);
     uint8_t code = 0;
-    CHECK_EQ(mbr_check_reply(f, len, rx, got, r, 20, &code), MBR_EXCEPTION);
+    CHECK_EQ(mbr_check_reply(f, len, rx, got, r, 10, &code), MBR_EXCEPTION);
     CHECK_EQ(code, 2);
     /* status registers are read-only; a bad value changes nothing */
     len = mbr_req_write1(f, 5, IOB_R_STATUS, 1);
@@ -837,6 +837,113 @@ static void t_link_change(void) {
     CHECK_EQ(view(0).state, IOB_S_RUN);
 }
 
+/* map 2: temperatures (settings to the board, calibration, channel states, the alarm) and the pump PWM */
+static void t_temps_and_pwm(void) {
+    setup();
+    iob_tags[0].enable = true;
+    iob_tags[0].temp_type[0] = IOB_TT_TC_K;
+    iob_tags[0].temp_type[1] = IOB_TT_PT100_3W;
+    iob_tags[0].temp_type[2] = IOB_TT_NTC;
+    iob_tags[0].ntc_r25[2] = 270;                          /* the legacy 2.7k */
+    iob_tags[0].ntc_beta[2] = 0;                           /* 0: the default B */
+    iob_tags[0].pwm_hz = 400;
+    iob_tags[0].first_ao = 2;
+    run(100, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK_EQ(view(0).map_version, 2);
+    CHECK_EQ(view(0).n_temps, IOB_TEMPS);
+    CHECK_EQ(n1.temp_type[0], IOB_TT_TC_K); CHECK_EQ(n1.temp_type[1], IOB_TT_PT100_3W); CHECK_EQ(n1.temp_type[2], IOB_TT_NTC);
+    CHECK_EQ(n1.ntc_r25[2], 270); CHECK_EQ(n1.ntc_beta[2], 3435);
+    CHECK_EQ(n1.pwm_hz, 400); CHECK_EQ(n1.tach_ppr, 2);
+    /* the board's readings, calibrated here: channel 1 +1.50 degC offset, channel 3 gain +1 % */
+    n1.temp[0] = 2345; n1.temp_st[0] = IOB_TS_OK;           /* 234.5 degC */
+    n1.temp[1] = IOB_TEMP_INVALID; n1.temp_st[1] = IOB_TS_OPEN;
+    n1.temp[2] = 1000; n1.temp_st[2] = IOB_TS_OK;
+    n1.temp[4] = -125; n1.temp_st[4] = IOB_TS_OK;
+    n1.cj = 251;
+    iob_tags[0].temp_offset[0] = 150;
+    iob_tags[0].temp_gain[2] = 100;
+    run(PLAT_IOB_TEMP_MS + 100, true);
+    CHECK_EQ(last_in.rtd_cdeg[4], 23600); CHECK_EQ(last_in.rtd_status[4], PLAT_AIN_OK);   /* first_temp 5 */
+    CHECK_EQ(last_in.rtd_status[5], PLAT_AIN_FAULT);
+    CHECK_EQ(last_in.rtd_cdeg[6], 10100);
+    CHECK_EQ(last_in.rtd_status[7], 0);                    /* an RTD has no B channel: not touched */
+    CHECK_EQ(last_in.rtd_cdeg[8], -1250);
+    CHECK_EQ(iob_tags[0].temps[0], 2360); CHECK_EQ(iob_tags[0].temp_state[1], IOB_TS_OPEN);
+    CHECK_EQ(iob_tags[0].temp_state[3], IOB_TS_OFF);
+    CHECK_EQ(iob_tags[0].cj_temp, 251);
+    CHECK(view(0).status & IOBS_TEMP_FAULT);
+    run(3200, true);
+    CHECK(alarm_on(ALARM_ID_IOB_TEMP_FAULT));
+    char lines[8][IOB_LINE];
+    iob_view_t v = view(0);
+    int nl = iob_fault_lines(&v, 0xFF, 0, lines, 8);
+    CHECK(nl >= 1 && strcmp(lines[0], "Temp 2: open circuit") == 0);
+    n1.temp_st[1] = IOB_TS_OK; n1.temp[1] = 200;
+    run(PLAT_IOB_TEMP_MS + 100, true);
+    CHECK(!alarm_on(ALARM_ID_IOB_TEMP_FAULT));
+    /* a sensor type change goes to the board at once */
+    iob_tags[0].temp_type[1] = IOB_TT_PT1000_4W;
+    run(60, true);
+    CHECK_EQ(n1.temp_type[1], IOB_TT_PT1000_4W);
+    iob_tags[0].temp_type[1] = 9;                          /* not a type: sent as none */
+    run(60, true);
+    CHECK_EQ(n1.temp_type[1], IOB_TT_NONE);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+
+    /* the pump: ao_raw 2 in 0.1 %, the sign is DIR */
+    cur_out.ao_raw[1] = -455;
+    run(60, true);
+    CHECK_EQ(n1.pwm_cmd, 455); CHECK_EQ(n1.pwm_dir, 1);
+    n1.tach_rpm = 1480;
+    run(60, true);
+    CHECK_EQ(iob_tags[0].pump_rpm, 1480); CHECK_EQ(iob_tags[0].pump_duty, 455);
+    cur_out.ao_raw[1] = 2000;                              /* clamped */
+    run(60, true);
+    CHECK_EQ(n1.pwm_cmd, 1000); CHECK_EQ(n1.pwm_dir, 0);
+    /* stale outputs and the safe state stop the pump too */
+    for (int i = 0; i < 20; ++i) step_ms(PLAT_IOB_PERIOD_MS, false);
+    CHECK_EQ(n1.pwm_cmd, 0);
+    run(60, true);
+    CHECK_EQ(n1.pwm_cmd, 1000);
+    iob_safe_state();
+    run(60, true);
+    CHECK_EQ(n1.pwm_cmd, 0);
+    /* the board stops answering: the configured channels are faults for the application */
+    n1.powered = false;
+    run(1500, true);
+    CHECK_EQ(view(0).state, IOB_S_LOST);
+    CHECK_EQ(last_in.rtd_status[4], PLAT_AIN_FAULT);
+    CHECK_EQ(iob_tags[0].temps[0], IOB_TEMP_INVALID);
+    CHECK_EQ(iob_tags[0].temp_state[0], IOB_TS_WAIT);
+    cur_out.ao_raw[1] = 0;
+}
+
+/* a map 1 board (G0 firmware) still runs: no PWM written, no temperatures read */
+static void t_map1_board(void) {
+    setup();
+    n1.map_version = 1; n1.n_temp_pwm = 0;
+    iob_tags[0].enable = true;
+    iob_tags[0].temp_type[0] = IOB_TT_TC_J;
+    iob_tags[0].first_ao = 1;
+    cur_out.ao_raw[0] = 500;
+    cur_out.do_bits = 0x3;
+    run(200, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK_EQ(view(0).map_version, 1);
+    CHECK_EQ(view(0).n_temps, 0);
+    CHECK_EQ(n1.out_cmd, 0x3);
+    CHECK_EQ(view(0).errors, 0u);                          /* nothing it would refuse was sent */
+    CHECK_EQ(iob_tags[0].temp_state[0], IOB_TS_ADC);       /* configured, but the board has no inputs */
+    CHECK_EQ(last_in.rtd_status[4], PLAT_AIN_FAULT);
+    n1.map_version = 3;                                    /* a later map: not this master's board */
+    iob_node_restart(&n1, false, bsp_host.ms);
+    n1.powered = false; run(1200, true); n1.powered = true;
+    run(1200, true);
+    CHECK_EQ(view(0).state, IOB_S_WRONG_TYPE);
+    cur_out.do_bits = 0; cur_out.ao_raw[0] = 0;
+}
+
 void test_iobus_all(void) {
     t_node_cfg();
     t_comms_latch();
@@ -857,6 +964,8 @@ void test_iobus_all(void) {
         RUN(t_lost_replies);
         RUN(t_node_timeout);
         RUN(t_no_port);
+        RUN(t_temps_and_pwm);
+        RUN(t_map1_board);
     }
     cur_link = IOB_LINK_ETH;
     RUN(t_eth_commission);

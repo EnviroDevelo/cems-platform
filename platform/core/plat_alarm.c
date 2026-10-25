@@ -62,6 +62,8 @@ static const alarm_def_t core_defs[] = {
       .text = "I/O board field 24 V supply missing", .on_delay_ms = 500 },
     { .id = ALARM_ID_IOB_NODE_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "IOB_NODE_RESET",
       .text = "I/O board restarted by its watchdog" },
+    { .id = ALARM_ID_IOB_TEMP_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_TEMP_FAULT",
+      .text = "Temperature input fault: open, short or out of range", .on_delay_ms = 3000 },
 };
 #define N_CORE (sizeof core_defs / sizeof core_defs[0])
 

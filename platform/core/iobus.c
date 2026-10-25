@@ -14,15 +14,18 @@
 
 /* ---------------- settings (parameter tags, owned by the scan) ---------------- */
 iob_board_tags_t iob_tags[IOB_BOARDS] = {
-    { .address = 1, .first_do = 1,  .first_di = 1,  .ol_mask = 0xFF, .ip = 0xC0A8013Du },
-    { .address = 2, .first_do = 19, .first_di = 9,  .ol_mask = 0xFF, .ip = 0xC0A8013Eu },
-    { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF, .ip = 0xC0A8013Fu },
+    { .address = 1, .first_do = 1,  .first_di = 1,  .ol_mask = 0xFF, .ip = 0xC0A8013Du, .first_temp = 5,  .pwm_hz = 1000, .tach_ppr = 2 },
+    { .address = 2, .first_do = 19, .first_di = 9,  .ol_mask = 0xFF, .ip = 0xC0A8013Eu, .first_temp = 11, .pwm_hz = 1000, .tach_ppr = 2 },
+    { .address = 3, .first_do = 37, .first_di = 17, .ol_mask = 0xFF, .ip = 0xC0A8013Fu, .first_temp = 17, .pwm_hz = 1000, .tach_ppr = 2 },
 };
 uint16_t iob_hold_s = 300;
 uint8_t  iob_filter_ms = 8;
 uint8_t  iob_link = IOB_LINK_ETH;
 
-typedef struct { bool en; uint8_t addr, first_do, first_di, ol, wb; uint32_t ip; } cfg_t;
+typedef struct {
+    bool en; uint8_t addr, first_do, first_di, ol, wb; uint32_t ip;
+    uint16_t temp[IOB_R_CONFIG2_N];      /* map 2: registers 96..106 as they are written */
+} cfg_t;
 
 /* scan -> bus (under PLAT_CRIT) */
 static struct {
@@ -33,6 +36,8 @@ static struct {
     bool     cfg_valid;                 /* the scan has copied the settings at least once */
     uint16_t out[IOB_BOARDS];
     uint8_t  rel[IOB_BOARDS];
+    uint16_t pwm[IOB_BOARDS];           /* duty 0..1000 */
+    uint8_t  dir[IOB_BOARDS];
     uint32_t stamp;                     /* bsp ms when the scan last wrote outputs */
     bool     out_valid;
 } cmd;
@@ -66,6 +71,10 @@ typedef struct {
     uint16_t sent_timeout;
     uint8_t  sent_filter;
     bool     ident_ok;
+    uint8_t  map, temps, pwm;           /* the board's map version and what it has (map 2) */
+    uint32_t temp_at;                   /* the temperatures are read next at */
+    bool     temp_cfg_sent;
+    uint16_t temp_sent[IOB_R_CONFIG2_N];
     /* last raw values, for the event log */
     uint16_t st;
     uint8_t  a_open, a_ovl, a_otemp, wb, bf;
@@ -119,10 +128,41 @@ int iob_fault_lines(const iob_view_t *v, uint8_t ol, uint8_t wbm, char lines[][I
     if ((v->b_fault & IOB_BF_WDG) && n < max) snprintf(lines[n++], IOB_LINE, "Outs 9-16: off (own watchdog)");
     for (unsigned i = 0; i < 8 && n < max; ++i)
         if (v->wirebreak & wbm & (1u << i)) snprintf(lines[n++], IOB_LINE, "In %u: wire break", i + 1u);
+    for (unsigned i = 0; i < IOB_TEMPS && n < max; ++i) {
+        uint8_t t = v->temp_st[i];
+        if (t != IOB_TS_OK && t != IOB_TS_OFF && t != IOB_TS_WAIT)
+            snprintf(lines[n++], IOB_LINE, "Temp %u: %s", i + 1u, iob_temp_state_name(t));
+    }
     if (!(v->status & IOBS_FIELD_A_OK) && n < max) snprintf(lines[n++], IOB_LINE, "Field 24 V A missing");
     if (!(v->status & IOBS_FIELD_B_OK) && n < max) snprintf(lines[n++], IOB_LINE, "Field 24 V B missing");
     return n;
 }
+
+const char *iob_temp_type_name(uint8_t t) {
+    switch (t) {
+    case IOB_TT_NONE: return "none";
+    case IOB_TT_TC_K: return "K"; case IOB_TT_TC_J: return "J"; case IOB_TT_TC_T: return "T";
+    case IOB_TT_TC_E: return "E"; case IOB_TT_TC_S: return "S";
+    case IOB_TT_PT100_2W: return "PT100 2-wire"; case IOB_TT_PT100_3W: return "PT100 3-wire"; case IOB_TT_PT100_4W: return "PT100 4-wire";
+    case IOB_TT_PT1000_2W: return "PT1000 2-wire"; case IOB_TT_PT1000_3W: return "PT1000 3-wire"; case IOB_TT_PT1000_4W: return "PT1000 4-wire";
+    case IOB_TT_NTC: return "NTC";
+    default: return "?";
+    }
+}
+
+const char *iob_temp_state_name(uint8_t st) {
+    static const char *const n[] = { "ok", "not used", "starting", "open circuit", "short circuit", "below range",
+                                     "above range", "converter fault", "no cold junction" };
+    return st <= IOB_TS_CJ ? n[st] : "?";
+}
+
+int32_t iob_temp_cal(int16_t raw, int16_t off, int16_t gain) {
+    int64_t cd = (int64_t)raw * 10;                               /* 0.01 degC */
+    cd += (cd * gain + (cd >= 0 ? 5000 : -5000)) / 10000;         /* gain - 1 in 0.01 % */
+    return (int32_t)(cd + off);
+}
+
+static bool tt_known(uint8_t t) { return strcmp(iob_temp_type_name(t), "?") != 0; }
 
 bool iob_board_view(unsigned b, iob_view_t *v) {
     if (b >= IOB_BOARDS) return false;
@@ -206,12 +246,19 @@ static bool ident(unsigned b, uint8_t addr) {
     uint16_t r[IOB_R_IDENT_N];
     int rc = transact(b, f, mbr_req_read(f, addr, IOB_R_MAGIC, IOB_R_IDENT_N), r, IOB_R_IDENT_N);
     if (rc != MBR_OK) return false;
+    uint16_t map = r[1], tp = map >= 2u ? r[IOB_R_N_TEMP_PWM - IOB_R_MAGIC] : 0u;
+    B[b].map = (uint8_t)map;
+    B[b].temps = (tp & 0xFFu) == IOB_TEMPS ? IOB_TEMPS : 0u;
+    B[b].pwm = (tp >> 8) ? 1u : 0u;
     PLAT_CRIT_ENTER();
     view[b].hw_rev = r[IOB_R_HW_REV - IOB_R_MAGIC];
     view[b].fw_version = r[IOB_R_FW_VERSION - IOB_R_MAGIC];
     memcpy(view[b].uid, &r[IOB_R_UID - IOB_R_MAGIC], sizeof view[b].uid);
+    view[b].map_version = (uint8_t)map;
+    view[b].n_temps = B[b].temps;
+    view[b].n_pwm = B[b].pwm;
     PLAT_CRIT_EXIT();
-    bool match = r[0] == IOB_MAGIC && r[1] == IOB_MAP_VERSION &&
+    bool match = r[0] == IOB_MAGIC && map >= 1u && map <= IOB_MAP_VERSION &&
                  r[IOB_R_N_OUT_A - IOB_R_MAGIC] == 8 && r[IOB_R_N_OUT_B - IOB_R_MAGIC] == 8 &&
                  r[IOB_R_N_RELAYS - IOB_R_MAGIC] == 2 && r[IOB_R_N_INPUTS - IOB_R_MAGIC] == 8;
     B[b].ident_ok = match;
@@ -232,6 +279,46 @@ static bool write_cfg(unsigned b, const cfg_t *c, uint16_t timeout, uint8_t filt
 static bool cfg_changed(const bstate_t *x, const cfg_t *c, uint16_t timeout, uint8_t filter) {
     return !x->cfg_sent || x->sent.ol != c->ol || x->sent.wb != c->wb || x->sent.addr != c->addr ||
            x->sent_timeout != timeout || x->sent_filter != filter;
+}
+
+/* map 2 settings: the temperature part (96..104) to a board with temperatures, the PWM part
+ * (105..106) to one with a PWM output */
+static bool temp_cfg_changed(const bstate_t *x, const cfg_t *c) {
+    return (x->temps || x->pwm) && (!x->temp_cfg_sent || memcmp(x->temp_sent, c->temp, sizeof c->temp) != 0);
+}
+
+static bool write_cfg2(unsigned b, const cfg_t *c) {
+    uint8_t f[MBR_FRAME_MAX];
+    bstate_t *x = &B[b];
+    const uint16_t nt = IOB_R_PWM_FREQ - IOB_R_TEMP_TYPE;
+    if (x->temps && transact(b, f, mbr_req_write(f, c->addr, IOB_R_TEMP_TYPE, c->temp, nt), NULL, 0) != MBR_OK) return false;
+    if (x->pwm && transact(b, f, mbr_req_write(f, c->addr, IOB_R_PWM_FREQ, c->temp + nt, IOB_R_CONFIG2_N - nt), NULL, 0) != MBR_OK)
+        return false;
+    x->temp_cfg_sent = true;
+    memcpy(x->temp_sent, c->temp, sizeof c->temp);
+    return true;
+}
+
+/* a sensor is configured on one of the board's connectors (else its temperatures are not read) */
+static bool any_sensor(const cfg_t *c) {
+    for (unsigned k = 0; k < IOB_TEMP_CONNS; ++k) if (c->temp[k] != IOB_TT_NONE) return true;
+    return false;
+}
+
+/* map 2: the temperature block, every PLAT_IOB_TEMP_MS */
+static bool read_temps(unsigned b, const cfg_t *c, uint32_t now) {
+    uint8_t f[MBR_FRAME_MAX];
+    uint16_t r[IOB_R_TEMPS_N];
+    if (transact(b, f, mbr_req_read(f, c->addr, IOB_R_TEMP, IOB_R_TEMPS_N), r, IOB_R_TEMPS_N) != MBR_OK) return false;
+    B[b].temp_at = now + PLAT_IOB_TEMP_MS;
+    PLAT_CRIT_ENTER();
+    for (unsigned i = 0; i < IOB_TEMPS; ++i) {
+        view[b].temp[i] = (int16_t)r[i];
+        view[b].temp_st[i] = (uint8_t)r[IOB_R_TEMP_STATE - IOB_R_TEMP + i];
+    }
+    view[b].cj = (int16_t)r[IOB_R_CJ_TEMP - IOB_R_TEMP];
+    PLAT_CRIT_EXIT();
+    return true;
 }
 
 /* event-log lines for what changed in the status block */
@@ -274,13 +361,14 @@ static bool lost_acknowledged(void) {
     return !a.enabled || (a.active && !a.unacked);
 }
 
-static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32_t now) {
+static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint16_t pwm, uint8_t dir, uint32_t now) {
     bstate_t *x = &B[b];
     uint8_t f[MBR_FRAME_MAX];
-    uint16_t r[IOB_R_STATUS_N];
+    uint16_t r[IOB_R_STATUS_N2];
     x->seq++;
-    uint16_t w[3] = { out, rel, x->seq };
-    int rc = transact(b, f, mbr_req_rw(f, c->addr, IOB_R_STATUS, IOB_R_STATUS_N, IOB_R_OUT_CMD, w, 3), r, IOB_R_STATUS_N);
+    uint16_t w[5] = { out, rel, x->seq, pwm, dir };
+    uint16_t nr = x->map >= 2u ? IOB_R_STATUS_N2 : IOB_R_STATUS_N, nw = x->pwm ? 5u : 3u;
+    int rc = transact(b, f, mbr_req_rw(f, c->addr, IOB_R_STATUS, nr, IOB_R_OUT_CMD, w, nw), r, nr);
     if (rc == MBR_OK && r[IOB_R_CMD_ECHO - IOB_R_STATUS] != x->seq) {
         rc = MBR_BAD_FORMAT;                     /* the node did not apply this write */
         PLAT_CRIT_ENTER(); view[b].errors++; view[b].last_error = MBR_BAD_FORMAT; PLAT_CRIT_EXIT();
@@ -310,6 +398,12 @@ static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32
     v->a_open = open; v->a_overload = ovl; v->a_overtemp = otemp; v->b_fault = bf; v->wirebreak = wb;
     v->node_rx_errors = r[IOB_R_RX_ERRORS - IOB_R_STATUS];
     v->node_resets = r[IOB_R_RESETS - IOB_R_STATUS];
+    if (nr == IOB_R_STATUS_N2) {
+        v->pwm_applied = r[IOB_R_PWM_APPLIED - IOB_R_STATUS];
+        v->rpm = r[IOB_R_TACH_RPM - IOB_R_STATUS];
+        v->temp_flags = r[IOB_R_TEMP_FLAGS - IOB_R_STATUS];
+        v->temp_count = r[IOB_R_TEMP_COUNT - IOB_R_STATUS];
+    }
     uint16_t s = (uint16_t)(v->status & (IOBS_WDG_SEEN | IOBS_TIMEOUT_SEEN));
     s |= IOBS_ONLINE;
     if (st & IOB_ST_OUT_ENABLED) s |= IOBS_GATE_OPEN;
@@ -318,12 +412,14 @@ static void cyclic(unsigned b, const cfg_t *c, uint16_t out, uint8_t rel, uint32
     if (st & IOB_ST_WDG_RESET) { s |= IOBS_WDG_SEEN; wdg_events[b]++; clear = true; }
     if (st & IOB_ST_TIMEOUT) { s |= IOBS_TIMEOUT_SEEN; clear = true; }
     if (st & IOB_ST_COMMS_LOST) s |= IOBS_COMMS_LATCHED;
+    for (unsigned i = 0; i < IOB_TEMPS; ++i)
+        if (v->temp_st[i] != IOB_TS_OK && v->temp_st[i] != IOB_TS_OFF && v->temp_st[i] != IOB_TS_WAIT) s |= IOBS_TEMP_FAULT;
     v->status = s;
     PLAT_CRIT_EXIT();
 
     if (st & IOB_ST_WDG_RESET) ev(b, "watchdog reset");
     if (st & IOB_ST_TIMEOUT) ev(b, "outputs timed out");
-    if (st & IOB_ST_CONFIG_NEEDED) { ev(b, "restarted"); x->cfg_sent = false; }   /* send the settings again next cycle */
+    if (st & IOB_ST_CONFIG_NEEDED) { ev(b, "restarted"); x->cfg_sent = false; x->temp_cfg_sent = false; }   /* send the settings again next cycle */
     /* TIMEOUT and WDG_RESET are events, taken in at once. COMMS_LOST stays on the node (its comms
      * LED double-flashes) until someone acknowledges IOB_LOST here, which the node's bit also
      * raises; only then is it cleared on the node (node requirements FW-58). */
@@ -350,6 +446,9 @@ static void publish_state(unsigned b) {
         v->outputs = 0;
         v->out_faults = s == IOB_S_OFF ? 0u : (1u << IOB_OUTS) - 1u;
         v->in_faults = s == IOB_S_OFF ? 0u : 0xFFu;
+        v->pwm_applied = v->rpm = 0;
+        for (unsigned i = 0; i < IOB_TEMPS; ++i) { v->temp[i] = IOB_TEMP_INVALID; v->temp_st[i] = IOB_TS_WAIT; }
+        v->cj = IOB_TEMP_INVALID;
     }
     PLAT_CRIT_EXIT();
 }
@@ -361,13 +460,15 @@ void iob_cycle(uint32_t now) {
     cm_run();                                    /* a commissioning request from the web page, if any */
     dc_run();
     cfg_t c[IOB_BOARDS];
-    uint16_t out[IOB_BOARDS], timeout;
-    uint8_t rel[IOB_BOARDS], filter;
+    uint16_t out[IOB_BOARDS], pwm[IOB_BOARDS], timeout;
+    uint8_t rel[IOB_BOARDS], dir[IOB_BOARDS], filter;
     bool fresh, valid;
     PLAT_CRIT_ENTER();
     memcpy(c, cmd.cfg, sizeof c);
     memcpy(out, cmd.out, sizeof out);
     memcpy(rel, cmd.rel, sizeof rel);
+    memcpy(pwm, cmd.pwm, sizeof pwm);
+    memcpy(dir, cmd.dir, sizeof dir);
     timeout = cmd.hold_s;
     filter = cmd.filter_ms;
     uint8_t link = cmd.link;
@@ -375,7 +476,7 @@ void iob_cycle(uint32_t now) {
     fresh = cmd.out_valid && (uint32_t)(now - cmd.stamp) <= PLAT_IOB_STALE_MS;
     PLAT_CRIT_EXIT();
     if (!valid) return;                          /* the scan has not run yet */
-    if (safe || !fresh) { memset(out, 0, sizeof out); memset(rel, 0, sizeof rel); }
+    if (safe || !fresh) { memset(out, 0, sizeof out); memset(rel, 0, sizeof rel); memset(pwm, 0, sizeof pwm); memset(dir, 0, sizeof dir); }
     if (timeout < 1u) timeout = 1u;
     if (timeout > 600u) timeout = 600u;
     if (link != bus_link) {                      /* a new link: every board connects again */
@@ -384,6 +485,7 @@ void iob_cycle(uint32_t now) {
     }
     bus = link == IOB_LINK_ETH ? tcp : port;
     uint8_t bad = bad_settings(c, link);
+    bool temps_read = false;                     /* one board's temperatures per cycle */
 
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
         bstate_t *x = &B[b];
@@ -398,12 +500,19 @@ void iob_cycle(uint32_t now) {
             if (!ident(b, c[b].addr)) { failed(b, now); publish_state(b); continue; }
             if (!x->ident_ok) { set_state(b, IOB_S_WRONG_TYPE, now); publish_state(b); continue; }
             x->cfg_sent = false;
+            x->temp_cfg_sent = false;
+            x->temp_at = now;
         }
         if (cfg_changed(x, &c[b], timeout, filter) && !write_cfg(b, &c[b], timeout, filter)) {
             failed(b, now); publish_state(b); continue;
         }
+        if (temp_cfg_changed(x, &c[b]) && !write_cfg2(b, &c[b])) { failed(b, now); publish_state(b); continue; }
         if (x->state != IOB_S_RUN) { x->last_ok = now; set_state(b, IOB_S_RUN, now); }
-        cyclic(b, &c[b], out[b], rel[b], now);
+        cyclic(b, &c[b], out[b], rel[b], pwm[b], dir[b], now);
+        if (x->temps && x->state == IOB_S_RUN && !temps_read && (int32_t)(now - x->temp_at) >= 0 && any_sensor(&c[b])) {
+            temps_read = true;
+            if (!read_temps(b, &c[b], now)) failed(b, now);
+        }
         publish_state(b);
     }
 }
@@ -460,7 +569,7 @@ static uint8_t cm_read(uint8_t a, iob_cm_view_t *v) {
         rc = cm_xfer(f, mbr_req_read(f, a, IOB_R_MAGIC, IOB_R_IDENT_N), r, IOB_R_IDENT_N, NULL);
     if (rc == MBR_EXCEPTION) return IOB_CM_WRONG_TYPE;
     if (rc != MBR_OK) return IOB_CM_NO_REPLY;
-    if (r[0] != IOB_MAGIC || r[1] != IOB_MAP_VERSION) return IOB_CM_WRONG_TYPE;
+    if (r[0] != IOB_MAGIC || r[1] < 1u || r[1] > IOB_MAP_VERSION) return IOB_CM_WRONG_TYPE;
     v->found = true;
     v->hw_rev = r[IOB_R_HW_REV - IOB_R_MAGIC];
     v->fw_version = r[IOB_R_FW_VERSION - IOB_R_MAGIC];
@@ -649,8 +758,16 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
     PLAT_CRIT_ENTER();
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
         const iob_board_tags_t *t = &iob_tags[b];
-        cmd.cfg[b] = (cfg_t){ .en = t->enable, .addr = t->address, .ip = t->ip, .first_do = t->first_do,
-                              .first_di = t->first_di, .ol = t->ol_mask, .wb = t->wb_mask };
+        cfg_t *cf = &cmd.cfg[b];
+        *cf = (cfg_t){ .en = t->enable, .addr = t->address, .ip = t->ip, .first_do = t->first_do,
+                       .first_di = t->first_di, .ol = t->ol_mask, .wb = t->wb_mask };
+        for (unsigned k = 0; k < IOB_TEMP_CONNS; ++k) {
+            cf->temp[IOB_R_TEMP_TYPE - IOB_R_TEMP_TYPE + k] = tt_known(t->temp_type[k]) ? t->temp_type[k] : IOB_TT_NONE;
+            cf->temp[IOB_R_NTC_R25 - IOB_R_TEMP_TYPE + k] = t->ntc_r25[k] >= 10u ? t->ntc_r25[k] : 1000u;
+            cf->temp[IOB_R_NTC_BETA - IOB_R_TEMP_TYPE + k] = t->ntc_beta[k] >= 1000u && t->ntc_beta[k] <= 10000u ? t->ntc_beta[k] : 3435u;
+        }
+        cf->temp[IOB_R_PWM_FREQ - IOB_R_TEMP_TYPE] = t->pwm_hz >= 10u && t->pwm_hz <= 25000u ? t->pwm_hz : 1000u;
+        cf->temp[IOB_R_TACH_PPR - IOB_R_TEMP_TYPE] = t->tach_ppr >= 1u && t->tach_ppr <= 12u ? t->tach_ppr : 2u;
     }
     cmd.hold_s = iob_hold_s;
     cmd.filter_ms = iob_filter_ms;
@@ -660,7 +777,7 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
     memcpy(wd, wdg_events, sizeof wd);
     PLAT_CRIT_EXIT();
 
-    bool lost = false, conf = false, of = false, inf = false, sup = false, wdg = false;
+    bool lost = false, conf = false, of = false, inf = false, sup = false, wdg = false, tf = false;
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
         iob_board_tags_t *t = &iob_tags[b];
         bool on = t->enable && v[b].state != IOB_S_OFF && v[b].state != IOB_S_BAD_SETTINGS;
@@ -671,6 +788,29 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
             in->di_fault = (in->di_fault & ~dm) | ((uint64_t)v[b].in_faults << d0);
             in->do_fault = (in->do_fault & ~om) | ((uint64_t)v[b].out_faults << o0);
         }
+        /* temperatures (map 2): calibrated here; any channel without a reading is a fault for the application */
+        for (unsigned i = 0; i < IOB_TEMPS; ++i) {
+            uint8_t typ = t->temp_type[i / 2u], st = v[b].temp_st[i];
+            bool used = t->enable && tt_known(typ) && typ != IOB_TT_NONE && (typ <= IOB_TT_TC_S || i % 2u == 0);
+            bool ok = on && v[b].state == IOB_S_RUN && v[b].n_temps && st == IOB_TS_OK;
+            int32_t cd = ok ? iob_temp_cal(v[b].temp[i], t->temp_offset[i], t->temp_gain[i]) : 0;
+            t->temps[i] = (int16_t)(ok ? (cd >= 0 ? (cd + 5) / 10 : (cd - 5) / 10) : IOB_TEMP_INVALID);
+            t->temp_state[i] = !used ? (uint8_t)IOB_TS_OFF : !on || v[b].state != IOB_S_RUN ? (uint8_t)IOB_TS_WAIT
+                               : !v[b].n_temps ? (uint8_t)IOB_TS_ADC : st;
+            unsigned ch = t->first_temp ? t->first_temp - 1u + i : PLAT_RTD_MAX;
+            if (used && ch < PLAT_RTD_MAX) {
+                uint8_t ps = PLAT_AIN_FAULT;
+                if (ok) ps = PLAT_AIN_OK;
+                else if (st == IOB_TS_UNDER) ps = PLAT_AIN_UNDER;
+                else if (st == IOB_TS_OVER) ps = PLAT_AIN_OVER;
+                in->rtd_cdeg[ch] = cd;
+                in->rtd_status[ch] = ps;
+            }
+            if (used && v[b].state == IOB_S_RUN && t->temp_state[i] > IOB_TS_WAIT) tf = true;
+        }
+        t->cj_temp = v[b].cj;
+        t->pump_rpm = v[b].rpm;
+        t->pump_duty = v[b].pwm_applied;
         t->status = v[b].status;
         t->out_faults = v[b].out_faults;
         t->in_faults = v[b].in_faults;
@@ -694,13 +834,20 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
     alarm_set(ALARM_ID_IOB_IN_FAULT, inf);
     alarm_set(ALARM_ID_IOB_SUPPLY, sup);
     alarm_set(ALARM_ID_IOB_NODE_RESET, wdg);
+    alarm_set(ALARM_ID_IOB_TEMP_FAULT, tf);
 }
 
 void iob_scan_out(const plat_io_out_t *o, uint32_t now_ms) {
-    uint16_t out[IOB_BOARDS] = { 0 };
-    uint8_t rel[IOB_BOARDS] = { 0 };
+    uint16_t out[IOB_BOARDS] = { 0 }, pwm[IOB_BOARDS] = { 0 };
+    uint8_t rel[IOB_BOARDS] = { 0 }, dir[IOB_BOARDS] = { 0 };
     for (unsigned b = 0; b < IOB_BOARDS; ++b) {
         const iob_board_tags_t *t = &iob_tags[b];
+        if (t->enable && t->first_ao >= 1 && t->first_ao <= PLAT_AO_MAX) {
+            int32_t a = o->ao_raw[t->first_ao - 1u];
+            dir[b] = a < 0;
+            a = a < 0 ? -a : a;
+            pwm[b] = (uint16_t)(a > 1000 ? 1000 : a);
+        }
         if (!t->enable || t->first_do < 1 || t->first_do - 1u + IOB_OUTS > PLAT_DO_MAX) continue;
         uint32_t bits = (uint32_t)(o->do_bits >> (t->first_do - 1u)) & ((1u << IOB_OUTS) - 1u);
         out[b] = (uint16_t)bits;
@@ -709,6 +856,8 @@ void iob_scan_out(const plat_io_out_t *o, uint32_t now_ms) {
     PLAT_CRIT_ENTER();
     memcpy(cmd.out, out, sizeof out);
     memcpy(cmd.rel, rel, sizeof rel);
+    memcpy(cmd.pwm, pwm, sizeof pwm);
+    memcpy(cmd.dir, dir, sizeof dir);
     cmd.stamp = now_ms;
     cmd.out_valid = true;
     PLAT_CRIT_EXIT();

@@ -66,8 +66,8 @@ static bool tap(const char *label) {
 static bool shows(const char *s) { return eve_sim_has_text(&sim, s); }
 /* page the settings list until the row shows, then tap it */
 static bool row(const char *name) {
-    for (int k = 0; k < 40 && eve_sim_tag_of(&sim, "Up") > 0 && !shows(name); ++k) tap("Up");
-    if (!shows(name)) for (int k = 0; k < 40 && !shows(name); ++k) if (!tap("Down")) break;
+    for (int k = 0; k < 80 && eve_sim_tag_of(&sim, "Up") > 0 && !shows(name); ++k) tap("Up");
+    if (!shows(name)) for (int k = 0; k < 80 && !shows(name); ++k) if (!tap("Down")) break;
     return tap(name);
 }
 static void type(const char *s) { for (; *s; ++s) press((uint8_t)*s); }

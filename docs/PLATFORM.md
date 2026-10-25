@@ -37,7 +37,7 @@ runs on top of it.
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
-| I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, six platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
+| I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -665,6 +665,7 @@ supply A, the inputs). Inputs report a wire break where the check is on.
 | IOB_IN_FAULT | 15 | any input wire break for 1 s |
 | IOB_SUPPLY | 16 | a field 24 V supply missing for 0.5 s |
 | IOB_NODE_RESET | 17 | a node was restarted by its own watchdog (latched until acknowledged) |
+| IOB_TEMP_FAULT | 18 | a configured temperature input is open, shorted, out of range or its converter has failed, for 3 s |
 
 Every change goes to the event log as "I/O board": board 2: online / not responding /
 out 3 open circuit / in 5 wire break / field A 24V missing / restarted / watchdog reset.
@@ -705,6 +706,39 @@ board at a time. The bus task does the request between the boards' own cycles
 (`iob_cm_find` / `iob_cm_assign`, `POST /api/iob/find`, `POST /api/iob/assign`, result on
 `GET /api/iob/commission`). The setting `iobN_address` is 1-245: 246 and 247 (the node's USB
 port) are never a running board's address.
+
+**Temperatures and the pump (register map 2, 25 Oct).** The rev A board adds an ADS124S08
+front end with three universal connectors and one PWM output with direction and tach for
+a pump or fan (lessons from the legacy dryer slave: per-channel sensor type and calibration,
+explicit sensor faults). Connector c gives temperature channels 2c-1 (A) and 2c (B): two
+thermocouples (K, J, T, E, S; cold junction from the ADC's own sensor), or one RTD (PT100 or
+PT1000, 2-, 3- or 4-wire) or one NTC (R25 and beta set per connector) on A. The board
+converts to 0.1 °C and reports a state per channel (OK, off, waiting, open, short, under or
+over range, ADC failed, cold junction failed) plus front-end flags (ADC, supply, CJ,
+reference). A map 1 board still works: it simply has none of these.
+
+| Registers | Contents |
+|---|---|
+| 3-4 | PWM command 0-1000 (0.1 %), direction; written with the outputs (function 23 of 0-4) |
+| 28-31 | PWM applied, tach rpm, temperature flags, conversion count (status read 16-31) |
+| 79 | channel counts: low byte temperature channels (6), high byte PWM outputs (1) |
+| 80-92 | temperatures (0.1 °C, -32768 = none), their states, cold junction |
+| 96-106 | sensor type per connector, NTC R25 (10 Ω units) and beta, PWM frequency (10-25000 Hz), tach pulses per revolution |
+
+The master reads 80-92 every 500 ms (`PLAT_IOB_TEMP_MS`, one board per cycle, and only when
+a sensor is configured) and sends 96-106 when they change, and to a restarted board. It
+applies the calibration (`iob_temp_cal`: offset in 0.01 °C plus span in 0.01 %) and puts
+each channel in the platform's RTD channels (`rtd_cdeg` / `rtd_status`, 24 of them) from
+`iobK_first_temp` (defaults 5, 11, 17). The pump runs from analogue output `iobK_pump_ao`
+(0 = none; `ao_raw` in 0.1 %, the sign sets the direction), and is held at 0 by the node's
+hardware gate like every other output. Parameters 160 + 16(K-1) + 0..13: `first_temp`,
+`pump_ao`, `temp_type[3]`, `ntc_r25[3]`, `ntc_beta[3]`, `temp_offset[6]`, `temp_span[6]`,
+`pwm_freq`, `tach_ppr`, and read-only `temps[6]`, `temp_state[6]`, `cj_temp`, `pump_rpm`,
+`pump_duty`. An unknown type is sent as none. On the web page each board card shows a
+temperature table and the pump line; an admin can press *Set to…* beside a channel and enter
+a reference thermometer's reading, which sets that channel's offset (`POST /api/iob/temp/zero`
+with `board`, `ch`, `ref`: refused unless the channel is reading, or if the change is over
+50 °C; an ordinary logged parameter write).
 
 **Screens.** System → I/O boards on the touchscreen (`docs/ui/iob.png`) and the I/O boards
 section of the web page (`docs/web_iob.png`, `/api/iob`): each board's state, its

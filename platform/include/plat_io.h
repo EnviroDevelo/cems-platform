@@ -18,8 +18,8 @@
 #define PLAT_DI_MAX   64            /* main-board inputs plus up to 3 I/O boards (iobus.h) */
 #define PLAT_DO_MAX   64
 #define PLAT_AI_MAX   8
-#define PLAT_RTD_MAX  4
-#define PLAT_AO_MAX   4
+#define PLAT_RTD_MAX  24           /* main board's own, plus 6 per I/O board (iobus.h, map 2) */
+#define PLAT_AO_MAX   8            /* main board's own, plus each I/O board's pump PWM */
 
 /* Analog channel status, per channel */
 typedef enum {
@@ -42,7 +42,7 @@ typedef struct {
 
 typedef struct {
     uint64_t do_bits;                /* bit n = digital output n (1 = energised) */
-    int32_t  ao_raw[PLAT_AO_MAX];
+    int32_t  ao_raw[PLAT_AO_MAX];    /* an I/O board's pump PWM: 0.1 %, sign = DIR (iobus.h) */
 } plat_io_out_t;
 
 static inline bool plat_di(const plat_io_in_t *in, unsigned n) {

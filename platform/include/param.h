@@ -152,6 +152,12 @@ enum {
          +6 RO status (IOBS_*), +7 RO output faults (bits 1-18), +8 RO input faults, +9 RO failed requests */
     PARAM_ID_IOB_LIVE_FIRST   = 140, /* board k at 140 + 2k: +0 RO inputs (bits), +1 RO outputs as driven (bits) */
     PARAM_ID_IOB_IP_FIRST     = 146, /* board k at 146 + k: its IP on Ethernet */
+    PARAM_ID_IOB_T_FIRST      = 160, /* board k at 160 + 16k: temperature inputs and pump PWM (map 2, iobus.h): */
+    /*   +0 first temperature channel (0 = not mapped), +1 analog output for the pump PWM (0 = none),
+         +2 sensor type per connector (3 bytes, IOB_TT_*), +3 NTC R25 (3 x 10 ohm, 0 = 10k), +4 NTC B (3 x K, 0 = 3435),
+         +5 calibration offset (6 x 0.01 degC), +6 calibration span (gain - 1, 6 x 0.01 %), +7 PWM frequency (Hz),
+         +8 tacho pulses per revolution, +9 RO temperatures (6 x 0.1 degC), +10 RO channel states (6 x IOB_TS_*),
+         +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

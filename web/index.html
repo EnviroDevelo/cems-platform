@@ -53,6 +53,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 .iobgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
 .iob{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
 .iob .hd{display:flex;justify-content:space-between;align-items:baseline}
+.iob .tt{border-collapse:collapse;font-size:13px}.iob .tt td{padding:1px 8px 1px 0}.iob .tt button{padding:1px 6px;font-size:12px}
 .sqs{display:flex;flex-wrap:wrap;gap:3px;margin:3px 0;align-items:center}
 .sq{width:26px;height:24px;border-radius:4px;background:#e4e7ec;font-size:11px;display:inline-flex;align-items:center;justify-content:center}
 .sq.on{background:var(--ok);color:#fff}.sq.in{background:var(--accent);color:#fff}.sq.f{background:var(--bad);color:#fff}
@@ -106,7 +107,8 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
   <section id="iobsec" style="display:none">
     <h2>I/O boards</h2>
     <div class="iobgrid" id="iobcards"></div>
-    <p class="note">Green: output on. Blue: input active. Red: fault. Settings are the iob parameters (filter "iob", admin level).</p>
+    <p class="note">Green: output on. Blue: input active. Red: fault. Settings are the iob parameters (filter "iob", admin level):
+      sensor types per connector in iobN_temp_type, calibration in iobN_temp_offset and iobN_temp_span, or "Set to" against a reference thermometer.</p>
   </section>
 
   <section>
@@ -1002,6 +1004,17 @@ async function pollIob() {
           h += sqRow(0, 8, b.outputs, b.out_faults, "on", "0.6 A") + sqRow(8, 8, b.outputs, b.out_faults, "on", "1 A") +
                sqRow(16, 2, b.outputs, b.out_faults, "on", "relays");
           h += '<div class="note" style="margin-top:4px">Inputs</div>' + sqRow(0, 8, b.inputs, b.in_faults, "in", "");
+          if (b.temps.length) {
+            h += '<div class="note" style="margin-top:4px">Temperatures' + (b.cj !== null ? ` (cold junction ${b.cj.toFixed(1)} &deg;C)` : "") +
+                 '</div><table class="tt">';
+            for (const t of b.temps)
+              h += `<tr><td>T${t.ch}</td><td class="note">${esc(t.type)}</td><td>${t.t !== null ? t.t.toFixed(1) + " &deg;C" : ""}</td>` +
+                   `<td class="${t.ok ? "note" : "err"}">${t.ok ? (t.offset ? "offset " + t.offset : "") : esc(t.state)}</td>` +
+                   (level >= 2 && t.ok ? `<td><button class="tz" data-b="${b.n}" data-c="${t.ch}">Set to&hellip;</button></td>` : "") + "</tr>";
+            h += "</table>";
+          }
+          if (b.pump) h += `<div class="note">Pump: ${b.pump.duty.toFixed(1)} %, ${b.pump.rpm} rpm` +
+                           (b.pump.ao ? `, from analog output ${b.pump.ao}` : " (no analog output set: held off)") + "</div>";
           h += b.faults.length ? b.faults.map(f => `<div class="err">${esc(f)}</div>`).join("")
                                : (b.state === "online" ? '<div class="note" style="color:var(--ok)">No faults</div>' : "");
           h += `<div class="note">${b.fw ? "Firmware " + esc(b.fw) + ", hardware " + b.hw + ". " : ""}Requests ${b.requests}, failed ${b.errors}` +
@@ -1014,6 +1027,17 @@ async function pollIob() {
   setTimeout(pollIob, 1000);
 }
 pollIob();
+/* zero capture: the channel's offset is set so it reads the reference thermometer now */
+$("iobcards").onclick = async ev => {
+  const btn = ev.target.closest(".tz");
+  if (!btn) return;
+  const ref = prompt(`Board ${btn.dataset.b}, T${btn.dataset.c}: what does the reference thermometer read (\u00b0C)?`);
+  if (ref === null || ref.trim() === "") return;
+  try {
+    const j = await api("/api/iob/temp/zero", form({ board: btn.dataset.b, ch: btn.dataset.c, ref: ref.trim() }));
+    alert(`Calibration offset set to ${j.offset} \u00b0C`);
+  } catch (e) { alert("Not set: " + e.message); }
+};
 
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 

@@ -289,6 +289,13 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/iob/commission", NULL, false), 200);
     CHECK(has("\"busy\":true")); CHECK(has("\"op\":\"find\"")); CHECK(has("\"board\":null"));
     iob_reset();
+    /* temperature zero: the checks (applying it needs a running board with a reading) */
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=0&ch=1&ref=20", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=7&ref=20", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1&ref=2x", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1&ref=20.5", true), 409); CHECK(has("no reading"));
+    CHECK_EQ(call("GET", "/api/iob", NULL, false), 200); CHECK(has("\"temps\":["));
     /* on Ethernet: list the boards on the network, give one a board slot's IP and address */
     {
         static iob_simnet_t net; static iob_node_t nd;

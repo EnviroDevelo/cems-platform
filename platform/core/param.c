@@ -66,7 +66,21 @@ void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
     PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 9, "iob" N "_errors", iob_tags[K].errors, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
     PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K, "iob" N "_inputs", iob_tags[K].inputs, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
     PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K + 1, "iob" N "_outputs", iob_tags[K].outputs, CT_U32, 0, 0x3FFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
-    PARAM_UINT(PARAM_ID_IOB_IP_FIRST + K, "iob" N "_ip", iob_tags[K].ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Du + K, PLAT_LVL_ADMIN, PF_PERSIST, NULL)
+    PARAM_UINT(PARAM_ID_IOB_IP_FIRST + K, "iob" N "_ip", iob_tags[K].ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Du + K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K, "iob" N "_first_temp", iob_tags[K].first_temp, CT_U8, 0, PLAT_RTD_MAX - IOB_TEMPS + 1, 5 + IOB_TEMPS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 1, "iob" N "_pump_ao", iob_tags[K].first_ao, CT_U8, 0, PLAT_AO_MAX, 0, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 2, "iob" N "_temp_type", iob_tags[K].temp_type, CT_U8, 0, IOB_TT_NTC, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 3, "iob" N "_ntc_r25", iob_tags[K].ntc_r25, CT_U16, 0, 65535, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 4, "iob" N "_ntc_beta", iob_tags[K].ntc_beta, CT_U16, 0, 10000, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 5, "iob" N "_temp_offset", iob_tags[K].temp_offset, CT_I16, -5000, 5000, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 6, "iob" N "_temp_span", iob_tags[K].temp_gain, CT_I16, -1000, 1000, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 7, "iob" N "_pwm_freq", iob_tags[K].pwm_hz, CT_U16, 10, 25000, 1000, PLAT_LVL_ADMIN, PF_PERSIST, "Hz"), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 8, "iob" N "_tach_ppr", iob_tags[K].tach_ppr, CT_U8, 1, 12, 2, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_ARRAY_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 9, "iob" N "_temps", iob_tags[K].temps, CT_I16, -32768, 32767, PLAT_LVL_VIEW, PF_RO), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 10, "iob" N "_temp_state", iob_tags[K].temp_state, CT_U8, 0, 255, PLAT_LVL_VIEW, PF_RO), \
+    PARAM_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 11, "iob" N "_cj_temp", iob_tags[K].cj_temp, CT_I16, -32768, 32767, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 12, "iob" N "_pump_rpm", iob_tags[K].pump_rpm, CT_U16, 0, 65535, 0, PLAT_LVL_VIEW, PF_RO, "rpm"), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL)
 
 static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
