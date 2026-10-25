@@ -405,7 +405,8 @@ function edit(d, tr) {
 function explain(e) {
   const m = { range: "Outside the allowed range", mode: "Not allowed in the current local/remote mode",
               access: "Your login level is too low", login: "Please log in again", value: "Not a valid value",
-              readonly: "Read only", busy: "Instrument busy, try again", type: "Wrong type of value" };
+              readonly: "Read only", busy: "Instrument busy, try again", type: "Wrong type of value",
+              interlock: "Not possible on this unit, or blocked by another setting" };
   return m[e.message] || ("Refused: " + e.message);
 }
 

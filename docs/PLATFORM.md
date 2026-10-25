@@ -230,6 +230,15 @@ browsers (`tests/integration/multi_viewer_test.py`): each gets its 2 value polls
 request after 5 s, so a stalled server shows "Connection lost" rather than stale values
 marked live.
 
+**Slow links (remote access through a VPN router, D17).** Measured with Chromium's network
+emulation against netsim (round trip / bandwidth: page live after, value polls a second,
+95 % within): 100 ms / 2 Mbit/s: 0.6 s, 1.7, 71 ms; 300 ms / 1 Mbit/s: 1.3 s, 1.5,
+180 ms; 600 ms / 256 kbit/s: 2.8 s, 1.1, 412 ms; 1.2 s / 128 kbit/s (poor cellular):
+5.5 s, 0.8, 868 ms. The page never showed "Connection lost" on any of them: each poll
+waits for the previous answer, so a slow link slows the updates instead of piling up
+requests. The emulation adds the delay per request, not to the TCP and TLS handshakes,
+so first loads on a real link are somewhat slower.
+
 **Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
 ported to native FreeRTOS. The address comes from the parameter table (static
 192.168.1.50/24 by default, or DHCP) and a change from the touchscreen or web takes effect
