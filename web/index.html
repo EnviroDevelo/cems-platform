@@ -324,6 +324,7 @@ let defs = [], byId = {}, level = 0, mode = "local", lastOk = 0, editing = null;
 async function api(path, body, raw) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "X-CEMS": "1" }, body };
   if (body !== undefined && !raw) opt.headers["Content-Type"] = "application/x-www-form-urlencoded";
+  if (body === undefined) opt.signal = AbortSignal.timeout(5000);   /* a hung poll counts as lost, not as live */
   const r = await fetch(path, opt);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status, info: j });
