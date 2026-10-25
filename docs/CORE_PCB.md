@@ -110,9 +110,9 @@ PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 | Rail | Source | Loads | Budget |
 |---|---|---|---|
 | 24 VDC in (18-32 V) | Pluggable terminal (+, 0 V, FE) | | about 0.3 A at 24 V |
-| Input protection | Fuse 1 A slow (or PTC), P-channel FET reverse-polarity, TVS SMBJ33A, LC filter | | |
-| 5 V | Buck, 60 V rated input (e.g. TI LMR36015, 1.5 A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
-| 3.3 V | Buck from 5 V (e.g. TI TLV62569, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, NOR, FRAM | about 0.6 A |
+| Input protection | Fuse 1 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional TVS SMBJ33CA after it (D2), 47 µF bulk | | |
+| 5 V | Buck, 60 V rated input: TI TPS54360 (U1, 3.5 A, about 600 kHz, catch diode B260A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
+| 3.3 V | Buck from 5 V: TI TLV62569 (U2, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, NOR, FRAM | about 0.6 A |
 | VBAT | CR2032 in a holder (H1) | RTC, backup registers | µA |
 | VDDA / VREF+ | 3.3 V through a ferrite and 1 µF + 100 nF | ADC (supply sense) | |
 
@@ -196,6 +196,36 @@ board's -40 to 85 °C parts, sets the instrument's rating.
    firmware's RS-485 I/O link setting has no port on this board (`bsp_rs485()` returns NULL).
 5. **Ethernet: RJ45s with integrated magnetics (Gary, 25 Oct)**, shielded, with LEDs,
    1500 Vrms, -40 to 85 °C.
+6. **Enclosure (chosen 25 Oct, Gary can override):** see section 10.
+
+## 10. Enclosure
+
+The board goes in a DIN-rail electronics housing on the panel's rail. The two RJ45s, the
+24 V terminal and the display's FFC exit all need openings, and the board has no field
+wiring other than power. Shortlist:
+
+| Housing | For | Against |
+|---|---|---|
+| **Phoenix Contact BC 107,6 (6 modules, 107.6 mm wide)**, chosen | Made for electronics boards: PCB guides at two levels, top covers for pluggable terminals and RJ45 openings, IP20 for a panel, widely stocked | Openings beyond the standard covers need machining |
+| Camdenboss CNMB/6 (6 modules) | Low cost, quick to get | Plain covers: every RJ45 and the FFC slot must be machined |
+| Phoenix Contact ICS 50 | Designed for front RJ45s and bus connectors | Dearer, larger than this board needs |
+
+The board outline, the connector positions and the FFC exit follow the BC 107,6 PCB drawing.
+**(check: the drawing could not be downloaded from here, so the outline is set at layout from
+Phoenix Contact's data.)** The schematic doesn't depend on the enclosure.
+
+## 11. Schematic
+
+`hardware/core_pcb/` holds the KiCad 7 project: a root sheet and five sheets (power, MCU,
+client Ethernet, I/O Ethernet, memories and display), 145 parts, and a PDF of all sheets
+(`cems_core.pdf`) for review without KiCad. The schematic is generated from
+`hardware/core_pcb/tools/design.py`, the single description of the circuit, by
+`gen_schematic.py`. Each connected pin carries a net label and each unused pin a no-connect
+flag. `check_netlist.py` then checks KiCad's own exported netlist against `design.py`, pin by
+pin, along with each part's footprint and value. `bom.csv` is the grouped bill of materials.
+Values marked CHECK in the sheet notes (buck compensation, crystal load capacitors, the
+Ethernet line terminations, the FRAM pinout, the FFC contact side) must be confirmed against
+their datasheets before layout.
 
 ## 9. BOM summary (main parts)
 
@@ -204,14 +234,14 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 | STM32H573VIT6 (or H563VIT6) | MCU | 1 |
 | LAN8742A-CZ-TR (-40 to 85 °C) | Client Ethernet PHY | 1 |
 | W5500 (-40 to 85 °C) | I/O Ethernet controller | 1 |
-| Shielded RJ45 MagJack with LEDs, 1500 Vrms | J2, J3 | 2 |
+| Würth 7499010121A (RJ45 with magnetics and LEDs) | J2, J3 | 2 |
 | MB85RC1MT | 128 KB FRAM, settings | 1 |
 | W25Q128JV | 16 MB NOR, event and data log | 1 |
 | 25 MHz crystals | MCU HSE, PHY, W5500 | 3 |
 | 32.768 kHz crystal | RTC | 1 |
-| LMR36015 (or equal, 60 V in) | 24 → 5 V buck | 1 |
-| TLV62569 (or equal) | 5 → 3.3 V buck | 1 |
-| SMBJ33A, P-FET, fuse | Input protection | 1 each |
+| TPS54360DDA (60 V in, 3.5 A) | 24 → 5 V buck | 1 |
+| TLV62569DBV | 5 → 3.3 V buck | 1 |
+| SS16, SMBJ33CA, 1 A T fuse | Input protection | 1 each |
 | TPD4E05U06 (or equal) | Ethernet ESD | 2 |
-| 20-pin FFC connector (RiBUS) | Display | 1 |
+| Hirose FH12-20S-0.5SH(55) | Display FFC | 1 |
 | CR2032 holder | VBAT | 1 |
