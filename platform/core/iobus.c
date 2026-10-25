@@ -91,6 +91,13 @@ void iob_init(iob_port_t *p) { port = p; }
 void iob_init_eth(iob_port_t *t, iob_dgram_t *d) { tcp = t; disc = d; }
 void iob_init_ioport(iob_port_t *t, iob_dgram_t *d) { io_tcp = t; io_disc = d; }
 
+/* a link with no port on this board (the CORE PCB has no RS-485) cannot be chosen */
+int iob_link_interlock(uint16_t id, plat_val_t v) {
+    (void)id;
+    iob_port_t *p = v.u == IOB_LINK_IOPORT ? io_tcp : v.u == IOB_LINK_ETH ? tcp : port;
+    return p ? 0 : 1;
+}
+
 void iob_reset(void) {
     PLAT_CRIT_ENTER();
     memset(&cmd, 0, sizeof cmd);

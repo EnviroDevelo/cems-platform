@@ -50,6 +50,7 @@
 #include <stdbool.h>
 #include "plat_io.h"
 #include "iob_net.h"
+#include "plat_cmdq.h"         /* plat_val_t */
 
 #define IOB_BOARDS       3u
 #define IOB_OUTS         18u   /* per board: 8 bank A + 8 bank B + 2 relays */
@@ -270,6 +271,7 @@ typedef struct {
 void iob_init(iob_port_t *port);       /* plat_start (NULL: no RS-485 port, boards report not responding) */
 void iob_init_eth(iob_port_t *tcp, iob_dgram_t *disc);   /* plat_start: the Ethernet link (NULL: none) */
 void iob_init_ioport(iob_port_t *tcp, iob_dgram_t *disc);   /* plat_start: the I/O port link (NULL: none) */
+int  iob_link_interlock(uint16_t id, plat_val_t v);           /* setting 102: refuses a link with no port */
 void iob_cycle(uint32_t now_ms);       /* iobus task */
 void iob_safe_state(void);             /* any task: send all-off from now on (until the next reset) */
 bool iob_board_view(unsigned board, iob_view_t *v);   /* board 0..IOB_BOARDS-1 */

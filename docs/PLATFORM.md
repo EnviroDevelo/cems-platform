@@ -623,7 +623,9 @@ Modbus TCP, email, SNTP) and the **I/O port**, a WIZnet W5500 on its own SPI (`w
 sockets, so the I/O traffic never enters lwIP and nothing can route between the plant network
 and the I/O boards. Parameter 102 `iob_link`: 2 = the I/O port (default), 1 = Ethernet on the
 main port through lwIP (the DK, which has no W5500), 0 = RS-485. The single RS-485 pair (Modbus
-RTU, up to 100 m) stays as a setting, for the bench and older boards.
+RTU, up to 100 m) stays as a setting, for the bench and older boards. The CORE PCB has no RS-485
+transceiver (Gary, 25 Oct: the second RJ45 replaces it), so `BSP_RS485_HUART` stays undefined
+there. A write of a link whose port this board does not have is refused (`PERR_INTERLOCK`, HTTP 409).
 
 On the I/O port `iob_w5500.c` is the transport: sockets 0-2 are the three boards' connections,
 socket 3 discovery, 4-7 free. It sets the chip up on first use (its own IP `iob_port_ip`,

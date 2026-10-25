@@ -141,7 +141,8 @@ static const param_def_t plat_defs[] = {
     /* I/O boards on RS-485 (iobus.h, D27): settings at admin (technician) level, LOCAL only */
     PARAM_UINT(PARAM_ID_IOB_HOLD, "iob_hold", iob_hold_s, CT_U16, 1, 600, 300, PLAT_LVL_ADMIN, PF_PERSIST, "s"),
     PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 8, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
-    PARAM_UINT(PARAM_ID_IOB_LINK, "iob_link", iob_link, CT_U8, 0, 2, IOB_LINK_IOPORT, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
+    { .id = PARAM_ID_IOB_LINK, .ctype = CT_U8, .ptype = PT_UINT, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = &iob_link,
+      .vmin.u = 0, .vmax.u = 2, .vdef.u = IOB_LINK_IOPORT, .name = "iob_link", .interlock = iob_link_interlock },   /* a link with no port is refused */
     PARAM_UINT(PARAM_ID_IOB_PORT_IP, "iob_port_ip", iob_port_ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Cu, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
     PARAM_UINT(PARAM_ID_IOB_PORT_PREFIX, "iob_port_prefix", iob_port_prefix, CT_U8, 8, 30, 24, PLAT_LVL_ADMIN, PF_PERSIST, "bits"),
     PARAM_UINT(PARAM_ID_IOB_PORT_STATUS, "iob_port_status", iob_port_status, CT_U8, 0, 3, 0, PLAT_LVL_VIEW, PF_RO, NULL),

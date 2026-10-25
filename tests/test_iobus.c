@@ -623,9 +623,12 @@ static void t_no_port(void) {
     run(1100, true);
     CHECK_EQ(view(0).state, IOB_S_LOST);
     if (ETH) { CHECK(iob_dc_find()); run(20, true); iob_dc_view_t d; iob_dc_view(&d); CHECK_EQ(d.result, IOB_CM_NO_REPLY); }
+    plat_cmd_t c = { .id = PARAM_ID_IOB_LINK, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_U32, .v.u = cur_link };
+    CHECK_EQ(param_apply(&c), PERR_INTERLOCK);  /* no port for that link on this board: refused */
     iob_init(&bus.port);
     iob_init_eth(&net.port, &net.disc);
     iob_init_ioport(&io.port, &io.disc);
+    CHECK_EQ(param_apply(&c), PERR_OK);
 }
 /* ---------------- Ethernet only ---------------- */
 #define MASK24 0xFFFFFF00u
