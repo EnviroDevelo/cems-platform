@@ -785,12 +785,13 @@ static void draw_login(uint32_t now) {
     char m[40]; size_t n = strlen(U.pw), k = 0;
     for (; k < n && k < 32; ++k) m[k] = '*';
     m[k++] = '_'; m[k] = 0;
-    box(32, BODY_Y + 76, 560, 40, 0xF4F5F7u, 6);
+    box(32, BODY_Y + 76, 540, 40, 0xF4F5F7u, 6);
     color(C_INK);
     text(44, BODY_Y + 96, F_BIG, OPT_CENTERY, m);
-    if (now < U.lock_until) { color(C_BAD); text(610, BODY_Y + 96, F_SMALL, OPT_CENTERY, "Too many attempts: wait"); }
-    button(T_OK, 784, BODY_Y + 76, 108, 40, "Enter", C_OK, now >= U.lock_until);
-    button(T_CANCEL, 900, BODY_Y + 76, 108, 40, "Cancel", 0x5B6577u, true);
+    if (now < U.lock_until) { color(C_BAD); text(584, BODY_Y + 96, F_SMALL, OPT_CENTERY, "Too many attempts: wait"); }
+    /* full card height: 40 px (6 mm on the RVT70) was the smallest target on any screen */
+    button(T_OK, 776, BODY_Y + 8, 112, 112, "Enter", C_OK, now >= U.lock_until);
+    button(T_CANCEL, 896, BODY_Y + 8, 104, 112, "Cancel", 0x5B6577u, true);
     draw_keyboard(BODY_Y + 136, true);
 }
 
