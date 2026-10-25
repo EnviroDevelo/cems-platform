@@ -130,6 +130,30 @@ static void t_diag(void) {
     plat_diag_fault(PLAT_FAULT_ASSERT, -1, "a_very_long_file_name_here.c", 77, 1);
     CHECK_EQ(strlen(plat_diag.fault_name), sizeof plat_diag.fault_name - 1);   /* truncated, terminated */
     CHECK_EQ(plat_diag.fault_arg, 77);
+
+    /* CPU faults (D4): kind from CFSR/HFSR, PC in the name, fault address only when valid */
+    plat_diag_cpu_fault(0x0801A2C4u, 0x08004001u, 0x00008200u, 0x40000000u, 0x11111111u, 0x20012345u, 99);
+    CHECK(plat_diag_valid());
+    CHECK_EQ(plat_diag.fault, PLAT_FAULT_HARDFAULT); CHECK_EQ(plat_diag.fault_task, -1);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "bus @0801A2C4"), 0);
+    CHECK_EQ(plat_diag.fault_arg, 0x0801A2C4u); CHECK_EQ(plat_diag.fault_lr, 0x08004001u);
+    CHECK_EQ(plat_diag.fault_cfsr, 0x00008200u); CHECK_EQ(plat_diag.fault_hfsr, 0x40000000u);
+    CHECK_EQ(plat_diag.fault_addr, 0x20012345u);               /* BFARVALID */
+    plat_diag_cpu_fault(0x08000010u, 0, 0x00000082u, 0x40000000u, 0x00000004u, 0, 1);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "mem @08000010"), 0); CHECK_EQ(plat_diag.fault_addr, 4);   /* MMARVALID */
+    plat_diag_cpu_fault(0x080ABCDEu, 0, 0x02000000u, 0x40000000u, 7, 7, 1);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "usage @080ABCDE"), 0); CHECK_EQ(plat_diag.fault_addr, 0);  /* divide by zero: no address */
+    plat_diag_cpu_fault(0, 0, 0x00100000u, 0x40000000u, 0, 0, 1);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "stack @00000000"), 0);   /* longest name still fits */
+    plat_diag_cpu_fault(0xFFFFFFFEu, 0, 0, 0x00000002u, 0, 0, 1);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "vect @FFFFFFFE"), 0);
+    plat_diag_cpu_fault(0x08001234u, 0, 0, 0x40000000u, 0, 0, 1);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "hard @08001234"), 0);
+    plat_diag_boot(BSP_RESET_SOFTWARE);                         /* NVIC_SystemReset after the record */
+    CHECK(plat_diag_valid()); CHECK_EQ(plat_diag.fault, PLAT_FAULT_HARDFAULT);
+    CHECK_EQ(strcmp(plat_diag.fault_name, "hard @08001234"), 0);
+    plat_diag_fault(PLAT_FAULT_ASSERT, -1, "x.c", 1, 2);           /* a later fault clears the CPU registers */
+    CHECK_EQ(plat_diag.fault_lr, 0); CHECK_EQ(plat_diag.fault_cfsr, 0); CHECK_EQ(plat_diag.fault_addr, 0);
 }
 
 void test_diag_all(void) { RUN(t_diag); }

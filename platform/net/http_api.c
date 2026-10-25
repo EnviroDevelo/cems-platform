@@ -246,6 +246,11 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"late_starts\":"); json_uint(o, ss.late_starts); out_str(o, "}");
     out_str(o, ",\"last_fault\":{\"code\":"); json_uint(o, plat_diag.fault);
     out_str(o, ",\"name\":"); json_strn(o, plat_diag.fault_name, blen(plat_diag.fault_name, sizeof plat_diag.fault_name));
+    out_str(o, ",\"arg\":"); json_uint(o, plat_diag.fault_arg);
+    out_str(o, ",\"lr\":"); json_uint(o, plat_diag.fault_lr);
+    out_str(o, ",\"cfsr\":"); json_uint(o, plat_diag.fault_cfsr);
+    out_str(o, ",\"hfsr\":"); json_uint(o, plat_diag.fault_hfsr);
+    out_str(o, ",\"addr\":"); json_uint(o, plat_diag.fault_addr);
     out_str(o, ",\"boots\":"); json_uint(o, plat_diag.boots); out_str(o, "}}");
 }
 

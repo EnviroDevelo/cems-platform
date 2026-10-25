@@ -234,11 +234,12 @@ configuration → SWAP_BANK).
    `plat_assert_failed(__FILE__, __LINE__)`.
 4. Create **no** tasks in CubeMX: the platform creates its own.
 5. NVIC → Code generation: make sure **SVC, PendSV and SysTick handlers are not generated** (the FreeRTOS port defines them). X-CUBE-FREERTOS normally unticks these itself; check after generating that `stm32h5xx_it.c` doesn't contain them.
+   Untick the same "Generate IRQ handler" box for **Hard fault, Memory management fault, Prefetch fault / memory access fault (BusFault) and Undefined instruction / illegal state (UsageFault)**: `port/stm32h5/fault_stm32h5.c` defines these four (D4). Left ticked, the link fails with multiple definitions; with ST's empty loops instead, a fault would hang until the watchdog and leave no record.
 6. If the generated code already defines `vApplicationGetIdleTaskMemory` / `vApplicationGetTimerTaskMemory`, keep them: the platform's versions are weak and give way.
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, and for a first test `app_demo/`, into the project.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, `port/stm32h5/fault_stm32h5.c`, and for a first test `app_demo/`, into the project.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.

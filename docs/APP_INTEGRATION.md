@@ -186,7 +186,7 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 | # | Decision |
 |---|---|
 | D1 | Scan period 10 ms |
-| D6 | FRAM size to be chosen once the application's retained size is known (32 KB part on the bench) |
+| D6 | FRAM is 128 KB (MB85RC1MT, Gary 20 Oct), the build default; the application's settings image is 13.4 KB of the 40 KB slot. The 32 KB bench part still works with `PLAT_FRAM_SIZE=32768u` |
 | D16 | UI is a plain-C layer on the EVE co-processor, not LVGL |
 | D19 | Ack without login on the touchscreen; alarms re-evaluated on power-up; 5 s valve settle |
 | D20 | Alarm actions configurable per alarm by the user (email / Modbus / relay / nothing) |

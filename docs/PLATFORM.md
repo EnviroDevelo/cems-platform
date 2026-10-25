@@ -16,6 +16,7 @@ runs on top of it.
 | Snapshot seqlock (scan → UI/web/Modbus readers) | `plat_seqlock.h` | Done, host-tested |
 | Task monitor + watchdog supervisor | `task_monitor.h/.c`, in `plat_tasks_freertos.c` | Done, host + RTOS tested |
 | Fault record that survives a reset | `plat_diag.h/.c`, `port/stm32h5/noinit_section.ld` | Done, host-tested, placement checked in the ELF |
+| CPU fault handlers (D4): safe state, PC/LR and fault registers recorded, reset | `port/stm32h5/fault_stm32h5.c`, `plat_diag_cpu_fault()` | Record and naming host-tested; handlers compiled and linked, in the vector table (checked in the ELF). Not yet run on the DK |
 | FreeRTOS task set, priorities, hooks | `platform/os/plat_tasks_freertos.c`, `port/stm32h5/FreeRTOSConfig.h` | Done, run under the FreeRTOS POSIX port |
 | Board support: interface, PC simulation, STM32H5 | `bsp.h`, `platform/bsp/bsp_host.c`, `port/stm32h5/bsp_stm32h5.c` | H5 version compiled and linked, not yet run on the DK |
 | Shared parameter table, local/remote arbitration, remote-link watchdog | `param.h/.c`, `plat_sys.c` | Done, host-tested |
@@ -55,7 +56,7 @@ then networking, and the UI last. Nothing below the scan can delay it.
 | scan | 13 | every 10 ms (`PLAT_SCAN_PERIOD_MS`) | 200 ms | `scan_step()`: the VM/MUX program |
 | supervisor | 12 | every 100 ms | n/a | kicks the IWDG only if every task is alive |
 | FreeRTOS timer service | 11 | on demand | n/a | kernel |
-| iobus | 11 | every 20 ms (`PLAT_IOB_PERIOD_MS`) | 1 s | `plat_iobus_task_body()`: the RS-485 I/O boards; sleeps on the UART while it waits for replies |
+| iobus | 11 | every 20 ms (`PLAT_IOB_PERIOD_MS`) | 1 s | `plat_iobus_task_body()`: the I/O boards, over Modbus TCP (default) or RS-485 (`iob_link`, D27); sleeps on the socket or the UART while it waits for replies |
 | store | 10 | every 20 ms | 2 s | `plat_store_task_body()`: parameter store and logger (sole owner of the FRAM and the log flash) |
 | lwIP tcpip_thread | 8 | event-driven | via modbus/http | lwIP |
 | modbus | 7 | socket events | 5 s | `plat_modbus_task_body()` |
@@ -799,7 +800,7 @@ work before integration.
 | D1 | Scan period | 10 ms, fixed period, measured `g_dt_ms` | The UniLogic scan time is unknown. 10 ms matches the Stage 4 tests and leaves the CPU mostly free |
 | D2 | Fast control loop rate | 1 kHz task tick for now; a hardware timer ISR if any loop needs more | The spec allows 1 to 10 kHz; the loop list doesn't exist yet |
 | D3 | Network stack | lwIP 2.2.1 from ST's `stm32h5-classic-coremw-apps`, added by hand | CubeMX doesn't offer lwIP for the H5 (ST recommends NetX Duo). The spec says lwIP; NetX Duo is ThreadX-based, and choosing it would mean changing the RTOS |
-| D4 | Hard-fault handling | Record PC/LR in `plat_diag`, then reset | Not written yet; small, belongs in the port |
+| D4 | Hard-fault handling | **Built (25 Oct):** HardFault, MemManage, BusFault and UsageFault go to `port/stm32h5/fault_stm32h5.c`: outputs to the safe state, the stacked PC and LR plus CFSR, HFSR and the faulting address into `plat_diag`, then a reset. The next boot shows it as e.g. "bus @0801A2C4" (kind and PC) on the System screen, the web page and in the event log's power-up entry; `/api/info` `last_fault` has `arg` (the PC), `lr`, `cfsr`, `hfsr`, `addr`. A stack-limit fault (PSPLIM, `STKOF`) is named "stack" with no PC, since its frame is not usable. CubeMX must not generate these handlers (`CUBEMX_SETUP.md` 4) | A crash in the field is otherwise a silent reset; the PC and LR point at the function, found in the build's map or with `addr2line` |
 | D5 | Factory network default | Static 192.168.1.50/24, gateway 192.168.1.1, DHCP off | Always settable from the touchscreen, so a unit can be recovered locally |
 | D6 | FRAM | **128 KB (MB85RC1MT, I2C, same driver) for the product (Gary, 20 Oct)**, now the build default (`PLAT_FRAM_SIZE`). The VM/MUX application's settings image is 13.4 KB of the 40 KB slot. The 32 KB development breakout (MB85RC256V) still fits the application: build with `PLAT_FRAM_SIZE=32768u`; the I2C driver reads the part's Device ID and refuses a part smaller than the build's map instead of wrapping onto the factory data. `make test` runs both maps | Room for the instrument family to grow; costs about 60 KB of RAM (the store's slot copy and the web restore buffer) |
 | D7 | Modbus writes at first power-up | Enabled; any client IP | Plugs into a DAHS without setup; an admin can make Modbus read-only or limit it to one IP |
