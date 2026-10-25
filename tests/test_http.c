@@ -206,6 +206,9 @@ static void t_api(void) {
     param_publish();
 
     CHECK_EQ(call("GET", "/", NULL, false), 200); CHECK(has("Content-Encoding: gzip"));
+    CHECK(has("Content-Security-Policy: default-src 'self'") && has("frame-ancestors 'none'") && has("Referrer-Policy: no-referrer"));
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+    CHECK(has("Cache-Control: no-store") && has("X-Content-Type-Options: nosniff") && !has("Content-Security-Policy"));
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"product\":\"CEMS Supervisor\"")); CHECK(has("\"mode\":\"local\"")); CHECK(has("\"default_passwords\":true"));
     CHECK(has("\"cal_valid\":false")); CHECK(has("\"level\":\"view\""));

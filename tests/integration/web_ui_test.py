@@ -13,7 +13,8 @@ async def run(unit):
     ok = True
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME)
-        pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True)
+        pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True,
+                                bypass_csp=True)   # wait_for_function evaluates strings; the phone page below runs under the policy
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "401" not in m.text and "400" not in m.text else None)
@@ -39,6 +40,8 @@ async def run(unit):
               and all(len(r.split(",")) == 2 and r.split(",")[1].isdigit() for r in csv[1:])
         # phone width: no sideways scrolling of the page (wide tables scroll inside their own section)
         ph = await b.new_page(viewport={"width": 390, "height": 844}, ignore_https_errors=True, has_touch=True)
+        csp = []
+        ph.on("console", lambda m: csp.append(m.text) if "Content Security Policy" in m.text else None)
         await ph.goto(URL)
         await ph.wait_for_selector("#v1001")
         await ph.wait_for_timeout(1500)
@@ -46,6 +49,7 @@ async def run(unit):
         await ph.screenshot(path=os.path.join(ROOT, "build", "web_phone.png"))
         await ph.close()
         print("phone width: page", sw[0], "px in a", sw[1], "px window"); ok &= sw[0] <= sw[1]
+        print("page under its Content-Security-Policy, violations:", csp); ok &= not csp
         await pg.fill("#pw", "1111")
         await pg.click("#loginbtn")
         await pg.wait_for_selector("#userrow", state="visible")

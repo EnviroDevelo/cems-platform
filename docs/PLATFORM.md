@@ -378,6 +378,11 @@ which the unit has no address. Status: parameter 14 `net_status` (`NETST_*`).
   certificate downloadable (`/api/tls/cert`) to trust it on the site's laptops; port 80
   only redirects; logins with lockout, tech-level firmware updates with signed images
   (D14), every change in the event log;
+- every web reply carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+  and `X-Frame-Options: DENY`; the page also carries a Content-Security-Policy (scripts,
+  styles, requests and frames only from the unit itself; no plug-ins, no framing) and
+  `Referrer-Policy: no-referrer`. HSTS is not sent: browsers ignore it for an IP address
+  and for a certificate they were told to accept;
 - Modbus TCP has no security of its own (nor do the PLCs that use it): it stays on the
   control network, with the existing allowed-client IP and the "Modbus read-only"
   switch, and is never routed to the internet;
