@@ -22,7 +22,6 @@ against the part's datasheet before layout.
  MB85RC1MT FRAM 128 KB (settings) ═ I2C1 ════════════════│ store task
  32.768 kHz LSE, CR2032 on VBAT (RTC) ═══════════════════│
  SWD + SWO, BOOT0, reset ════════════════════════════════│
- RS-485 (not fitted by default) ═ USART2 ════════════════│
                     └──────────────────────────────────────────────────────────┘
 ```
 
@@ -41,7 +40,7 @@ lwIP does not know the I/O port exists. The I/O boards' data reaches the client 
 the core's own values (platform image → HTTPS and Modbus), never as forwarded packets.
 
 **Hardware hardening of the client port** (security and industrial EMC):
-- Magnetics (integrated MagJack or discrete) rated 1500 Vrms isolation, Bob Smith
+- RJ45 with integrated magnetics (MagJack, Gary 25 Oct) rated 1500 Vrms isolation, Bob Smith
   termination to chassis through 1 nF / 2 kV.
 - Low-capacitance ESD array on the PHY side of the magnetics (e.g. TI TPD4E05U06) **(check)**.
 - RJ45 shield to the chassis-ground plane, which ties to logic ground only through
@@ -96,7 +95,6 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | NOR SPI2 SCK / MISO / MOSI | PB13 / PB14 / PC3 (AF5) | `hspi2`, the NOR default |
 | NOR CS | PD10 (GPIO out, initial high) | `NOR_CS`; WP# and HOLD# pulled up |
 | FRAM I2C1 SCL / SDA | PB6 / PB7 (AF4) | `hi2c1`, the FRAM default; 2.2 kΩ pull-ups |
-| RS-485 USART2 TX / RX / DE | PD5 / PD6 / PD4 (AF7) | `huart2`; transceiver not fitted by default (H11) |
 | Service UART USART1 TX / RX | PA9 / PA10 (AF7) | 3.3 V header for bench logging |
 | SWD SWDIO / SWCLK / SWO | PA13 / PA14 / PB3 | 10-pin 1.27 mm Cortex debug header with NRST |
 | BOOT0 | BOOT0 pin | 10 kΩ pull-down, test pad / jumper to 3.3 V (H9) |
@@ -105,7 +103,7 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | Hardware revision straps | PE7, PE8 | read once at boot |
 
 Free for later: PA0, PA3, PA4, PA6, PA8, PA11, PA12, PB0-PB2, PB4, PB5, PB8-PB11, PC2,
-PC6-PC9, PC13, PD1, PD3, PD7-PD9, PD14, PD15, PE0, PE2-PE6, PE15.
+PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 
 ## 5. Power
 
@@ -135,7 +133,6 @@ plus the supply-sense pin (H10). The core board drives no field outputs (H6 and 
 | J4 | Display FFC, RiBUS, ZIF 20-pin, 0.5 mm pitch | See section 6a |
 | J5 | SWD, 10-pin 1.27 mm Cortex debug | SWDIO, SWCLK, SWO, NRST, 3.3 V, GND |
 | J6 | Service UART, 6-pin 2.54 mm (FTDI-cable order) | 3.3 V levels |
-| J7 | RS-485, 4-way terminal (not fitted) | A, B, 0 V, shield; isolated transceiver, TVS, switchable 120 Ω (H11) |
 | BT1 | CR2032 holder | |
 | SW1 | Reset button | |
 
@@ -195,10 +192,10 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 2. **Mounting: DIN rail, behind the display (Gary, 25 Oct)**; see section 7.
 3. **No system-OK relay (Gary, 25 Oct):** the PLC's Modbus communication watchdog is
    enough to detect a core board that has stopped.
-4. **RS-485 footprint:** open, explained to Gary.
-5. **Ethernet magnetics:** open. Gary answered "None"; being confirmed. Magnetics (or a
-   MagJack) can't be left out on a port that goes off the board: they give the 1500 Vrms
-   isolation and the common-mode rejection the client network needs.
+4. **No RS-485 on the core board (Gary, 25 Oct):** the second RJ45 replaces it. The
+   firmware's RS-485 I/O link setting has no port on this board (`bsp_rs485()` returns NULL).
+5. **Ethernet: RJ45s with integrated magnetics (Gary, 25 Oct)**, shielded, with LEDs,
+   1500 Vrms, -40 to 85 °C.
 
 ## 9. BOM summary (main parts)
 
