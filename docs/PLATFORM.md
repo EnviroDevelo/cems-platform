@@ -217,6 +217,19 @@ not retry a POST on a connection the server closed) and before an alarm email bo
 the TLS context. Measured with Chromium and the page open: about 0.7 new TLS
 connections a second (all resumed by ticket) instead of one per request (3-4 a second).
 
+**Several viewers.** Browsers open spare connections that may never send a request.
+Accepted connections wait in a table of 3 (with the kept connection, the 4 HTTP sockets
+in lwIP's budget) with no TLS yet; the handshake starts only when a connection's first
+bytes arrive, and one that stays silent for 2 s is closed. Before this, each spare
+connection held the server for its 2 s read timeout, and 4 browsers got one value poll
+every 5-8 s with nothing on the page to say so. The port-80 redirect is polled without a
+wait, so it no longer adds 50 ms to every HTTPS request. Measured on netsim with 4
+browsers (`tests/integration/multi_viewer_test.py`): each gets its 2 value polls a second,
+95 % within 52 ms; the cost is about 18 TLS connections a second, all resumed by ticket
+(no public-key work), which still needs measuring on the H5. The page also gives up on a
+request after 5 s, so a stalled server shows "Connection lost" rather than stale values
+marked live.
+
 **Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
 ported to native FreeRTOS. The address comes from the parameter table (static
 192.168.1.50/24 by default, or DHCP) and a change from the touchscreen or web takes effect
