@@ -68,7 +68,7 @@ are spares for later without a bigger package, and it can be hand-reworked on pr
 
 Clocks: HSE crystal 25 MHz on PH0/PH1 (**check** it matches the DK so the CubeMX clock tree
 for 250 MHz SYSCLK carries over unchanged); LSE 32.768 kHz on PC14/PC15 with load
-capacitors per ST AN2867 (H1). The LAN8742A and the W5500 have their own 25 MHz crystals.
+capacitors per ST AN2867 (H1). The LAN8742A and the W5500 each have their own 25 MHz crystal, separate from the MCU's HSE (nothing in the MCU clock tree depends on them, and the W5500 SPI clock comes from SPI4). W5500 SPI runs at up to about 30 MHz: keep its traces short (under 50 mm) with a 33 Ω series resistor on SCK and MOSI at the MCU.
 
 ## 4. Pin map
 
@@ -90,9 +90,9 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | Display PD_N | PD2 (GPIO out, initial high) | `EVE_PD` |
 | Display INT_N | PD0 (EXTI0) | `EVE_INT` (routed; the driver polls today). The module has its own 47 kΩ pull-up |
 | W5500 SPI4 SCK / MISO / MOSI | PE12 / PE13 / PE14 (AF5) | own bus, not shared (I/O timing) |
-| W5500 SCSn | PE11 (GPIO out, initial high) | `IOE_CS` |
-| W5500 INTn | PE9 (EXTI9, pull-up) | `IOE_INT` |
-| W5500 RSTn | PE10 (GPIO out, initial low → high) | `IOE_RST` |
+| W5500 SCSn | PE11 (GPIO out, initial high) | `W5500_CS` |
+| W5500 INTn | PE9 (EXTI9, pull-up) | `W5500_INT` (routed; the driver polls today) |
+| W5500 RSTn | PE10 (GPIO out, initial low → high) | `W5500_RST` |
 | NOR SPI2 SCK / MISO / MOSI | PB13 / PB14 / PC3 (AF5) | `hspi2`, the NOR default |
 | NOR CS | PD10 (GPIO out, initial high) | `NOR_CS`; WP# and HOLD# pulled up |
 | FRAM I2C1 SCL / SDA | PB6 / PB7 (AF4) | `hi2c1`, the FRAM default; 2.2 kΩ pull-ups |
