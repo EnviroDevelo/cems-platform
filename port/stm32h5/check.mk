@@ -63,7 +63,9 @@ LDT     = $(EXT)/cmsis-device-h5/Source/Templates/gcc/linker/STM32H573xx_FLASH.l
 
 link: $(OUT)/cems_check.elf
 $(OUT)/linker.ld: $(LDT) port/stm32h5/noinit_section.ld | $(OUT)
-	sed '/^  ._user_heap_stack :/e cat port/stm32h5/noinit_section.ld' $(LDT) > $@
+	sed -e '/^  ._user_heap_stack :/e cat port/stm32h5/noinit_section.ld' \
+	    -e 's/^_Min_Heap_Size = .*/_Min_Heap_Size = 0x1000; \/* CUBEMX_SETUP.md 1 *\//' \
+	    -e 's/^_Min_Stack_Size = .*/_Min_Stack_Size = 0x2000; \/* CUBEMX_SETUP.md 1 *\//' $(LDT) > $@
 $(OUT)/startup_stm32h573xx.o: startup_stm32h573xx.s | $(OUT)
 	$(ARMCC) -mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard -c $< -o $@
 $(OUT)/cems_check.elf: $(LOBJS) $(OUT)/linker.ld

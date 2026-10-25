@@ -8,14 +8,14 @@ module, and before choosing hardware. Last run: 2026-10-25.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 409.5 KB | 1016.0 KB | 40 % | 606.5 KB |
-| RAM (STM32H573/H563, 640 KB) | 395.6 KB | 640.0 KB | 62 % | 244.4 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 409.6 KB | 1016.0 KB | 40 % | 606.4 KB |
+| RAM (STM32H573/H563, 640 KB) | 468.1 KB | 640.0 KB | 73 % | 171.9 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 20.0 | 0.1 |
+| Scan engine, queue, watchdog, diag | 20.1 | 0.1 |
 | Parameter table | 11.7 | 25.7 |
 | Parameter store (FRAM) | 5.3 | 57.2 |
 | Event log / data logger | 14.5 | 6.8 |
@@ -28,29 +28,29 @@ module, and before choosing hardware. Last run: 2026-10-25.
 | Web server + page + logins | 49.9 | 73.4 |
 | HTTPS (tls.c + mbedTLS) | 96.4 | 46.9 |
 | Touch UI + EVE driver | 52.3 | 2.5 |
-| Task layer (FreeRTOS glue) | 2.6 | 56.0 |
+| Task layer (FreeRTOS glue) | 2.6 | 99.5 |
 | Board support (BSP) | 0.9 | 0.7 |
-| lwIP + Ethernet driver | 53.5 | 49.4 |
-| FreeRTOS kernel + heap | 9.8 | 48.8 |
+| lwIP + Ethernet driver | 53.5 | 51.4 |
+| FreeRTOS kernel + heap | 9.8 | 64.8 |
 | ST HAL + startup | 21.2 | 0.0 |
 | Application | 2.1 | 0.2 |
 | C library | 27.7 | 0.8 |
 | Other | 2.5 | 0.0 |
-| Main stack (interrupts, start-up) | 0.0 | 1.0 |
+| Main stack (interrupts, start-up) + C heap | 0.0 | 12.0 |
 
 ## With the VM/MUX application (app_vmmux)
 
-The same build with the real application linked in (`make target APP=...`). Last run with the application: 2026-10-22 (its directory is not in this tree; `tools/check_target.sh` refreshes this section when it is).
+The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own change since (25 Oct: +72.5 KB RAM for the larger stacks and heaps, +0.1 KB flash); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash | 485.3 KB | 1016.0 KB | 48 % | 530.7 KB |
-| RAM | 438.2 KB | 640.0 KB | 68 % | 201.8 KB |
+| Flash | 485.4 KB | 1016.0 KB | 48 % | 530.6 KB |
+| RAM | 510.7 KB | 640.0 KB | 80 % | 129.3 KB |
 
 The application itself: 83.5 KB of flash, 46.1 KB of RAM (its tags, timers and tables).
 
 
-RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (48 KB, in
+RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (64 KB, in
 "FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
 shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
 (web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added

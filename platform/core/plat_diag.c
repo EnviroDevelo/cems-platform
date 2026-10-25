@@ -53,15 +53,20 @@ void plat_diag_fault(plat_fault_t f, int32_t task, const char *name, uint32_t ar
 #define HFSR_VECTTBL    (1u << 1)
 
 void plat_diag_cpu_fault(uint32_t pc, uint32_t lr, uint32_t cfsr, uint32_t hfsr,
-                         uint32_t mmfar, uint32_t bfar, uint32_t now_ms) {
+                         uint32_t mmfar, uint32_t bfar, const char *task, uint32_t now_ms) {
     /* no printf here: this runs in the fault handler */
     const char *kind = (cfsr & CFSR_STKOF) ? "stack" : (cfsr & 0xFFFF0000u) ? "usage" : (cfsr & 0x0000FF00u) ? "bus"
                      : (cfsr & 0x000000FFu) ? "mem" : (hfsr & HFSR_VECTTBL) ? "vect" : "hard";
     char name[sizeof plat_diag.fault_name];
     size_t n = 0;
     while (kind[n]) { name[n] = kind[n]; ++n; }
-    name[n++] = ' '; name[n++] = '@';
-    for (int sh = 28; sh >= 0; sh -= 4) name[n++] = "0123456789ABCDEF"[(pc >> sh) & 0xFu];
+    if ((cfsr & CFSR_STKOF) && task && task[0]) {      /* the task matters more than a PC that isn't there */
+        n = 0; name[n++] = 's'; name[n++] = 't'; name[n++] = 'k'; name[n++] = ' ';
+        while (*task && n < sizeof name - 1u) name[n++] = *task++;
+    } else {
+        name[n++] = ' '; name[n++] = '@';
+        for (int sh = 28; sh >= 0; sh -= 4) name[n++] = "0123456789ABCDEF"[(pc >> sh) & 0xFu];
+    }
     name[n] = 0;
     plat_diag_fault(PLAT_FAULT_HARDFAULT, -1, name, pc, now_ms);
     plat_diag.fault_lr = lr;

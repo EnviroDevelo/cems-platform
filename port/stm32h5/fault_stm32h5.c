@@ -11,6 +11,8 @@
 #include "stm32h5xx.h"
 #include "bsp.h"
 #include "plat_diag.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* RAM the stacked frame may be in (SRAM1-3, 640 KB); anything else is not read */
 #define FRAME_RAM_START 0x20000000u
@@ -28,7 +30,10 @@ void plat_cpu_fault(const uint32_t *frame) {
         lr = frame[5];
         pc = frame[6];
     }
-    plat_diag_cpu_fault(pc, lr, cfsr, SCB->HFSR, SCB->MMFAR, SCB->BFAR, bsp_ms());
+    /* The CM33 port gives every task a stack limit (PSPLIM), so an overflow faults here
+     * before it corrupts anything, and the task's control block is still sound to read. */
+    const char *task = (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) ? pcTaskGetName(NULL) : NULL;
+    plat_diag_cpu_fault(pc, lr, cfsr, SCB->HFSR, SCB->MMFAR, SCB->BFAR, task, bsp_ms());
     NVIC_SystemReset();
 }
 

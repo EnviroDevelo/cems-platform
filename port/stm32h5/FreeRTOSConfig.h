@@ -25,7 +25,7 @@ void plat_assert_failed(const char *file, int line);
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_TICKLESS_IDLE                 0
 #define configMAX_PRIORITIES                    16        /* REQUIRED: plat_config.h uses up to 14 */
-#define configMINIMAL_STACK_SIZE                256
+#define configMINIMAL_STACK_SIZE                512       /* the idle task */
 #define configMAX_TASK_NAME_LEN                 16
 #define configTICK_TYPE_WIDTH_IN_BITS           TICK_TYPE_WIDTH_32_BITS
 #define configIDLE_SHOULD_YIELD                 1
@@ -42,7 +42,7 @@ void plat_assert_failed(const char *file, int line);
 /* ---- memory ---- */
 #define configSUPPORT_STATIC_ALLOCATION         1         /* REQUIRED: platform tasks are static */
 #define configSUPPORT_DYNAMIC_ALLOCATION        1         /* lwIP sys_arch creates its own objects */
-#define configTOTAL_HEAP_SIZE                   (48 * 1024)
+#define configTOTAL_HEAP_SIZE                   (64 * 1024)   /* lwIP's buffers and objects; was 48 KB */
 #define configAPPLICATION_ALLOCATED_HEAP        0
 
 /* ---- hooks and checks ---- */
@@ -60,7 +60,7 @@ void plat_assert_failed(const char *file, int line);
 #define configUSE_TIMERS                        1
 #define configTIMER_TASK_PRIORITY               11        /* below the supervisor, above store */
 #define configTIMER_QUEUE_LENGTH                10
-#define configTIMER_TASK_STACK_DEPTH            512
+#define configTIMER_TASK_STACK_DEPTH            1024
 
 /* ---- interrupts (STM32H5: 4 priority bits) ----
  * ISRs that call FreeRTOS API must have priority number >= 5 (numerically).

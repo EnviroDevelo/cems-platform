@@ -12,6 +12,8 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 1. STM32CubeIDE → New STM32 Project → Board Selector → **STM32H573I-DK**.
 2. When asked about TrustZone, choose **without TrustZone** (the platform uses the `ARM_CM33_NTZ` FreeRTOS port).
 3. Don't initialise all peripherals to their default mode. Add only the ones below, so the project stays readable.
+4. **Memory for stacks (Gary, 25 Oct: stack overflows on earlier DK prototypes; set these large from the start).** Project Manager → Project → Linker Settings: **Minimum Stack Size 0x2000** (8 KB, the main stack: interrupts, and start-up before the scheduler, which includes the HTTPS key generation on first boot) and **Minimum Heap Size 0x1000** (4 KB, the C library's heap). ST's defaults are 0x400 and 0x200, too small. These are minimums the linker checks; the build fails rather than run short.
+   The task stacks are not set in CubeMX: the platform allocates them itself (`plat_config.h` `PLAT_STACK_*`, 85 KB in all, about twice the first sizes), as it does the FreeRTOS heap (64 KB, section 4) and the idle and timer task stacks (`FreeRTOSConfig.h`). Leave CubeMX's FreeRTOS task list empty. A task that still runs past its stack is stopped by the CPU's stack limit and the next boot names it ("stk scan" on the System screen; `PLATFORM.md` D4). Trim the sizes only after the 72-hour soak on hardware, from the margins shown under `health` on `/api/info`.
 
 ## 2. System core
 
@@ -230,7 +232,7 @@ configuration → SWAP_BANK).
 3. Set the values the platform requires (see `port/stm32h5/FreeRTOSConfig.h`, the REQUIRED lines):
    `configTICK_RATE_HZ 1000`, `configMAX_PRIORITIES 16`, `configSUPPORT_STATIC_ALLOCATION 1`,
    `configCHECK_FOR_STACK_OVERFLOW 2`, `configUSE_MALLOC_FAILED_HOOK 1`, `INCLUDE_xTaskDelayUntil 1`,
-   `configTOTAL_HEAP_SIZE` 48 KB, `configTIMER_TASK_PRIORITY 11`. Also set `configASSERT` to call
+   `configTOTAL_HEAP_SIZE` 64 KB, `configMINIMAL_STACK_SIZE 512`, `configTIMER_TASK_STACK_DEPTH 1024`, `configTIMER_TASK_PRIORITY 11`. Also set `configASSERT` to call
    `plat_assert_failed(__FILE__, __LINE__)`.
 4. Create **no** tasks in CubeMX: the platform creates its own.
 5. NVIC → Code generation: make sure **SVC, PendSV and SysTick handlers are not generated** (the FreeRTOS port defines them). X-CUBE-FREERTOS normally unticks these itself; check after generating that `stm32h5xx_it.c` doesn't contain them.

@@ -44,9 +44,11 @@ bool plat_diag_valid(void);
 
 /* CPU fault (D4), called by the port's fault handler before the reset. pc and lr are
  * the stacked values (0 if the stack could not be read); cfsr, hfsr, mmfar and bfar are
- * the SCB registers as found. Names the fault "bus @0801A2C4" (kind and PC), which is
- * what the touchscreen, the web page and the next boot's event-log entry show. */
+ * the SCB registers as found; task is the running task's name, or NULL. Names the fault
+ * "bus @0801A2C4" (kind and PC), or "stk scan" for a task that ran past its stack limit
+ * (no usable PC then), which is what the touchscreen, the web page and the next boot's
+ * event-log entry show. */
 void plat_diag_cpu_fault(uint32_t pc, uint32_t lr, uint32_t cfsr, uint32_t hfsr,
-                         uint32_t mmfar, uint32_t bfar, uint32_t now_ms);
+                         uint32_t mmfar, uint32_t bfar, const char *task, uint32_t now_ms);
 
 #endif

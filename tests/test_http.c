@@ -206,7 +206,7 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"product\":\"CEMS Supervisor\"")); CHECK(has("\"mode\":\"local\"")); CHECK(has("\"default_passwords\":true"));
     CHECK(has("\"cal_valid\":false")); CHECK(has("\"level\":\"view\""));
-    plat_diag_cpu_fault(0x0801A2C4u, 0x08004001u, 0x00008200u, 0x40000000u, 0, 0x20000010u, 5);   /* D4 record on /api/info */
+    plat_diag_cpu_fault(0x0801A2C4u, 0x08004001u, 0x00008200u, 0x40000000u, 0, 0x20000010u, NULL, 5);   /* D4 record on /api/info */
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"name\":\"bus @0801A2C4\"")); CHECK(has("\"arg\":134324932")); CHECK(has("\"lr\":134234113"));
     CHECK(has("\"cfsr\":33280")); CHECK(has("\"addr\":536870928"));
