@@ -141,8 +141,8 @@ SPI kernel clock (11 MHz or less at start-up, 30 MHz or less after):
 Add `platform/ui/`, `platform/os/plat_ui_task.c` and `port/stm32h5/eve_bus_stm32h5.c`.
 Bring-up order (spec): the chip ID (REG_ID = 0x7C) answers, then the first frame
 shows. If the touch doesn't respond, the module's touch controller may need
-`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c) **(check with Riverdi which
-controller the uxTouch variant uses)**. If the picture is shifted or flickers, the
+`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c): Riverdi lists the ILITEK ILI2132A
+for the uxTouch variant (check its setting in Riverdi's library for this module). If the picture is shifted or flickers, the
 timing values came from Riverdi's library for this module and are worth checking
 against its datasheet.
 

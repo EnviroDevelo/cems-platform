@@ -937,12 +937,12 @@ static void draw_system(uint32_t now) {
 
 /* I/O boards (iobus.h): one card per board, outputs and inputs as lit squares, faults in words */
 static void draw_iob(void) {
-    char b[64];
+    char b[64], c[20];
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
         int16_t x = (int16_t)(16 + k * 334), y = BODY_Y;
         const iob_board_tags_t *t = &iob_tags[k];
         iob_view_t v; memset(&v, 0, sizeof v); (void)iob_board_view(k, &v);
-        box(x, y, 324, 392, C_CARD, 8);
+        box(x, y, 324, 438, C_CARD, 8);
         snprintf(b, sizeof b, "Board %u", k + 1u);
         color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 10), F_TEXT, 0, b);
         uint32_t sc = !t->enable ? C_GREY : v.state == IOB_S_RUN ? C_OK : v.state == IOB_S_CONNECTING ? C_WARN : C_BAD;
@@ -954,11 +954,15 @@ static void draw_iob(void) {
             text((int16_t)(x + 14), (int16_t)(y + 72), F_SMALL, 0, b);
             continue;
         }
-        snprintf(b, sizeof b, "Address %u, out %u-%u, in %u-%u", t->address, t->first_do, t->first_do + IOB_OUTS - 1u,
-                 t->first_di, t->first_di + IOB_INS - 1u);
-        color(C_MUTE); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
+        /* how the board is reached: its IP and Modbus address on Ethernet (D27), the address on RS-485 */
+        if (iob_link == IOB_LINK_ETH) {
+            if (t->ip) { fmt_ip(c, sizeof c, t->ip); snprintf(b, sizeof b, "%s, address %u", c, t->address); }
+            else snprintf(b, sizeof b, "No IP set (iob%u_ip)", k + 1u);
+        } else snprintf(b, sizeof b, "RS-485, address %u", t->address);
+        color(t->ip || iob_link != IOB_LINK_ETH ? C_MUTE : C_BAD); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
         /* outputs: bank A, bank B and the relays, one row each */
-        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 66), F_SMALL, 0, "Outputs");
+        snprintf(b, sizeof b, "Outputs %u-%u", t->first_do, t->first_do + IOB_OUTS - 1u);
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 66), F_SMALL, 0, b);
         static const char *const bank[] = { "0.6 A", "1 A", "relay" };
         color(C_MUTE);
         for (unsigned r = 0; r < 3; ++r) text((int16_t)(x + 310), (int16_t)(y + 103 + r * 34), F_SMALL, OPT_CENTERY | OPT_RIGHTX, bank[r]);
@@ -969,7 +973,8 @@ static void draw_iob(void) {
             snprintf(b, sizeof b, "%u", i + 1u);
             color(f || on ? 0xFFFFFFu : C_INK); text((int16_t)(bx + 14), (int16_t)(by + 14), F_SMALL, OPT_CENTER, b);
         }
-        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 196), F_SMALL, 0, "Inputs");
+        snprintf(b, sizeof b, "Inputs %u-%u", t->first_di, t->first_di + IOB_INS - 1u);
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 196), F_SMALL, 0, b);
         for (unsigned i = 0; i < IOB_INS; ++i) {
             int16_t bx = (int16_t)(x + 14 + i * 31), by = (int16_t)(y + 219);
             bool on = (v.inputs >> i) & 1u, f = (v.in_faults >> i) & 1u;
@@ -977,16 +982,39 @@ static void draw_iob(void) {
             snprintf(b, sizeof b, "%u", i + 1u);
             color(f || on ? 0xFFFFFFu : C_INK); text((int16_t)(bx + 14), (int16_t)(by + 14), F_SMALL, OPT_CENTER, b);
         }
+        /* map 2: the configured temperature channels (calibrated, as the web page shows them), two
+         * columns, and the pump */
+        int16_t ly = (int16_t)(y + 258);
+        unsigned nt = 0;
+        for (unsigned i = 0; i < IOB_TEMPS; ++i) {
+            if (t->temp_state[i] == IOB_TS_OFF) continue;
+            bool ok = t->temp_state[i] == IOB_TS_OK && t->temps[i] != IOB_TEMP_INVALID;
+            bool wait = t->temp_state[i] == IOB_TS_WAIT;
+            int32_t d = t->temps[i];                         /* 0.1 degC, without float printf */
+            if (ok) snprintf(b, sizeof b, "T%u %s%ld.%ld \u00b0C", i + 1u, d < 0 ? "-" : "", (long)(labs(d) / 10), (long)(labs(d) % 10));
+            else snprintf(b, sizeof b, "T%u %s", i + 1u, wait ? "starting" : "fault");   /* why: in the fault lines */
+            color(ok ? C_INK : wait ? C_MUTE : C_BAD);
+            text((int16_t)(x + 14 + (nt % 2u) * 155), (int16_t)(ly + (nt / 2u) * 18), F_SMALL, 0, b);
+            ++nt;
+        }
+        ly = (int16_t)(ly + ((nt + 1u) / 2u) * 18);
+        if (v.n_pwm) {
+            snprintf(b, sizeof b, "Pump %u.%u %%, %u rpm", v.pwm_applied / 10u, v.pwm_applied % 10u, (unsigned)v.rpm);
+            color(C_INK); text((int16_t)(x + 14), ly, F_SMALL, 0, b);
+            ly = (int16_t)(ly + 18);
+        }
+        if (nt || v.n_pwm) ly = (int16_t)(ly + 6);
         char lines[4][IOB_LINE];
-        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, 4);
+        int room = (y + 398 - ly) / 18;
+        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, room < 4 ? (room < 1 ? 1 : room) : 4);
         color(n ? C_BAD : C_OK);
-        if (!n) text((int16_t)(x + 14), (int16_t)(y + 262), F_SMALL, 0, v.state == IOB_S_RUN ? "No faults" : "");
-        for (int i = 0; i < n; ++i) text((int16_t)(x + 14), (int16_t)(y + 262 + i * 18), F_SMALL, 0, lines[i]);
+        if (!n) text((int16_t)(x + 14), ly, F_SMALL, 0, v.state == IOB_S_RUN ? "No faults" : "");
+        for (int i = 0; i < n; ++i) text((int16_t)(x + 14), (int16_t)(ly + i * 18), F_SMALL, 0, lines[i]);
         color(C_MUTE);
         snprintf(b, sizeof b, "Firmware %u.%u, hardware %u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u), (unsigned)v.hw_rev);
-        if (v.fw_version) text((int16_t)(x + 14), (int16_t)(y + 352), F_SMALL, 0, b);
+        if (v.fw_version) text((int16_t)(x + 14), (int16_t)(y + 398), F_SMALL, 0, b);
         snprintf(b, sizeof b, "Requests %lu, failed %lu", (unsigned long)v.requests, (unsigned long)v.errors);
-        text((int16_t)(x + 14), (int16_t)(y + 372), F_SMALL, 0, b);
+        text((int16_t)(x + 14), (int16_t)(y + 418), F_SMALL, 0, b);
     }
 }
 

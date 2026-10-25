@@ -469,10 +469,38 @@ static void t_iob_screen(void) {
     iob_run(100);
     frame();
     CHECK(shows("online"));
-    CHECK(shows("Address 1, out 1-18, in 1-8"));
+    CHECK(shows("RS-485, address 1"));
+    CHECK(shows("Outputs 1-18")); CHECK(shows("Inputs 1-8"));
     CHECK(shows("Out 3: open circuit"));
     CHECK(shows("Firmware 1.0, hardware 1"));
+    CHECK(!shows("T1 "));                             /* no temperature channel configured */
+    /* map 2: configured temperature channels (calibrated) and the pump */
+    iob_tags[0].temp_type[0] = IOB_TT_TC_K;
+    nd.temp[0] = 2345; nd.temp_st[0] = IOB_TS_OK;
+    nd.temp[1] = IOB_TEMP_INVALID; nd.temp_st[1] = IOB_TS_OPEN;
+    iob_tags[0].temp_type[2] = IOB_TT_PT100_3W;
+    nd.temp[4] = -125; nd.temp_st[4] = IOB_TS_OK;
+    iob_tags[0].temp_offset[0] = 150;
+    nd.tach_rpm = 1200;                               /* pump AO not assigned: duty 0 */
+    iob_run(PLAT_IOB_TEMP_MS + 100);
+    frame();
+    CHECK(shows("T1 236.0 "));
+    CHECK(shows("T2 fault")); CHECK(shows("Temp 2: open circuit"));
+    CHECK(!shows("T3 ")); CHECK(!shows("T4 "));       /* connector 2 not configured */
+    CHECK(shows("T5 -12.5 ")); CHECK(!shows("T6 "));  /* an RTD has no B channel */
+    CHECK(shows("Pump 0.0 %, 1200 rpm"));
+    /* on Ethernet: the board's IP and Modbus address */
+    iob_link = IOB_LINK_ETH;
+    iob_tags[0].ip = 0xC0A8013Du;
+    frame();
+    CHECK(shows("192.168.1.61, address 1"));
     dump("iob");
+    iob_tags[0].ip = 0;
+    frame();
+    CHECK(shows("No IP set (iob1_ip)"));
+    iob_tags[0].ip = 0xC0A8013Du;
+    iob_link = IOB_LINK_RS485;
+    iob_tags[0].temp_type[0] = iob_tags[0].temp_type[2] = IOB_TT_NONE;
     nd.powered = false;
     iob_run(1100);
     frame();
