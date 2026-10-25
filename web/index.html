@@ -1155,7 +1155,9 @@ async function pollIob() {
         const st = b.state === "online" ? "b-ok" : b.state === "not fitted" ? "" : b.state === "connecting" ? "b-warn" : "b-bad";
         let h = `<div class="hd"><b>Board ${b.n}</b><span class="badge ${st}">${esc(b.state)}</span></div>`;
         if (b.enabled) {
-          h += `<div class="note">Address ${b.address}, outputs ${b.first_do}-${b.first_do + 17}, inputs ${b.first_di}-${b.first_di + 7}</div>`;
+          const ip = lastValues[145 + b.n] >>> 0, eth = lastValues[102] === 1;   /* iobN_ip, iob_link: as on the touchscreen card */
+          const where = !eth ? `RS-485, address ${b.address}` : ip ? `${[24, 16, 8, 0].map(s => (ip >>> s) & 255).join(".")}, address ${b.address}` : `No IP set (iob${b.n}_ip)`;
+          h += `<div class="note">${where}. Outputs ${b.first_do}-${b.first_do + 17}, inputs ${b.first_di}-${b.first_di + 7}</div>`;
           h += sqRow(0, 8, b.outputs, b.out_faults, "on", "0.6 A") + sqRow(8, 8, b.outputs, b.out_faults, "on", "1 A") +
                sqRow(16, 2, b.outputs, b.out_faults, "on", "relays");
           h += '<div class="note" style="margin-top:4px">Inputs</div>' + sqRow(0, 8, b.inputs, b.in_faults, "in", "");

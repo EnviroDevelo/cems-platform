@@ -70,6 +70,7 @@ def screenshot():
             txt = await pg.inner_text("#iobsec")
             check("Board 1" in txt and "Out 3: open circuit" in txt, "web page shows board 1 and its fault")
             check("not fitted" in txt.lower(), "web page shows the boards not fitted")
+            check("192.168.1.61, address 1. Outputs 1-18, inputs 1-8" in txt, "web card shows the board's IP and address")
             await pg.locator("#iobsec").screenshot(path=os.path.join(ROOT, "build", "web_iob.png"))
             check(not errs, "no script errors on the page " + "; ".join(errs))
             await b.close()
