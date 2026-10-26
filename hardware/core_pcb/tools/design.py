@@ -55,14 +55,19 @@ def fb(ref, value, sheet, a, b, **kw):
 S = "power"
 part("J1", "Connector:Screw_Terminal_01x03", "24VDC IN",
      "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal", S,
-     {1: "+24V_IN", 2: "GND", 3: "CHASSIS"},
+     {1: "+24V_IN", 2: "0V_IN", 3: "CHASSIS"},
      note="pin 1 +24 V, pin 2 0 V, pin 3 functional earth. Pluggable version to suit the enclosure")
 part("F1", "Device:Fuse", "1A T", "Fuse:Fuse_1206_3216Metric", S, {1: "+24V_IN", 2: "+24V_F"},
      note="1 A time-lag, rated 63 V DC or more. CHECK part")
-part("D1", "Device:D_Schottky", "SS16", "Diode_SMD:D_SMA", S, {2: "+24V_F", 1: "+24V"},
+part("D1", "Device:D_Schottky", "SS16", "Diode_SMD:D_SMA", S, {2: "+24V_F", 1: "+24V_D"},
      mpn="SS16 (60 V, 1 A)", note="reverse-polarity protection")
-part("D2", "Device:D_TVS", "SMBJ33CA", "Diode_SMD:D_SMB", S, {1: "+24V", 2: "GND"},
-     mpn="SMBJ33CA", note="bidirectional TVS after the series diode; clamps about 53 V")
+part("D2", "Device:D_TVS", "SMDJ33CA", "Diode_SMD:D_SMC", S, {1: "+24V_D", 2: "0V_IN"},
+     mpn="SMDJ33CA (3 kW)", note="bidirectional TVS ahead of the choke; IEC 61000-4-5 0.5 kV line-line (docs/CORE_PCB_EMC.md)")
+c("C16", "4n7 2kV", S, "+24V_D", "CHASSIS", fp=C1812, note="Y-capacitor, common-mode to chassis (EFT, conducted RF)")
+c("C17", "4n7 2kV", S, "0V_IN", "CHASSIS", fp=C1812, note="Y-capacitor")
+part("L3", "Device:L_Coupled_1423", "WE-SL2 744227", "Inductor_SMD:L_CommonMode_Wuerth_WE-SL2", S,
+     {1: "+24V_D", 4: "+24V", 2: "0V_IN", 3: "GND"}, mpn="Wurth 744227",
+     note="common-mode choke on the 24 V input; windings 1-4 and 2-3. CHECK current rating >= 0.5 A and pad mapping")
 part("C1", "Device:C_Polarized", "47u 63V", "Capacitor_SMD:CP_Elec_8x10", S, {1: "+24V", 2: "GND"},
      note="bulk, aluminium electrolytic, 105 C")
 c("C2", "2u2 100V", S, "+24V", "GND", fp=C1210)

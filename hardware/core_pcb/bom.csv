@@ -10,7 +10,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,C9,10u 10V,C_0805_2012Metric,,yes
 1,C10,22p,C_0603_1608Metric,,yes
 2,C11 C12,22u 10V,C_1206_3216Metric,,yes
-1,C15,4n7 2kV,C_1812_4532Metric,,yes
+3,C15 C16 C17,4n7 2kV,C_1812_4532Metric,,yes
 2,C26 C59,4u7,C_0805_2012Metric,,yes
 3,C27 C40 C44,1u,C_0603_1608Metric,,yes
 2,C29 C30,2u2,C_0603_1608Metric,,yes
@@ -24,7 +24,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 2,C60 C61,18p,C_0603_1608Metric,,yes
 1,C62,6n8,C_0603_1608Metric,,yes
 1,D1,SS16,D_SMA,"SS16 (60 V, 1 A)",yes
-1,D2,SMBJ33CA,D_SMB,SMBJ33CA,yes
+1,D2,SMDJ33CA,D_SMC,SMDJ33CA (3 kW),yes
 1,D3,B260A,D_SMA,"B260A-13 (60 V, 2 A)",yes
 1,D10,green RUN,LED_0603_1608Metric,,yes
 1,D11,red FAULT,LED_0603_1608Metric,,yes
@@ -39,6 +39,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,JP1,BOOT0,PinHeader_1x02_P2.54mm_Vertical,,yes
 1,L1,15uH 2.5A,L_Bourns_SRN6045TA,Bourns SRN6045TA-150M,yes
 1,L2,2u2 3A,L_Wuerth_MAPI-4030,"Wurth 74438357022 (MAPI 4030, 2.2 uH)",yes
+1,L3,WE-SL2 744227,L_CommonMode_Wuerth_WE-SL2,Wurth 744227,yes
 1,R3,162k 1%,R_0603_1608Metric,,yes
 1,R4,52k3 1%,R_0603_1608Metric,,yes
 1,R5,10k 1%,R_0603_1608Metric,,yes

@@ -52,10 +52,9 @@ the core's own values (platform image → HTTPS and Modbus), never as forwarded 
   technicians don't swap the cables. If they do, nothing is exposed: the W5500 has no
   listening sockets and the boards simply don't answer.
 
-**Product lifecycle on the H573:** the production units are shipped with debug closed
-(product state / RDP per ST's H5 security model) so SWD cannot read the firmware or keys
-from a unit on site. The SWD header stays fitted for development units. **(check: which state, and
-the recovery route, are a firmware-update decision; see `PLATFORM.md` 5b.)**
+**Product lifecycle on the H573:** production units ship with debug closed, so SWD cannot
+read the firmware or keys from a unit on site. The state and the recovery route are in
+section 13.
 
 ## 3. MCU
 
@@ -110,7 +109,7 @@ PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 | Rail | Source | Loads | Budget |
 |---|---|---|---|
 | 24 VDC in (18-32 V) | Pluggable terminal (+, 0 V, FE) | | about 0.3 A at 24 V |
-| Input protection | Fuse 1 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional TVS SMBJ33CA after it (D2), 47 µF bulk | | |
+| Input protection | Fuse 1 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional 3 kW TVS SMDJ33CA after it (D2), Y-capacitors to chassis (C16, C17), common-mode choke (L3), 47 µF bulk. Sized for IEC 61326-1 industrial, see `CORE_PCB_EMC.md` | | |
 | 5 V | Buck, 60 V rated input: TI TPS54360 (U1, 3.5 A, about 600 kHz, catch diode B260A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
 | 3.3 V | Buck from 5 V: TI TLV62569 (U2, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, NOR, FRAM | about 0.6 A |
 | VBAT | CR2032 in a holder (H1) | RTC, backup registers | µA |
@@ -198,6 +197,25 @@ board's -40 to 85 °C parts, sets the instrument's rating.
    1500 Vrms, -40 to 85 °C.
 6. **Enclosure (chosen 25 Oct, Gary can override):** see section 10.
 
+## 9. BOM summary (main parts)
+
+| Part | Function | Qty |
+|---|---|---|
+| STM32H573VIT6 (or H563VIT6) | MCU | 1 |
+| LAN8742A-CZ-TR (-40 to 85 °C) | Client Ethernet PHY | 1 |
+| W5500 (-40 to 85 °C) | I/O Ethernet controller | 1 |
+| Würth 7499010121A (RJ45 with magnetics and LEDs) | J2, J3 | 2 |
+| MB85RC1MT | 128 KB FRAM, settings | 1 |
+| W25Q128JV | 16 MB NOR, event and data log | 1 |
+| 25 MHz crystals | MCU HSE, PHY, W5500 | 3 |
+| 32.768 kHz crystal | RTC | 1 |
+| TPS54360DDA (60 V in, 3.5 A) | 24 → 5 V buck | 1 |
+| TLV62569DBV | 5 → 3.3 V buck | 1 |
+| SS16, SMDJ33CA, 1 A T fuse, Würth 744227 choke | Input protection | 1 each |
+| TPD4E05U06 (or equal) | Ethernet ESD | 2 |
+| Hirose FH12-20S-0.5SH(55) | Display FFC | 1 |
+| CR2032 holder | VBAT | 1 |
+
 ## 10. Enclosure
 
 The board goes in a DIN-rail electronics housing on the panel's rail. The two RJ45s, the
@@ -227,21 +245,67 @@ Values marked CHECK in the sheet notes (buck compensation, crystal load capacito
 Ethernet line terminations, the FRAM pinout, the FFC contact side) must be confirmed against
 their datasheets before layout.
 
-## 9. BOM summary (main parts)
+## 12. What the firmware reads from the board (CIP-01.3, CIP-07.3)
 
-| Part | Function | Qty |
-|---|---|---|
-| STM32H573VIT6 (or H563VIT6) | MCU | 1 |
-| LAN8742A-CZ-TR (-40 to 85 °C) | Client Ethernet PHY | 1 |
-| W5500 (-40 to 85 °C) | I/O Ethernet controller | 1 |
-| Würth 7499010121A (RJ45 with magnetics and LEDs) | J2, J3 | 2 |
-| MB85RC1MT | 128 KB FRAM, settings | 1 |
-| W25Q128JV | 16 MB NOR, event and data log | 1 |
-| 25 MHz crystals | MCU HSE, PHY, W5500 | 3 |
-| 32.768 kHz crystal | RTC | 1 |
-| TPS54360DDA (60 V in, 3.5 A) | 24 → 5 V buck | 1 |
-| TLV62569DBV | 5 → 3.3 V buck | 1 |
-| SS16, SMBJ33CA, 1 A T fuse | Input protection | 1 each |
-| TPD4E05U06 (or equal) | Ethernet ESD | 2 |
-| Hirose FH12-20S-0.5SH(55) | Display FFC | 1 |
-| CR2032 holder | VBAT | 1 |
+**Hardware revision straps, PE7 and PE8.** Read once at boot, as inputs with the internal
+pull-ups and pull-downs off; each pin has a 10 kΩ to ground (R23, R24) and a 10 kΩ to 3.3 V
+footprint (R25, R26), and a revision fits one or the other.
+
+| PE8 | PE7 | `hw_rev` | Board |
+|---|---|---|---|
+| 0 | 0 | 0 | Rev A (this design, rev 0.1 schematic) |
+| 0 | 1 | 1 | Rev B |
+| 1 | 0 | 2 | Rev C |
+| 1 | 1 | 3 | Rev D |
+
+`hw_rev = (PE8 << 1) | PE7`. The firmware reports it with the firmware version (`/api/info`,
+System screen) and can refuse an image built for another revision. A fifth revision needs a
+third strap (PE15 is free and next to them).
+
+**24 V supply sense, PC0 (ADC1_INP10).** R9 100 kΩ over R10 8.2 kΩ, both 1 %, with C13 100 nF:
+
+- `V24 = V_PC0 × (100 + 8.2) / 8.2 = 13.20 × V_PC0`. With the 12-bit ADC and VREF+ = VDDA:
+  `V24 = raw × VDDA / 4095 × 13.20`. Take VDDA from the VREFINT calibration value
+  (VDDA = 3.3 V × VREFINT_CAL / VREFINT reading), not the nominal 3.3 V, since the 3.3 V rail
+  is only ±2 %.
+- Full scale is 43.5 V; 24 V reads about 1.82 V (raw about 2260).
+- The sense point is after the reverse-polarity diode D1, so it reads about 0.4 V below the
+  terminal voltage at full load. Add 0.4 V for display, or report "supply (after protection)".
+- Accuracy: about ±3 % with VREFINT correction (resistor tolerances and the ADC).
+- Source impedance 7.6 kΩ, but C13 holds the node, so any sampling time works. The node's
+  time constant is 0.76 ms: average 16 samples per reading; it is a supervision value, not a
+  fast one.
+- Suggested thresholds: below 19 V supply low (warning); below 16 V supply failing (log it
+  and stop writes that are not power-safe); above 30 V supply high. The bucks run down to
+  about 6 V at the input, so the board keeps working through the whole range.
+- A surge can briefly lift PC0 to about 4 V; the 100 kΩ limits the injected current to well
+  under the pin's 5 mA. Readings in the 100 µs after such an event are not trusted (the
+  average covers it).
+
+## 13. Debug lock and recovery (proposed with the firmware thread; CIP-04.4, CIP-20.4)
+
+Based on ST's STM32H5 product-state model (RM0481 "product life cycle" and debug
+authentication). **(check: confirm the state names and what each regression erases in
+RM0481 before the first production unit is closed.)**
+
+| Stage | Product state | Debug | Recovery |
+|---|---|---|---|
+| Development, bench, DK | Open | Full SWD | SWD (J5), BOOT0 jumper (JP1) for the ST bootloader |
+| Production units | **Closed, with debug authentication provisioned** | Off: SWD can't read flash, RAM or keys | Authorised regression over SWD (below) |
+| Not used | Locked | Off for good | None: a unit with both banks bad would be scrap |
+
+- **Normal updates never need SWD:** the network update writes the free bank, test-boots it
+  and rolls back by itself (`PLATFORM.md` 5b). Recovery is only for a unit whose both
+  banks are unusable, which the update design prevents.
+- **Recovery route:** a technician with the company's debug-authentication credential
+  (certificate on the H573; a password on the H563) opens the housing, connects J5, and runs
+  a regression with ST's tools. That erases the user flash and returns the chip to Open; the
+  factory image is then programmed and the unit closed again. FRAM (settings, calibration)
+  and the NOR log are separate chips and are kept. The serial-number record (D25) must be
+  stored where a regression cannot erase it, or re-applied with a developer token afterwards.
+- **Hardware for this:** J5 (SWD with NRST) fitted on every unit, inside the housing, not
+  reachable without opening it; JP1 BOOT0 footprint fitted, no jumper in production (the
+  bootloader is not a route on a closed unit); BOOT0 pulled down by R20.
+- The credential is held like the firmware signing key: not in the repository, two people
+  hold it.
+
