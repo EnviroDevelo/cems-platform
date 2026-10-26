@@ -110,7 +110,7 @@ PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 |---|---|---|---|
 | 24 VDC in (18-32 V) | Pluggable terminal (+, 0 V, FE) | | about 0.3 A at 24 V |
 | Input protection | Fuse 2 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional 3 kW TVS SMDJ33CA after it (D2), Y-capacitors to chassis (C16, C17), common-mode choke (L3), 47 µF bulk. Sized for IEC 61326-1 industrial, see `CORE_PCB_EMC.md` | | |
-| 5 V | Buck, 60 V rated input: TI TPS54360 (U1, 3.5 A, about 600 kHz, catch diode B260A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
+| 5 V | Buck, 60 V rated input: TI TPS54360B (U1, 3.5 A, 600 kHz, 22 µH, catch diode B260A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
 | 3.3 V | Buck from 5 V: TI TLV62569 (U2, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, NOR, FRAM | about 0.6 A |
 | VBAT | CR2032 in a holder (H1) | RTC, backup registers | µA |
 | VDDA / VREF+ | 3.3 V through a ferrite and 1 µF + 100 nF | ADC (supply sense) | |
@@ -121,6 +121,12 @@ VDD 3.0-3.6 V, 235 mA typ / 240 mA max (audio on at full volume); BLVDD 4.5-5.5 
 it still lights from 2.7 V but not at full brightness), 10 / 310 / 400 mA at minimum / 50 % /
 100 % backlight. A 5 % 5 V rail is within range; keep the FFC's 5 V drop under 0.25 V. Brown-out: the MCU's BOR at the highest level
 plus the supply-sense pin (H10). The core board drives no field outputs (H6 and H7 are on the I/O boards).
+
+**5 V buck design** (TPS54360B datasheet, equations 44-51; `hardware/datasheets/TPS54360B.pdf`): RT 162 kΩ for
+600 kHz; L1 22 µH (about 30 % ripple at 1 A from 24 V); output 22 µF ceramic, about 15 µF
+effective at 5 V, plus the 3.3 V buck's input capacitance, about 30 µF in all; crossover about
+18 kHz. Type II compensation R6 4.99 kΩ, C5 33 nF, C6 100 pF. **(check L1's Isat, 1.6 A or more,
+on the Bourns SRN6045TA-220M datasheet)**.
 
 ## 5a. Hold-up after the 24 V input fails
 
@@ -235,9 +241,10 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 | W25Q128JV | 16 MB NOR, event and data log | 1 |
 | 25 MHz crystals | MCU HSE, PHY, W5500 | 3 |
 | 32.768 kHz crystal | RTC | 1 |
-| TPS54360DDA (60 V in, 3.5 A) | 24 → 5 V buck | 1 |
+| TPS54360BDDAR (60 V in, 3.5 A) | 24 → 5 V buck | 1 |
 | TLV62569DBV | 5 → 3.3 V buck | 1 |
-| SS16, SMDJ33CA, 2 A T fuse, Würth 744227 choke | Input protection | 1 each |
+| SS16, SMDJ33CA, 2 A T fuse, Würth 744227 choke (1 A, 80 V) | Input protection | 1 each |
+| Bourns SRN6045TA-220M (22 µH) | 5 V buck inductor | 1 |
 | 470 µF 63 V radial 12.5 mm, 105 °C | Hold-up (C18, C19) | 2 |
 | TPD4E05U06 (or equal) | Ethernet ESD | 2 |
 | Hirose FH12-20S-0.5SH(55) | Display FFC | 1 |
@@ -268,9 +275,16 @@ client Ethernet, I/O Ethernet, memories and display), 145 parts, and a PDF of al
 `gen_schematic.py`. Each connected pin carries a net label and each unused pin a no-connect
 flag. `check_netlist.py` then checks KiCad's own exported netlist against `design.py`, pin by
 pin, along with each part's footprint and value. `bom.csv` is the grouped bill of materials.
-Values marked CHECK in the sheet notes (buck compensation, crystal load capacitors, the
-Ethernet line terminations, the FRAM pinout, the FFC contact side) must be confirmed against
-their datasheets before layout.
+Values marked CHECK in the sheet notes must be confirmed before layout. Cleared against the
+datasheets in `hardware/datasheets/` (26 Oct): the buck compensation and inductor value, the
+LAN8742A crystal capacitors (33 pF for its 20 pF CL), straps and line terminations, the W5500
+crystal circuit (18 pF, 1 MΩ, 0 Ω) and reserved pins (only 23 to ground, 38-42 open), the FRAM
+pinout and the choke rating and pads. Still open: the W5500 line terminations (WIZnet
+reference schematic), L1's Isat, the HSE crystal against the DK, the VCAP values, and the FFC
+contact side.
+
+The W5500 has no auto-MDIX. The I/O board's LAN8742A has HP auto-MDIX, so a straight cable
+works; a W5500-to-W5500 link would need a crossover cable.
 
 ## 12. What the firmware reads from the board (CIP-01.3, CIP-07.3)
 
