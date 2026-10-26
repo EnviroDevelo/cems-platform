@@ -977,10 +977,12 @@ static void draw_system(uint32_t now) {
         kv(544, BODY_Y + 390, "Memory", b);
     }
     uint32_t ct;
-    if (plat_clock_now(&ct)) log_fmt_time(b, sizeof b, ct, true); else snprintf(b, sizeof b, "NOT SET");
+    if (plat_clock_now(&ct))                          /* day first, no seconds (the header has them): clears the buttons */
+        snprintf(b, sizeof b, "%02u/%02u/%04u %02u:%02u", RTC_Date.Day_In_Month, RTC_Date.Month, RTC_Date.Year, RTC_Time.Hours, RTC_Time.Minutes);
+    else snprintf(b, sizeof b, "NOT SET");
     kv(544, BODY_Y + 364, "Clock", b);
-    button(T_CLOCK, 868, BODY_Y + 318, 128, 64, "Set clock", C_ACCENT, true);
-    button(T_IOB, 868, BODY_Y + 244, 128, 64, "I/O boards", C_ACCENT, true);
+    button(T_CLOCK, 884, BODY_Y + 318, 116, 64, "Set clock", C_ACCENT, true);
+    button(T_IOB, 884, BODY_Y + 244, 116, 64, "I/O boards", C_ACCENT, true);
 }
 
 /* I/O boards (iobus.h): one card per board, outputs and inputs as lit squares, faults in words */
