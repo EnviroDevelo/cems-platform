@@ -176,6 +176,9 @@ enum {
     PARAM_ID_PRODUCT          = 313, /* RO text: product (Modbus identity) */
     PARAM_ID_VENDOR           = 314, /* RO text: vendor */
     PARAM_ID_FW_TEXT          = 315, /* RO text: firmware version as text */
+    PARAM_ID_CLOCK_SYNCED     = 316, /* RO: the clock is synchronised (plat_clock.h, CIP-02.6) */
+    PARAM_ID_CLOCK_SYNC_TIME  = 317, /* RO: when it was last set or confirmed (local s since 1970; 0 = not since start) */
+    PARAM_ID_CLOCK_SOURCE     = 318, /* RO: PLAT_CLK_SRC_* of that */
     PARAM_ID_CAL_CMD          = 320, /* calibration command (plat_cal.h): command << 8 | channel; momentary */
     PARAM_ID_CAL_LEVEL        = 321, /* factory: login level that may calibrate (CIP-19.3; default admin) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */

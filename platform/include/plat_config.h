@@ -131,7 +131,7 @@
 
 /* interface versions (CIP-14.4): bump on any change a client could break on */
 #define PLAT_API_VERSION          2u     /* the web API (1 = before 26 Oct 2026) */
-#define PLAT_MB_BLOCK_VERSION     1u     /* the layout of the platform's Modbus block */
+#define PLAT_MB_BLOCK_VERSION     2u     /* the layout of the platform's Modbus block (2: clock quality added, 26 Oct) */
 #define PLAT_MB_BLOCK_ADDR        9000u  /* input registers 9000-9199 belong to the platform in every product */
 #define PLAT_MB_BLOCK_END         9199u
 

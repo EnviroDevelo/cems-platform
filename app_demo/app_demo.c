@@ -107,7 +107,7 @@ const size_t app_demo_n_retain = sizeof app_demo_retain / sizeof app_demo_retain
  * 1 valve output; input registers 0 alarms active, 1 alarms unacknowledged, 2 common alarm,
  * 10-25 active bits, 30-45 unacknowledged bits (K12: the master sees both), 50 instrument state,
  * 52-83 measurement quality, 100 the level x 10. The platform adds its own block at input registers
- * 9000-9083 (identity, heartbeat, state, link age, versions: modbus.h) in every product. */
+ * 9000-9089 (identity, heartbeat, state, link age, versions: modbus.h) in every product. */
 const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_HOLDING,  0, DEMO_PARAM_START_DELAY, MBF_U32),
     MB_ENTRY(MB_HOLDING,  2, DEMO_PARAM_RUN_HOURS,   MBF_U32),
