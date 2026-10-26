@@ -67,7 +67,7 @@ c("C16", "4n7 2kV", S, "+24V_D", "CHASSIS", fp=C1812, note="Y-capacitor, common-
 c("C17", "4n7 2kV", S, "0V_IN", "CHASSIS", fp=C1812, note="Y-capacitor")
 part("L3", "Device:L_Coupled_1423", "WE-SL2 744227", "Inductor_SMD:L_CommonMode_Wuerth_WE-SL2", S,
      {1: "+24V_D", 4: "+24V", 2: "0V_IN", 3: "GND"}, mpn="Wurth 744227",
-     note="common-mode choke on the 24 V input; windings 1-4 and 2-3. CHECK current rating >= 0.5 A and pad mapping")
+     note="common-mode choke on the 24 V input; windings 1-4 and 2-3 (datasheet: 1 A, 80 V, 0.16 R; footprint pads match)")
 part("C1", "Device:C_Polarized", "47u 63V", "Capacitor_SMD:CP_Elec_8x10", S, {1: "+24V", 2: "GND"},
      note="bulk, aluminium electrolytic, 105 C")
 part("C18", "Device:C_Polarized", "470u 63V", "Capacitor_THT:CP_Radial_D12.5mm_P5.00mm", S, {1: "+24V", 2: "GND"},
@@ -79,24 +79,24 @@ c("C2", "2u2 100V", S, "+24V", "GND", fp=C1210)
 c("C3", "100n 100V", S, "+24V", "GND")
 
 # 24 V -> 5 V, TPS54360 (4.5-60 V in, 3.5 A), about 600 kHz
-part("U1", "Regulator_Switching:TPS54360DDA", "TPS54360DDA",
+part("U1", "Regulator_Switching:TPS54360DDA", "TPS54360B",
      "Package_SO:TI_SO-PowerPAD-8_ThermalVias", S,
      {1: "BUCK5_BOOT", 2: "+24V", 3: "BUCK5_EN", 4: "BUCK5_RT", 5: "BUCK5_FB", 6: "BUCK5_COMP",
       7: "GND", 8: "BUCK5_SW", 9: "GND"},
-     mpn="TPS54360DDAR", note="compensation and RT values to be confirmed with TI WEBENCH. CHECK")
+     mpn="TPS54360BDDAR", note="TPS54360B, same pinout as TPS54360; RT and compensation from its datasheet eq. 44-51 (CORE_PCB.md 5)")
 r("R1", "DNF", S, "+24V", "BUCK5_EN", dnp=True, note="UVLO divider, not fitted: EN's internal pull-up enables the regulator")
 r("R2", "DNF", S, "BUCK5_EN", "GND", dnp=True)
 r("R3", "162k 1%", S, "BUCK5_RT", "GND", note="about 600 kHz")
 c("C4", "100n", S, "BUCK5_BOOT", "BUCK5_SW")
-part("L1", "Device:L", "15uH 2.5A", "Inductor_SMD:L_Bourns_SRN6045TA", S, {1: "BUCK5_SW", 2: "+5V"},
-     mpn="Bourns SRN6045TA-150M", note="CHECK saturation current >= 2.5 A")
+part("L1", "Device:L", "22uH", "Inductor_SMD:L_Bourns_SRN6045TA", S, {1: "BUCK5_SW", 2: "+5V"},
+     mpn="Bourns SRN6045TA-220M", note="22 uH for 30 % ripple at 1 A, 600 kHz, 24 V in. CHECK Isat >= 1.6 A")
 part("D3", "Device:D_Schottky", "B260A", "Diode_SMD:D_SMA", S, {1: "BUCK5_SW", 2: "GND"},
      mpn="B260A-13 (60 V, 2 A)", note="catch diode")
 r("R4", "52k3 1%", S, "+5V", "BUCK5_FB")
 r("R5", "10k 1%", S, "BUCK5_FB", "GND", note="0.8 V x (1 + 52.3/10) = 4.98 V")
-r("R6", "16k9", S, "BUCK5_COMP", "BUCK5_CC", note="CHECK WEBENCH")
-c("C5", "4n7", S, "BUCK5_CC", "GND", note="CHECK WEBENCH")
-c("C6", "47p", S, "BUCK5_COMP", "GND", note="CHECK WEBENCH")
+r("R6", "4k99 1%", S, "BUCK5_COMP", "BUCK5_CC", note="type II compensation, crossover about 18 kHz")
+c("C5", "33n", S, "BUCK5_CC", "GND")
+c("C6", "100p", S, "BUCK5_COMP", "GND")
 c("C7", "22u 10V", S, "+5V", "GND", fp=C1210)
 c("C8", "22u 10V", S, "+5V", "GND", fp=C1210)
 
@@ -211,14 +211,14 @@ c("C44", "1u", S, "PHY_VDDCR", "GND", note="VDDCR, with C45")
 c("C45", "470p", S, "PHY_VDDCR", "GND")
 r("R30", "12k1 1%", S, "PHY_RBIAS", "GND")
 part("Y3", "Device:Crystal_GND24", "25MHz", "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", S,
-     {1: "PHY_XTAL1", 3: "PHY_XTAL2", 2: "GND", 4: "GND"}, note="+/-50 ppm or better")
-c("C46", "15p", S, "PHY_XTAL1", "GND", note="CHECK for the crystal's CL")
-c("C47", "15p", S, "PHY_XTAL2", "GND")
+     {1: "PHY_XTAL1", 3: "PHY_XTAL2", 2: "GND", 4: "GND"}, note="CL 20 pF, +/-50 ppm total (LAN8742A datasheet)")
+c("C46", "33p", S, "PHY_XTAL1", "GND", note="for CL 20 pF with about 4 pF stray")
+c("C47", "33p", S, "PHY_XTAL2", "GND")
 r("R31", "22R", S, "PHY_REFCLKO", "ETH_REF_CLK", note="series, at the PHY")
 r("R32", "1k5", S, "+3V3", "ETH_MDIO")
 r("R33", "10k", S, "PHY_LED2", "GND", note="strap nINTSEL = 0 (REFCLKO mode)")
 r("R34", "10k", S, "+3V3", "ETH_PHY_RST", note="PHY runs if the firmware leaves PD11 as input")
-# line side: 49.9 R pull-ups to the centre-tap supply (Microchip LAN87xx reference). CHECK
+# line side: 49.9 R pull-ups to the centre-tap supply (LAN8742A datasheet, confirmed)
 fb("FB3", "600R@100MHz", S, "+3V3", "ETH1_CT")
 c("C48", "22n", S, "ETH1_CT", "GND")
 c("C49", "100n", S, "ETH1_CT", "GND")
@@ -241,11 +241,11 @@ w = {1: "ETH2_TXN", 2: "ETH2_TXP", 3: "GND", 4: "+3V3_WA", 5: "ETH2_RXN", 6: "ET
      16: "GND", 17: "+3V3_WA", 19: "GND", 20: "W5500_TOCAP", 21: "+3V3_WA", 22: "W5500_1V2O",
      23: "GND", 25: "W5500_LINKLED", 27: "W5500_ACTLED", 28: "+3V3", 29: "GND",
      30: "W5500_XI", 31: "W5500_XO", 32: "W5500_CS", 33: "W5500_SCK", 34: "W5500_MISO",
-     35: "W5500_MOSI", 36: "W5500_INT", 37: "W5500_RST", 38: "GND", 39: "GND", 40: "GND",
-     41: "GND", 42: "GND", 48: "GND"}
+     35: "W5500_MOSI", 36: "W5500_INT", 37: "W5500_RST", 48: "GND"}
 part("U6", "Interface_Ethernet:W5500", "W5500", "Package_QFP:LQFP-48_7x7mm_P0.5mm", S, w,
      mpn="W5500 (-40 to 85 C)",
-     note="PMODE[2:0] internal pull-ups = all capable, auto-negotiation; RSVD pins to ground; VBG open")
+     note="PMODE[2:0] internal pull-ups = all capable, auto-negotiation; RSVD pin 23 to ground, RSVD 38-42 NC; VBG open. "
+          "No auto-MDIX: the I/O board's LAN8742A does HP auto-MDIX, so a straight cable works")
 fb("FB4", "600R@100MHz", S, "+3V3", "+3V3_WA")
 c("C50", "10u", S, "+3V3_WA", "GND", fp=C0805)
 for ref in ("C51", "C52", "C53", "C54", "C55", "C56"):
@@ -255,9 +255,12 @@ c("C58", "10n", S, "W5500_1V2O", "GND")
 c("C59", "4u7", S, "W5500_TOCAP", "GND", fp=C0805)
 r("R50", "12k4 1%", S, "W5500_EXRES", "GND")
 part("Y4", "Device:Crystal_GND24", "25MHz", "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", S,
-     {1: "W5500_XI", 3: "W5500_XO", 2: "GND", 4: "GND"}, note="own crystal, separate from the MCU's HSE")
-c("C60", "18p", S, "W5500_XI", "GND", note="CHECK for the crystal's CL")
-c("C61", "18p", S, "W5500_XO", "GND")
+     {1: "W5500_XI", 3: "W5500_XTAL2", 2: "GND", 4: "GND"},
+     note="own crystal, CL 18 pF, +/-30 ppm (W5500 datasheet); separate from the MCU's HSE")
+c("C60", "18p", S, "W5500_XI", "GND", note="W5500 reference circuit")
+c("C61", "18p", S, "W5500_XTAL2", "GND")
+r("R62", "1M", S, "W5500_XI", "W5500_XO", note="W5500 reference circuit")
+r("R63", "0R", S, "W5500_XO", "W5500_XTAL2", note="drive-level option, W5500 reference circuit")
 r("R51", "33R", S, "W5500_SCK_MCU", "W5500_SCK", note="series, at the MCU")
 r("R52", "33R", S, "W5500_MOSI_MCU", "W5500_MOSI", note="series, at the MCU")
 r("R53", "10k", S, "+3V3", "W5500_CS")
@@ -293,7 +296,7 @@ r("R72", "10k", S, "+3V3", "NOR_HOLD")
 r("R73", "33R", S, "NOR_SCK_MCU", "NOR_SCK", note="series, at the MCU")
 part("U9", "cems_core:MB85RC1MT", "MB85RC1MT", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", S,
      {2: "GND", 3: "GND", 4: "GND", 5: "FRAM_SDA", 6: "FRAM_SCL", 7: "GND", 8: "+3V3"},
-     mpn="MB85RC1MTPNF", note="128 KB FRAM (H2). A1 = A2 = 0, WP low = writes enabled. CHECK pinout")
+     mpn="MB85RC1MTPNF", note="128 KB FRAM (H2), I2C address 0x50. A1 = A2 = 0, WP low = writes enabled (pinout per datasheet)")
 c("C71", "100n", S, "+3V3", "GND")
 r("R74", "2k2", S, "+3V3", "FRAM_SCL")
 r("R75", "2k2", S, "+3V3", "FRAM_SDA")

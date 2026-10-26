@@ -433,7 +433,7 @@
   (no_connect (at 205.73999999999998 58.42) (uuid 6fe348ca-de6f-5c5c-8933-0ae942580e77))
   (no_connect (at 205.73999999999998 40.64) (uuid c450f0bb-7287-5bb2-8fc5-1bf05da42e34))
 
-  (text "Notes\nU8: event log and data logger (H3)\nR73: series, at the MCU\nU9: 128 KB FRAM (H2). A1 = A2 = 0, WP low = writes enabled. CHECK pinout\nJ4: RiBUS pinout from the RVT70HSBNWC00 V1.1A datasheet; 9-12 (GPIO, audio, QSPI) left open; 13-16 NC. CHECK contact side against the cable at\n    mechanical layout\nR76: series, at the MCU"
+  (text "Notes\nU8: event log and data logger (H3)\nR73: series, at the MCU\nU9: 128 KB FRAM (H2), I2C address 0x50. A1 = A2 = 0, WP low = writes enabled (pinout per datasheet)\nJ4: RiBUS pinout from the RVT70HSBNWC00 V1.1A datasheet; 9-12 (GPIO, audio, QSPI) left open; 13-16 NC. CHECK contact side against the cable at\n    mechanical layout\nR76: series, at the MCU"
     (at 15.24 137.16 0)
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid 241ef9e2-a9c2-521e-99a3-828a3b328048)
