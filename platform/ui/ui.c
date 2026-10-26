@@ -57,7 +57,7 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
-    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB,
+    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB, T_MAINT,
     T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
     /* application screens and record editors (no keyboard there, so 1..126 are free):
      * 1..8 tabs, T_W0.. widgets and cells (looked up in U.tmap), T_DLG_* the dialog */
@@ -422,6 +422,19 @@ static void mode_tap(uint32_t now) {
     }
 }
 
+/* MAINTENANCE (CIP-09, section 7): the operator enters and leaves it here, confirmed;
+ * parameter 301, so levels and the event log apply as for any write */
+static bool maint_on(void) { plat_val_t v; return param_read(PARAM_ID_MAINTENANCE, &v) && v.b; }
+static void maint_tap(uint32_t now) {
+    bool in = maint_on();
+    if (U.level < PLAT_LVL_OPERATOR) { toast(true, now, "Log in as operator to %s maintenance", in ? "leave" : "enter"); return; }
+    plat_cmd_t c = { .id = PARAM_ID_MAINTENANCE, .src = PLAT_SRC_LOCAL, .kind = PLAT_VAL_BOOL, .level = U.level, .v.b = !in };
+    U.pend = c;
+    snprintf(U.ok_msg, sizeof U.ok_msg, "%s", in ? "Maintenance ended" : "Maintenance started");
+    ask(ACT_POST, in ? "Leave maintenance? Readings are reported as valid again."
+                     : "Start maintenance? Every reading is marked \"maintenance\" until you leave it.");
+}
+
 /* ---------------- input ---------------- */
 static size_t n_params(void) { return param_count(); }
 
@@ -450,6 +463,7 @@ static void tap(uint8_t t, uint32_t now) {
         goto_scr(UI_LOGIN);
         return;
     case T_MODE: mode_tap(now); return;
+    case T_MAINT: maint_tap(now); return;
     case T_ALARMS: U.al_first = 0; goto_scr(UI_ALARMS); return;
     case T_ACTIONS: U.cfg_first = 0; goto_scr(UI_ALARM_CFG); return;
     default: break;
@@ -719,10 +733,11 @@ static void draw_home(void) {
     box(16, y, 992, 110, C_CARD, 8);
     bool remote = param_ctrl_mode() == PARAM_MODE_REMOTE;
     color(C_INK);
-    text(36, (int16_t)(y + 18), F_BIG, 0, remote ? "Control: REMOTE (PLC and web)" : "Control: LOCAL (this touchscreen)");
+    text(36, (int16_t)(y + 18), F_BIG, 0, remote ? "Control: REMOTE" : "Control: LOCAL");
     color(C_MUTE);
-    text(36, (int16_t)(y + 64), F_TEXT, 0, remote ? "Changes here are refused until you take control back."
-                                                  : "The PLC and web can read but not change settings.");
+    text(36, (int16_t)(y + 64), F_TEXT, 0, remote ? "Changes here are refused." : "The PLC and web can only read.");
+    bool maint = maint_on();
+    button(T_MAINT, 476, (int16_t)(y + 23), 236, 64, maint ? "End maintenance" : "Maintenance", maint ? C_WARN : C_ACCENT, true);
     button(T_MODE, 724, (int16_t)(y + 23), 264, 64, remote ? "Take LOCAL control" : "Hand to REMOTE", remote ? C_WARN : C_ACCENT, true);
 }
 

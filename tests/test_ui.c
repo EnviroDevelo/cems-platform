@@ -222,7 +222,7 @@ static void t_ui(void) {
     CHECK_EQ(ui_screen(), UI_HOME);
     CHECK(shows("CEMS Supervisor")); CHECK(shows("LOCAL")); CHECK(shows("1 ALARM  1 NEW")); CHECK(shows("09:41:07"));
     CHECK(shows("start_delay")); CHECK(shows("2000 ms")); CHECK(shows("Valve 1"));
-    CHECK(shows("Control: LOCAL (this touchscreen)"));
+    CHECK(shows("Control: LOCAL"));
     dump("home");
 
     /* settings: everything readable; changes need a login */
@@ -491,6 +491,24 @@ static void t_state_quality(void) {
     st_scan();
     CHECK(shows("LINK LOST"));
     dump("home_quality");
+    /* MAINTENANCE from the home screen: operator, confirmed, readings marked */
+    CHECK(tap("Maintenance"));
+    CHECK(shows("Log in as operator to enter maintenance"));
+    CHECK(tap("Log in")); CHECK(tap("Operator")); type("1111"); CHECK(tap("Enter"));
+    CHECK(ui_level() >= PLAT_LVL_OPERATOR);
+    CHECK(tap("Home"));
+    CHECK(tap("Maintenance"));
+    CHECK(shows("Start maintenance?"));
+    CHECK(tap("Yes"));
+    scan(); st_scan();
+    CHECK(shows("Maintenance started"));
+    CHECK(shows("End maintenance"));
+    CHECK(plat_state() == PLAT_ST_MAINTENANCE || plat_state() == PLAT_ST_FAULT);
+    CHECK(tap("End maintenance"));
+    CHECK(tap("Yes"));
+    scan(); st_scan();
+    CHECK(shows("Maintenance ended"));
+    CHECK(shows("Maintenance"));
     plat_state_reset_for_test();
 }
 
