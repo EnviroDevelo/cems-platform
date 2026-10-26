@@ -17,6 +17,9 @@
 #include "web_auth.h"
 #include "modbus.h"
 #include "iobus.h"
+#include "iob_tcp.h"
+#include "iob_w5500.h"
+#include "plat_power.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -25,6 +28,8 @@ task_monitor_t plat_monitor;
 
 static int tm_ids[PLAT_TASK_COUNT];
 static const plat_app_t *the_app;
+static iob_tcp_t iob_eth;                        /* the I/O boards on Ethernet (iobus task only) */
+static iob_w5500_t iob_io;                       /* the I/O boards on the I/O port (iobus task only) */
 const plat_app_t *plat_app(void) { return the_app; }
 
 void plat_checkin(plat_task_id_t id) {
@@ -50,6 +55,7 @@ static void ctrl_task(void *arg) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_CTRL_PERIOD_MS));
+        plat_power_sample();                     /* the 24 V supply, for the power-fail shutdown */
         plat_ctrl_tick();
         plat_checkin(PLAT_TASK_CTRL);
     }
@@ -96,6 +102,7 @@ static void supervisor_task(void *arg) {
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_SUPERVISOR_PERIOD_MS));
         if (n++ % (5000u / PLAT_SUPERVISOR_PERIOD_MS) == 0) health_sample();
+        plat_diag_tick(bsp_ms());                /* how long this boot ran, for the reboot-loop check */
         int bad = tm_check(&plat_monitor, bsp_ms());
         if (bad == TM_ALL_OK) { bsp_wdg_kick(); continue; }
         fatal(PLAT_FAULT_TASK_SILENT, bad, tm_name(&plat_monitor, bad), 0);
@@ -176,10 +183,19 @@ void plat_start(const plat_app_t *app) {
 
     plat_cmdq_init(&plat_cmdq);
     plat_snap_lock.seq = 0;
-    scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
+    /* CIP-08.5: after a reboot loop, no application code at all (not even its init); outputs stay
+     * off, and the network, the touchscreen and firmware update run so it can be serviced */
+    static const scan_app_t safe_scan = { 0 };
+    bool safe = plat_diag_reboot_loop();
+    scan_init(&plat_scan, safe ? &safe_scan : app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
 
     /* A table error is a programming error: stop here with outputs safe, the
      * watchdog fed, and the offending ID in the fault record (debugger or next boot). */
+    { char why[64]; int ce = plat_app_check(app, why, sizeof why);   /* the contract (spec 9.3) */
+      if (ce != 0) {
+          plat_diag_fault(PLAT_FAULT_ASSERT, -1, "app contract", (uint32_t)ce, bsp_ms());
+          for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+      } }
     if (param_init(app->params, app->n_params) != PERR_OK) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "param table", param_table_error(), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
@@ -189,6 +205,10 @@ void plat_start(const plat_app_t *app) {
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
     ui_app_set(app->ui);
+    if (plat_cal_init(app->cal, app->n_cal) != 0) {             /* a calibrated channel names a missing or wrong coefficient */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "cal table", (uint32_t)plat_cal_init(app->cal, app->n_cal), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     nvm_dev_t *fram = bsp_param_nvm();
     if (!param_store_init(fram, NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "store table", param_store_status(), bsp_ms());
@@ -196,6 +216,10 @@ void plat_start(const plat_app_t *app) {
     }
     param_store_boot();
     log_start(app, fram);
+    if (plat_selftest_init(app->selftests, app->n_selftests, bsp_ms()) != 0) {   /* more than PLAT_STEST_APP_MAX */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "selftest table", (uint32_t)app->n_selftests, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
     fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
     fw_safe_check = app->fw_safe;
@@ -204,6 +228,11 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "alarm table", 0, bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
+    if (plat_state_init(app->meas, app->n_meas) != 0) {        /* a measurement names a missing or non-numeric ID */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "meas table", (uint32_t)plat_state_init(app->meas, app->n_meas), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
+    plat_state_safe_mode(safe);
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {
@@ -212,6 +241,15 @@ void plat_start(const plat_app_t *app) {
     }
     scan_set_sys(&plat_scan, &plat_sys);
     iob_init(bsp_rs485());
+    iob_tcp_init(&iob_eth);                      /* the sockets open on first use, once the network is up */
+    iob_init_eth(&iob_eth.port, &iob_eth.disc);
+    if (bsp_w5500()) {                           /* the I/O port: the chip is set up on first use */
+        uint8_t uid[12], mac[6];
+        bsp_chip_uid(uid);
+        iob_w5500_mac(uid, mac);
+        iob_w5500_init(&iob_io, bsp_w5500(), mac);
+        iob_init_ioport(&iob_io.port, &iob_io.disc);
+    }
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);
     MAKE(scan_task,       "scan",   PLAT_STACK_SCAN,       PLAT_PRIO_SCAN,       NULL, scan);

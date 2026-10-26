@@ -42,6 +42,10 @@ size_t      plat_serial_message(uint32_t new_serial, char *buf, size_t cap);
 int         plat_serial_assign(uint32_t new_serial, const uint8_t sig[64], uint8_t src, uint8_t level);
 const char *plat_serial_err(int rc);
 
+/* Is sig (64 bytes r||s) the developer key's signature over msg? false also when this build has
+ * no developer key. Shared by the serial and the credential recovery token (web_auth.h). */
+bool        plat_dev_token_ok(const char *msg, size_t n, const uint8_t sig[64]);
+
 /* For tests: use this key instead of dev_pubkey (NULL = back to the built-in one). */
 void plat_serial_key_override_for_test(const uint8_t *q65);
 /* P-256 signature check (fw_sig.c). */

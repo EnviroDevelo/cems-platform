@@ -1,4 +1,5 @@
-/* test_log.c - event log, data logger, CSV export, power-cut and fault handling. */
+/* test_log.c - event log, data logger, CSV export, power-cut and fault handling.
+ * Requirements proved here: CIP-02.5, 06.4, 06.5, 16.1, 16.2, 16.4, 16.5, 16.6, 17.1, 17.4, 17.5, 26.2. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -218,6 +219,10 @@ static void t_data(void) {
     s = csv_of(LOG_RING_DATA, 0, 0);
     CHECK_EQ(count(s, "time,SO2"), 2);
     CHECK(strstr(s, "2026-10-19 13:00:05,2.0,BAD") != NULL);
+    /* the hour with no data (power off, or here the clock step) is one GAP row (CIP-16.6) */
+    CHECK_EQ(count(s, ",GAP"), 3);
+    CHECK(strstr(s, "2026-10-19 12:00:44,,GAP,,GAP,,GAP\r\n2026-10-19 13:00:05,") != NULL);   /* last row 12:00:39 + 5 s */
+    CHECK(strstr(s, "12:00:35,1.0,OK,,N/A,,N/A\r\n2026-10-19 12:00:39") != NULL);           /* none for a normal step */
     plat_log_interval_s = 60;
 }
 

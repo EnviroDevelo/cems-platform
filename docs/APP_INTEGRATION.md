@@ -59,13 +59,53 @@ const plat_app_t app = {
     .retain     = retain,  .n_retain = N,      /* RETAIN() blocks: retained tags not in the table */
     .layout_version = 1, .migrate = NULL,      /* bump the version when a stored record changes meaning */
     .modbus_map = map,     .n_modbus_map = N,  /* mb_map_t */
-    .ident      = { .vendor, .product, .revision = "x.y.z", .write_level },
+    .ident      = { .vendor, .product, .revision = "x.y.z", .write_level, .map_version },   /* bump map_version when an address moves */
     .log_chans  = chans,   .n_log_chans = N,   /* data-log columns */
     .ui_home_ids = ids,    .n_ui_home = N,     /* up to 6 tiles on the home screen */
     .alarms     = alarms,  .n_alarms = N,      /* alarm_def_t, IDs 100..255 */
     .fw_safe    = fw_safe,                     /* false + reason while a sequence/calibration runs */
+    .meas       = meas,    .n_meas = N,        /* plat_meas_def_t: measured values that carry a quality (up to 32) */
+    .cal        = cal,     .n_cal = N,         /* plat_cal_channel_t: calibrated channels (up to 8) */
 };
 ```
+
+### State and quality (CIP-09, CIP-10; PLATFORM.md 5l)
+
+Mandatory for every instrument. In `logic()`:
+- `plat_app_state(PLAT_ST_WARMING_UP | PLAT_ST_READY | PLAT_ST_MEASURING)` as the instrument
+  moves through its cycle, and `plat_app_state(PLAT_ST_CALIBRATION)` while a calibration runs (back
+  to MEASURING after). The platform adds MAINTENANCE (the operator), FAULT and SAFE_MODE itself.
+- `plat_meas_update(i, PLAT_Q_VALID)` each time measurement `i` gets a new value, or the value's own
+  quality (`PLAT_Q_FAULT` for a broken sensor, `PLAT_Q_UNAVAILABLE` for one not fitted). A value
+  that stops being updated goes stale on its own after its `max_age_ms`.
+- Mark an alarm `AL_STOPS` if measurement cannot go on while it is active (the instrument goes to FAULT).
+
+### Calibration (CIP-18; PLATFORM.md 5m)
+
+Declare each calibrated channel with its coefficient parameters (PF_PERSIST | PF_FACTORY floats,
+level PLAT_LVL_FACTORY so they are not hand-edited in the field) and an interval. Do not keep your
+own calibration records or dates. While `plat_cal_active(&ch)` is true, run the procedure in
+`logic()`: `plat_cal_point(i, ref, as_found, as_left)` per reference point and
+`plat_cal_propose(coef, n)` with the result. The operator (or your logic, with `plat_cal_end`)
+accepts or aborts; your channel's `check` hook may refuse a result that is out of line. Starting,
+ending and the CALIBRATION state are the platform's: do not call `plat_app_state(PLAT_ST_CALIBRATION)`
+for a calibration declared this way.
+
+### Start-up checks (CIP-11.1; PLATFORM.md 5o)
+
+The platform checks its own hardware after every start. A product with hardware of its own to
+check (a pump that must draw current, a sensor that must answer) adds up to 8 entries to
+`plat_app_t.selftests`: `{ "pump", pump_check }`, where the function returns 1 pass, 0 fail or
+-1 skipped. They run once, from the store task, 10 s after start, so keep each one short and do
+not wait in it. Results join the platform's on `/api/info`, in parameter 333 (bits 16 up) and in
+alarm 23.
+
+### Reserved numbers (spec R5)
+
+Parameters 1-999, alarms 1-99 and Modbus **input registers 9000-9199** belong to the platform and
+mean the same in every product (the platform's block: identity, heartbeat, state, link age,
+versions; PLATFORM.md 5). Products use parameters from 1000, alarms from 100, and any Modbus
+address outside that input-register range.
 
 ### The scan (`scan_app_t`), one call per 10 ms
 
@@ -83,7 +123,7 @@ Timers (TON/TP/TA) are modelled in the application from `g_dt_ms`. `ul_timer_t` 
 ### I/O image (`plat_io.h`)
 - `di` (64 bits), `do_bits` (64 bits) since D27; `plat_di()` / `plat_do_set()` as before.
 - `di_fault`, `do_fault` (64 bits each): a channel not to be trusted (input wire break; output open circuit, short or overheating; no field supply; the I/O board not answering). Read them with `plat_di_fault()` / `plat_do_fault()` if the logic should act on them; the platform already raises the alarms (IOB_*, PLATFORM.md 5k).
-- The valves and digital inputs come from the RS-485 I/O boards (D27): board 1 fills outputs 1-18 (bank A 0.6 A, bank B 1 A, relays 17-18) and inputs 1-8, board 2 outputs 19-36 and inputs 9-16, board 3 outputs 37-54 and inputs 17-24 (settings `iobN_first_do` / `iobN_first_di` move them). The application's channel numbers stay as they are; the site's wiring decides which board channel is which valve.
+- The valves and digital inputs come from the I/O boards (D27; on Ethernet with Modbus TCP since 24 Oct, RS-485 as a setting): board 1 fills outputs 1-18 (bank A 0.6 A, bank B 1 A, relays 17-18) and inputs 1-8, board 2 outputs 19-36 and inputs 9-16, board 3 outputs 37-54 and inputs 17-24 (settings `iobN_first_do` / `iobN_first_di` move them). The application's channel numbers stay as they are; the site's wiring decides which board channel is which valve.
 - `ai_raw[8]` with `ai_status[]` (`PLAT_AIN_OK/UNDER/OVER/FAULT/NOT_FITTED`).
 - `rtd_cdeg[4]` (0.01 °C) with status.
 - `ao_raw[4]`.
@@ -129,6 +169,7 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 
 - One `alarm_def_t` per distinct `new_id` in `70_alarm_map.csv`, IDs 100..255. The table holds 96 alarms in total; the platform uses about 10.
 - The logic only reports conditions: `alarm_set(id, cond)` or `alarm_set_range(id, value, lo, hi, deadband)`. The platform owns delays, latch, acknowledge and state.
+- Give each alarm a `.help` (what to check). `make fault-codes APP=<dir>` writes the product's code list, `<dir>/FAULT_CODES.md`, from the table (CIP-11.3); the platform's codes are in `docs/FAULT_CODES.md`.
 - **Agreed with Gary (D19):**
   - Acknowledging needs no login on the touchscreen.
   - Alarm states are re-evaluated at power-up (not restored).
@@ -186,7 +227,7 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 | # | Decision |
 |---|---|
 | D1 | Scan period 10 ms |
-| D6 | FRAM size to be chosen once the application's retained size is known (32 KB part on the bench) |
+| D6 | FRAM is 128 KB (MB85RC1MT, Gary 20 Oct), the build default; the application's settings image is 13.4 KB of the 40 KB slot. The 32 KB bench part still works with `PLAT_FRAM_SIZE=32768u` |
 | D16 | UI is a plain-C layer on the EVE co-processor, not LVGL |
 | D19 | Ack without login on the touchscreen; alarms re-evaluated on power-up; 5 s valve settle |
 | D20 | Alarm actions configurable per alarm by the user (email / Modbus / relay / nothing) |
@@ -207,6 +248,20 @@ Full list: PLATFORM.md section 8.
   - `make target APP=app_vmmux` compiles the application for the target.
   - `tools/check_target.sh` links it and adds its totals to `docs/MEMORY.md` automatically.
 - The FRAM map is 128 KB by default (D6). Build with `PLAT_FRAM_SIZE=32768u` for the 32 KB breakout.
+
+## 10b. Staying on the common platform (spec section 9)
+
+- Write `app_vmmux/PROFILE.md` from `docs/PROFILE_TEMPLATE.md`: the optional items fitted, the
+  measurement channels, the states, and any exception to a mandatory requirement (with Gary's
+  sign-off).
+- `make snapshots APP=app_vmmux` writes `app_vmmux/interface/MODBUS_MAP.md` (the register map
+  document for the integrator) and `API.txt`; commit them. After that, a moved Modbus address or a
+  removed field fails the build until the map version is bumped and the snapshots written again.
+- `make conformance APP=app_vmmux` must pass before every merge: the start-up contract
+  (`plat_app_check`), the profile filled in, every alarm with a `.help`, the snapshots current, and
+  the shared CIP-26 tests (start-up, power cut, corrupted settings, comms loss, update failure)
+  against the product's own build.
+- `/api/info` shows `core` (the platform version, `plat_version.h`) beside `fw` (yours).
 
 ## 11. Suggested order of work
 

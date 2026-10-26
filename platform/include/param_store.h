@@ -44,6 +44,7 @@
 
 #define RF_FACTORY 0x01u
 #define RF_SECRET  0x02u   /* never in a backup file, never restored from one (password hashes) */
+#define RF_UNIT    0x04u   /* this unit's own history (hours, service log): in a backup, never restored from one */
 
 typedef struct {
     uint16_t    id;        /* shares the parameter ID space, >= PARAM_ID_APP_FIRST */

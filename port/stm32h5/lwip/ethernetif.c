@@ -39,6 +39,7 @@
 #include "ethernetif.h"
 #include "lan8742.h"
 #include "plat_config.h"
+#include "plat_selftest.h"
 
 #define ETHIF_TX_TIMEOUT_MS   2000U
 #define ETH_RX_BUFFER_SIZE    1000U       /* must be the same as heth.Init.RxBuffLen */
@@ -160,7 +161,9 @@ static void low_level_init(struct netif *netif) {
     xTaskCreateStatic(ethernetif_input, "eth_rx", PLAT_STACK_ETH_RX, netif, PLAT_PRIO_ETH_RX, rx_stack, &rx_tcb);
 
     LAN8742_RegisterBusIO(&LAN8742, &LAN8742_IOCtx);
-    if (LAN8742_Init(&LAN8742) != LAN8742_STATUS_OK) {
+    bool phy_ok = LAN8742_Init(&LAN8742) == LAN8742_STATUS_OK;
+    plat_selftest_report(PLAT_STEST_NET_PHY, phy_ok);   /* CIP-11.1 */
+    if (!phy_ok) {
         netif_set_link_down(netif);
         netif_set_down(netif);
         return;

@@ -75,6 +75,7 @@ enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
 #define AL_LATCH   0x01u   /* stays active until acknowledged, even if the condition goes */
 #define AL_NO_ACK  0x02u   /* status alarm: no acknowledge, leaves the list when it clears */
 #define AL_NOTIFY  0x04u   /* passed to alarm_on_change (notification: email, relay; Stage 8) */
+#define AL_STOPS   0x08u   /* while active the instrument is in FAULT: measurement stopped (plat_state.h) */
 
 typedef struct {
     uint16_t    id;            /* 1..99 platform, 100..255 application */
@@ -88,6 +89,7 @@ typedef struct {
     uint16_t    enable_param;  /* bool parameter: false suppresses the alarm (0 = always enabled) */
     uint16_t    delay_param;   /* integer parameter, s: replaces on_delay_ms (0 = none) */
     uint8_t     route;         /* default actions: AR_EMAIL | AR_MODBUS | AR_RELAY(k) (0 = none) */
+    const char *help;          /* what to check, for the service manual and docs/FAULT_CODES.md (may be NULL) */
 } alarm_def_t;
 
 /* ---------------- platform alarms ---------------- */
@@ -108,6 +110,12 @@ enum {
     ALARM_ID_IOB_IN_FAULT      = 15,  /* an I/O board input: wire break or input chip fault */
     ALARM_ID_IOB_SUPPLY        = 16,  /* an I/O board's field 24 V supply is missing */
     ALARM_ID_IOB_NODE_RESET    = 17,  /* an I/O board was restarted by its watchdog */
+    ALARM_ID_IOB_TEMP_FAULT    = 18,  /* an I/O board temperature input: open, short, out of range, converter fault */
+    ALARM_ID_SAFE_MODE         = 19,  /* restarted repeatedly: safe mode, the application stopped (CIP-08.5) */
+    ALARM_ID_SUPPLY            = 20,  /* the 24 V supply outside 19-30 V (plat_power.h) */
+    ALARM_ID_CAL_DUE           = 21,  /* a channel's calibration is overdue (plat_cal.h, CIP-18) */
+    ALARM_ID_HW_REV            = 22,  /* the board's revision straps disagree with the factory hw_rev (CIP-01.3) */
+    ALARM_ID_SELFTEST          = 23,  /* a start-up self-test failed (plat_selftest.h, CIP-11.1) */
 };
 
 /* A copy of one alarm, for lists. */
@@ -118,6 +126,7 @@ typedef struct {
     uint32_t t_raise;          /* s since 1970 when raised (0 if the clock was not set) */
     uint32_t up_raise;         /* uptime s when raised */
     const char *name;
+    const char *help;          /* what to check (the definition's; may be NULL) */
     char     text[64];         /* the description (UTF-8) */
 } alarm_view_t;
 

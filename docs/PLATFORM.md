@@ -16,6 +16,7 @@ runs on top of it.
 | Snapshot seqlock (scan → UI/web/Modbus readers) | `plat_seqlock.h` | Done, host-tested |
 | Task monitor + watchdog supervisor | `task_monitor.h/.c`, in `plat_tasks_freertos.c` | Done, host + RTOS tested |
 | Fault record that survives a reset | `plat_diag.h/.c`, `port/stm32h5/noinit_section.ld` | Done, host-tested, placement checked in the ELF |
+| CPU fault handlers (D4): safe state, PC/LR and fault registers recorded, reset | `port/stm32h5/fault_stm32h5.c`, `plat_diag_cpu_fault()` | Record and naming host-tested; handlers compiled and linked, in the vector table (checked in the ELF). Not yet run on the DK |
 | FreeRTOS task set, priorities, hooks | `platform/os/plat_tasks_freertos.c`, `port/stm32h5/FreeRTOSConfig.h` | Done, run under the FreeRTOS POSIX port |
 | Board support: interface, PC simulation, STM32H5 | `bsp.h`, `platform/bsp/bsp_host.c`, `port/stm32h5/bsp_stm32h5.c` | H5 version compiled and linked, not yet run on the DK |
 | Shared parameter table, local/remote arbitration, remote-link watchdog | `param.h/.c`, `plat_sys.c` | Done, host-tested |
@@ -37,7 +38,12 @@ runs on top of it.
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
-| I/O boards on RS-485 (D27): Modbus RTU master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, six platform alarms, events, the I/O boards screen and web section; a simulated node that implements the register map | `iobus.h`, `platform/core/iobus.c`, `mb_rtu.h/.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob` | Done; host-tested against simulated boards (`tests/test_iobus.c`, `t_iob_screen`), end to end over netsim with two simulated boards (`tests/integration/iob_test.py`). UART driver compiled and linked for the H5, not yet run on hardware; the I/O board itself is specified in the *I/O Module Requirements* document |
+| I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
+| I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
+| 24 V supply monitoring, SUPPLY alarm and power-fail write hold (CIP-07) | `plat_power.h`, `platform/core/plat_power.c`, `port/stm32h5/supply_stm32h5.c` | Done, host-tested; ADC read compiled and linked |
+| Instrument state and quality of live values (Common Instrument Platform Specification CIP-09, CIP-10): one state (STARTING ... SAFE_MODE), forced FAULT, maintenance from the touchscreen or web, per-measurement quality with automatic stale detection, on Modbus, `/api/*` and for the touchscreen; the supervisory link age (CIP-15.2) | `plat_state.h`, `platform/core/plat_state.c` | Done, host-tested (5l) |
+| Calibration records (CIP-18, CIP-17.6, CIP-19.3): per channel a factory record and the record in force, a history of the last 12 (any outcome), begin/accept/abort/revert with a permission level, a product check hook, due dates and alarm 21, `/api/cal` | `plat_cal.h`, `platform/core/plat_cal.c` | Done, host-tested and end-to-end (5m) |
+| Service history (CIP-22.2, 22.4, 23.4, 05.4): operating hours and hours since service, a service log, the manufacturing test record, a configuration checksum, `/api/service` | `plat_service.h`, `platform/core/plat_service.c` | Done, host-tested and end-to-end (5n) |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -55,7 +61,7 @@ then networking, and the UI last. Nothing below the scan can delay it.
 | scan | 13 | every 10 ms (`PLAT_SCAN_PERIOD_MS`) | 200 ms | `scan_step()`: the VM/MUX program |
 | supervisor | 12 | every 100 ms | n/a | kicks the IWDG only if every task is alive |
 | FreeRTOS timer service | 11 | on demand | n/a | kernel |
-| iobus | 11 | every 20 ms (`PLAT_IOB_PERIOD_MS`) | 1 s | `plat_iobus_task_body()`: the RS-485 I/O boards; sleeps on the UART while it waits for replies |
+| iobus | 11 | every 20 ms (`PLAT_IOB_PERIOD_MS`) | 1 s | `plat_iobus_task_body()`: the I/O boards, over Modbus TCP (default) or RS-485 (`iob_link`, D27); sleeps on the socket or the UART while it waits for replies |
 | store | 10 | every 20 ms | 2 s | `plat_store_task_body()`: parameter store and logger (sole owner of the FRAM and the log flash) |
 | lwIP tcpip_thread | 8 | event-driven | via modbus/http | lwIP |
 | modbus | 7 | socket events | 5 s | `plat_modbus_task_body()` |
@@ -184,15 +190,64 @@ mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes
 (a PLC that rebooted without closing would otherwise hold a slot). Optional single
 allowed client IP. TCP keepalive notices a vanished client in about 50 s.
 
+**The platform's block (CIP-01.6, 14.4, 15.1, 15.2).** Whatever the application maps, the
+platform adds its own read-only block at input registers 9000-9089 (9000-9199 reserved), the
+same in every product, so a PLC or DAHS can identify and supervise any CEMS instrument the same
+way: block layout version (9000), the application's map version (9001, `mb_ident_t.map_version`),
+a heartbeat that counts every 100 ms (9002), the instrument state (9003), seconds since the last
+Modbus or web request (9004), alarms active and the common alarm word (9005-9006), hardware
+revision, serial number and firmware version (9007-9012), web API version (9013), uptime
+(9014-9015), the supply voltage (9016-9017), when the state was entered (9018-9019), the quality
+of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083); layout 2 adds the
+clock and its quality (9084-9089: the clock, synchronised, source, when last set or confirmed).
+Registers are only ever added, never moved, and each addition raises the layout version. The full
+layout is in `modbus.h`. An application map entry in that range of the input registers stops the
+start-up ("modbus map"). Function 43/14 (device identification) gives vendor, product and firmware
+as before. Compatibility (CIP-14.5): addresses in the block never move; a new value is added at
+the end and the block version goes up.
+
 **Web interface.** One page (4.6 KB gzip) loads once, then polls JSON: values every
 0.5 s, status every 2 s. Viewing needs no login. Changes need a login (operator, admin
 or factory); a session allows changes for 10 minutes after the login or the last change.
-Five wrong passwords lock login for 30 s. Passwords are stored as salted SHA-256 in FRAM,
-outside the readable table. Every POST must carry an `X-CEMS: 1` header and the cookie
+Five wrong passwords lock login for 30 s. Passwords are stored as PBKDF2-HMAC-SHA256 (4096
+rounds, per-unit salt; CIP-20.3) in FRAM, outside the readable table; one set by older firmware
+still works and is re-stored that way at its next good login. Every password (operator, admin,
+factory) needs 4 characters or more. **Lost passwords
+(CIP-19.3):** a one-time token from the developer, signed with the developer key over the chip ID
+and the unit's reset count (`tools/reset_token.py`; `GET /api/auth/reset` shows what to sign,
+`POST /api/auth/reset sig=..` needs no login), puts all three back to the defaults and ends every
+session; a wrong token counts as a failed login, and both are logged. On the web page, the login row has a
+"Lost passwords?" panel that shows the line to send the developer (with a Copy button) and a box
+for the token, which is checked as 128 hex digits before it is sent; firmware without a developer
+key says recovery is not possible (`tests/integration/reset_web_test.py`, `docs/web_reset.png`). Every POST must carry an `X-CEMS: 1` header and the cookie
 is `HttpOnly; SameSite=Strict`, so another web page cannot submit changes. If the
 instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner appears
 and the values grey out until polling recovers. Admin users can download a parameter
 backup and restore it. Screenshots: `docs/web_ui.png`, `docs/web_ui_connection_lost.png`.
+
+**Trends.** The Trends section charts up to 4 values (any scalar bool, int, uint or float
+in the table) against time, over the last 1, 5, 15 or 60 minutes. Each value has its own
+scale (click its name to show that scale on the axis); a gap shows where the link was
+down; Hold freezes the view while recording carries on; hovering reads every value at
+that moment; Save CSV downloads what is recorded. It is recorded in the browser from the
+same 0.5 s value polls, so it costs the instrument no requests, no RAM and no API (about
+0.5 KB of page). It holds what was seen while the page was open; the instrument's own
+record is the data logger (5a). The chosen values are remembered by the browser.
+Screenshot: `docs/web_trend.png`.
+
+**State, quality and service (CIP-09, 10, 21, 22.1).** The header shows the instrument
+state (`/api/info` "state") and the supervisory link (LINK OK / LINK LOST / NO LINK), and
+any value whose quality is not valid (`/api/values` "q", keyed "id" or "id.index") is
+greyed with its word, in the words and colours of `docs/UI_CONVENTIONS.md`; trend lines
+break where a sample was not valid, and the trend CSV gains a quality column. The page
+reads these fields when the instrument sends them. **Diagnostic package** (Event log
+section, no login): one JSON file put together in the browser from `/api/info`, time,
+alarms and their actions, firmware (with its update history), log status, I/O boards,
+every setting with its value and quality (secret entries left out) and the event log CSV.
+
+**Phones and tablets.** The page fits a phone's width (390 px) without sideways
+scrolling: the parameter and alarm lists stack into cards, and wider tables (alarm
+actions) scroll inside their own section. `web_ui_test.py` checks this.
 
 **Keep-alive.** The server handles one HTTPS connection at a time. After a GET the
 connection stays open (HTTP/1.1 keep-alive; bodies without a known length are sent
@@ -202,6 +257,28 @@ server; it also closes after 5 s idle, after 200 requests, after any POST (brows
 not retry a POST on a connection the server closed) and before an alarm email borrows
 the TLS context. Measured with Chromium and the page open: about 0.7 new TLS
 connections a second (all resumed by ticket) instead of one per request (3-4 a second).
+
+**Several viewers.** Browsers open spare connections that may never send a request.
+Accepted connections wait in a table of 3 (with the kept connection, the 4 HTTP sockets
+in lwIP's budget) with no TLS yet; the handshake starts only when a connection's first
+bytes arrive, and one that stays silent for 2 s is closed. Before this, each spare
+connection held the server for its 2 s read timeout, and 4 browsers got one value poll
+every 5-8 s with nothing on the page to say so. The port-80 redirect is polled without a
+wait, so it no longer adds 50 ms to every HTTPS request. Measured on netsim with 4
+browsers (`tests/integration/multi_viewer_test.py`): each gets its 2 value polls a second,
+95 % within 52 ms; the cost is about 18 TLS connections a second, all resumed by ticket
+(no public-key work), which still needs measuring on the H5. The page also gives up on a
+request after 5 s, so a stalled server shows "Connection lost" rather than stale values
+marked live.
+
+**Slow links (remote access through a VPN router, D17).** Measured with Chromium's network
+emulation against netsim (round trip / bandwidth: page live after, value polls a second,
+95 % within): 100 ms / 2 Mbit/s: 0.6 s, 1.7, 71 ms; 300 ms / 1 Mbit/s: 1.3 s, 1.5,
+180 ms; 600 ms / 256 kbit/s: 2.8 s, 1.1, 412 ms; 1.2 s / 128 kbit/s (poor cellular):
+5.5 s, 0.8, 868 ms. The page never showed "Connection lost" on any of them: each poll
+waits for the previous answer, so a slow link slows the updates instead of piling up
+requests. The emulation adds the delay per request, not to the TCP and TLS handshakes,
+so first loads on a real link are somewhat slower.
 
 **Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
 ported to native FreeRTOS. The address comes from the parameter table (static
@@ -230,6 +307,11 @@ Changes made by the unit itself are not audit events.
 column set changed (L3). Here a configuration change writes a schema record (channel
 names, units, decimals, interval) and the CSV gets a new header line at that point.
 
+**Gaps (CIP-16.6).** When two consecutive data rows with the clock set are more than two
+intervals apart (the unit was off, or the clock was stepped forward), the CSV has one row
+at the first missing interval with every value empty and every quality `GAP`, so a
+spreadsheet shows the hole instead of drawing across it. The power-up event says why.
+
 **Power cuts.** Records are 64-byte slots (a data record with up to 32 channels is 4
 slots; the schema up to 17), each with its own CRC-32, written only into erased flash and
 read back to verify. A cut loses at most the record being written. The write position
@@ -248,6 +330,15 @@ the newest events as JSON, which the web page shows. Without flash fitted (the D
 RAM stand-in keeps the event log until power-off and the page says so.
 
 ## 5b. Firmware update
+
+**Image header version 2 (CIP-01.3, 03.2, 25.1).** `tools/mkfwimage.py` now writes header
+version 2, which adds the range of board revisions the image runs on (`--hw 0-1`; the board's
+straps, `CUBEMX_SETUP.md` 3j), the settings layout version it was built with (`--layout`) and the
+build ID (git short hash, `--build-id`, default the working tree's). Version 2 signs these fields
+too (the signature covers header bytes 0..83 and 148..251). An image for other board revisions is
+refused at upload and again at activation ("built for another board revision"); a version 1 image,
+or a board without straps, is not range-checked. `/api/fw` shows `build` (running) and, for a
+staged image, `staged_build` and `staged_hw`; `/api/info` shows `build` and `board_rev`.
 
 **Update record (Gary, 20 Oct).** Every firmware change is stored in the instrument: the
 date and time of the restart onto the new firmware, the date and time it was kept (or
@@ -351,6 +442,11 @@ which the unit has no address. Status: parameter 14 `net_status` (`NETST_*`).
   certificate downloadable (`/api/tls/cert`) to trust it on the site's laptops; port 80
   only redirects; logins with lockout, tech-level firmware updates with signed images
   (D14), every change in the event log;
+- every web reply carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+  and `X-Frame-Options: DENY`; the page also carries a Content-Security-Policy (scripts,
+  styles, requests and frames only from the unit itself; no plug-ins, no framing) and
+  `Referrer-Policy: no-referrer`. HSTS is not sent: browsers ignore it for an IP address
+  and for a certificate they were told to accept;
 - Modbus TCP has no security of its own (nor do the PLCs that use it): it stays on the
   control network, with the existing allowed-client IP and the "Modbus read-only"
   switch, and is never routed to the internet;
@@ -493,6 +589,13 @@ logger's own "clock stepped" detection stays for unexplained jumps). A request i
 applied by the scan task, between scans, so no scan sees a half-set clock. The
 logger closes its averaging interval at a step, as before.
 
+**Clock quality (CIP-02.6).** Parameters 316 `clock_synced`, 317 `clock_sync_time` and 318
+`clock_source` (also in the Modbus block and `/api/time` `synced`, `sync_time`, `source`) say
+whether the clock is trustworthy: synchronised means set or confirmed from outside (an SNTP
+answer, even one that did not need a step; a setting from the web, touchscreen or Modbus) within
+the last 24 h (`PLAT_CLOCK_SYNC_MAX_S`). It is not kept across a restart: after power-up the clock
+runs on the RTC battery and shows "not synchronised" until SNTP answers or someone sets it.
+
 The product board needs a VBAT supply for the RTC (`docs/CUBEMX_SETUP.md`).
 
 ## 5g. Touchscreen fonts (D24)
@@ -606,13 +709,42 @@ screen-saver logic (R3). The target check and the memory report include `app_vmm
 its directory is present (R5): with it (and the I/O bus, 5k) the firmware is 485 KB of flash
 (48 %) and 438 KB of RAM (68 %).
 
-## 5k. I/O boards on RS-485 (D27)
+## 5k. I/O boards on Ethernet or RS-485 (D27)
 
-The valves, loads, relays and digital inputs sit on separate I/O boards, up to 100 m from
-the main board on one isolated RS-485 pair (the *I/O Board Design Specification* and the
-*I/O Module Requirements* documents). Each board is a Modbus RTU slave with 8 outputs of
-0.6 A with per-channel diagnostics (bank A), 8 outputs of 1 A (bank B), 2 socketed relays
+The valves, loads, relays and digital inputs sit on separate I/O boards (the *I/O Board
+Design Specification* and the *I/O Module Requirements* documents). Each board has 8 outputs
+of 0.6 A with per-channel diagnostics (bank A), 8 outputs of 1 A (bank B), 2 socketed relays
 and 8 isolated inputs with wire-break detection. The main board is the master.
+
+**The link (Gary, 24 Oct).** The boards are on **Ethernet** with **Modbus TCP** (an STM32H563
+with a LAN8742A on each board, the same chip as the main board). **Their own network (Gary,
+25 Oct):** the main board has two Ethernet ports, the client port (the H5's MAC, lwIP: HTTPS,
+Modbus TCP, email, SNTP) and the **I/O port**, a WIZnet W5500 on its own SPI (`w5500.h`,
+`port/stm32h5/w5500_stm32h5.c`, `CUBEMX_SETUP.md` 3h). The W5500 runs TCP/IP in its own hardware
+sockets, so the I/O traffic never enters lwIP and nothing can route between the plant network
+and the I/O boards. Parameter 102 `iob_link`: 2 = the I/O port (default), 1 = Ethernet on the
+main port through lwIP (the DK, which has no W5500), 0 = RS-485. The single RS-485 pair (Modbus
+RTU, up to 100 m) stays as a setting, for the bench and older boards. The CORE PCB has no RS-485
+transceiver (Gary, 25 Oct: the second RJ45 replaces it), so `BSP_RS485_HUART` stays undefined
+there. A write of a link whose port this board does not have is refused (`PERR_INTERLOCK`, HTTP 409).
+
+On the I/O port `iob_w5500.c` is the transport: sockets 0-2 are the three boards' connections,
+socket 3 discovery, 4-7 free. It sets the chip up on first use (its own IP `iob_port_ip`,
+parameter 103, default 192.168.1.60, and `iob_port_prefix`, 104, default /24; MAC: the main
+port's with bit 1 of the last byte flipped), tries again once a second while the chip does not
+answer, applies a new IP at once, and keeps `iob_port_status` (105: 1 chip found, 2 link up)
+current. ARP and TCP retries are 20 ms x 3, so a board that is not there fails within the
+cycle. Commissioning on the I/O port gives the boards the I/O port's IP as their supervisor
+(no gateway, and the main port's DHCP setting does not matter). A board's IP may not be the I/O
+port's own. The register map, the requests and every rule
+below are the same on both: the master builds the same RTU frames and, on Ethernet,
+`iob_net.c` turns each into a Modbus TCP frame (MBAP header, unit id = the board's address,
+no CRC) and the reply back (`iob_net.h`). Each board has an IP (`iobN_ip`, parameters
+146-148, default 192.168.1.61-63) as well as its address; the master keeps one TCP
+connection per board on port 502 (`platform/net/iob_tcp.c`, sockets: lwIP on the H5, POSIX on
+the PC), opened on first use, with a 50 ms connect timeout and 15 ms for each reply, so three
+boards still fit the 20 ms cycle. A board's settings conflict if two enabled boards have the
+same IP (on RS-485: the same address) or an IP is not a usable one.
 
 **The application does not change.** Board k fills the platform's generic channels: its
 18 outputs from `iobK_first_do` and its 8 inputs from `iobK_first_di` (defaults: board 1
@@ -653,15 +785,80 @@ supply A, the inputs). Inputs report a wire break where the check is on.
 | IOB_IN_FAULT | 15 | any input wire break for 1 s |
 | IOB_SUPPLY | 16 | a field 24 V supply missing for 0.5 s |
 | IOB_NODE_RESET | 17 | a node was restarted by its own watchdog (latched until acknowledged) |
+| IOB_TEMP_FAULT | 18 | a configured temperature input is open, shorted, out of range or its converter has failed, for 3 s |
 
 Every change goes to the event log as "I/O board": board 2: online / not responding /
 out 3 open circuit / in 5 wire break / field A 24V missing / restarted / watchdog reset.
 
-**Settings** (admin level, parameters 100-101 and 110-139): `iob_hold` (300 s), `iob_filter` (8 ms, as the old panel), and
-per board `enable` (off by default), `address`, `first_do`, `first_di`, `open_check`
+**Settings** (admin level, parameters 100-104, 110-139 and 146-148): `iob_hold` (300 s), `iob_filter` (8 ms, as the old panel), `iob_link` (the I/O port), `iob_port_ip`, `iob_port_prefix`, and
+per board `enable` (off by default), `address`, `ip`, `first_do`, `first_di`, `open_check`
 (bits: bank A outputs with a valve fitted), `wire_check` (bits: inputs with the wire-break
-resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, and 140-145
-`inputs` / `outputs`.
+resistor). Status, read-only: `status`, `out_faults`, `in_faults`, `errors`, 140-145
+`inputs` / `outputs`, and 105 `iob_port_status`. `/api/iob/net` reports `"link":"ethernet"` for both Ethernet links, with `"port":"io"` or `"main"`, and its `supervisor` block is the address the boards see (the I/O port's on the I/O port).
+
+**IP and address on Ethernet (commissioning).** A new board has no IP and no address: it
+serves no Modbus TCP, but answers discovery (UDP port 50223, `iob_net.h`), whatever subnet
+it is on. Administration → I/O boards on the network on the web page (admin login,
+`docs/web_iob_net.png`) → *Find boards* broadcasts FIND and lists every board that answers:
+serial, chip ID, MAC, IP, address, and whether it is running or belongs to another
+supervisor. *Give it* Board 1, 2 or 3 sends SET to that board's chip ID with the slot's IP
+(`iobN_ip`) and address (`iobN_address`) and this supervisor's own IP, mask and gateway (the
+supervisor needs a fixed IP for this: refused while `net_dhcp` is on). The board saves them,
+reads them back and answers with what it saved, then changes over to the new IP; the master
+reports OK only when the answer matches, and the board comes online by itself within a
+second ("IP .1.62 set" in the event log). From then on the board takes settings and Modbus
+TCP connections only from that supervisor's IP, so a second supervisor on the network can
+neither take it over nor drive it. Setting its address to 0 over USB makes it a new board
+again. An IP already used by another listed board, or by the supervisor, is refused before
+anything is sent (`iob_dc_find` / `iob_dc_set`, `POST /api/iob/net/find`,
+`POST /api/iob/net/set` with `uid` and `board` (and `ip` to change the slot's IP at the same
+time), result on `GET /api/iob/net`).
+
+**Addresses on RS-485 (commissioning).** A new board has no address and answers only at 246
+(`IOB_COMMISSION_ADDR`), for reads and the address change. Administration → I/O board
+addresses on the web page (admin login, `docs/web_iob_commission.png`) finds it ("Find new
+board", or "Read board at address" for any address), shows its serial number, chip ID and
+firmware, and gives it the address of Board 1, 2 or 3 or any free address: one guarded FC16
+of registers 40-42 (key 0xA55A, address, complement; node requirements FW-61). The master
+first checks that nothing answers at the new address, and reads the board back there before
+it reports success; the change goes to the event log ("addr 246->2 set"). Connect one new
+board at a time. The bus task does the request between the boards' own cycles
+(`iob_cm_find` / `iob_cm_assign`, `POST /api/iob/find`, `POST /api/iob/assign`, result on
+`GET /api/iob/commission`). The setting `iobN_address` is 1-245: 246 and 247 (the node's USB
+port) are never a running board's address.
+
+**Temperatures and the pump (register map 2, 25 Oct).** The rev A board adds an ADS124S08
+front end with three universal connectors and one PWM output with direction and tach for
+a pump or fan (lessons from the legacy dryer slave: per-channel sensor type and calibration,
+explicit sensor faults). Connector c gives temperature channels 2c-1 (A) and 2c (B): two
+thermocouples (K, J, T, E, S; cold junction from the ADC's own sensor), or one RTD (PT100 or
+PT1000, 2-, 3- or 4-wire) or one NTC (R25 and beta set per connector) on A. The board
+converts to 0.1 °C and reports a state per channel (OK, off, waiting, open, short, under or
+over range, ADC failed, cold junction failed) plus front-end flags (ADC, supply, CJ,
+reference). A map 1 board still works: it simply has none of these.
+
+| Registers | Contents |
+|---|---|
+| 3-4 | PWM command 0-1000 (0.1 %), direction; written with the outputs (function 23 of 0-4) |
+| 28-31 | PWM applied, tach rpm, temperature flags, conversion count (status read 16-31) |
+| 79 | channel counts: low byte temperature channels (6), high byte PWM outputs (1) |
+| 80-92 | temperatures (0.1 °C, -32768 = none), their states, cold junction |
+| 96-106 | sensor type per connector, NTC R25 (10 Ω units) and beta, PWM frequency (10-25000 Hz), tach pulses per revolution |
+
+The master reads 80-92 every 500 ms (`PLAT_IOB_TEMP_MS`, one board per cycle, and only when
+a sensor is configured) and sends 96-106 when they change, and to a restarted board. It
+applies the calibration (`iob_temp_cal`: offset in 0.01 °C plus span in 0.01 %) and puts
+each channel in the platform's RTD channels (`rtd_cdeg` / `rtd_status`, 24 of them) from
+`iobK_first_temp` (defaults 5, 11, 17). The pump runs from analogue output `iobK_pump_ao`
+(0 = none; `ao_raw` in 0.1 %, the sign sets the direction), and is held at 0 by the node's
+hardware gate like every other output. Parameters 160 + 16(K-1) + 0..13: `first_temp`,
+`pump_ao`, `temp_type[3]`, `ntc_r25[3]`, `ntc_beta[3]`, `temp_offset[6]`, `temp_span[6]`,
+`pwm_freq`, `tach_ppr`, and read-only `temps[6]`, `temp_state[6]`, `cj_temp`, `pump_rpm`,
+`pump_duty`. An unknown type is sent as none. On the web page each board card shows a
+temperature table and the pump line; an admin can press *Set to…* beside a channel and enter
+a reference thermometer's reading, which sets that channel's offset (`POST /api/iob/temp/zero`
+with `board`, `ch`, `ref`: refused unless the channel is reading, or if the change is over
+50 °C; an ordinary logged parameter write).
 
 **Screens.** System → I/O boards on the touchscreen (`docs/ui/iob.png`) and the I/O boards
 section of the web page (`docs/web_iob.png`, `/api/iob`): each board's state, its
@@ -674,6 +871,172 @@ interrupts and receives to line idle; the task sleeps meanwhile.
 **The simulated board** (`platform/bsp/iob_node_sim.c`) implements the register map exactly
 as the node firmware must; it is the master's test partner, and netsim runs two of them
 (console: `node 1 open 4`, `node 2 power 0`, `node 1 wdg` ...).
+
+## 5l. Instrument state, quality, safe mode and supply (CIP-07 to CIP-10)
+
+Agreed with Gary 26 Oct (`INSTRUMENT_PLATFORM_SPEC.md` sections 6 and 7). The aim is principle P1: a
+plausible number from a stalled or faulted instrument never looks valid.
+
+**State.** Parameter 300 (`state`, read-only) holds one of STARTING, INITIALISING, WARMING_UP,
+READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT, SAFE_MODE. The application sets WARMING_UP,
+READY or MEASURING with `plat_app_state()` and asks for CALIBRATION the same way. The operator
+selects MAINTENANCE with parameter 301 (`maintenance`, operator level, kept across a restart so a
+reset during maintenance does not report valid data). The platform forces FAULT while
+CAL_INVALID or an application alarm marked `AL_STOPS` is active, and SAFE_MODE after a reboot
+loop (below). Precedence: SAFE_MODE, FAULT, CALIBRATION, MAINTENANCE, then the
+application's state. Every change except the normal start is an event (`state`). Parameter 302
+holds the clock when the state was entered.
+
+Actions the state refuses (`plat_state_allows`): a firmware restart and restore defaults in
+CALIBRATION (the web page shows "not allowed in CALIBRATION"); a calibration in WARMING_UP,
+FAULT and SAFE_MODE; the application's logic in SAFE_MODE.
+
+**Quality.** The application lists its measured values in `plat_app_t.meas`
+(`plat_meas_def_t`: parameter ID, array index, maximum age, valid range; up to 32) and calls
+`plat_meas_update(i, own_quality)` whenever it writes one. Each scan the platform works out the
+reported quality:
+
+| Condition | Quality |
+|---|---|
+| State not MEASURING | WARMING_UP: warmup; MAINTENANCE: maint; CALIBRATION: cal; FAULT: fault; otherwise unavailable |
+| Never updated | unavailable |
+| The value's own quality is not valid | that quality |
+| Not updated for longer than its maximum age | stale |
+| Outside its range, or NaN | range |
+| Otherwise | valid |
+
+Codes (`PLAT_Q_*`, in this order): 0 valid, 1 stale, 2 unavailable, 3 range, 4 warmup, 5 maint,
+6 cal, 7 fault. The data log keeps OK/FLAG/BAD/N/A as its summary.
+
+**Where it shows.** Modbus: parameter 300 for the state and parameter 303 (`meas_q`, one register
+per measurement, in table order) as a status block; the application's map places them (the demo:
+input registers 50 and 52-83). Web: `/api/info` has `"api":2`, `"state"` and `"state_since"`;
+`/api/values` has a sparse `"q"` with only the values that are not valid
+(`{"1002":"stale","1010.3":"cal"}`); `/api/params` marks measurements with `"q":true`.
+Touchscreen: `plat_state()`, `plat_state_name()`, `param_quality(id, index)`,
+`plat_quality_name()`, `plat_link_age_ms()` (time since the last Modbus or web request, for the
+header's link indicator) and `plat_state_request()` to enter or leave maintenance.
+
+A measurement table that names a missing or non-numeric parameter stops the start-up like the
+other tables (fault record "meas table").
+
+**Reboot loop and safe mode (CIP-08.5).** The fault record (`plat_diag`, kept across a reset)
+counts crashes: a watchdog reset, or a software reset after a recorded fault (task silent, stack,
+heap, assert, CPU fault). Three crashes (`PLAT_LOOP_RESETS`) with less than 10 minutes
+(`PLAT_LOOP_WINDOW_MS`) of running between them in total start the unit in SAFE_MODE: none of the
+application's code runs, not even its `init`, and every output stays off. The network, the web
+page, Modbus, the touchscreen and firmware update all run, so the unit can be looked at and fixed
+remotely, and platform alarm 19 SAFE_MODE is raised (email, Modbus). A power cycle, a clean restart
+(a firmware update) or a boot that runs for the whole window starts normally again.
+
+**Supply and power-fail shutdown (CIP-07.3, CIP-07.5).** The ctrl task reads the 24 V supply
+every ms (`bsp_supply_mv`, `CUBEMX_SETUP.md` 3i) into a 16-reading average, shown as parameter
+305 (`supply_mv`, mV; 0 = not measured on this board). Outside 19-30 V for 2 s: alarm 20 SUPPLY
+(warning, email, Modbus). Two readings in a row below 16 V (2 ms; not the average, since the board holds up for only about 20 ms from 16 V at full load, `CORE_PCB.md` 5a) and the supply is failing: the store task starts no new FRAM
+image write or log-flash write (it lets the event log run for 60 ms more so the `power_fail`
+event, with the voltage, is written first). FRAM images are dual-copy with CRC anyway, so the
+hold is to keep both copies and the log's current page intact, not to save the last settings.
+Back above 18 V for a full second (a dip, not a loss): `power_restored`, and writing resumes,
+with nothing lost (changes made during the hold are saved then).
+
+## 5m. Calibration records (CIP-18)
+
+The product declares its calibrated channels (`plat_cal_channel_t`: a name, the PF_FACTORY float
+parameters holding the coefficients, an interval in days, an optional check hook). The procedure
+itself (gases, waits, the maths) stays in the product; the platform owns the record, the
+permission, the state and the history (`plat_cal.h` has the whole sequence):
+
+| Step | Who | What the platform does |
+|---|---|---|
+| Begin | touchscreen, web (`POST /api/cal cmd=begin&ch=N`) or the product | Refused below setting 321 `cal_level` (factory setting, default admin), in WARMING UP, FAULT, SAFE MODE or start-up (factory login may calibrate in FAULT, so a unit that lost its calibration data can be recalibrated). Otherwise CALIBRATION until the end; event `cal` "start"; a history slot written ABORTED, so a power cut part way leaves an honest record |
+| Procedure | the product's logic, while `plat_cal_active()` | Collects up to 4 points (`plat_cal_point`: reference, reading as found, reading as left) and the proposed coefficients (`plat_cal_propose`) |
+| Accept | anyone with the level (`cmd=accept`) | The check hook may reject the whole calibration; every coefficient is range-checked; all written or none. PASS (now in force) or FAIL (nothing changes); event `cal` with the reason |
+| Abort | `cmd=abort`, or 2 h with no end | ABORTED |
+| Revert | factory login (`cmd=revert&ch=N`) | The factory record's coefficients back in force, recorded REVERTED |
+
+A calibration at factory login is a factory calibration: it replaces the channel's factory
+record, which field calibrations never touch (CIP-18.3). Records are in the FACTORY region of
+FRAM (dual copy; survive firmware updates and restore defaults, CIP-18.5): 2.4 KB for 8 channels
+and 12 history records on the 128 KB part, 2 and 3 on the 32 KB part. A channel's due date is the
+record in force plus its interval; alarm 21 CAL_DUE (warning, email, Modbus) while any channel is
+overdue. Commands go through parameter 320 like every other write, so the local/remote mode rules
+apply (web and Modbus only in REMOTE; Modbus never). `GET /api/cal` gives the channels (in force,
+factory, due time, overdue), the history (newest first) and which channel is calibrating.
+
+**On the web page** (Calibration section, shown when the product declares channels): each
+channel's record in force, its factory record and its due date (marked overdue); Begin and,
+at factory login, Revert to factory; while a channel is calibrating, a box with Accept and
+Abort; the history with outcome, who, the points (reference, as found, as left) and the
+coefficients. Refusals show the instrument's reason. `tests/integration/cal_web_test.py`
+runs a calibration and an abort through the page. Screenshot: `docs/web_cal.png`.
+
+## 5n. Service history (CIP-22, CIP-23.4, CIP-05.4)
+
+| Record | What | Where it shows |
+|---|---|---|
+| Operating hours | powered hours, and hours since the last service log entry, in 0.1 h steps (up to 6 minutes per power cycle is not counted) | parameters 330, 331; `/api/info` `run_hours`; `/api/service` |
+| Service log | the last 8 entries (2 on the 32 KB part): date, login level, technician, work done; entered at factory login (`POST /api/service/log tech=..&work=..`); each entry restarts "since service" and logs a `service` event | `/api/service` |
+| Test record | the manufacturing test: date, station, pass/fail per test (up to 24, in the test procedure's order), overall pass; written at factory login (`POST /api/service/test station=..&r=1,1,2`) | `/api/service` |
+| Configuration checksum | CRC-32 over the ID and value of every user setting (not factory, not secret, not status), worked out every second: two units with the same checksum have the same settings | parameter 332; `/api/info` and `/api/service` `config_crc` (8 hex digits) |
+
+The first three are in the FRAM factory region (dual copy; survive firmware updates and restore
+defaults) and belong to the unit: a backup carries them for reference, but restoring it into
+another unit never copies them (`RF_UNIT`, like the serial number).
+
+On the web page, the Service section shows operating hours, hours since service, the
+configuration checksum, the service log and the last manufacturing test (PASSED/FAILED badge
+plus a pass/fail/not-run count per station). At factory login it also shows two forms: add a
+log entry (technician up to 15 characters, work up to 39) and record a test result (station up
+to 11 characters, results as `1,1,2,...` where 1 = pass, 2 = fail, 0 = not run; anything else
+is refused before it is sent). Below factory login the forms are hidden and a 403 says so. The
+section hides itself on firmware without `/api/service`. Checked by
+`tests/integration/cal_web_test.py`; screenshot `docs/web_service.png`.
+
+## 5o. Start-up self-test (CIP-11.1)
+
+After every start the unit works through a fixed list of checks (`plat_selftest.h`), each
+with one result: pass, fail or skipped.
+
+| Check | Pass when | Skipped when |
+|---|---|---|
+| `image` | the running firmware hashes to the SHA-256 in the header the update left in its flash bank (16 KB per store-task pass, about 0.6 s for 500 KB) | no header for this version (programmed with the debugger) |
+| `ram` | a March C- test of a 1 KB block passes (before the tasks start; the H573's SRAM also has ECC) | - |
+| `rtc` | the clock's seconds move on within 3 s | the clock has never been set |
+| `settings` | the FRAM answers and holds (not the RAM fallback; no write or table error) | - |
+| `calibration` | a valid factory image was loaded | - |
+| `log_flash` | the log flash answers and is large enough | the RAM stand-in (no flash fitted: the DK) |
+| `net_phy` | the LAN8742A answered when the Ethernet driver started | nothing reported it (PC simulation) |
+| `io_port` | the I/O-port W5500 answered when the I/O bus first used it | not used in the first 10 s (none fitted, no board enabled) |
+| `display` | the touchscreen answers | no display on this hardware |
+| product checks | up to 8 of the product's own (`plat_app_t.selftests`), run once at 10 s | the check says so |
+
+The first six are known within about a second; the rest 10 s after start. Then parameter 333
+holds the failed bits (bit *i* = check *i* above, bit 16 + *j* = product check *j*), the event
+log gets one `selftest` event ("passed", or the failed names), `/api/info` `selftest` lists
+every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a check failed that
+has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
+CAL_INVALID and DISPLAY_FAULT).
+
+On the web page, the Service section shows the self-test as one badge per check (pass, fail,
+"not checked" for skipped, or pending), with a summary line naming any that failed. It is visible
+without a login (`tests/integration/cal_web_test.py`, `docs/web_service.png`).
+
+**Keeping the core common (spec section 9).** The core has its own version (`plat_version.h`,
+`/api/info` `core`). `plat_app_check()` refuses an application description that breaks the
+contract before anything starts. `make test` also checks that every mandatory requirement is
+named by a test or listed in `tools/cip_untested.txt` with its reason (`tools/cip_coverage.py`),
+that `docs/FAULT_CODES.md` is current, and that the Modbus map still matches its snapshot
+(`docs/interface/<app>/MODBUS_MAP.md`). `make conformance APP=<dir>` runs, for a product build,
+the contract, its `PROFILE.md` (template `docs/PROFILE_TEMPLATE.md`), help on every alarm, the
+web API snapshot (`tools/api_snapshot.py`) and the shared CIP-26 tests
+(`tests/integration/conformance_test.py`).
+
+**Fault and alarm code list (CIP-11.3).** `docs/FAULT_CODES.md` lists the platform's alarms
+(with what to check), self-test checks, fault record codes, reset causes, event codes and
+firmware update refusals. `make fault-codes` writes it from the firmware's own tables
+(`tools/fault_codes.c`), and `make test` fails if it is out of date or if a platform alarm has
+no help text. A product's own list: `make fault-codes APP=<dir>`. `/api/alarms` carries the same help text
+(`help`), and the web page's alarm list shows it under each alarm as "What to check".
 
 ## 6. Integration rules for the application (VM/MUX) code
 
@@ -722,7 +1085,7 @@ work before integration.
 | D1 | Scan period | 10 ms, fixed period, measured `g_dt_ms` | The UniLogic scan time is unknown. 10 ms matches the Stage 4 tests and leaves the CPU mostly free |
 | D2 | Fast control loop rate | 1 kHz task tick for now; a hardware timer ISR if any loop needs more | The spec allows 1 to 10 kHz; the loop list doesn't exist yet |
 | D3 | Network stack | lwIP 2.2.1 from ST's `stm32h5-classic-coremw-apps`, added by hand | CubeMX doesn't offer lwIP for the H5 (ST recommends NetX Duo). The spec says lwIP; NetX Duo is ThreadX-based, and choosing it would mean changing the RTOS |
-| D4 | Hard-fault handling | Record PC/LR in `plat_diag`, then reset | Not written yet; small, belongs in the port |
+| D4 | Hard-fault handling | **Built (25 Oct):** HardFault, MemManage, BusFault and UsageFault go to `port/stm32h5/fault_stm32h5.c`: outputs to the safe state, the stacked PC and LR plus CFSR, HFSR and the faulting address into `plat_diag`, then a reset. The next boot shows it as e.g. "bus @0801A2C4" (kind and PC) on the System screen, the web page and in the event log's power-up entry; `/api/info` `last_fault` has `arg` (the PC), `lr`, `cfsr`, `hfsr`, `addr`. A task that runs past its stack is caught by the CPU's stack limit (PSPLIM, set per task by the CM33 port) and named instead, e.g. "stk scan" (no usable PC then). Stacks are sized generously (Gary, 25 Oct: overflows on earlier DK prototypes): task stacks 85 KB in all in `plat_config.h`, FreeRTOS heap 64 KB, main stack 8 KB and C heap 4 KB in the linker settings (`CUBEMX_SETUP.md` 1). CubeMX must not generate these handlers (`CUBEMX_SETUP.md` 4) | A crash in the field is otherwise a silent reset; the PC and LR point at the function, found in the build's map or with `addr2line` |
 | D5 | Factory network default | Static 192.168.1.50/24, gateway 192.168.1.1, DHCP off | Always settable from the touchscreen, so a unit can be recovered locally |
 | D6 | FRAM | **128 KB (MB85RC1MT, I2C, same driver) for the product (Gary, 20 Oct)**, now the build default (`PLAT_FRAM_SIZE`). The VM/MUX application's settings image is 13.4 KB of the 40 KB slot. The 32 KB development breakout (MB85RC256V) still fits the application: build with `PLAT_FRAM_SIZE=32768u`; the I2C driver reads the part's Device ID and refuses a part smaller than the build's map instead of wrapping onto the factory data. `make test` runs both maps | Room for the instrument family to grow; costs about 60 KB of RAM (the store's slot copy and the web restore buffer) |
 | D7 | Modbus writes at first power-up | Enabled; any client IP | Plugs into a DAHS without setup; an admin can make Modbus read-only or limit it to one IP |
@@ -744,7 +1107,7 @@ work before integration.
 | D24 | Display assets | Own fonts (DejaVu, L4) compressed in the firmware, inflated into RAM_G at start-up and CRC-checked; nothing in the module's flash yet; link stays single SPI | Versioned with the firmware with no extra step; the units the instrument shows need ° ² ³ µ; the module's flash is kept for big images if ever needed |
 | D26 | Application screens and records | The application describes its screens and record editors by parameter ID (`ui_app.h`); the platform draws them on the touchscreen and the web page the same way, and every press is a write through the table. Sequences and schedules are records: whole C structures, written only whole and applied in one scan after the application's check of the complete new image (`PARAM_RECORD`) | One description serves both screens; no half-edited sequence can reach the logic; the old 7-row editor bits and copies are not needed |
 | D25 | Serial number authority | **Gary, 20 Oct: developer level authority to change it at all.** No login level can write it; only a token signed by a separate developer key, bound to the chip's unique ID and the current serial (single use, single unit); not restored from backups; every change and refusal logged; no key built in = cannot be changed | The serial is the unit's identity for the customer, certificates and records; a tech login or a copied backup must not be able to change or clone it |
-| D27 | Field I/O | **Gary, 22 Oct:** valves on 24 VDC (SMC VX21 class) switched by isolated solid-state outputs, not relays; the I/O on separate boards linked by RS-485 Modbus RTU (deployable up to 100 m away); per board 8 × 0.6 A with diagnostics, 8 × 1 A, 2 socketed relays for 230 VAC, 8 inputs. A board holds its outputs for 5 min (setting) when the link goes quiet. Built: the master here; the boards follow the *I/O Board Design Specification* and the *I/O Module Requirements* | Sockets and relay contacts were the reliability worry; per-channel diagnostics tell a technician which valve is open-circuit; the bus keeps the main board small and the I/O near the valves |
+| D27 | Field I/O | **Gary, 22 Oct:** valves on 24 VDC (SMC VX21 class) switched by isolated solid-state outputs, not relays; the I/O on separate boards linked by RS-485 Modbus RTU (deployable up to 100 m away); per board 8 × 0.6 A with diagnostics, 8 × 1 A, 2 socketed relays for 230 VAC, 8 inputs. A board holds its outputs for 5 min (setting) when the link goes quiet. Built: the master here; the boards follow the *I/O Board Design Specification* and the *I/O Module Requirements* | Sockets and relay contacts were the reliability worry; per-channel diagnostics tell a technician which valve is open-circuit; the bus keeps the main board small and the I/O near the valves **Revised (Gary, 24 Oct):** the boards move to the STM32H563 (the H5 is the standard for all development) with a LAN8742A, and **Ethernet with Modbus TCP replaces the RS-485 pair**; each board's IP is set from the HTTPS page like its address (5k). RS-485 stays as a setting (`iob_link`) |
 | D18 | Memory record | `docs/MEMORY.md`, generated from the linker map by `tools/mem_report.py` (run by `tools/check_target.sh`) after every module: flash and RAM by module, totals against the H573's limits, and what is still to come | The hardware choice depends on it (Gary, 20 Oct: we are getting closer to the limits) |
 
 ## 9. Repository layout

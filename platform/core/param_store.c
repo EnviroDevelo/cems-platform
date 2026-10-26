@@ -26,6 +26,10 @@ extern uint32_t param_store_status_word;    /* storage of PARAM_ID_STORE_STATUS 
 /* Platform-owned retained blocks (e.g. password hashes): kept in FRAM, never
  * visible through the parameter table. Provided by web_auth.c; none otherwise. */
 __attribute__((weak)) const retain_def_t *plat_store_blocks(size_t *n) { *n = 0; return NULL; }
+/* The calibration records (plat_cal.c) and the service records (plat_service.c), in the factory region. */
+__attribute__((weak)) const retain_def_t *plat_cal_blocks(size_t *n) { *n = 0; return NULL; }
+__attribute__((weak)) const retain_def_t *plat_service_blocks(size_t *n) { *n = 0; return NULL; }
+#define PLAT_BLOCKS_MAX 16u
 
 /* one persisted item: a PF_PERSIST parameter or a retained block */
 typedef struct {
@@ -135,11 +139,20 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
                                          .size = PARAM_IS_BLOB(d) ? d->size : (uint16_t)param_ctype_size(d->ctype),
                                          .region = (uint8_t)((d->flags & PF_FACTORY) ? 0u : 1u), .pdef = d };
     }
+    const retain_def_t *plat[PLAT_BLOCKS_MAX];       /* the platform's own blocks, from each module */
     size_t n_plat = 0;
-    const retain_def_t *plat = plat_store_blocks(&n_plat);
+    const retain_def_t *(*const providers[])(size_t *) = { plat_store_blocks, plat_cal_blocks, plat_service_blocks };
+    for (size_t p = 0; p < sizeof providers / sizeof providers[0]; ++p) {
+        size_t n = 0;
+        const retain_def_t *b = providers[p](&n);
+        for (size_t k = 0; k < n; ++k) {
+            if (n_plat < PLAT_BLOCKS_MAX) plat[n_plat++] = &b[k];
+            else ok = false;
+        }
+    }
     for (size_t k = 0; k < n_plat + n_blocks; ++k) {
         bool is_plat = k < n_plat;
-        const retain_def_t *b = is_plat ? &plat[k] : &blocks[k - n_plat];
+        const retain_def_t *b = is_plat ? plat[k] : &blocks[k - n_plat];
         bool id_ok = is_plat ? (b->id >= PARAM_ID_PLAT_BLOCK_FIRST && b->id < PARAM_ID_APP_FIRST) : b->id >= PARAM_ID_APP_FIRST;
         if (S.n_items >= MAX_ITEMS || !id_ok || b->size == 0 || !b->ptr ||
             find_item(b->id) || param_find(b->id)) { ok = false; continue; }
@@ -193,7 +206,9 @@ static bool importing;          /* apply_payload is restoring a backup file: sec
 
 /* kept in the backup for reference but never restored from one: the serial (a backup
  * loaded into another unit must not give it this unit's identity) */
-static bool item_dev(const item_t *it) { return it && it->pdef && (it->pdef->flags & PF_DEV); }
+static bool item_dev(const item_t *it) {
+    return it && ((it->pdef && (it->pdef->flags & PF_DEV)) || (it->rdef && (it->rdef->flags & RF_UNIT)));
+}
 
 static bool apply_payload(uint8_t region, const uint8_t *p, uint32_t len, uint16_t version, bool dry_run) {
     /* pass 1: structure */

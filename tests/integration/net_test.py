@@ -9,6 +9,7 @@ backup/restore, concurrent clients, and that everything survives a restart.
 
     PYTHONPATH=<pymodbus source> python3 tests/integration/net_test.py
 """
+# Requirements proved here: CIP-07.6, 26.1, 26.4, 05.5, 12.3, 12.4, 15.4, 17.2, 17.5, 20.1, 13.1.
 import http.cookiejar, ssl, json, os, signal, struct, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 
 from pymodbus.client import ModbusTcpClient
@@ -171,8 +172,6 @@ def main():
     check(u32(mb.read_holding_registers(0, 2, slave=1).registers) == 2500, "...and nothing applied")
     st, j = web.json("/api/write", {"id": 1, "v": 0})
     check(st == 409 and j["error"] == "mode", "only the touchscreen changes the mode")
-    st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
-    check(st == 200, "admin password changed")
 
     # ---------------- client limit and IP filter ----------------
     extra = [ModbusTcpClient("127.0.0.1", port=MB) for _ in range(4)]
@@ -318,6 +317,7 @@ def main():
     j, a = alarms()
     check(1 in a and a[1]["severity"] == "fault" and a[1]["active"] and a[1]["name"] == "CAL_INVALID",
           "platform alarm: calibration invalid")
+    check(a[1]["help"].startswith("Neither copy of the factory data"), "alarm list carries what to check (help)")
     web.json("/api/write", {"id": 1007, "v": 1}); time.sleep(0.3)
     j, a = alarms()
     check(100 in a and a[100]["active"] and a[100]["unacked"] and a[100]["latch"], "application alarm raised (latching)")
@@ -365,6 +365,57 @@ def main():
     check(info["alarms"]["active"] == j["active"], "alarm counts in /api/info")
     mbc.close()
 
+    # ---------------- calibration records (CIP-18) ----------------
+    st, cal = web.json("/api/cal")
+    check(st == 200 and cal["channels"][0]["name"] == "Level" and cal["channels"][0]["in_force"] is None
+          and cal["active"] is None, "calibrated channels listed, nothing in force")
+    st, j = web.json("/api/cal", {"cmd": "begin", "ch": 0})
+    check(st == 409 and "FAULT" in j["error"], f"admin may not calibrate a unit with no calibration data ({j})")
+    fac = Web()
+    st, j = fac.json("/api/login", {"level": "factory", "password": "9999"})
+    check(st == 200, "factory login")
+    st, j = fac.json("/api/cal", {"cmd": "begin", "ch": 0})
+    check(st == 200, f"factory calibration started ({j})")
+    time.sleep(0.1)
+    st, cal = web.json("/api/cal")
+    check(cal["active"] == 0, "calibration running on channel 0")
+    st, j = fac.json("/api/cal", {"cmd": "accept"})
+    check(st == 200, "accepted")
+    time.sleep(0.1)
+    st, cal = web.json("/api/cal")
+    rec = cal["channels"][0]["in_force"] or {}
+    check(rec.get("kind") == "factory" and rec.get("outcome") == "pass" and rec.get("level") == "factory"
+          and rec.get("src") == "web" and rec.get("points") == [[50, 50, 50]] and rec.get("coef") == [0, 1],
+          f"factory record in force ({rec})")
+    check(cal["channels"][0]["factory"] == rec and len(cal["history"]) == 1, "factory record and history")
+    check(cal["channels"][0]["due_time"] == rec.get("time", -1) + 90 * 86400, "due in 90 days")
+    check(cal["channels"][0]["overdue"] is False, "not overdue")
+    # ---------------- service history (CIP-22.2, 22.4, 23.4, 05.4) ----------------
+    st, j = web.json("/api/service/log", {"tech": "Sam", "work": "Pump replaced"})
+    check(st == 403, "service log needs factory login")
+    st, j = fac.json("/api/service/log", {"tech": "Sam", "work": "Pump replaced"})
+    check(st == 200, "service log entry")
+    st, j = fac.json("/api/service/test", {"station": "EOL-1", "r": "1,1,1,2"})
+    check(st == 200, "test record")
+    time.sleep(0.1)
+    st, sv = web.json("/api/service")
+    check(st == 200 and sv["log"] and sv["log"][0]["tech"] == "Sam" and sv["log"][0]["level"] == "factory"
+          and sv["test"]["passed"] is False and sv["test"]["results"] == [1, 1, 1, 2], f"service history ({sv})")
+    st, info = web.json("/api/info")
+    check(len(info["config_crc"]) == 8 and info["config_crc"] == sv["config_crc"] and info["board_rev"] == 0
+          and info["build"], "config checksum, board revision, build on /api/info")
+    for _ in range(120):                                # the start-up self-test closes 10 s after start
+        st, info = web.json("/api/info")
+        if info["selftest"]["done"]: break
+        time.sleep(0.1)
+    stt = {t["name"]: t["result"] for t in info["selftest"]["tests"]}
+    check(info["selftest"]["done"] and list(stt)[:3] == ["image", "ram", "rtc"] and stt["ram"] == "pass"
+          and stt["image"] == "skipped" and stt["settings"] == "pass" and stt["log_flash"] == "pass",
+          f"start-up self-test list on /api/info ({info['selftest']})")
+    fac.req("/api/logout", {})
+    st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
+    check(st == 200, "admin password changed")
+
     # ---------------- event log ----------------
     st, j = web.json("/api/log/events?n=200")
     ev = j["events"] if st == 200 else []
@@ -389,7 +440,7 @@ def main():
           and len(lines) == len(ev) + 1, f"event CSV ({len(lines) - 1} rows)")
     st, j = web.json("/api/log/info")
     check(st == 200 and j["status"] == 0 and j["events"]["used"] == len(ev), "log info")
-    n_events = len([e for e in ev if not e["event"].startswith("alarm")])   # the platform's own alarms come and go
+    n_events = len([e for e in ev if not e["event"].startswith(("alarm", "state"))])   # the platform's own alarms and the state they force come and go
 
     time.sleep(1.5)                                  # let the store save
     log = unit.stop()
@@ -407,9 +458,14 @@ def main():
     check(st == 401, "old admin password no longer works")
     st, j = web.json("/api/login", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "changed admin password survived the restart")
+    st, cal = web.json("/api/cal")
+    check((cal["channels"][0]["factory"] or {}).get("outcome") == "pass", "calibration record survived the restart")
+    st, sv = web.json("/api/service")
+    check(sv["log"] and sv["log"][0]["work"] == "Pump replaced" and sv["test"]["station"] == "EOL-1",
+          "service history survived the restart")
     st, j = web.json("/api/log/events?n=200")
     allev = j["events"] if st == 200 else []
-    ev = [e for e in allev if not e["event"].startswith("alarm")]
+    ev = [e for e in allev if not e["event"].startswith(("alarm", "state"))]
     check(len(ev) == n_events + 3 and [e["event"] for e in ev[:3]] == ["login", "login_fail", "power_up"],
           "event log continues across the restart")
     check([e["seq"] for e in allev] == list(range(len(allev), 0, -1)), "sequence numbers contiguous")

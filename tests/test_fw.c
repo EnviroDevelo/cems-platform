@@ -1,4 +1,5 @@
-/* test_fw.c - firmware upload, staging, activation, trial, confirm and rollback. */
+/* test_fw.c - firmware upload, staging, activation, trial, confirm and rollback.
+ * Requirements proved here: CIP-03.2, 03.3, 03.4, 03.5, 03.6, 03.7, 17.3, 20.2, 25.1, 19.2. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,14 @@ static uint32_t make_image(uint32_t payload, const char *ver, uint32_t product, 
     h.hdr_crc = plat_crc32(0, &h, (uint32_t)offsetof(fw_header_t, hdr_crc));
     memcpy(file, &h, sizeof h);
     return FW_HDR_SIZE + payload;
+}
+static void make_v2(uint8_t hw_min, uint8_t hw_max, const char *build) {   /* a header-version-2 image */
+    fw_header_t h; memcpy(&h, file, sizeof h);
+    h.hdr_version = 2; h.hw_min = hw_min; h.hw_max = hw_max; h.layout_version = 3;
+    memset(h.build_id, 0, sizeof h.build_id);
+    strncpy(h.build_id, build, sizeof h.build_id);
+    h.hdr_crc = plat_crc32(0, &h, (uint32_t)offsetof(fw_header_t, hdr_crc));
+    memcpy(file, &h, sizeof h);
 }
 static void reheader(void) {      /* recompute the CRC after editing the header in file[] */
     fw_header_t h; memcpy(&h, file, sizeof h);
@@ -316,8 +325,15 @@ static void sign_file(int which) {            /* as tools/mkfwimage.py --key doe
     fw_header_t h; memcpy(&h, file, sizeof h);
     h.flags = FW_F_SIGNED;
     memset(h.sig, 0, sizeof h.sig);
-    uint8_t dg[32];
-    mbedtls_sha256((const uint8_t *)&h, FW_SIGNED_LEN, dg, 0);
+    uint8_t dg[32], msg[FW_HDR_SIZE];
+    size_t n = FW_SIGNED_LEN;
+    memcpy(msg, &h, FW_SIGNED_LEN);
+    if (h.hdr_version >= 2u) {                /* v2: the fields after the signature too */
+        size_t more = offsetof(fw_header_t, hdr_crc) - FW_SIGNED2_OFF;
+        memcpy(msg + n, (const uint8_t *)&h + FW_SIGNED2_OFF, more);
+        n += more;
+    }
+    mbedtls_sha256(msg, n, dg, 0);
     mbedtls_mpi r, s2; mbedtls_mpi_init(&r); mbedtls_mpi_init(&s2);
     CHECK_EQ(mbedtls_ecdsa_sign(&sk[which].MBEDTLS_PRIVATE(grp), &r, &s2, &sk[which].MBEDTLS_PRIVATE(d), dg, 32,
                                 mbedtls_ctr_drbg_random, &rng), 0);
@@ -361,9 +377,45 @@ static void t_signed(void) {
     make_image(20000, "0.8.0", PLAT_FW_PRODUCT, 31); sign_file(0);
     file[FW_HDR_SIZE + 5] ^= 1;
     CHECK_EQ(upload(len, 2048), FW_E_HASH);
+    /* header version 2 signs the board range and build ID as well */
+    make_image(20000, "0.8.1", PLAT_FW_PRODUCT, 32); make_v2(0, 3, "abc1234"); sign_file(0);
+    CHECK_EQ(upload(len, 2048), FW_OK);
+    { fw_header_t h; memcpy(&h, file, sizeof h); h.hw_max = 9; memcpy(file, &h, sizeof h); reheader(); }
+    CHECK_EQ(upload(len, 2048), FW_E_SIGNATURE);         /* the range widened after signing */
     fw_pubkey_override_for_test(NULL);
     for (int k = 0; k < 2; ++k) mbedtls_ecdsa_free(&sk[k]);
     mbedtls_ctr_drbg_free(&rng); mbedtls_entropy_free(&ent);
+}
+
+/* ---------------- board revision range, build ID (CIP-01.3, 03.2, 25.1) ---------------- */
+static void t_hw_range(void) {
+    fw_status_t st;
+    bsp_host.straps_fitted = true; bsp_host.hw_straps = 1;      /* a Rev B board */
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_board_rev(), 1);
+    CHECK(fw_build_id()[0] != 0);
+    uint32_t len = make_image(30000, "0.9.0", PLAT_FW_PRODUCT, 41);
+    make_v2(2, 3, "deadbeef01");
+    CHECK_EQ(upload(len, 4096), FW_E_HARDWARE);           /* Rev C/D only */
+    CHECK(!strcmp(fw_err_name(FW_E_HARDWARE), "built for another board revision"));
+    make_v2(0, 1, "deadbeef01");
+    CHECK_EQ(upload(len, 4096), FW_OK);
+    fw_status(&st);
+    CHECK(!strcmp(st.staged_build, "deadbeef01"));
+    CHECK_EQ(st.staged_hw_min, 0); CHECK_EQ(st.staged_hw_max, 1);
+    /* the straps read differently at the next start (another board): refused at activation */
+    bsp_host.hw_straps = 3;
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_request_activate(), FW_E_HARDWARE);
+    /* a v1 image states no range; a board without straps checks none */
+    make_image(30000, "0.9.1", PLAT_FW_PRODUCT, 42);
+    CHECK_EQ(upload(len, 4096), FW_OK);
+    fw_status(&st); CHECK_EQ(st.staged_hw_max, 255); CHECK(!st.staged_build[0]);
+    bsp_host.straps_fitted = false;
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_board_rev(), -1);
+    make_image(30000, "0.9.2", PLAT_FW_PRODUCT, 43); make_v2(3, 3, "x");
+    CHECK_EQ(upload(len, 4096), FW_OK);
 }
 
 /* ---------------- gates: minimum version, safe state, local confirmation ---------------- */
@@ -509,6 +561,7 @@ void test_fw_all(void) {
     RUN(t_rollback);
     RUN(t_history);
     RUN(t_signed);
+    RUN(t_hw_range);
     RUN(t_http);
     RUN(t_gates);
     fw_reset_for_test();

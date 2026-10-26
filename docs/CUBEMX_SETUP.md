@@ -12,6 +12,8 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 1. STM32CubeIDE → New STM32 Project → Board Selector → **STM32H573I-DK**.
 2. When asked about TrustZone, choose **without TrustZone** (the platform uses the `ARM_CM33_NTZ` FreeRTOS port).
 3. Don't initialise all peripherals to their default mode. Add only the ones below, so the project stays readable.
+4. **Memory for stacks (Gary, 25 Oct: stack overflows on earlier DK prototypes; set these large from the start).** Project Manager → Project → Linker Settings: **Minimum Stack Size 0x2000** (8 KB, the main stack: interrupts, and start-up before the scheduler, which includes the HTTPS key generation on first boot) and **Minimum Heap Size 0x1000** (4 KB, the C library's heap). ST's defaults are 0x400 and 0x200, too small. These are minimums the linker checks; the build fails rather than run short.
+   The task stacks are not set in CubeMX: the platform allocates them itself (`plat_config.h` `PLAT_STACK_*`, 85 KB in all, about twice the first sizes), as it does the FreeRTOS heap (64 KB, section 4) and the idle and timer task stacks (`FreeRTOSConfig.h`). Leave CubeMX's FreeRTOS task list empty. A task that still runs past its stack is stopped by the CPU's stack limit and the next boot names it ("stk scan" on the System screen; `PLATFORM.md` D4). Trim the sizes only after the 72-hour soak on hardware, from the margins shown under `health` on `/api/info`.
 
 ## 2. System core
 
@@ -141,8 +143,10 @@ SPI kernel clock (11 MHz or less at start-up, 30 MHz or less after):
 Add `platform/ui/`, `platform/os/plat_ui_task.c` and `port/stm32h5/eve_bus_stm32h5.c`.
 Bring-up order (spec): the chip ID (REG_ID = 0x7C) answers, then the first frame
 shows. If the touch doesn't respond, the module's touch controller may need
-`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c) **(check with Riverdi which
-controller the uxTouch variant uses)**. If the picture is shifted or flickers, the
+`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c). The uxTouch variant uses the ILITEK
+ILI2132A; Riverdi's riverdi-eve-lib (IPS_70) leaves REG_TOUCH_CONFIG at the BT817's default
+(controller auto-detect), and so does `touch_config = 0` here (checked 25 Oct, along with the
+timing, PCLK, GPIOX and REG_FREQUENCY values, which match the library). If the picture is shifted or flickers, the
 timing values came from Riverdi's library for this module and are worth checking
 against its datasheet.
 
@@ -155,7 +159,94 @@ Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor). 
 enabled (3b). Browse to `https://192.168.1.50/` and accept the certificate once, after
 comparing its fingerprint with the touchscreen's System screen.
 
-## 3g. RS-485 to the I/O boards (D27)
+## 3h. The I/O port: W5500 for the I/O boards (HARDWARE.md H5, 25 Oct)
+
+The I/O boards are on their own network, on the I/O port: a WIZnet W5500 on its own SPI, which
+runs TCP/IP itself, so this traffic never enters lwIP (`iob_link` = 2, the default;
+`PLATFORM.md` 5k). Product board pins (PCB thread, `docs/CORE_PCB.md` 4):
+
+| CubeMX | Setting |
+|---|---|
+| SPI4 (PE12 SCK, PE13 MISO, PE14 MOSI) | Full-Duplex Master, 8 bits, Motorola, MSB first, CPOL low, CPHA 1 edge (mode 0), NSS **software**. Prescaler for **at most 33 MHz** from SPI4's kernel clock **(check against the clock tree)**. No DMA, no interrupt |
+| PE11 | GPIO output, label **W5500_CS**, initial level **high**, push-pull, speed high |
+| PE10 | GPIO output, label **W5500_RST**, initial level **high** (running), push-pull |
+| PE9 | GPIO input, label **W5500_INT**, pull-up (the chip's INTn; reserved for an interrupt-driven wait, not used yet) |
+
+In `main.h` (USER CODE section), only if the handle is not `hspi4`:
+
+```c
+#define W5500_SPI_HANDLE hspi2      /* the handle CubeMX generated for the W5500's SPI */
+```
+
+Add `port/stm32h5/w5500_stm32h5.c`, `platform/core/w5500.c` and `platform/core/iob_w5500.c`.
+Without the `W5500_CS` label there is no I/O port (`bsp_w5500()` returns NULL): with
+`iob_link` = 2, every enabled board then reports "not responding" and `iob_port_status`
+(parameter 105) reads 0.
+
+Settings: `iob_port_ip` (103, default 192.168.1.60) and `iob_port_prefix` (104, default 24) are
+the I/O port's own address. It is a separate network with its own stack, so it may use the same
+numbers as the client network without any clash; nothing routes between the two. The port's MAC
+is the main port's with bit 1 of the last byte flipped. `iob_port_status` shows the chip found
+(1) and the cable in (2).
+
+**On the DK** (no W5500 on the board): either wire a W5500 module (WIZ850io or any W5500
+breakout, 3.3 V) to a free SPI with the three GPIO labels above, or set `iob_link` = 1 to run the
+boards on the DK's own Ethernet port through lwIP (the same protocol; the boards then share the
+client network).
+
+## 3i. Supply sense: the 24 V supply on PC0 (CIP-07, CORE_PCB.md 12)
+
+The core board divides the 24 V supply (after the reverse diode) by 13.20 onto PC0. The firmware
+reads it every ms, averages 16 readings, raises alarm 20 SUPPLY outside 19-30 V and, below
+16 V, stops starting FRAM and log-flash writes so the brown-out finds nothing half-written
+(`PLATFORM.md` 5l).
+
+| CubeMX | Setting |
+|---|---|
+| ADC1 | 12-bit, right aligned, **scan conversion mode enabled**, 2 regular conversions, software trigger, continuous **off**, DMA **off**, overrun: data overwritten |
+| Rank 1 | Channel of **PC0** (ADC1_INP10), sampling time 47.5 cycles or more |
+| Rank 2 | **Vrefint** channel, sampling time 47.5 cycles or more (it needs the long sample) |
+| PC0 | label **SUPPLY_SENSE** (CubeMX sets it analog) |
+| ADC clock | any, up to the datasheet maximum; one reading is two conversions, a few µs |
+
+In `main.h` (USER CODE section), only if they differ:
+
+```c
+#define SUPPLY_ADC_HANDLE   hadc2   /* if not hadc1 */
+#define SUPPLY_DIVIDER_X100 1320    /* the divider ratio x 100 */
+```
+
+Add `port/stm32h5/supply_stm32h5.c` and `platform/core/plat_power.c`. Without the `SUPPLY_SENSE`
+label the board does not measure it: no SUPPLY alarm, no power-fail hold, parameter 305 reads 0.
+**On the DK**, PC0 is not wired to a supply divider: leave the label off, or feed PC0 from a
+potentiometer (0-2.4 V reads as 0-31.7 V) to try the alarm and the hold. Check the reading
+against a meter on the first core board (the VREFINT calibration value is taken at 3.3 V; the
+reading is about 0.4 V below the terminal voltage because of the diode).
+
+## 3j. Board revision straps: PE7 and PE8 (CIP-01.3, CORE_PCB.md 12)
+
+| CubeMX | Setting |
+|---|---|
+| PE7 | GPIO_Input, **no pull-up or pull-down** (the board has the resistors), label **HW_REV0** |
+| PE8 | GPIO_Input, no pull, label **HW_REV1** |
+
+The firmware reads them once at start (`bsp_hw_straps` in `supply_stm32h5.c`): revision =
+PE8 x 2 + PE7, shown as parameter 319 `board_rev` and `/api/info` `board_rev`. A firmware image
+whose header names other board revisions is refused (`FW_E_HARDWARE`), and alarm 22 HW_REV
+(warning) says when the straps disagree with the factory `hw_rev`. Without the labels the board
+has no straps: nothing is checked. **On the DK** leave them off (PE7/PE8 float there).
+
+**Build ID.** Add `PLAT_BUILD_ID="<git short hash>"` to the compiler's defines (Project >
+Properties > C/C++ Build > Settings > MCU GCC Compiler > Preprocessor), for example from a
+pre-build step; it shows as `/api/info` `build` and goes in the image header with
+`tools/mkfwimage.py --build-id`. Without it the build says "dev".
+
+## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
+
+The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the
+main port through lwIP instead, with nothing more to set up in CubeMX (lwIP's pools are sized for
+the three board connections and the discovery socket, `port/stm32h5/lwip/lwipopts.h`). Only
+for the RS-485 setting:
 
 | CubeMX | Setting |
 |---|---|
@@ -225,15 +316,16 @@ configuration → SWAP_BANK).
 3. Set the values the platform requires (see `port/stm32h5/FreeRTOSConfig.h`, the REQUIRED lines):
    `configTICK_RATE_HZ 1000`, `configMAX_PRIORITIES 16`, `configSUPPORT_STATIC_ALLOCATION 1`,
    `configCHECK_FOR_STACK_OVERFLOW 2`, `configUSE_MALLOC_FAILED_HOOK 1`, `INCLUDE_xTaskDelayUntil 1`,
-   `configTOTAL_HEAP_SIZE` 48 KB, `configTIMER_TASK_PRIORITY 11`. Also set `configASSERT` to call
+   `configTOTAL_HEAP_SIZE` 64 KB, `configMINIMAL_STACK_SIZE 512`, `configTIMER_TASK_STACK_DEPTH 1024`, `configTIMER_TASK_PRIORITY 11`. Also set `configASSERT` to call
    `plat_assert_failed(__FILE__, __LINE__)`.
 4. Create **no** tasks in CubeMX: the platform creates its own.
 5. NVIC → Code generation: make sure **SVC, PendSV and SysTick handlers are not generated** (the FreeRTOS port defines them). X-CUBE-FREERTOS normally unticks these itself; check after generating that `stm32h5xx_it.c` doesn't contain them.
+   Untick the same "Generate IRQ handler" box for **Hard fault, Memory management fault, Prefetch fault / memory access fault (BusFault) and Undefined instruction / illegal state (UsageFault)**: `port/stm32h5/fault_stm32h5.c` defines these four (D4). Left ticked, the link fails with multiple definitions; with ST's empty loops instead, a fault would hang until the watchdog and leave no record.
 6. If the generated code already defines `vApplicationGetIdleTaskMemory` / `vApplicationGetTimerTaskMemory`, keep them: the platform's versions are weak and give way.
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, and for a first test `app_demo/`, into the project.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, `port/stm32h5/fault_stm32h5.c`, `port/stm32h5/supply_stm32h5.c`, and for a first test `app_demo/`, into the project.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.

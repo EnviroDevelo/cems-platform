@@ -21,6 +21,12 @@
 #include "plat_health.h"
 #include "ui_app.h"
 #include "iobus.h"
+#include "plat_state.h"
+#include "plat_power.h"
+#include "plat_cal.h"
+#include "plat_service.h"
+#include "plat_selftest.h"
+#include "plat_version.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -55,16 +61,18 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
-    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB,
+    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB, T_MAINT, T_CAL,
     T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
     /* application screens and record editors (no keyboard there, so 1..126 are free):
      * 1..8 tabs, T_W0.. widgets and cells (looked up in U.tmap), T_DLG_* the dialog */
     T_TAB0 = 1, T_W0 = 10, T_WMAX = 118, T_DLG_YES = 120, T_DLG_NO = 121,
-    T_ROW0 = 200            /* .. T_ROW0 + ROWS - 1 */
+    T_ROW0 = 200,           /* .. T_ROW0 + ROWS - 1 */
+    T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
+    T_AL_ROW0 = 220         /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
-typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL } act_t;
+typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL } act_t;
 
 static struct {
     const ui_cfg_t *cfg;
@@ -106,6 +114,7 @@ static struct {
     /* alarms */
     size_t   al_first;
     uint16_t al_ids[ROWS];
+    uint16_t al_rows[ROWS], al_sel;   /* ids on the alarm rows; the one showing its help (0 = none) */
     size_t   cfg_first;
     /* application screens */
     int      app_scr;
@@ -113,6 +122,7 @@ static struct {
     uint8_t  tmap_w[128];          /* tag -> widget (or field) index + 1 */
     uint16_t tmap_i[128];          /* tag -> grid item / cell (row << 6 | element) */
     char     ok_msg[48];
+    uint8_t  cal_ch, cal_cmd;      /* calibration screen: the channel selected; the command being confirmed */
     /* record editor */
     const ui_record_t *rec;
     uint8_t  rec_buf[PARAM_RECORD_MAX];
@@ -285,6 +295,15 @@ static void do_action(uint32_t now) {
         else toast(false, now, "Restarting on the new firmware...");
         U.act = ACT_NONE;
         return;
+    } else if (U.act == ACT_CAL) {
+        int r = U.cal_cmd == PLAT_CAL_CMD_BEGIN ? plat_cal_begin(U.cal_ch, PLAT_SRC_LOCAL, U.level)
+              : U.cal_cmd == PLAT_CAL_CMD_REVERT ? plat_cal_revert(U.cal_ch, PLAT_SRC_LOCAL, U.level)
+              : plat_cal_end(U.cal_cmd == PLAT_CAL_CMD_ACCEPT, PLAT_SRC_LOCAL, U.level);
+        static const char *const done[] = { "", "Calibration started", "Accepted", "Calibration aborted", "Factory calibration restored" };
+        if (r != PERR_OK) toast(true, now, "%s", perr_text((param_err_t)r));
+        else toast(false, now, "%s", done[U.cal_cmd <= PLAT_CAL_CMD_REVERT ? U.cal_cmd : 0]);
+        U.act = ACT_NONE;
+        return;
     } else if (U.act == ACT_FW_LOCAL) {
         fw_local_answer(true, U.level);
         fw_status_t st; fw_status(&st);
@@ -420,6 +439,33 @@ static void mode_tap(uint32_t now) {
     }
 }
 
+/* MAINTENANCE (CIP-09, section 7): the operator enters and leaves it here, confirmed;
+ * parameter 301, so levels and the event log apply as for any write */
+static bool maint_on(void) { plat_val_t v; return param_read(PARAM_ID_MAINTENANCE, &v) && v.b; }
+static void maint_tap(uint32_t now) {
+    bool in = maint_on();
+    if (U.level < PLAT_LVL_OPERATOR) { toast(true, now, "Log in as operator to %s maintenance", in ? "leave" : "enter"); return; }
+    plat_cmd_t c = { .id = PARAM_ID_MAINTENANCE, .src = PLAT_SRC_LOCAL, .kind = PLAT_VAL_BOOL, .level = U.level, .v.b = !in };
+    U.pend = c;
+    snprintf(U.ok_msg, sizeof U.ok_msg, "%s", in ? "Maintenance ended" : "Maintenance started");
+    ask(ACT_POST, in ? "Leave maintenance? Readings are reported as valid again."
+                     : "Start maintenance? Every reading is marked \"maintenance\" until you leave it.");
+}
+
+/* Calibration (CIP-18): every command is checked first so a refusal says why in words, then
+ * confirmed; plat_cal applies it in the scan with the same checks */
+static void cal_tap(uint8_t cmd, uint32_t now) {
+    if (plat_cal_check(cmd, U.cal_ch, U.level) != PERR_OK) { toast(true, now, "%s", plat_cal_refusal()); return; }
+    char m[112];
+    const char *n = plat_cal_name(U.cal_ch);
+    if (cmd == PLAT_CAL_CMD_BEGIN) snprintf(m, sizeof m, "Start calibrating %s? Readings are marked \"calibration\" until it ends.", n);
+    else if (cmd == PLAT_CAL_CMD_ACCEPT) snprintf(m, sizeof m, "Accept the new %s calibration and put it in force?", n);
+    else if (cmd == PLAT_CAL_CMD_ABORT) snprintf(m, sizeof m, "Abort the %s calibration? The calibration in force stays.", n);
+    else snprintf(m, sizeof m, "Put the factory calibration of %s back in force?", n);
+    U.cal_cmd = cmd;
+    ask(ACT_CAL, m);
+}
+
 /* ---------------- input ---------------- */
 static size_t n_params(void) { return param_count(); }
 
@@ -448,7 +494,8 @@ static void tap(uint8_t t, uint32_t now) {
         goto_scr(UI_LOGIN);
         return;
     case T_MODE: mode_tap(now); return;
-    case T_ALARMS: U.al_first = 0; goto_scr(UI_ALARMS); return;
+    case T_MAINT: maint_tap(now); return;
+    case T_ALARMS: U.al_first = 0; U.al_sel = 0; goto_scr(UI_ALARMS); return;
     case T_ACTIONS: U.cfg_first = 0; goto_scr(UI_ALARM_CFG); return;
     default: break;
     }
@@ -493,6 +540,10 @@ static void tap(uint8_t t, uint32_t now) {
     case UI_ALARMS:
         if (t == T_PGUP) { U.al_first = U.al_first >= ROWS ? U.al_first - ROWS : 0; U.dirty = true; }
         else if (t == T_PGDN) { U.al_first += ROWS; U.dirty = true; }
+        else if (t >= T_AL_ROW0 && t < T_AL_ROW0 + ROWS && U.al_rows[t - T_AL_ROW0]) {
+            uint16_t id = U.al_rows[t - T_AL_ROW0];
+            U.al_sel = U.al_sel == id ? 0 : id; U.dirty = true;
+        }
         else if (t == T_ACK_ALL || (t >= T_ROW0 && t < T_ROW0 + ROWS && U.al_ids[t - T_ROW0])) {
             uint16_t id = t == T_ACK_ALL ? ALARM_ACK_ALL : U.al_ids[t - T_ROW0];
             param_err_t e = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = id }, PLAT_SRC_LOCAL, U.level);
@@ -553,8 +604,16 @@ static void tap(uint8_t t, uint32_t now) {
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
             ask(ACT_FW, m);
         } else if (t == T_IOB) goto_scr(UI_IOB);
+        else if (t == T_CAL) { unsigned a; if (plat_cal_active(&a)) U.cal_ch = (uint8_t)a; goto_scr(UI_CAL); }
         else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
+        break;
+    case UI_CAL:
+        if (t >= T_ROW0 && t < T_ROW0 + 4 && (size_t)(t - T_ROW0) < plat_cal_count()) { U.cal_ch = (uint8_t)(t - T_ROW0); U.dirty = true; }
+        else if (t == T_CAL_START) cal_tap(PLAT_CAL_CMD_BEGIN, now);
+        else if (t == T_CAL_ACCEPT) cal_tap(PLAT_CAL_CMD_ACCEPT, now);
+        else if (t == T_CAL_ABORT) cal_tap(PLAT_CAL_CMD_ABORT, now);
+        else if (t == T_CAL_REVERT) cal_tap(PLAT_CAL_CMD_REVERT, now);
         break;
     default:
         break;
@@ -616,16 +675,57 @@ static void button(uint8_t tag, int16_t x, int16_t y, int16_t w, int16_t h, cons
     eve_tag(E, 0);
 }
 
+/* UI_CONVENTIONS 3 and 4: the instrument state, the supervisory link and a value's quality */
+static uint32_t state_color(uint8_t st) {
+    switch (st) {
+    case PLAT_ST_READY: case PLAT_ST_MEASURING: return C_OK;
+    case PLAT_ST_WARMING_UP: case PLAT_ST_MAINTENANCE: case PLAT_ST_CALIBRATION: return C_WARN;
+    case PLAT_ST_FAULT: case PLAT_ST_SAFE_MODE: return C_BAD;
+    default: return 0x5B6577u;
+    }
+}
+enum { LINK_NONE, LINK_OK, LINK_LOST };
+static int link_state(uint32_t now) {
+    plat_val_t v;
+    uint32_t to = param_read(PARAM_ID_COMMS_TIMEOUT_S, &v) ? v.u : 0u, age = plat_link_age_ms(now);
+    if (!to || age == UINT32_MAX) return LINK_NONE;
+    return age > to * 1000u ? LINK_LOST : LINK_OK;
+}
+static uint32_t q_color(uint8_t q) {
+    return q == PLAT_Q_RANGE || q == PLAT_Q_FAULT ? C_BAD : q == PLAT_Q_UNAVAILABLE ? C_GREY : C_WARN;
+}
+/* A shown value with its quality, centred on cy: when it is not valid the number is greyed
+ * ("----" when unavailable) and moves up, with the quality word under it. idx: UW_NO_INDEX
+ * (= PLAT_MEAS_NO_INDEX) for a scalar. */
+static void qvalue(int16_t x, int16_t cy, int16_t f, uint16_t id, uint16_t idx, const char *v) {
+    uint8_t q = param_quality(id, idx);
+    if (q == PLAT_Q_VALID) { color(C_INK); text(x, cy, f, OPT_CENTERY, v); return; }
+    int16_t hv = f == F_HUGE ? 49 : f == F_BIG ? 36 : 25;          /* the ROM fonts' cell heights */
+    int16_t vc = (int16_t)(cy - 11);
+    color(C_GREY); text(x, vc, f, OPT_CENTERY, q == PLAT_Q_UNAVAILABLE ? "----" : v);
+    color(q_color(q)); text(x, (int16_t)(vc + hv / 2 + 11), f >= F_BIG ? F_TEXT : F_SMALL, OPT_CENTERY, plat_quality_name(q));
+}
+
 static void header(uint32_t now) {
     box(0, 0, W, HEAD_H, C_HEAD, 1);
     color(0xFFFFFFu);
     text(16, HEAD_H / 2, 29, OPT_CENTERY, U.cfg && U.cfg->product ? U.cfg->product : "CEMS Supervisor");
-    bool remote = param_ctrl_mode() == PARAM_MODE_REMOTE;
-    int16_t x = 520;
-    box(x, 14, 130, 36, remote ? C_OK : 0x5B6577u, 18);
+    uint8_t st = plat_state();
+    int16_t x = 236;
+    box(x, 14, 176, 36, state_color(st), 18);
     color(0xFFFFFFu);
-    text((int16_t)(x + 65), 32, F_TEXT, OPT_CENTER, remote ? "REMOTE" : "LOCAL");
-    x = (int16_t)(x + 140);
+    text((int16_t)(x + 88), 32, F_SMALL, OPT_CENTER, plat_state_name(st));
+    x = (int16_t)(x + 184);
+    bool remote = param_ctrl_mode() == PARAM_MODE_REMOTE;
+    box(x, 14, 112, 36, remote ? C_OK : 0x5B6577u, 18);
+    color(0xFFFFFFu);
+    text((int16_t)(x + 56), 32, F_SMALL, OPT_CENTER, remote ? "REMOTE" : "LOCAL");
+    x = (int16_t)(x + 120);
+    int ls = link_state(now);
+    box(x, 14, 124, 36, ls == LINK_OK ? C_OK : ls == LINK_LOST ? C_BAD : 0x5B6577u, 18);
+    color(0xFFFFFFu);
+    text((int16_t)(x + 62), 32, F_SMALL, OPT_CENTER, ls == LINK_OK ? "LINK OK" : ls == LINK_LOST ? "LINK LOST" : "NO LINK");
+    x = (int16_t)(x + 132);
     alarm_summary_t as;
     alarm_summary(&as);
     if (as.shown) {                                   /* one pill for every alarm: tap for the list */
@@ -634,15 +734,14 @@ static void header(uint32_t now) {
         else snprintf(a, sizeof a, "%u ALARM%s", as.active, as.active == 1 ? "" : "S");
         uint32_t c = !as.worst_unacked ? 0x5B6577u : as.worst >= AL_SEV_ALARM ? C_BAD : as.worst == AL_SEV_WARNING ? C_WARN : 0x5B6577u;
         eve_tag(E, T_ALARMS);
-        box(x, 10, 230, 44, U.pressed == T_ALARMS ? C_PRESS : c, 22);
-        color(0xFFFFFFu); text((int16_t)(x + 115), 32, F_TEXT, OPT_CENTER, a);
+        box(x, 10, 196, 44, U.pressed == T_ALARMS ? C_PRESS : c, 22);
+        color(0xFFFFFFu); text((int16_t)(x + 98), 32, F_SMALL, OPT_CENTER, a);
         eve_tag(E, 0);
     }
     char t[16];
     snprintf(t, sizeof t, "%02u:%02u:%02u", RTC_Time.Hours, RTC_Time.Minutes, RTC_Time.Seconds);
     color(0xC9D2E3u);
     text(W - 16, HEAD_H / 2, F_TEXT, OPT_CENTERY | OPT_RIGHTX, RTC_Date.Year >= 2000 ? t : "--:--:--");
-    (void)now;
 }
 
 static void nav(void) {
@@ -651,7 +750,7 @@ static void nav(void) {
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
     for (int k = 0; k < 4; ++k) {
         bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
-                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK));
+                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL));
         button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
     char b[32];
@@ -671,17 +770,17 @@ static void draw_home(void) {
         text((int16_t)(x + 16), (int16_t)(y + 12), F_TEXT, 0, d ? d->name : "?");
         char v[64] = "-";
         if (d) fmt_value(d, v, sizeof v);
-        color(C_INK);
-        text((int16_t)(x + 16), (int16_t)(y + 56), F_HUGE, 0, v);
+        qvalue((int16_t)(x + 16), (int16_t)(y + 81), F_HUGE, c->home_ids[k], UW_NO_INDEX, v);
     }
     int16_t y = (int16_t)(BODY_Y + (n > 3 ? 280 : n ? 140 : 10));
     box(16, y, 992, 110, C_CARD, 8);
     bool remote = param_ctrl_mode() == PARAM_MODE_REMOTE;
     color(C_INK);
-    text(36, (int16_t)(y + 18), F_BIG, 0, remote ? "Control: REMOTE (PLC and web)" : "Control: LOCAL (this touchscreen)");
+    text(36, (int16_t)(y + 18), F_BIG, 0, remote ? "Control: REMOTE" : "Control: LOCAL");
     color(C_MUTE);
-    text(36, (int16_t)(y + 64), F_TEXT, 0, remote ? "Changes here are refused until you take control back."
-                                                  : "The PLC and web can read but not change settings.");
+    text(36, (int16_t)(y + 64), F_TEXT, 0, remote ? "Changes here are refused." : "The PLC and web can only read.");
+    bool maint = maint_on();
+    button(T_MAINT, 476, (int16_t)(y + 23), 236, 64, maint ? "End maintenance" : "Maintenance", maint ? C_WARN : C_ACCENT, true);
     button(T_MODE, 724, (int16_t)(y + 23), 264, 64, remote ? "Take LOCAL control" : "Hand to REMOTE", remote ? C_WARN : C_ACCENT, true);
 }
 
@@ -703,7 +802,7 @@ static void draw_params(void) {
         color(C_INK);  text(110, (int16_t)(y + ROW_H / 2), F_TEXT, OPT_CENTERY, d->name);
         fmt_value(d, b, sizeof b);
         if (strlen(b) > 22) strcpy(b + 19, "...");
-        text(440, (int16_t)(y + ROW_H / 2), F_TEXT, OPT_CENTERY, b);
+        qvalue(440, (int16_t)(y + ROW_H / 2), F_TEXT, d->id, UW_NO_INDEX, b);
         color(can ? C_ACCENT : C_GREY);
         text(880, (int16_t)(y + ROW_H / 2), F_SMALL, OPT_CENTERY | OPT_RIGHTX, can ? "Change >" : (d->flags & PF_RO) ? "read only" : (d->flags & PF_DEV) ? "developer" : lvl_name(d->level));
         eve_tag(E, 0);
@@ -743,14 +842,15 @@ static void draw_edit(void) {
     const param_def_t *d = U.ed;
     if (!d) return;
     char b[96], r[64];
-    box(16, BODY_Y, 992, 88, C_CARD, 8);
+    int16_t cw = U.kb == KB_TEXT ? 760 : 992;            /* the text keyboard's OK/Cancel stand beside it */
+    box(16, BODY_Y, cw, 88, C_CARD, 8);
     color(C_INK);
     snprintf(b, sizeof b, "%s  (%u)", d->name, d->id);
     text(32, BODY_Y + 10, F_BIG, 0, b);
     fmt_value(d, r, sizeof r);
     snprintf(b, sizeof b, "Now: %s", r);
     color(C_MUTE);
-    text(992, BODY_Y + 16, F_TEXT, OPT_RIGHTX, b);
+    text((int16_t)(cw), BODY_Y + 16, F_TEXT, OPT_RIGHTX, b);
     if (d->ptype == PT_INT) snprintf(r, sizeof r, "Range %ld .. %ld", (long)d->vmin.i, (long)d->vmax.i);
     else if (d->ptype == PT_UINT && !is_ip(d)) snprintf(r, sizeof r, "Range %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u);
     else if (d->ptype == PT_FLOAT) { char a[24], z[24]; fmt_float(a, sizeof a, (double)d->vmin.f); fmt_float(z, sizeof z, (double)d->vmax.f); snprintf(r, sizeof r, "Range %s .. %s", a, z); }
@@ -771,7 +871,9 @@ static void draw_edit(void) {
     text(28, (int16_t)(y + 24), F_BIG, OPT_CENTERY, b);
     draw_keyboard((int16_t)(y + 54), U.kb == KB_TEXT);
     int16_t bx = U.kb == KB_TEXT ? 784 : 664;
-    if (U.kb == KB_TEXT) { button(T_OK, bx, y, 108, 48, "OK", C_OK, true); button(T_CANCEL, bx + 116, y, 108, 48, "Cancel", 0x5B6577u, true); }
+    if (U.kb == KB_TEXT) {                               /* beside the narrowed card and the entry: 144 px tall */
+        button(T_OK, bx, BODY_Y, 108, 144, "OK", C_OK, true); button(T_CANCEL, (int16_t)(bx + 116), BODY_Y, 108, 144, "Cancel", 0x5B6577u, true);
+    }
     else { button(T_OK, bx, (int16_t)(y + 54), 344, 119, "OK", C_OK, true); button(T_CANCEL, bx, (int16_t)(y + 176), 344, 119, "Cancel", 0x5B6577u, true); }
 }
 
@@ -785,12 +887,13 @@ static void draw_login(uint32_t now) {
     char m[40]; size_t n = strlen(U.pw), k = 0;
     for (; k < n && k < 32; ++k) m[k] = '*';
     m[k++] = '_'; m[k] = 0;
-    box(32, BODY_Y + 76, 560, 40, 0xF4F5F7u, 6);
+    box(32, BODY_Y + 76, 540, 40, 0xF4F5F7u, 6);
     color(C_INK);
     text(44, BODY_Y + 96, F_BIG, OPT_CENTERY, m);
-    if (now < U.lock_until) { color(C_BAD); text(610, BODY_Y + 96, F_SMALL, OPT_CENTERY, "Too many attempts: wait"); }
-    button(T_OK, 784, BODY_Y + 76, 108, 40, "Enter", C_OK, now >= U.lock_until);
-    button(T_CANCEL, 900, BODY_Y + 76, 108, 40, "Cancel", 0x5B6577u, true);
+    if (now < U.lock_until) { color(C_BAD); text(584, BODY_Y + 96, F_SMALL, OPT_CENTERY, "Too many attempts: wait"); }
+    /* full card height: 40 px (6 mm on the RVT70) was the smallest target on any screen */
+    button(T_OK, 776, BODY_Y + 8, 112, 112, "Enter", C_OK, now >= U.lock_until);
+    button(T_CANCEL, 896, BODY_Y + 8, 104, 112, "Cancel", 0x5B6577u, true);
     draw_keyboard(BODY_Y + 136, true);
 }
 
@@ -852,7 +955,8 @@ static void draw_system(uint32_t now) {
     /* firmware */
     fw_status_t st; fw_status(&st);
     color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Firmware");
-    kv(32, BODY_Y + 44, "Running", st.running_version);
+    snprintf(b, sizeof b, "%.15s, core %s, build %.11s", st.running_version, PLAT_CORE_VERSION, fw_build_id());   /* R4: core version beside it */
+    kv(32, BODY_Y + 44, "Running", b);
     if (st.state == FW_ST_TRIAL) { snprintf(b, sizeof b, "on trial, keeps itself in %u s", (unsigned)((st.trial_left_ms + 999u) / 1000u)); kv(32, BODY_Y + 72, "State", b); }
     else {
         fw_hist_t h;
@@ -865,6 +969,21 @@ static void draw_system(uint32_t now) {
         } else kv(32, BODY_Y + 72, "State", st.rolled_back || (fw_history(&h, 1) && h.kind == FWH_ROLLED_BACK) ? "last update rolled back" : "normal");
     }
     kv(32, BODY_Y + 100, "Spare bank", st.staged ? st.staged_version : "empty");
+    {   /* CIP-11.1: the start-up self-test; failed checks by name */
+        unsigned nst = plat_selftest_count(), skip = 0;
+        size_t o = 0; b[0] = 0;
+        for (unsigned i = 0; i < nst; ++i) {
+            const char *nm; uint8_t r;
+            if (!plat_selftest_get(i, &nm, &r)) continue;
+            if (r == PLAT_STR_SKIP) ++skip;
+            else if (r == PLAT_STR_FAIL && o < sizeof b - 2u)
+                o += (size_t)snprintf(b + o, sizeof b - o, "%s%s", o ? ", " : "failed: ", nm);
+        }
+        if (!plat_selftest_done()) { snprintf(b, sizeof b, "running"); o = 0; }
+        else if (!o) snprintf(b, sizeof b, "passed (%u checks, %u skipped)", nst - skip, skip);
+        color(C_MUTE); text(32, BODY_Y + 128, F_SMALL, 0, "Self-test");
+        color(o ? C_BAD : C_INK); text(202, BODY_Y + 128, F_SMALL, 0, b);
+    }
     if (st.uploading) {
         snprintf(b, sizeof b, "receiving %lu of %lu bytes", (unsigned long)st.upload_bytes, (unsigned long)st.upload_total);
         kv(32, BODY_Y + 128, "Update", b);
@@ -898,12 +1017,22 @@ static void draw_system(uint32_t now) {
     /* unit */
     color(C_INK); text(544, BODY_Y + 10, F_TEXT, 0, "Unit");
     plat_val_t v;
-    snprintf(b, sizeof b, "%lu", (unsigned long)(param_read(PARAM_ID_SERIAL, &v) ? v.u : 0)); kv(544, BODY_Y + 44, "Serial", b);
-    snprintf(b, sizeof b, "%lu", (unsigned long)(param_read(PARAM_ID_HW_REV, &v) ? v.u : 0)); kv(544, BODY_Y + 70, "Hardware", b);
+    {   unsigned long sn = param_read(PARAM_ID_SERIAL, &v) ? v.u : 0, hw = param_read(PARAM_ID_HW_REV, &v) ? v.u : 0;
+        int br = fw_board_rev();                     /* -1 = no revision straps on this board */
+        if (br >= 0) snprintf(b, sizeof b, "%lu, hardware %lu, board rev %d", sn, hw, br);
+        else snprintf(b, sizeof b, "%lu, hardware %lu", sn, hw);
+        kv(544, BODY_Y + 44, "Serial", b); }
+    {   uint32_t h = plat_service_hours_x10(), sv = plat_service_since_x10();   /* CIP-05: operating hours */
+        snprintf(b, sizeof b, "%lu.%lu total, %lu.%lu since service", (unsigned long)(h / 10u), (unsigned long)(h % 10u),
+                 (unsigned long)(sv / 10u), (unsigned long)(sv % 10u));
+        kv(544, BODY_Y + 70, "Hours", b); }
     snprintf(b, sizeof b, "%lu h %lu min", (unsigned long)(now / 3600000u), (unsigned long)((now / 60000u) % 60u)); kv(544, BODY_Y + 96, "Up", b);
-    snprintf(b, sizeof b, "%lu%s%.15s", (unsigned long)plat_diag.boots, plat_diag.fault ? ", last fault: " : "", plat_diag.fault ? plat_diag.fault_name : "");
+    snprintf(b, sizeof b, "%lu%s%.24s", (unsigned long)plat_diag.boots, plat_diag.fault ? ", last: " : "", plat_diag.fault ? plat_fault_text(plat_diag.fault) : "");
     kv(544, BODY_Y + 122, "Restarts", b);
-    color(C_INK); text(544, BODY_Y + 156, F_TEXT, 0, "Network");
+    uint32_t mv = plat_supply_mv();                  /* CIP-07.3: 0 = not measured on this board */
+    if (mv) snprintf(b, sizeof b, "%lu.%lu V", (unsigned long)(mv / 1000u), (unsigned long)((mv % 1000u) / 100u));
+    kv(544, BODY_Y + 148, "Supply", mv ? b : "not measured");
+    color(C_INK); text(544, BODY_Y + 172, F_TEXT, 0, "Network");
     uint32_t ip = 0; bool link = false; uint8_t mac[6] = { 0 };
     bool have = ui_net_status(&ip, &link, mac);
     if (!have && param_read(PARAM_ID_NET_IP, &v)) ip = v.u;
@@ -911,38 +1040,150 @@ static void draw_system(uint32_t now) {
     if (plat_net_status_word & NETST_CONFLICT) snprintf(b, sizeof b, "%s IN USE by another device", c);
     else if (plat_net_status_word & NETST_PROBING) snprintf(b, sizeof b, "%s (checking...)", c);
     else snprintf(b, sizeof b, "%s%s", c, have ? (link ? "  (link up)" : "  (no link)") : "");
-    kv(544, BODY_Y + 190, "Address", b);
-    if (have) { snprintf(b, sizeof b, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); kv(544, BODY_Y + 216, "MAC", b); }
-    color(C_INK); text(544, BODY_Y + 252, F_TEXT, 0, "Storage");
-    kv(544, BODY_Y + 286, "Calibration", param_store_calibration_valid() ? "valid" : "INVALID");
+    kv(544, BODY_Y + 202, "Address", b);
+    if (have) { snprintf(b, sizeof b, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); kv(544, BODY_Y + 226, "MAC", b); }
+    color(C_INK); text(544, BODY_Y + 250, F_TEXT, 0, "Storage");
+    kv(544, BODY_Y + 280, "Calibration", param_store_calibration_valid() ? "valid" : "INVALID");
     uint32_t ls = plat_log_status();
     snprintf(b, sizeof b, "%s%s%s", ls & LSTAT_NOR_FAULT ? "FAULT " : "", ls & LSTAT_VOLATILE ? "RAM only (no flash) " : "",
              (ls & (LSTAT_NOR_FAULT | LSTAT_VOLATILE)) ? "" : "ok");
-    kv(544, BODY_Y + 312, "Log", b);
-    snprintf(b, sizeof b, "0x%04lx", (unsigned long)param_store_status());
-    kv(544, BODY_Y + 338, "Store status", b);
+    snprintf(b + strlen(b), sizeof b - strlen(b), ", store 0x%04lx", (unsigned long)param_store_status());
+    kv(544, BODY_Y + 302, "Log, store", b);
+    snprintf(b, sizeof b, "%08lX", (unsigned long)plat_config_crc());
+    kv(544, BODY_Y + 324, "Config", b);                 /* CIP-05.4: configuration checksum, 8 hex digits */
     if (plat_health.valid) {
         unsigned lo = 0xFFFFu; const char *ln = "";
         for (unsigned i = 0; i < plat_health.n_tasks && i < PLAT_HEALTH_TASKS; ++i)
             if (plat_health.task[i].free_words < lo) { lo = plat_health.task[i].free_words; ln = plat_health.task[i].name; }
         snprintf(b, sizeof b, "heap %lu KB free at worst, stack %.11s %u words", (unsigned long)(plat_health.heap_min / 1024u), ln, lo);
-        kv(544, BODY_Y + 390, "Memory", b);
+        kv(544, BODY_Y + 368, "Memory", b);
     }
     uint32_t ct;
-    if (plat_clock_now(&ct)) log_fmt_time(b, sizeof b, ct, true); else snprintf(b, sizeof b, "NOT SET");
-    kv(544, BODY_Y + 364, "Clock", b);
-    button(T_CLOCK, 868, BODY_Y + 318, 128, 64, "Set clock", C_ACCENT, true);
-    button(T_IOB, 868, BODY_Y + 244, 128, 64, "I/O boards", C_ACCENT, true);
+    if (plat_clock_now(&ct))                          /* day first, no seconds (the header has them): clears the buttons */
+        snprintf(b, sizeof b, "%02u/%02u/%04u %02u:%02u", RTC_Date.Day_In_Month, RTC_Date.Month, RTC_Date.Year, RTC_Time.Hours, RTC_Time.Minutes);
+    else snprintf(b, sizeof b, "NOT SET");
+    kv(544, BODY_Y + 346, plat_clock_synced() ? "Clock" : "Clock, not synced", b);   /* CIP-02.6 */
+    button(T_CLOCK, 884, BODY_Y + 318, 116, 64, "Set clock", C_ACCENT, true);
+    button(T_IOB, 884, BODY_Y + 244, 116, 64, "I/O boards", C_ACCENT, true);
+    if (plat_cal_count()) button(T_CAL, 884, BODY_Y + 40, 116, 64, plat_cal_any_due() ? "Cal DUE" : "Calibrate", plat_cal_any_due() ? C_WARN : C_ACCENT, true);
 }
 
 /* I/O boards (iobus.h): one card per board, outputs and inputs as lit squares, faults in words */
+/* dd/mm/yyyy, or "clock not set" (UI_CONVENTIONS 5) */
+static void fmt_day(char *b, size_t cap, uint32_t t) {
+    if (!t) { snprintf(b, cap, "clock not set"); return; }
+    unsigned y, mo, d, h, mi, s;
+    plat_civil_from_unix(t, &y, &mo, &d, &h, &mi, &s);
+    snprintf(b, cap, "%02u/%02u/%04u", d % 100u, mo % 100u, y % 10000u);
+}
+static const char *cal_kind(uint8_t k) { return k == PLAT_CAL_FACTORY ? "factory" : k == PLAT_CAL_FIELD ? "field" : "-"; }
+static uint32_t cal_outcome_color(uint8_t o) { return o == PLAT_CAL_PASS || o == PLAT_CAL_REVERTED ? C_OK : o == PLAT_CAL_FAIL ? C_BAD : C_WARN; }
+static void fmt_f(char *b, size_t cap, float v) {
+    if (v != v) { snprintf(b, cap, "-"); return; }                  /* NaN: not taken */
+    fmt_float(b, cap, (double)v);
+}
+
+/* Calibration (CIP-18): channels with the record in force and due date; the selected channel's
+ * points (reference, as found, as left); the history; start, accept, abort, revert */
+static void draw_cal(uint32_t now) {
+    char b[96], c[24];
+    size_t n = plat_cal_count();
+    if (U.cal_ch >= n) U.cal_ch = 0;
+    unsigned act_ch = 0;
+    bool active = plat_cal_active(&act_ch);
+    uint32_t today = 0; bool clk = plat_clock_now(&today);
+    /* channels */
+    box(16, BODY_Y, 480, 248, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Channels");
+    for (size_t k = 0; k < n && k < 4; ++k) {
+        int16_t y = (int16_t)(BODY_Y + 44 + k * 50);
+        uint8_t tg = (uint8_t)(T_ROW0 + k);
+        eve_tag(E, tg);
+        box(24, y, 464, 46, k == U.cal_ch ? 0xDCE6F5u : C_CARD, 6);
+        color(C_INK); text(36, (int16_t)(y + 23), F_TEXT, OPT_CENTERY, plat_cal_name((unsigned)k));
+        plat_cal_record_t r;
+        uint32_t due = plat_cal_due((unsigned)k);
+        if (active && act_ch == k) { color(C_WARN); snprintf(b, sizeof b, "calibrating now"); }
+        else if (!plat_cal_in_force((unsigned)k, &r)) { color(C_BAD); snprintf(b, sizeof b, "never calibrated"); }
+        else if (due && clk && today >= due) { fmt_day(c, sizeof c, due); color(C_WARN); snprintf(b, sizeof b, "DUE since %s", c); }
+        else if (due) { fmt_day(c, sizeof c, due); color(C_MUTE); snprintf(b, sizeof b, "due %s", c); }
+        else { fmt_day(c, sizeof c, r.time); color(C_MUTE); snprintf(b, sizeof b, "%s, %s", cal_kind(r.kind), c); }
+        text(480, (int16_t)(y + 23), F_SMALL, OPT_CENTERY | OPT_RIGHTX, b);
+        eve_tag(E, 0);
+    }
+    if (n > 4) { color(C_MUTE); snprintf(b, sizeof b, "+%u more on the web page", (unsigned)(n - 4)); text(32, BODY_Y + 226, F_SMALL, 0, b); }
+    /* history */
+    box(16, BODY_Y + 256, 480, 184, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 266, F_TEXT, 0, "History");
+    plat_cal_record_t h;
+    unsigned shown = 0;
+    for (unsigned i = 0; shown < 6 && plat_cal_history(i, &h); ++i, ++shown) {
+        int16_t y = (int16_t)(BODY_Y + 300 + shown * 22);
+        fmt_day(c, sizeof c, h.time);
+        snprintf(b, sizeof b, "%s  %.12s  %s  %s", c, plat_cal_name(h.channel), cal_kind(h.kind), lvl_name(h.level));
+        color(C_INK); text(32, y, F_SMALL, 0, b);
+        color(cal_outcome_color(h.outcome)); text(480, y, F_SMALL, OPT_RIGHTX, plat_cal_outcome_name(h.outcome));
+    }
+    if (!shown) { color(C_MUTE); text(32, BODY_Y + 300, F_SMALL, 0, "No calibrations yet"); }
+    /* the selected channel */
+    box(508, BODY_Y, 500, 440, C_CARD, 8);
+    if (!n) return;
+    color(C_INK); text(524, BODY_Y + 10, F_BIG, 0, plat_cal_name(U.cal_ch));
+    plat_cal_record_t r;
+    bool have = plat_cal_in_force(U.cal_ch, &r);
+    if (have) {
+        fmt_day(c, sizeof c, r.time);
+        snprintf(b, sizeof b, "In force: %s, %s, %s", cal_kind(r.kind), c, plat_cal_outcome_name(r.outcome));
+    } else snprintf(b, sizeof b, "No calibration in force");
+    color(have ? C_MUTE : C_BAD); text(524, BODY_Y + 50, F_SMALL, 0, b);
+    plat_cal_record_t f;
+    if (plat_cal_factory(U.cal_ch, &f)) { fmt_day(c, sizeof c, f.time); snprintf(b, sizeof b, "Factory: %s", c); }
+    else snprintf(b, sizeof b, "Factory: none");
+    color(C_MUTE); text(524, BODY_Y + 72, F_SMALL, 0, b);
+    if (have && r.n_pts) {                                /* reference points of the record in force */
+        static const int16_t cx[] = { 524, 640, 770, 900 };
+        static const char *const hd[] = { "Point", "Reference", "As found", "As left" };
+        color(C_MUTE);
+        for (int k = 0; k < 4; ++k) text(cx[k], BODY_Y + 104, F_SMALL, 0, hd[k]);
+        for (unsigned i = 0; i < r.n_pts && i < PLAT_CAL_PTS_MAX; ++i) {
+            int16_t y = (int16_t)(BODY_Y + 128 + i * 24);
+            color(C_INK);
+            snprintf(b, sizeof b, "%u", i + 1u); text(cx[0], y, F_SMALL, 0, b);
+            fmt_f(b, sizeof b, r.ref[i]); text(cx[1], y, F_SMALL, 0, b);
+            fmt_f(b, sizeof b, r.found[i]); text(cx[2], y, F_SMALL, 0, b);
+            fmt_f(b, sizeof b, r.left[i]); text(cx[3], y, F_SMALL, 0, b);
+        }
+    }
+    /* actions: what is refused shows greyed with the reason under it */
+    int16_t by = BODY_Y + 296;
+    if (active && act_ch == U.cal_ch) {
+        color(C_WARN); text(524, (int16_t)(by - 26), F_SMALL, 0, "Calibrating: the procedure runs, then accept or abort");
+        button(T_CAL_ACCEPT, 524, by, 228, 64, "Accept", C_OK, plat_cal_check(PLAT_CAL_CMD_ACCEPT, U.cal_ch, U.level) == PERR_OK);
+        button(T_CAL_ABORT, 764, by, 228, 64, "Abort", 0x5B6577u, true);
+    } else {
+        bool can = plat_cal_check(PLAT_CAL_CMD_BEGIN, U.cal_ch, U.level) == PERR_OK;
+        const char *why = can ? NULL : plat_cal_refusal();
+        char wb[64]; snprintf(wb, sizeof wb, "%s", why ? why : "");
+        bool rv = plat_cal_check(PLAT_CAL_CMD_REVERT, U.cal_ch, U.level) == PERR_OK;
+        eve_tag(E, T_CAL_START);                         /* tappable even when refused, so the reason toasts */
+        eve_fgcolor(E, U.pressed == T_CAL_START ? C_PRESS : can ? C_ACCENT : C_GREY);
+        color(0xFFFFFFu); ebutton(524, by, 228, 64, F_TEXT, OPT_FLAT, "Start calibration");
+        eve_tag(E, T_CAL_REVERT);
+        eve_fgcolor(E, U.pressed == T_CAL_REVERT ? C_PRESS : rv ? 0x5B6577u : C_GREY);
+        color(0xFFFFFFu); ebutton(764, by, 228, 64, F_TEXT, OPT_FLAT, "Revert to factory");
+        eve_tag(E, 0);
+        if (why) { color(C_MUTE); text(524, (int16_t)(by + 74), F_SMALL, 0, wb); }
+    }
+    (void)now;
+}
+
 static void draw_iob(void) {
-    char b[64];
+    char b[64], c[20];
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
         int16_t x = (int16_t)(16 + k * 334), y = BODY_Y;
         const iob_board_tags_t *t = &iob_tags[k];
         iob_view_t v; memset(&v, 0, sizeof v); (void)iob_board_view(k, &v);
-        box(x, y, 324, 392, C_CARD, 8);
+        box(x, y, 324, 438, C_CARD, 8);
         snprintf(b, sizeof b, "Board %u", k + 1u);
         color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 10), F_TEXT, 0, b);
         uint32_t sc = !t->enable ? C_GREY : v.state == IOB_S_RUN ? C_OK : v.state == IOB_S_CONNECTING ? C_WARN : C_BAD;
@@ -954,11 +1195,16 @@ static void draw_iob(void) {
             text((int16_t)(x + 14), (int16_t)(y + 72), F_SMALL, 0, b);
             continue;
         }
-        snprintf(b, sizeof b, "Address %u, out %u-%u, in %u-%u", t->address, t->first_do, t->first_do + IOB_OUTS - 1u,
-                 t->first_di, t->first_di + IOB_INS - 1u);
-        color(C_MUTE); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
+        /* how the board is reached: its IP and Modbus address on any IP link (D27), the address on RS-485 */
+        bool by_ip = iob_link != IOB_LINK_RS485;
+        if (by_ip) {
+            if (t->ip) { fmt_ip(c, sizeof c, t->ip); snprintf(b, sizeof b, "%s, address %u", c, t->address); }
+            else snprintf(b, sizeof b, "No IP set (iob%u_ip)", k + 1u);
+        } else snprintf(b, sizeof b, "RS-485, address %u", t->address);
+        color(t->ip || !by_ip ? C_MUTE : C_BAD); text((int16_t)(x + 14), (int16_t)(y + 42), F_SMALL, 0, b);
         /* outputs: bank A, bank B and the relays, one row each */
-        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 66), F_SMALL, 0, "Outputs");
+        snprintf(b, sizeof b, "Outputs %u-%u", t->first_do, t->first_do + IOB_OUTS - 1u);
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 66), F_SMALL, 0, b);
         static const char *const bank[] = { "0.6 A", "1 A", "relay" };
         color(C_MUTE);
         for (unsigned r = 0; r < 3; ++r) text((int16_t)(x + 310), (int16_t)(y + 103 + r * 34), F_SMALL, OPT_CENTERY | OPT_RIGHTX, bank[r]);
@@ -969,7 +1215,8 @@ static void draw_iob(void) {
             snprintf(b, sizeof b, "%u", i + 1u);
             color(f || on ? 0xFFFFFFu : C_INK); text((int16_t)(bx + 14), (int16_t)(by + 14), F_SMALL, OPT_CENTER, b);
         }
-        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 196), F_SMALL, 0, "Inputs");
+        snprintf(b, sizeof b, "Inputs %u-%u", t->first_di, t->first_di + IOB_INS - 1u);
+        color(C_INK); text((int16_t)(x + 14), (int16_t)(y + 196), F_SMALL, 0, b);
         for (unsigned i = 0; i < IOB_INS; ++i) {
             int16_t bx = (int16_t)(x + 14 + i * 31), by = (int16_t)(y + 219);
             bool on = (v.inputs >> i) & 1u, f = (v.in_faults >> i) & 1u;
@@ -977,16 +1224,39 @@ static void draw_iob(void) {
             snprintf(b, sizeof b, "%u", i + 1u);
             color(f || on ? 0xFFFFFFu : C_INK); text((int16_t)(bx + 14), (int16_t)(by + 14), F_SMALL, OPT_CENTER, b);
         }
+        /* map 2: the configured temperature channels (calibrated, as the web page shows them), two
+         * columns, and the pump */
+        int16_t ly = (int16_t)(y + 258);
+        unsigned nt = 0;
+        for (unsigned i = 0; i < IOB_TEMPS; ++i) {
+            if (t->temp_state[i] == IOB_TS_OFF) continue;
+            bool ok = t->temp_state[i] == IOB_TS_OK && t->temps[i] != IOB_TEMP_INVALID;
+            bool wait = t->temp_state[i] == IOB_TS_WAIT;
+            int32_t d = t->temps[i];                         /* 0.1 degC, without float printf */
+            if (ok) snprintf(b, sizeof b, "T%u %s%ld.%ld \u00b0C", i + 1u, d < 0 ? "-" : "", (long)(labs(d) / 10), (long)(labs(d) % 10));
+            else snprintf(b, sizeof b, "T%u %s", i + 1u, wait ? "starting" : "fault");   /* why: in the fault lines */
+            color(ok ? C_INK : wait ? C_MUTE : C_BAD);
+            text((int16_t)(x + 14 + (nt % 2u) * 155), (int16_t)(ly + (nt / 2u) * 18), F_SMALL, 0, b);
+            ++nt;
+        }
+        ly = (int16_t)(ly + ((nt + 1u) / 2u) * 18);
+        if (v.n_pwm) {
+            snprintf(b, sizeof b, "Pump %u.%u %%, %u rpm", v.pwm_applied / 10u, v.pwm_applied % 10u, (unsigned)v.rpm);
+            color(C_INK); text((int16_t)(x + 14), ly, F_SMALL, 0, b);
+            ly = (int16_t)(ly + 18);
+        }
+        if (nt || v.n_pwm) ly = (int16_t)(ly + 6);
         char lines[4][IOB_LINE];
-        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, 4);
+        int room = (y + 398 - ly) / 18;
+        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, room < 4 ? (room < 1 ? 1 : room) : 4);
         color(n ? C_BAD : C_OK);
-        if (!n) text((int16_t)(x + 14), (int16_t)(y + 262), F_SMALL, 0, v.state == IOB_S_RUN ? "No faults" : "");
-        for (int i = 0; i < n; ++i) text((int16_t)(x + 14), (int16_t)(y + 262 + i * 18), F_SMALL, 0, lines[i]);
+        if (!n) text((int16_t)(x + 14), ly, F_SMALL, 0, v.state == IOB_S_RUN ? "No faults" : "");
+        for (int i = 0; i < n; ++i) text((int16_t)(x + 14), (int16_t)(ly + i * 18), F_SMALL, 0, lines[i]);
         color(C_MUTE);
         snprintf(b, sizeof b, "Firmware %u.%u, hardware %u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u), (unsigned)v.hw_rev);
-        if (v.fw_version) text((int16_t)(x + 14), (int16_t)(y + 352), F_SMALL, 0, b);
+        if (v.fw_version) text((int16_t)(x + 14), (int16_t)(y + 398), F_SMALL, 0, b);
         snprintf(b, sizeof b, "Requests %lu, failed %lu", (unsigned long)v.requests, (unsigned long)v.errors);
-        text((int16_t)(x + 14), (int16_t)(y + 372), F_SMALL, 0, b);
+        text((int16_t)(x + 14), (int16_t)(y + 418), F_SMALL, 0, b);
     }
 }
 
@@ -1009,6 +1279,14 @@ static uint32_t sev_colour(uint8_t s) {
     return s >= AL_SEV_ALARM ? C_BAD : s == AL_SEV_WARNING ? C_WARN : C_GREY;
 }
 
+/* "what to check" for an alarm (alarm_def_t.help), or NULL */
+static const char *alarm_help(uint16_t id) {
+    const alarm_def_t *d;
+    for (size_t i = 0; (d = alarm_def_at(i)) != NULL; ++i)
+        if (d->id == id) return d->help;
+    return NULL;
+}
+
 static void draw_alarms(void) {
     alarm_view_t v[ROWS];
     alarm_summary_t as;
@@ -1017,9 +1295,17 @@ static void draw_alarms(void) {
     size_t n = alarm_list(v, U.al_first, ROWS);
     box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
     memset(U.al_ids, 0, sizeof U.al_ids);
+    memset(U.al_rows, 0, sizeof U.al_rows);
     for (size_t r = 0; r < n; ++r) {
         const alarm_view_t *a = &v[r];
         int16_t y = (int16_t)(BODY_Y + 4 + (int)r * ROW_H);
+        const char *help = alarm_help(a->id);
+        bool sel = help && U.al_sel == a->id;
+        if (help) {                                   /* the row is tappable: it swaps the status line for the help */
+            U.al_rows[r] = a->id;
+            eve_tag(E, (uint8_t)(T_AL_ROW0 + r));
+            box(20, (int16_t)(y + 2), 696, ROW_H - 4, sel ? 0xEEF3FAu : C_CARD, 4);
+        }
         if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
         box(24, (int16_t)(y + 8), 8, ROW_H - 16, sev_colour(a->severity), 2);
         char t[48], line[112];
@@ -1034,13 +1320,33 @@ static void draw_alarms(void) {
                  a->active ? (a->unacked ? "active, not acknowledged" : "active") : "cleared, not acknowledged",
                  a->active && a->unacked && (a->flags & AL_LATCH) ? " (latched)" : "");
         color(C_INK); text(44, (int16_t)(y + 18), F_TEXT, OPT_CENTERY, a->text);
-        color(a->unacked ? sev_colour(a->severity) : C_MUTE); text(44, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, line);
+        color(a->unacked ? sev_colour(a->severity) : C_MUTE);
+        text(44, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, line);
+        eve_tag(E, 0);
         if (a->unacked) {
             U.al_ids[r] = a->id;
             button((uint8_t)(T_ROW0 + r), 724, (int16_t)(y + 4), 164, ROW_H - 8, "Acknowledge", C_ACCENT, true);
         }
     }
     if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No alarms"); }
+    /* the tapped alarm's "what to check", in a panel over two rows away from it, wrapped */
+    for (size_t r = 0; r < n; ++r) {
+        const char *help = U.al_rows[r] && U.al_rows[r] == U.al_sel ? alarm_help(U.al_sel) : NULL;
+        if (!help) continue;
+        int16_t py = (int16_t)(BODY_Y + 4 + (r < ROWS - 2 ? (ROWS - 2) * ROW_H : 0));
+        box(20, py, 872, 2 * ROW_H, 0xEEF3FAu, 6);
+        box(20, py, 6, 2 * ROW_H, sev_colour(v[r].severity), 2);
+        color(C_INK); text(40, (int16_t)(py + 8), F_SMALL, 0, "What to check");
+        const char *h = help;
+        for (int16_t y = (int16_t)(py + 34); *h && y < py + 2 * ROW_H - 16; y = (int16_t)(y + 22)) {
+            char ln[96]; size_t k = strlen(h);
+            if (k > 88) { k = 88; while (k > 40 && h[k] != ' ') k--; }
+            memcpy(ln, h, k); ln[k] = 0;
+            color(C_INK); text(40, y, F_SMALL, 0, ln);
+            h += k; while (*h == ' ') h++;
+        }
+        break;
+    }
     button(T_PGUP, 908, BODY_Y, 100, 96, "Up", C_ACCENT, U.al_first > 0);
     button(T_ACK_ALL, 908, BODY_Y + 104, 100, 96, "Ack all", C_WARN, as.unacked > 0);
     button(T_PGDN, 908, BODY_Y + 208, 100, 96, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
@@ -1251,11 +1557,19 @@ static void draw_app(void) {
                 char b[24]; item_label(w, k, b, sizeof b);
                 if (strlen(b) > 10) b[10] = 0;
                 bool en = item_enabled(w, k);
+                /* the item's state element, if it is a measurement, carries its own quality (UI_CONVENTIONS 4) */
+                uint8_t q = w->state_id && is_arr(w->state_id) ? param_quality(w->state_id, (uint16_t)(k - 1u)) : PLAT_Q_VALID;
                 U.tmap_w[tag] = (uint8_t)(i + 1u); U.tmap_i[tag] = (uint16_t)k;
                 eve_tag(E, en ? (uint8_t)tag : 0);
-                eve_fgcolor(E, !en ? C_GREY : U.pressed == tag ? C_PRESS : item_lit(w, k) ? C_OK : 0x5B6577u);
+                bool qv = q == PLAT_Q_VALID;
+                eve_fgcolor(E, !qv ? (U.pressed == tag ? 0xDCE6F5u : 0xE4E7ECu) : !en ? C_GREY : U.pressed == tag ? C_PRESS : item_lit(w, k) ? C_OK : 0x5B6577u);
                 color(0xFFFFFFu);
-                ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, b);
+                if (qv) ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, b);
+                else {                                       /* light, not lit or unlit: the name and the quality word under it */
+                    ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, "");
+                    color(en ? C_INK : C_GREY); text((int16_t)(ix + 52), (int16_t)(iy + 17), F_SMALL, OPT_CENTER, b);
+                    color(q_color(q)); text((int16_t)(ix + 52), (int16_t)(iy + 38), F_SMALL, OPT_CENTER, plat_quality_name(q));
+                }
                 eve_tag(E, 0);
                 tag++; c++;
             }
@@ -1275,7 +1589,8 @@ static void draw_app(void) {
             char v[64] = "-";
             if (d) { if (w->index != UW_NO_INDEX) fmt_elem(d, w->index, v, sizeof v); else fmt_value(d, v, sizeof v); }
             if (strlen(v) > 14) strcpy(v + 11, "...");
-            color(C_INK); text((int16_t)(x + 12), (int16_t)(y + 36), F_BIG, 0, v);
+            if (d) qvalue((int16_t)(x + 12), (int16_t)(y + 56), F_BIG, d->id, w->index, v);
+            else { color(C_INK); text((int16_t)(x + 12), (int16_t)(y + 56), F_BIG, OPT_CENTERY, v); }
             if (can) { color(C_ACCENT); text((int16_t)(x + wdt - 10), (int16_t)(y + 8), F_SMALL, OPT_RIGHTX, ">"); }
             eve_tag(E, 0);
         } else if (w->kind == UW_RECORD) {
@@ -1476,7 +1791,7 @@ static bool cell_submit(bool on, uint32_t now) {
 static void draw_cell_edit(void) {
     const ui_field_t *f = U.cell_f;
     char b[96], r[64];
-    box(16, BODY_Y, 992, 88, C_CARD, 8);
+    box(16, BODY_Y, U.kb == KB_TEXT ? 760 : 992, 88, C_CARD, 8);
     color(C_INK);
     if (U.rec->rows) snprintf(b, sizeof b, "%s: %s, row %u", U.rec->title, f->label, U.cell_row + 1u);
     else if (f->count > 1) snprintf(b, sizeof b, "%s: %s %u", U.rec->title, f->label, U.cell_elem + 1u);
@@ -1494,7 +1809,9 @@ static void draw_cell_edit(void) {
     text(28, (int16_t)(y + 24), F_BIG, OPT_CENTERY, b);
     draw_keyboard((int16_t)(y + 54), U.kb == KB_TEXT);
     int16_t bx = U.kb == KB_TEXT ? 784 : 664;
-    if (U.kb == KB_TEXT) { button(T_OK, bx, y, 108, 48, "OK", C_OK, true); button(T_CANCEL, bx + 116, y, 108, 48, "Cancel", 0x5B6577u, true); }
+    if (U.kb == KB_TEXT) {                               /* beside the narrowed card and the entry: 144 px tall */
+        button(T_OK, bx, BODY_Y, 108, 144, "OK", C_OK, true); button(T_CANCEL, (int16_t)(bx + 116), BODY_Y, 108, 144, "Cancel", 0x5B6577u, true);
+    }
     else { button(T_OK, bx, (int16_t)(y + 54), 344, 119, "OK", C_OK, true); button(T_CANCEL, bx, (int16_t)(y + 176), 344, 119, "Cancel", 0x5B6577u, true); }
 }
 
@@ -1504,17 +1821,17 @@ static void draw_rec(void) {
     if (!r) return;
     const char *why = rec_why_not();
     unsigned used = ui_record_rows_used(r, U.rec_buf);
-    box(16, BODY_Y, 992, 56, C_CARD, 8);
-    color(C_INK); text(32, BODY_Y + 28, F_BIG, OPT_CENTERY, r->title);
+    box(16, BODY_Y, 992, 64, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 32, F_BIG, OPT_CENTERY, r->title);
     if (r->rows && r->rows_off != UI_ROWS_ALL) {
         char b[32]; snprintf(b, sizeof b, "In use: %u", used);
-        color(C_MUTE); text(330, BODY_Y + 28, F_TEXT, OPT_CENTERY, b);
-        button(T_OFF, 470, BODY_Y + 4, 64, 48, "-", C_ACCENT, !why && used > 0);
-        button(T_ON, 540, BODY_Y + 4, 64, 48, "+", C_ACCENT, !why && used < r->rows);
+        color(C_MUTE); text(330, BODY_Y + 32, F_TEXT, OPT_CENTERY, b);
+        button(T_OFF, 462, BODY_Y + 4, 72, 56, "-", C_ACCENT, !why && used > 0);
+        button(T_ON, 540, BODY_Y + 4, 72, 56, "+", C_ACCENT, !why && used < r->rows);
     }
-    button(T_OK, 700, BODY_Y + 4, 150, 48, U.rec_wait ? "Saving..." : "Save", U.rec_changed ? C_OK : C_ACCENT, !why && !U.rec_wait);
-    button(T_CANCEL, 858, BODY_Y + 4, 150, 48, U.rec_changed ? "Cancel" : "Close", 0x5B6577u, true);
-    int16_t y = BODY_Y + 64;
+    button(T_OK, 700, BODY_Y + 4, 150, 56, U.rec_wait ? "Saving..." : "Save", U.rec_changed ? C_OK : C_ACCENT, !why && !U.rec_wait);
+    button(T_CANCEL, 858, BODY_Y + 4, 150, 56, U.rec_changed ? "Cancel" : "Close", 0x5B6577u, true);
+    int16_t y = BODY_Y + 72;
     unsigned tag = T_W0;
     if (r->rows) {                                       /* table: 5 rows a page */
         int16_t cx[12], cw[12];
@@ -1548,8 +1865,8 @@ static void draw_rec(void) {
             }
         }
         U.rec_next = (uint16_t)row;
-        button(T_PGUP, 908, (int16_t)(BODY_Y + 64), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
-        button(T_PGDN, 908, (int16_t)(BODY_Y + 232), 100, 160, "Down", C_ACCENT, row < r->rows);
+        button(T_PGUP, 908, (int16_t)(BODY_Y + 72), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
+        button(T_PGDN, 908, (int16_t)(BODY_Y + 240), 100, 160, "Down", C_ACCENT, row < r->rows);
     } else {                                             /* form: one line per field (arrays wrap at 16) */
         unsigned i = U.rec_first;
         for (; i < r->n_fields; ++i) {
@@ -1585,8 +1902,8 @@ static void draw_rec(void) {
         }
         U.rec_next = (uint16_t)i;
         if (U.rec_first || i < r->n_fields) {
-            button(T_PGUP, 908, (int16_t)(BODY_Y + 64), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
-            button(T_PGDN, 908, (int16_t)(BODY_Y + 232), 100, 160, "Down", C_ACCENT, i < r->n_fields);
+            button(T_PGUP, 908, (int16_t)(BODY_Y + 72), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
+            button(T_PGDN, 908, (int16_t)(BODY_Y + 240), 100, 160, "Down", C_ACCENT, i < r->n_fields);
         }
     }
     if (why) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, why); }   /* a message covers it */
@@ -1650,6 +1967,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;
     case UI_IOB:   draw_iob(); break;
+    case UI_CAL:   draw_cal(now); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {

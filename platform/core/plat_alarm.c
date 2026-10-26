@@ -1,5 +1,9 @@
 /* plat_alarm.c - the alarm manager (plat_alarm.h). */
 #include "plat_alarm.h"
+#include "plat_state.h"
+#include "plat_power.h"
+#include "plat_cal.h"
+#include "plat_selftest.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -31,37 +35,71 @@ __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
 
 static const alarm_def_t core_defs[] = {
     { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_INVALID",
-      .text = "No valid calibration data: measurement blocked" },
+      .text = "No valid calibration data: measurement blocked",
+      .help = "Neither copy of the factory data in the settings memory is valid (new unit, or memory fault). Calibrate at factory login, or restore a backup taken from this unit." },
     { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "PARAM_WRITE_FAIL",
-      .text = "Settings memory fault: changes may not be kept", .on_delay_ms = 2000 },
+      .text = "Settings memory fault: changes may not be kept", .on_delay_ms = 2000,
+      .help = "The settings memory (FRAM) did not verify a write, or is not fitted (RAM fallback). Check the FRAM; changes made now may be lost at power-off." },
     { .id = ALARM_ID_LOG_STORAGE_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "LOG_STORAGE_FAULT",
-      .text = "Log memory fault: records are not being kept" },
+      .text = "Log memory fault: records are not being kept",
+      .help = "The log flash failed an erase, write or read-back. Records are not being kept. Replace the core board if it persists." },
     { .id = ALARM_ID_IP_CONFLICT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IP_CONFLICT",
-      .text = "IP address in use by another device: network off" },
+      .text = "IP address in use by another device: network off",
+      .help = "Another device answers at this unit's static IP address; the plant port is off until it is free. Change one of the addresses." },
     { .id = ALARM_ID_REMOTE_LINK_LOST, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "REMOTE_LINK_LOST",
-      .text = "Remote control: no messages from the control system" },
+      .text = "Remote control: no messages from the control system",
+      .help = "In REMOTE mode and no Modbus or web traffic from the control system for the timeout (parameter). Check the network and the PLC." },
     { .id = ALARM_ID_UNEXPECTED_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "UNEXPECTED_RESET",
-      .text = "The unit restarted itself (watchdog or supply dip)" },
+      .text = "The unit restarted itself (watchdog or supply dip)",
+      .help = "The watchdog or a supply dip restarted the unit. The last fault on the System screen says which task or check stopped. Acknowledge to clear." },
+    { .id = ALARM_ID_SAFE_MODE, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SAFE_MODE",
+      .text = "Restarted repeatedly: safe mode, application stopped",
+      .help = "The unit restarted repeatedly within a short time, so it started without the application (outputs off). Read the last fault, then power-cycle." },
+    { .id = ALARM_ID_SUPPLY, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SUPPLY",
+      .text = "Supply voltage outside 19-30 V", .on_delay_ms = 2000, .off_delay_ms = 2000,
+      .help = "The 24 V supply measured outside 19-30 V. Check the power supply and wiring." },
+    { .id = ALARM_ID_CAL_DUE, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_DUE",
+      .text = "Calibration due",
+      .help = "A calibrated channel is past its calibration interval. Calibrate it (Calibration page or screen)." },
+    { .id = ALARM_ID_HW_REV, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "HW_REV",
+      .text = "Board revision differs from the factory record",
+      .help = "The board's revision straps differ from the hardware revision in the factory record. Check that the core board was not swapped; update the record at factory login." },
+    { .id = ALARM_ID_SELFTEST, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SELFTEST",
+      .text = "Start-up self-test failed: see System information",
+      .help = "A start-up self-test failed (System information lists which). See docs/FAULT_CODES.md, self-test checks." },
     { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "FW_ROLLED_BACK",
-      .text = "Firmware update failed its trial and was undone" },
+      .text = "Firmware update failed its trial and was undone",
+      .help = "A new firmware image restarted during its trial, so the previous image was put back. Acknowledge; report the version to the manufacturer." },
     { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
-      .text = "Alarm email could not be sent" },
+      .text = "Alarm email could not be sent",
+      .help = "An alarm email could not be sent after retries. Check the mail server settings and the network." },
     { .id = ALARM_ID_RESOURCE_LOW, .severity = AL_SEV_WARNING, .flags = AL_LATCH | AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS,
-      .name = "RESOURCE_LOW", .text = "Memory running low: tell the manufacturer", .on_delay_ms = 10000 },
+      .name = "RESOURCE_LOW", .text = "Memory running low: tell the manufacturer", .on_delay_ms = 10000,
+      .help = "Free memory (heap or a task's stack) fell below its margin. Note the System screen figures and tell the manufacturer." },
     { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "DISPLAY_FAULT",
-      .text = "Touchscreen not responding", .on_delay_ms = 5000 },
+      .text = "Touchscreen not responding", .on_delay_ms = 5000,
+      .help = "The touchscreen stopped answering. Check its ribbon cable; the unit keeps measuring and the web page still works." },
     { .id = ALARM_ID_IOB_LOST, .severity = AL_SEV_FAULT, .flags = AL_LATCH | AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_LOST",
-      .text = "I/O board not responding" },
+      .text = "I/O board not responding",
+      .help = "An enabled I/O board does not answer. Check its power, its address switch and the I/O network cable." },
     { .id = ALARM_ID_IOB_CONFIG, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_CONFIG",
-      .text = "I/O board wrong type or channel settings conflict" },
+      .text = "I/O board wrong type or channel settings conflict",
+      .help = "An I/O board is not the type expected, or two channel settings conflict. Check the board type and the I/O settings." },
     { .id = ALARM_ID_IOB_OUT_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_OUT_FAULT",
-      .text = "Output fault: open circuit, short or overheating", .on_delay_ms = 1000 },
+      .text = "Output fault: open circuit, short or overheating", .on_delay_ms = 1000,
+      .help = "An I/O board output reports an open circuit, a short or overheating. Check the load and its wiring." },
     { .id = ALARM_ID_IOB_IN_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_IN_FAULT",
-      .text = "Input fault: wire break", .on_delay_ms = 1000 },
+      .text = "Input fault: wire break", .on_delay_ms = 1000,
+      .help = "An I/O board input reports a wire break or an input chip fault. Check the sensor wiring." },
     { .id = ALARM_ID_IOB_SUPPLY, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_SUPPLY",
-      .text = "I/O board field 24 V supply missing", .on_delay_ms = 500 },
+      .text = "I/O board field 24 V supply missing", .on_delay_ms = 500,
+      .help = "An I/O board's field 24 V supply is missing. Check its field supply terminals." },
     { .id = ALARM_ID_IOB_NODE_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "IOB_NODE_RESET",
-      .text = "I/O board restarted by its watchdog" },
+      .text = "I/O board restarted by its watchdog",
+      .help = "An I/O board was restarted by its own watchdog. Acknowledge; report it if it repeats." },
+    { .id = ALARM_ID_IOB_TEMP_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_TEMP_FAULT",
+      .text = "Temperature input fault: open, short or out of range", .on_delay_ms = 3000,
+      .help = "A temperature input is open, shorted, out of range, or its converter failed. Check the sensor and wiring." },
 };
 #define N_CORE (sizeof core_defs / sizeof core_defs[0])
 
@@ -204,6 +242,14 @@ static void tell(size_t i, uint8_t what, uint8_t src, uint8_t level) {
 static void poll_platform(void) {
     uint32_t ps = param_store_status(), ls = plat_log_status();
     alarm_set(ALARM_ID_CAL_INVALID, !param_store_calibration_valid());
+    alarm_set(ALARM_ID_SAFE_MODE, plat_state() == PLAT_ST_SAFE_MODE);
+    alarm_set(ALARM_ID_CAL_DUE, plat_cal_any_due());
+    alarm_set(ALARM_ID_SELFTEST, (plat_selftest_failed() & ~PLAT_STEST_OWN_ALARM) != 0);
+    { plat_val_t hw;                      /* only once there is a factory record to compare with */
+      alarm_set(ALARM_ID_HW_REV, fw_board_rev() >= 0 && param_store_calibration_valid() &&
+                                 param_read(PARAM_ID_HW_REV, &hw) && hw.u != (uint32_t)fw_board_rev()); }
+    { uint32_t mv = plat_supply_mv();
+      alarm_set(ALARM_ID_SUPPLY, mv != 0 && (mv < PLAT_SUPPLY_LOW_MV || mv > PLAT_SUPPLY_HIGH_MV)); }
     alarm_set(ALARM_ID_PARAM_WRITE_FAIL, (ps & (PSTAT_WRITE_ERROR | PSTAT_NVM_VOLATILE)) != 0);
     alarm_set(ALARM_ID_LOG_STORAGE_FAULT, (ls & LSTAT_NOR_FAULT) != 0);
     alarm_set(ALARM_ID_IP_CONFLICT, (plat_net_status_word & NETST_CONFLICT) != 0);
@@ -356,7 +402,7 @@ static void view(size_t i, alarm_view_t *v) {
     PLAT_CRIT_ENTER();
     al_state_t s = st[i];
     PLAT_CRIT_EXIT();
-    v->id = d->id; v->severity = d->severity; v->flags = d->flags; v->name = d->name;
+    v->id = d->id; v->severity = d->severity; v->flags = d->flags; v->name = d->name; v->help = d->help;
     v->active = s.active; v->unacked = s.unacked; v->enabled = s.enabled; v->cond = cond[i] != 0;
     v->t_raise = s.t_raise; v->up_raise = s.up_raise;
     text_of(d, v->text, sizeof v->text);
