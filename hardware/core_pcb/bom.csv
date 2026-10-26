@@ -11,6 +11,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,C10,22p,C_0603_1608Metric,,yes
 2,C11 C12,22u 10V,C_1206_3216Metric,,yes
 3,C15 C16 C17,4n7 2kV,C_1812_4532Metric,,yes
+2,C18 C19,470u 63V,CP_Radial_D12.5mm_P5.00mm,"470 uF 63 V, 105 C, low ESR, 12.5 mm radial",yes
 2,C26 C59,4u7,C_0805_2012Metric,,yes
 3,C27 C40 C44,1u,C_0603_1608Metric,,yes
 2,C29 C30,2u2,C_0603_1608Metric,,yes
@@ -28,7 +29,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,D3,B260A,D_SMA,"B260A-13 (60 V, 2 A)",yes
 1,D10,green RUN,LED_0603_1608Metric,,yes
 1,D11,red FAULT,LED_0603_1608Metric,,yes
-1,F1,1A T,Fuse_1206_3216Metric,,yes
+1,F1,2A T,Fuse_1206_3216Metric,,yes
 4,FB1 FB2 FB3 FB4,600R@100MHz,L_0603_1608Metric,,yes
 1,J1,24VDC IN,"TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal",,yes
 1,J2,CLIENT,RJ45_Wuerth_7499010121A_Horizontal,"Wurth 7499010121A (MagJack, 1500 Vrms, LEDs)",yes

@@ -109,7 +109,7 @@ PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 | Rail | Source | Loads | Budget |
 |---|---|---|---|
 | 24 VDC in (18-32 V) | Pluggable terminal (+, 0 V, FE) | | about 0.3 A at 24 V |
-| Input protection | Fuse 1 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional 3 kW TVS SMDJ33CA after it (D2), Y-capacitors to chassis (C16, C17), common-mode choke (L3), 47 µF bulk. Sized for IEC 61326-1 industrial, see `CORE_PCB_EMC.md` | | |
+| Input protection | Fuse 2 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional 3 kW TVS SMDJ33CA after it (D2), Y-capacitors to chassis (C16, C17), common-mode choke (L3), 47 µF bulk. Sized for IEC 61326-1 industrial, see `CORE_PCB_EMC.md` | | |
 | 5 V | Buck, 60 V rated input: TI TPS54360 (U1, 3.5 A, about 600 kHz, catch diode B260A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
 | 3.3 V | Buck from 5 V: TI TLV62569 (U2, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, NOR, FRAM | about 0.6 A |
 | VBAT | CR2032 in a holder (H1) | RTC, backup registers | µA |
@@ -121,6 +121,33 @@ VDD 3.0-3.6 V, 235 mA typ / 240 mA max (audio on at full volume); BLVDD 4.5-5.5 
 it still lights from 2.7 V but not at full brightness), 10 / 310 / 400 mA at minimum / 50 % /
 100 % backlight. A 5 % 5 V rail is within range; keep the FFC's 5 V drop under 0.25 V. Brown-out: the MCU's BOR at the highest level
 plus the supply-sense pin (H10). The core board drives no field outputs (H6 and H7 are on the I/O boards).
+
+## 5a. Hold-up after the 24 V input fails
+
+The firmware needs about 20 ms from the moment the supply crosses 16 V: up to 16 ms to see it
+through its 16-sample average, plus finishing the current FRAM or NOR write (firmware thread,
+26 Oct). The FRAM store and the log are already safe against a power cut at any byte
+(`PLATFORM.md` 4, 5a); the hold-up only stops the last record being lost.
+
+Energy available on the +24 V node between 16 V (detection) and 6 V (where the 5 V buck drops
+out; the 3.3 V buck then runs on from the 5 V capacitors a little longer):
+`E = ½ × C × (16² − 6²) = 110 × C` joules.
+
+| Load at the moment of failure | Input power | C1 only (49 µF) | With C18 + C19 (1 mF) | Same, cold (-20 % C) |
+|---|---|---|---|---|
+| Full: backlight 100 %, both networks | about 5.3 W | 1 ms | 20 ms | 16 ms |
+| Backlight off on power-fail | about 2.6 W | 2 ms | 42 ms | 34 ms |
+
+So the board carries **two 470 µF 63 V electrolytics (C18, C19)** on the protected +24 V node
+(63 V because the TVS clamps near 53 V during a surge), and the fuse goes to **2 A time-lag**
+for their charging current at switch-on. **Firmware side (asked of the firmware thread):** on
+"supply failing", turn the backlight off first (BT817 PWM duty 0), which doubles the time; and
+trip on the ADC's analog watchdog on a single sample below 16 V rather than waiting for the
+16-sample average, which gives back most of the 16 ms. With both, the margin is about 2× even
+cold.
+
+Everything before 16 V is extra: from 24 V down to 16 V the same capacitors give another
+13 ms at full load (`½ × C × (23.6² − 16²)`), which the firmware doesn't count on.
 
 ## 6. Connectors
 
@@ -211,7 +238,8 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 | 32.768 kHz crystal | RTC | 1 |
 | TPS54360DDA (60 V in, 3.5 A) | 24 → 5 V buck | 1 |
 | TLV62569DBV | 5 → 3.3 V buck | 1 |
-| SS16, SMDJ33CA, 1 A T fuse, Würth 744227 choke | Input protection | 1 each |
+| SS16, SMDJ33CA, 2 A T fuse, Würth 744227 choke | Input protection | 1 each |
+| 470 µF 63 V radial 12.5 mm, 105 °C | Hold-up (C18, C19) | 2 |
 | TPD4E05U06 (or equal) | Ethernet ESD | 2 |
 | Hirose FH12-20S-0.5SH(55) | Display FFC | 1 |
 | CR2032 holder | VBAT | 1 |

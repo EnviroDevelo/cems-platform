@@ -57,8 +57,8 @@ part("J1", "Connector:Screw_Terminal_01x03", "24VDC IN",
      "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal", S,
      {1: "+24V_IN", 2: "0V_IN", 3: "CHASSIS"},
      note="pin 1 +24 V, pin 2 0 V, pin 3 functional earth. Pluggable version to suit the enclosure")
-part("F1", "Device:Fuse", "1A T", "Fuse:Fuse_1206_3216Metric", S, {1: "+24V_IN", 2: "+24V_F"},
-     note="1 A time-lag, rated 63 V DC or more. CHECK part")
+part("F1", "Device:Fuse", "2A T", "Fuse:Fuse_1206_3216Metric", S, {1: "+24V_IN", 2: "+24V_F"},
+     note="2 A time-lag, rated 63 V DC or more, I2t for the hold-up capacitors' inrush. CHECK part")
 part("D1", "Device:D_Schottky", "SS16", "Diode_SMD:D_SMA", S, {2: "+24V_F", 1: "+24V_D"},
      mpn="SS16 (60 V, 1 A)", note="reverse-polarity protection")
 part("D2", "Device:D_TVS", "SMDJ33CA", "Diode_SMD:D_SMC", S, {1: "+24V_D", 2: "0V_IN"},
@@ -70,6 +70,11 @@ part("L3", "Device:L_Coupled_1423", "WE-SL2 744227", "Inductor_SMD:L_CommonMode_
      note="common-mode choke on the 24 V input; windings 1-4 and 2-3. CHECK current rating >= 0.5 A and pad mapping")
 part("C1", "Device:C_Polarized", "47u 63V", "Capacitor_SMD:CP_Elec_8x10", S, {1: "+24V", 2: "GND"},
      note="bulk, aluminium electrolytic, 105 C")
+part("C18", "Device:C_Polarized", "470u 63V", "Capacitor_THT:CP_Radial_D12.5mm_P5.00mm", S, {1: "+24V", 2: "GND"},
+     mpn="470 uF 63 V, 105 C, low ESR, 12.5 mm radial",
+     note="hold-up with C19: 16 V to 6 V gives 20 ms at full load, 40 ms with the backlight off (CORE_PCB.md 5a)")
+part("C19", "Device:C_Polarized", "470u 63V", "Capacitor_THT:CP_Radial_D12.5mm_P5.00mm", S, {1: "+24V", 2: "GND"},
+     mpn="470 uF 63 V, 105 C, low ESR, 12.5 mm radial")
 c("C2", "2u2 100V", S, "+24V", "GND", fp=C1210)
 c("C3", "100n 100V", S, "+24V", "GND")
 
