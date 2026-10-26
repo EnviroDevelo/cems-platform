@@ -493,6 +493,14 @@ These checks keep the core items true without anyone re-reading this spec for ev
 | **Interface snapshots**: the Modbus register map and `/api/*` are generated from the tables and compared with the last release | A core address or field moved or removed by accident (CIP-14.5) | Every pull request; a difference needs a MINOR or MAJOR version bump |
 | **Compatibility matrix** (CIP-25.5) | A product released on a core version or board revision that was never tested together | Every release |
 
+**Built (26 Oct):** the conformance suite (`make conformance APP=<dir>`,
+`tests/integration/conformance_test.py`), the start-up contract check (`plat_app_check`), the
+requirement-ID check (`tools/cip_coverage.py`, run by `make test`, known gaps in
+`tools/cip_untested.txt`) and the interface snapshots (`docs/interface/<app>/MODBUS_MAP.md`,
+checked by `make test`; `API.txt`, checked by `make conformance`). The core version is in
+`plat_version.h` and on `/api/info`; the product profile template is `docs/PROFILE_TEMPLATE.md`.
+The compatibility matrix starts with the first release.
+
 ### 9.4 Changing a core item
 
 1. The change goes to this spec first: a new requirement, a change to one, or a new exception.
