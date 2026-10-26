@@ -140,11 +140,10 @@ out; the 3.3 V buck then runs on from the 5 V capacitors a little longer):
 
 So the board carries **two 470 µF 63 V electrolytics (C18, C19)** on the protected +24 V node
 (63 V because the TVS clamps near 53 V during a surge), and the fuse goes to **2 A time-lag**
-for their charging current at switch-on. **Firmware side (asked of the firmware thread):** on
-"supply failing", turn the backlight off first (BT817 PWM duty 0), which doubles the time; and
-trip on the ADC's analog watchdog on a single sample below 16 V rather than waiting for the
-16-sample average, which gives back most of the 16 ms. With both, the margin is about 2× even
-cold.
+for their charging current at switch-on. **Firmware side (26 Oct):** "failing" trips on two raw readings in a row below 16 V
+(2 ms, not the 16 ms average; the average still drives the display and the low/high alarms),
+and the UI task turns the backlight off (REG_PWM_DUTY 0) as soon as `plat_power_failing()`
+is true. That leaves about 2× margin, even cold.
 
 Everything before 16 V is extra: from 24 V down to 16 V the same capacitors give another
 28 ms at full load (`½ × C × (23.6² − 16²)` = 0.15 J), which the firmware doesn't count on.
