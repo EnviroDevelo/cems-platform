@@ -21,6 +21,7 @@
 #include "plat_health.h"
 #include "ui_app.h"
 #include "iobus.h"
+#include "plat_state.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -616,16 +617,57 @@ static void button(uint8_t tag, int16_t x, int16_t y, int16_t w, int16_t h, cons
     eve_tag(E, 0);
 }
 
+/* UI_CONVENTIONS 3 and 4: the instrument state, the supervisory link and a value's quality */
+static uint32_t state_color(uint8_t st) {
+    switch (st) {
+    case PLAT_ST_READY: case PLAT_ST_MEASURING: return C_OK;
+    case PLAT_ST_WARMING_UP: case PLAT_ST_MAINTENANCE: case PLAT_ST_CALIBRATION: return C_WARN;
+    case PLAT_ST_FAULT: case PLAT_ST_SAFE_MODE: return C_BAD;
+    default: return 0x5B6577u;
+    }
+}
+enum { LINK_NONE, LINK_OK, LINK_LOST };
+static int link_state(uint32_t now) {
+    plat_val_t v;
+    uint32_t to = param_read(PARAM_ID_COMMS_TIMEOUT_S, &v) ? v.u : 0u, age = plat_link_age_ms(now);
+    if (!to || age == UINT32_MAX) return LINK_NONE;
+    return age > to * 1000u ? LINK_LOST : LINK_OK;
+}
+static uint32_t q_color(uint8_t q) {
+    return q == PLAT_Q_RANGE || q == PLAT_Q_FAULT ? C_BAD : q == PLAT_Q_UNAVAILABLE ? C_GREY : C_WARN;
+}
+/* A shown value with its quality, centred on cy: when it is not valid the number is greyed
+ * ("----" when unavailable) and moves up, with the quality word under it. idx: UW_NO_INDEX
+ * (= PLAT_MEAS_NO_INDEX) for a scalar. */
+static void qvalue(int16_t x, int16_t cy, int16_t f, uint16_t id, uint16_t idx, const char *v) {
+    uint8_t q = param_quality(id, idx);
+    if (q == PLAT_Q_VALID) { color(C_INK); text(x, cy, f, OPT_CENTERY, v); return; }
+    int16_t hv = f == F_HUGE ? 49 : f == F_BIG ? 36 : 25;          /* the ROM fonts' cell heights */
+    int16_t vc = (int16_t)(cy - 11);
+    color(C_GREY); text(x, vc, f, OPT_CENTERY, q == PLAT_Q_UNAVAILABLE ? "----" : v);
+    color(q_color(q)); text(x, (int16_t)(vc + hv / 2 + 11), f >= F_BIG ? F_TEXT : F_SMALL, OPT_CENTERY, plat_quality_name(q));
+}
+
 static void header(uint32_t now) {
     box(0, 0, W, HEAD_H, C_HEAD, 1);
     color(0xFFFFFFu);
     text(16, HEAD_H / 2, 29, OPT_CENTERY, U.cfg && U.cfg->product ? U.cfg->product : "CEMS Supervisor");
-    bool remote = param_ctrl_mode() == PARAM_MODE_REMOTE;
-    int16_t x = 520;
-    box(x, 14, 130, 36, remote ? C_OK : 0x5B6577u, 18);
+    uint8_t st = plat_state();
+    int16_t x = 236;
+    box(x, 14, 176, 36, state_color(st), 18);
     color(0xFFFFFFu);
-    text((int16_t)(x + 65), 32, F_TEXT, OPT_CENTER, remote ? "REMOTE" : "LOCAL");
-    x = (int16_t)(x + 140);
+    text((int16_t)(x + 88), 32, F_SMALL, OPT_CENTER, plat_state_name(st));
+    x = (int16_t)(x + 184);
+    bool remote = param_ctrl_mode() == PARAM_MODE_REMOTE;
+    box(x, 14, 112, 36, remote ? C_OK : 0x5B6577u, 18);
+    color(0xFFFFFFu);
+    text((int16_t)(x + 56), 32, F_SMALL, OPT_CENTER, remote ? "REMOTE" : "LOCAL");
+    x = (int16_t)(x + 120);
+    int ls = link_state(now);
+    box(x, 14, 124, 36, ls == LINK_OK ? C_OK : ls == LINK_LOST ? C_BAD : 0x5B6577u, 18);
+    color(0xFFFFFFu);
+    text((int16_t)(x + 62), 32, F_SMALL, OPT_CENTER, ls == LINK_OK ? "LINK OK" : ls == LINK_LOST ? "LINK LOST" : "NO LINK");
+    x = (int16_t)(x + 132);
     alarm_summary_t as;
     alarm_summary(&as);
     if (as.shown) {                                   /* one pill for every alarm: tap for the list */
@@ -634,15 +676,14 @@ static void header(uint32_t now) {
         else snprintf(a, sizeof a, "%u ALARM%s", as.active, as.active == 1 ? "" : "S");
         uint32_t c = !as.worst_unacked ? 0x5B6577u : as.worst >= AL_SEV_ALARM ? C_BAD : as.worst == AL_SEV_WARNING ? C_WARN : 0x5B6577u;
         eve_tag(E, T_ALARMS);
-        box(x, 10, 230, 44, U.pressed == T_ALARMS ? C_PRESS : c, 22);
-        color(0xFFFFFFu); text((int16_t)(x + 115), 32, F_TEXT, OPT_CENTER, a);
+        box(x, 10, 196, 44, U.pressed == T_ALARMS ? C_PRESS : c, 22);
+        color(0xFFFFFFu); text((int16_t)(x + 98), 32, F_SMALL, OPT_CENTER, a);
         eve_tag(E, 0);
     }
     char t[16];
     snprintf(t, sizeof t, "%02u:%02u:%02u", RTC_Time.Hours, RTC_Time.Minutes, RTC_Time.Seconds);
     color(0xC9D2E3u);
     text(W - 16, HEAD_H / 2, F_TEXT, OPT_CENTERY | OPT_RIGHTX, RTC_Date.Year >= 2000 ? t : "--:--:--");
-    (void)now;
 }
 
 static void nav(void) {
@@ -671,8 +712,7 @@ static void draw_home(void) {
         text((int16_t)(x + 16), (int16_t)(y + 12), F_TEXT, 0, d ? d->name : "?");
         char v[64] = "-";
         if (d) fmt_value(d, v, sizeof v);
-        color(C_INK);
-        text((int16_t)(x + 16), (int16_t)(y + 56), F_HUGE, 0, v);
+        qvalue((int16_t)(x + 16), (int16_t)(y + 81), F_HUGE, c->home_ids[k], UW_NO_INDEX, v);
     }
     int16_t y = (int16_t)(BODY_Y + (n > 3 ? 280 : n ? 140 : 10));
     box(16, y, 992, 110, C_CARD, 8);
@@ -703,7 +743,7 @@ static void draw_params(void) {
         color(C_INK);  text(110, (int16_t)(y + ROW_H / 2), F_TEXT, OPT_CENTERY, d->name);
         fmt_value(d, b, sizeof b);
         if (strlen(b) > 22) strcpy(b + 19, "...");
-        text(440, (int16_t)(y + ROW_H / 2), F_TEXT, OPT_CENTERY, b);
+        qvalue(440, (int16_t)(y + ROW_H / 2), F_TEXT, d->id, UW_NO_INDEX, b);
         color(can ? C_ACCENT : C_GREY);
         text(880, (int16_t)(y + ROW_H / 2), F_SMALL, OPT_CENTERY | OPT_RIGHTX, can ? "Change >" : (d->flags & PF_RO) ? "read only" : (d->flags & PF_DEV) ? "developer" : lvl_name(d->level));
         eve_tag(E, 0);
@@ -1308,7 +1348,8 @@ static void draw_app(void) {
             char v[64] = "-";
             if (d) { if (w->index != UW_NO_INDEX) fmt_elem(d, w->index, v, sizeof v); else fmt_value(d, v, sizeof v); }
             if (strlen(v) > 14) strcpy(v + 11, "...");
-            color(C_INK); text((int16_t)(x + 12), (int16_t)(y + 36), F_BIG, 0, v);
+            if (d) qvalue((int16_t)(x + 12), (int16_t)(y + 56), F_BIG, d->id, w->index, v);
+            else { color(C_INK); text((int16_t)(x + 12), (int16_t)(y + 56), F_BIG, OPT_CENTERY, v); }
             if (can) { color(C_ACCENT); text((int16_t)(x + wdt - 10), (int16_t)(y + 8), F_SMALL, OPT_RIGHTX, ">"); }
             eve_tag(E, 0);
         } else if (w->kind == UW_RECORD) {

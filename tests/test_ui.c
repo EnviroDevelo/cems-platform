@@ -24,6 +24,7 @@
 #include "plat_clock.h"
 #include "iobus.h"
 #include "iob_node_sim.h"
+#include "plat_state.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -441,6 +442,50 @@ static void t_ui(void) {
     fw_reset_for_test();
 }
 
+/* CIP-21.2, 21.4, 21.5: the state and link pills in the header; a value's quality on the home
+ * tile and the settings row (UI_CONVENTIONS 3, 4) */
+static const plat_meas_def_t ui_meas[] = {
+    { .id = 1002, .index = PLAT_MEAS_NO_INDEX, .max_age_ms = 1000, .lo = 0.0f, .hi = 1000.0f },
+};
+static void st_scan(void) { plat_state_scan(bsp_ms()); param_publish(); frame(); }   /* measurements are stamped by bsp_ms() */
+static void t_state_quality(void) {
+    setup();
+    plat_state_reset_for_test();
+    CHECK_EQ(plat_state_init(ui_meas, 1), 0);
+    a_run = 12;
+    st_scan();
+    CHECK(shows("READY"));                            /* not measuring: readings unavailable */
+    CHECK(shows("NO LINK"));
+    CHECK(shows("----")); CHECK(shows("unavailable")); CHECK(!shows("12 s"));
+    plat_app_state(PLAT_ST_MEASURING);
+    st_scan();
+    CHECK(shows("MEASURING"));
+    CHECK(shows("unavailable"));                      /* measuring, but never updated */
+    plat_meas_update(0, PLAT_Q_VALID);
+    st_scan();
+    CHECK(shows("12 s")); CHECK(!shows("unavailable")); CHECK(!shows("stale"));
+    dump("home_measuring");
+    bsp_host_advance_ms(1500);                        /* not updated within max_age_ms */
+    st_scan();
+    CHECK(shows("12 s")); CHECK(shows("stale"));
+    a_run = 5000; plat_meas_update(0, PLAT_Q_VALID);
+    st_scan();
+    CHECK(shows("out of range"));
+    CHECK(tap("Settings"));
+    CHECK(row("run_seconds"));                        /* the settings row carries it too */
+    CHECK(tap("Home"));
+    CHECK(shows("out of range"));
+    /* the supervisory link: a web or Modbus request, then quiet for longer than comms_timeout (10 s) */
+    param_comms_activity(PLAT_SRC_WEB, now);
+    st_scan();
+    CHECK(shows("LINK OK"));
+    now += 10500;
+    st_scan();
+    CHECK(shows("LINK LOST"));
+    dump("home_quality");
+    plat_state_reset_for_test();
+}
+
 /* System -> I/O boards: board states, lit outputs and inputs, faults in words */
 static void iob_run(uint32_t ms) {
     for (uint32_t t = 0; t < ms; t += 20) {
@@ -523,4 +568,5 @@ void test_ui_all(void) {
     RUN(t_fonts);
     RUN(t_ui);
     RUN(t_iob_screen);
+    RUN(t_state_quality);
 }
