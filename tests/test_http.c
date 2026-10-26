@@ -4,12 +4,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include "tst.h"
+#include "plat_state.h"
 #include "plat_sha256.h"
 #include "http_util.h"
 #include "http_api.h"
 #include "web_auth.h"
 #include "param.h"
 #include "param_store.h"
+#include "plat_diag.h"
+#include "iob_w5500.h"
+#include "w5500_sim.h"
 #include "bsp_host.h"
 #include "iobus.h"
 #include "iob_node_sim.h"
@@ -205,6 +209,12 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"product\":\"CEMS Supervisor\"")); CHECK(has("\"mode\":\"local\"")); CHECK(has("\"default_passwords\":true"));
     CHECK(has("\"cal_valid\":false")); CHECK(has("\"level\":\"view\""));
+    plat_diag_cpu_fault(0x0801A2C4u, 0x08004001u, 0x00008200u, 0x40000000u, 0, 0x20000010u, NULL, 5);   /* D4 record on /api/info */
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+    CHECK(has("\"name\":\"bus @0801A2C4\"")); CHECK(has("\"arg\":134324932")); CHECK(has("\"lr\":134234113"));
+    CHECK(has("\"cfsr\":33280")); CHECK(has("\"addr\":536870928"));
+    memset(&plat_diag, 0, sizeof plat_diag);
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     {   /* a kept connection: chunked body that decodes to the same JSON; fixed-length bodies stay as they are */
         static char plain[16 * 1024];
         size_t pn = capn; memcpy(plain, cap, capn + 1);
@@ -241,7 +251,21 @@ static void t_api(void) {
     CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25"));
     CHECK(has("\"elem\":\"i16\""));
     CHECK_EQ(call("GET", "/api/values?ids=1001,1003,9999", NULL, false), 200);
-    CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25}}"));
+    CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25},\"q\":{}}"));
+    {   /* quality (CIP-10) and state (CIP-09): a measurement not yet updated is "unavailable" */
+        static const plat_meas_def_t m[] = { { .id = 1003, .index = PLAT_MEAS_NO_INDEX, .lo = 0.0f, .hi = 10.0f } };
+        CHECK_EQ(plat_state_init(m, 1), 0);
+        CHECK_EQ(call("GET", "/api/values?ids=1001,1003", NULL, false), 200);
+        CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25},\"q\":{\"1003\":\"unavailable\"}}"));
+        CHECK_EQ(call("GET", "/api/values?ids=1001", NULL, false), 200);
+        CHECK(has("\"q\":{}}"));                                  /* only the IDs asked for */
+        CHECK_EQ(call("GET", "/api/params", NULL, false), 200);
+        CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25,\"q\":true"));
+        CHECK(!has("\"name\":\"setpoint\",\"type\":\"int\",\"unit\":\"%\",\"min\":0,\"max\":100,\"def\":10,\"q\""));
+        CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+        CHECK(has("\"api\":2,\"state\":\"INITIALISING\",\"state_since\":0"));
+        plat_state_reset_for_test();
+    }
     CHECK_EQ(call("GET", "/api/nothing", NULL, false), 404);
     CHECK_EQ(call("PUT", "/api/values", NULL, false), 405);
 
@@ -304,6 +328,7 @@ static void t_api(void) {
         memcpy(nd.serial, "CIO-26-00007", 12);
         iob_simnet_add(&net, &nd);
         iob_init_eth(&net.port, &net.disc);
+        iob_link = IOB_LINK_ETH;                                 /* the main port */
         CHECK_EQ(call("POST", "/api/iob/net/set", "uid=00&board=1", true), 400);
         CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=4", true), 400);
         CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=1&ip=10.0.0.5", true), 400);   /* not the supervisor's subnet */
@@ -324,6 +349,36 @@ static void t_api(void) {
         CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
         CHECK(has("\"op\":\"set\"")); CHECK(has("\"new\":false")); CHECK(has("\"slot\":2"));
         iob_init_eth(NULL, NULL);
+        iob_reset();
+    }
+    /* the same on the I/O port (the product default): through the W5500, with the I/O port's own
+     * IP as the supervisor's, not the main port's */
+    {
+        static iob_simnet_t net; static iob_node_t nd; static w5500_sim_t chip; static iob_w5500_t io;
+        iob_simnet_init(&net, 0);
+        iob_node_init(&nd, 0);
+        memcpy(nd.serial, "CIO-26-00008", 12);
+        iob_simnet_add(&net, &nd);
+        w5500_sim_init(&chip);
+        w5500_sim_simnet(&chip, &net);
+        static const uint8_t mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
+        iob_w5500_init(&io, &chip.bus, mac);
+        iob_init_ioport(&io.port, &io.disc);
+        iob_link = IOB_LINK_IOPORT;
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"link\":\"ethernet\",\"port\":\"io\"")); CHECK(has("\"supervisor\":{\"dhcp\":false,\"ip\":\"192.168.1.60\",\"mask\":\"255.255.255.0\",\"gw\":\"0.0.0.0\"}"));
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"ok\":true")); CHECK(has("\"serial\":\"CIO-26-00008\"")); CHECK(has("\"new\":true"));
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=1&ip=192.168.1.60", true), 400);   /* the I/O port's own */
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=3", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(nd.ip, 0xC0A8013Fu); CHECK_EQ(nd.address, 3u); CHECK_EQ(nd.master_ip, 0xC0A8013Cu);
+        CHECK_EQ(nd.mask, 0xFFFFFF00u); CHECK_EQ(nd.gw, 0u);
+        CHECK(chip.connects == 0u && chip.commands > 0u);         /* discovery only: no Modbus TCP yet */
+        iob_init_ioport(NULL, NULL);
+        iob_link = IOB_LINK_IOPORT;
         iob_reset();
     }
     CHECK(auth_check(PLAT_LVL_ADMIN, "newpass1"));

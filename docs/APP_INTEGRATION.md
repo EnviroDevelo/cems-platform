@@ -64,8 +64,20 @@ const plat_app_t app = {
     .ui_home_ids = ids,    .n_ui_home = N,     /* up to 6 tiles on the home screen */
     .alarms     = alarms,  .n_alarms = N,      /* alarm_def_t, IDs 100..255 */
     .fw_safe    = fw_safe,                     /* false + reason while a sequence/calibration runs */
+    .meas       = meas,    .n_meas = N,        /* plat_meas_def_t: measured values that carry a quality (up to 32) */
 };
 ```
+
+### State and quality (CIP-09, CIP-10; PLATFORM.md 5l)
+
+Mandatory for every instrument. In `logic()`:
+- `plat_app_state(PLAT_ST_WARMING_UP | PLAT_ST_READY | PLAT_ST_MEASURING)` as the instrument
+  moves through its cycle, and `plat_app_state(PLAT_ST_CALIBRATION)` while a calibration runs (back
+  to MEASURING after). The platform adds MAINTENANCE (the operator), FAULT and SAFE_MODE itself.
+- `plat_meas_update(i, PLAT_Q_VALID)` each time measurement `i` gets a new value, or the value's own
+  quality (`PLAT_Q_FAULT` for a broken sensor, `PLAT_Q_UNAVAILABLE` for one not fitted). A value
+  that stops being updated goes stale on its own after its `max_age_ms`.
+- Mark an alarm `AL_STOPS` if measurement cannot go on while it is active (the instrument goes to FAULT).
 
 ### The scan (`scan_app_t`), one call per 10 ms
 
@@ -186,7 +198,7 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 | # | Decision |
 |---|---|
 | D1 | Scan period 10 ms |
-| D6 | FRAM size to be chosen once the application's retained size is known (32 KB part on the bench) |
+| D6 | FRAM is 128 KB (MB85RC1MT, Gary 20 Oct), the build default; the application's settings image is 13.4 KB of the 40 KB slot. The 32 KB bench part still works with `PLAT_FRAM_SIZE=32768u` |
 | D16 | UI is a plain-C layer on the EVE co-processor, not LVGL |
 | D19 | Ack without login on the touchscreen; alarms re-evaluated on power-up; 5 s valve settle |
 | D20 | Alarm actions configurable per alarm by the user (email / Modbus / relay / nothing) |

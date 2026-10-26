@@ -75,6 +75,7 @@ enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
 #define AL_LATCH   0x01u   /* stays active until acknowledged, even if the condition goes */
 #define AL_NO_ACK  0x02u   /* status alarm: no acknowledge, leaves the list when it clears */
 #define AL_NOTIFY  0x04u   /* passed to alarm_on_change (notification: email, relay; Stage 8) */
+#define AL_STOPS   0x08u   /* while active the instrument is in FAULT: measurement stopped (plat_state.h) */
 
 typedef struct {
     uint16_t    id;            /* 1..99 platform, 100..255 application */

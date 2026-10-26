@@ -20,7 +20,10 @@ iob_board_tags_t iob_tags[IOB_BOARDS] = {
 };
 uint16_t iob_hold_s = 300;
 uint8_t  iob_filter_ms = 8;
-uint8_t  iob_link = IOB_LINK_ETH;
+uint8_t  iob_link = IOB_LINK_IOPORT;   /* the product's separate I/O network (HARDWARE.md H5) */
+uint32_t iob_port_ip = 0xC0A8013Cu;      /* 192.168.1.60: beside the boards' default IPs, on its own network */
+uint8_t  iob_port_prefix = 24;
+uint8_t  iob_port_status;
 
 typedef struct {
     bool en; uint8_t addr, first_do, first_di, ol, wb; uint32_t ip;
@@ -58,6 +61,8 @@ static volatile bool safe;
 static iob_port_t   *port;                             /* RS-485 */
 static iob_port_t   *tcp;                              /* Ethernet: Modbus TCP */
 static iob_dgram_t  *disc;                             /* Ethernet: discovery */
+static iob_port_t   *io_tcp;                           /* the I/O port (W5500): Modbus TCP */
+static iob_dgram_t  *io_disc;                          /* the I/O port: discovery */
 static iob_port_t   *bus;                              /* the link in use this cycle */
 static uint8_t       bus_link = 0xFF;
 
@@ -84,6 +89,14 @@ static bstate_t B[IOB_BOARDS];
 
 void iob_init(iob_port_t *p) { port = p; }
 void iob_init_eth(iob_port_t *t, iob_dgram_t *d) { tcp = t; disc = d; }
+void iob_init_ioport(iob_port_t *t, iob_dgram_t *d) { io_tcp = t; io_disc = d; }
+
+/* a link with no port on this board (the CORE PCB has no RS-485) cannot be chosen */
+int iob_link_interlock(uint16_t id, plat_val_t v) {
+    (void)id;
+    iob_port_t *p = v.u == IOB_LINK_IOPORT ? io_tcp : v.u == IOB_LINK_ETH ? tcp : port;
+    return p ? 0 : 1;
+}
 
 void iob_reset(void) {
     PLAT_CRIT_ENTER();
@@ -183,14 +196,15 @@ static uint8_t bad_settings(const cfg_t *c, uint8_t link) {
     uint8_t bad = 0;
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
         if (!c[k].en) continue;
-        if (link == IOB_LINK_ETH && !ip_ok(c[k].ip)) { bad |= (uint8_t)(1u << k); continue; }
+        if (IOB_LINK_IS_ETH(link) && !ip_ok(c[k].ip)) { bad |= (uint8_t)(1u << k); continue; }
+        if (link == IOB_LINK_IOPORT && c[k].ip == iob_port_ip) { bad |= (uint8_t)(1u << k); continue; }   /* the I/O port's own */
         if (c[k].addr < 1 || c[k].addr > IOB_ADDR_MAX || c[k].first_do < 1 || c[k].first_di < 1 ||
             c[k].first_do - 1u + IOB_OUTS > PLAT_DO_MAX || c[k].first_di - 1u + IOB_INS > PLAT_DI_MAX) { bad |= (uint8_t)(1u << k); continue; }
         for (unsigned j = 0; j < k; ++j) {
             if (!c[j].en || (bad & (1u << j))) continue;
             bool o_do = c[k].first_do < c[j].first_do + IOB_OUTS && c[j].first_do < c[k].first_do + IOB_OUTS;
             bool o_di = c[k].first_di < c[j].first_di + IOB_INS && c[j].first_di < c[k].first_di + IOB_INS;
-            bool same = link == IOB_LINK_ETH ? c[k].ip == c[j].ip : c[k].addr == c[j].addr;
+            bool same = IOB_LINK_IS_ETH(link) ? c[k].ip == c[j].ip : c[k].addr == c[j].addr;
             if (o_do || o_di || same) { bad |= (uint8_t)(1u << k); break; }
         }
     }
@@ -483,7 +497,7 @@ void iob_cycle(uint32_t now) {
         for (unsigned b = 0; b < IOB_BOARDS; ++b) if (B[b].state != IOB_S_OFF) set_state(b, IOB_S_CONNECTING, now);
         bus_link = link;
     }
-    bus = link == IOB_LINK_ETH ? tcp : port;
+    bus = link == IOB_LINK_IOPORT ? io_tcp : link == IOB_LINK_ETH ? tcp : port;
     uint8_t bad = bad_settings(c, link);
     bool temps_read = false;                     /* one board's temperatures per cycle */
 
@@ -672,13 +686,16 @@ void iob_dc_view(iob_dc_view_t *v) {
 static unsigned dc_exchange(const iob_disc_t *m, iob_disc_t *list, unsigned max, const uint16_t *want) {
     uint8_t b[IOB_DISC_LEN];
     (void)iob_disc_encode(m, b);
-    if (!disc || !disc->send || !disc->send(disc, b, IOB_DISC_LEN)) return 0;
+    uint8_t link;
+    PLAT_CRIT_ENTER(); link = cmd.cfg_valid ? cmd.link : iob_link; PLAT_CRIT_EXIT();
+    iob_dgram_t *d = link == IOB_LINK_IOPORT ? io_disc : disc;   /* RS-485 has none: the main port's, as before */
+    if (!d || !d->send || !d->send(d, b, IOB_DISC_LEN)) return 0;
     unsigned n = 0;
     uint32_t t0 = bsp_ms();
     for (;;) {
         uint32_t el = bsp_ms() - t0;
         if (el >= PLAT_IOB_DISC_WAIT_MS) break;
-        uint16_t got = disc->recv(disc, b, sizeof b, PLAT_IOB_DISC_WAIT_MS - el);
+        uint16_t got = d->recv(d, b, sizeof b, PLAT_IOB_DISC_WAIT_MS - el);
         iob_disc_t h;
         if (!got) break;
         if (!iob_disc_decode(b, got, &h) || h.op != IOB_DISC_HERE || h.seq != m->seq) continue;

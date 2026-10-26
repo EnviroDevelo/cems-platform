@@ -18,6 +18,7 @@
 #include "modbus.h"
 #include "iobus.h"
 #include "iob_tcp.h"
+#include "iob_w5500.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -27,6 +28,7 @@ task_monitor_t plat_monitor;
 static int tm_ids[PLAT_TASK_COUNT];
 static const plat_app_t *the_app;
 static iob_tcp_t iob_eth;                        /* the I/O boards on Ethernet (iobus task only) */
+static iob_w5500_t iob_io;                       /* the I/O boards on the I/O port (iobus task only) */
 const plat_app_t *plat_app(void) { return the_app; }
 
 void plat_checkin(plat_task_id_t id) {
@@ -206,6 +208,10 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "alarm table", 0, bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
+    if (plat_state_init(app->meas, app->n_meas) != 0) {        /* a measurement names a missing or non-numeric ID */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "meas table", (uint32_t)plat_state_init(app->meas, app->n_meas), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {
@@ -216,6 +222,13 @@ void plat_start(const plat_app_t *app) {
     iob_init(bsp_rs485());
     iob_tcp_init(&iob_eth);                      /* the sockets open on first use, once the network is up */
     iob_init_eth(&iob_eth.port, &iob_eth.disc);
+    if (bsp_w5500()) {                           /* the I/O port: the chip is set up on first use */
+        uint8_t uid[12], mac[6];
+        bsp_chip_uid(uid);
+        iob_w5500_mac(uid, mac);
+        iob_w5500_init(&iob_io, bsp_w5500(), mac);
+        iob_init_ioport(&iob_io.port, &iob_io.disc);
+    }
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);
     MAKE(scan_task,       "scan",   PLAT_STACK_SCAN,       PLAT_PRIO_SCAN,       NULL, scan);

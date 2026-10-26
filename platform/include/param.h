@@ -145,7 +145,10 @@ enum {
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
     PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
-    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet (iob_net.h) */
+    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet on the main port, 2 the I/O port (W5500, iob_w5500.h) */
+    PARAM_ID_IOB_PORT_IP      = 103, /* the I/O port's own IP (its own network, not the main port's) */
+    PARAM_ID_IOB_PORT_PREFIX  = 104, /* the I/O port's subnet, prefix length 8..30 */
+    PARAM_ID_IOB_PORT_STATUS  = 105, /* RO: IOBP_* bits (chip found, link up) */
     PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
     /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,
          +4 open-circuit check (bank A outputs 1-8, bits), +5 wire-break check (inputs 1-8, bits),
@@ -158,6 +161,10 @@ enum {
          +5 calibration offset (6 x 0.01 degC), +6 calibration span (gain - 1, 6 x 0.01 %), +7 PWM frequency (Hz),
          +8 tacho pulses per revolution, +9 RO temperatures (6 x 0.1 degC), +10 RO channel states (6 x IOB_TS_*),
          +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %) */
+    PARAM_ID_STATE            = 300, /* RO: instrument state, PLAT_ST_* (plat_state.h) */
+    PARAM_ID_MAINTENANCE      = 301, /* operator selects MAINTENANCE (1) or leaves it (0) */
+    PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */
+    PARAM_ID_MEAS_Q           = 303, /* RO: one PLAT_Q_* per declared measurement (a Modbus status block) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

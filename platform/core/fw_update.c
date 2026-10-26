@@ -9,6 +9,7 @@
 #include "plat_cmdq.h"
 #include "bsp.h"
 #include "param.h"
+#include "plat_state.h"
 #include "plat_clock.h"
 
 bool (*fw_safe_check)(char *why, size_t cap);
@@ -84,10 +85,11 @@ static uint32_t min_version(void) {
 
 static bool safe(void) {
     F.not_safe[0] = 0;
-    if (!fw_safe_check) return true;
     char why[48] = "";
-    if (fw_safe_check(why, sizeof why)) return true;
-    const char *w = why[0] ? why : "the application is busy";
+    const char *w;
+    if (!plat_state_allows(PLAT_ACT_FW_RESTART)) w = plat_state_refusal();     /* CALIBRATION (section 7) */
+    else if (!fw_safe_check || fw_safe_check(why, sizeof why)) return true;
+    else w = why[0] ? why : "the application is busy";
     size_t k = 0;
     for (; w[k] && k + 1 < sizeof F.not_safe; ++k) F.not_safe[k] = w[k];
     F.not_safe[k] = 0;

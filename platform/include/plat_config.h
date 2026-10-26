@@ -57,17 +57,42 @@
 #define PLAT_PRIO_NET             4      /* network bring-up, link and address changes */
 #define PLAT_PRIO_UI              3      /* Lowest tier: touch UI */
 
-/* ---- stacks, in 32-bit words (FreeRTOS units) ---- */
-#define PLAT_STACK_CTRL           512
-#define PLAT_STACK_SCAN           2048   /* Stage 4 code uses large locals in places */
-#define PLAT_STACK_SUPERVISOR     384
-#define PLAT_STACK_STORE          1024
-#define PLAT_STACK_MODBUS         1024
-#define PLAT_STACK_HTTP           1536
-#define PLAT_STACK_UI             2048
-#define PLAT_STACK_ETH_RX         512
-#define PLAT_STACK_NET            768
-#define PLAT_STACK_IOBUS          1024   /* Modbus TCP and discovery buffers (iob_tcp.c) */
+/* ---- stacks, in 32-bit words (FreeRTOS units) ----
+ * Generous on purpose (Gary, 25 Oct: stack overflows on earlier DK prototypes): about
+ * twice what each task was first given, 85 KB in all. Trim only after the 72-hour soak
+ * on hardware shows the margins (`health` on /api/info, System screen); RESOURCE_LOW
+ * (alarm 11) warns when any margin falls under PLAT_STACK_LOW. A task that overflows
+ * anyway is stopped by the CPU's stack limit (PSPLIM) and named in the fault record. */
+#ifndef PLAT_STACK_CTRL
+#define PLAT_STACK_CTRL           1024
+#endif
+#ifndef PLAT_STACK_SCAN
+#define PLAT_STACK_SCAN           4096   /* Stage 4 code uses large locals in places */
+#endif
+#ifndef PLAT_STACK_SUPERVISOR
+#define PLAT_STACK_SUPERVISOR     768
+#endif
+#ifndef PLAT_STACK_STORE
+#define PLAT_STACK_STORE          2048
+#endif
+#ifndef PLAT_STACK_MODBUS
+#define PLAT_STACK_MODBUS         2048
+#endif
+#ifndef PLAT_STACK_HTTP
+#define PLAT_STACK_HTTP           3072
+#endif
+#ifndef PLAT_STACK_UI
+#define PLAT_STACK_UI             4096
+#endif
+#ifndef PLAT_STACK_ETH_RX
+#define PLAT_STACK_ETH_RX         1024
+#endif
+#ifndef PLAT_STACK_NET
+#define PLAT_STACK_NET            1536
+#endif
+#ifndef PLAT_STACK_IOBUS
+#define PLAT_STACK_IOBUS          2048   /* Modbus TCP and discovery buffers (iob_tcp.c) */
+#endif
 
 /* ---- network services ---- */
 #ifndef PLAT_MODBUS_PORT
@@ -83,6 +108,10 @@
 #define PLAT_SILENCE_IOBUS_MS     1000u
 
 /* ---- I/O bus, RS-485 or Ethernet (iobus.h, D27) ---- */
+#ifndef PLAT_MEAS_MAX
+#define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
+#endif
+
 #ifndef PLAT_IOB_PERIOD_MS
 #define PLAT_IOB_PERIOD_MS        20u    /* one request per running board per cycle */
 #endif

@@ -7,6 +7,8 @@
 #include "iobus.h"
 #include "mb_rtu.h"
 #include "iob_node_sim.h"
+#include "iob_w5500.h"
+#include "w5500_sim.h"
 #include "bsp_host.h"
 #include "param.h"
 #include "plat_alarm.h"
@@ -16,9 +18,11 @@
 static iob_simbus_t bus;
 static iob_simnet_t net;
 static iob_node_t n1, n2, n3;
-static uint8_t cur_link;                /* the run of the tests: IOB_LINK_RS485, then IOB_LINK_ETH */
-#define SUP_IP   0xC0A80132u            /* the supervisor, 192.168.1.50 */
-#define ETH      (cur_link == IOB_LINK_ETH)
+static w5500_sim_t chip;                /* the I/O port: a simulated W5500 on the same simulated network */
+static iob_w5500_t io;
+static uint8_t cur_link;                /* the run of the tests: RS-485, Ethernet on the main port, the I/O port */
+#define SUP_IP   0xC0A80132u            /* the supervisor, 192.168.1.50 (on the I/O port: its own IP, set the same) */
+#define ETH      (cur_link != IOB_LINK_RS485)
 #define REQUESTS (ETH ? net.requests : bus.requests)
 
 static void setup(void) {
@@ -33,9 +37,16 @@ static void setup(void) {
     iob_simbus_add(&bus, &n1); iob_simbus_add(&bus, &n2); iob_simbus_add(&bus, &n3);
     iob_simnet_init(&net, SUP_IP);
     iob_simnet_add(&net, &n1); iob_simnet_add(&net, &n2); iob_simnet_add(&net, &n3);
+    w5500_sim_init(&chip);
+    w5500_sim_simnet(&chip, &net);
+    chip.bus.ms = bsp_ms;
+    static const uint8_t mac[6] = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x57 };
+    iob_w5500_init(&io, &chip.bus, mac);
     iob_init(&bus.port);
     iob_init_eth(&net.port, &net.disc);
+    iob_init_ioport(&io.port, &io.disc);
     iob_link = cur_link;
+    iob_port_ip = SUP_IP;
 }
 
 /* one scan (inputs in, outputs out) and one bus cycle, then time moves on */
@@ -607,13 +618,17 @@ static void t_node_timeout(void) {
 
 static void t_no_port(void) {
     setup();
-    if (ETH) iob_init_eth(NULL, NULL); else iob_init(NULL);
+    if (cur_link == IOB_LINK_IOPORT) iob_init_ioport(NULL, NULL); else if (ETH) iob_init_eth(NULL, NULL); else iob_init(NULL);
     iob_tags[0].enable = true;
     run(1100, true);
     CHECK_EQ(view(0).state, IOB_S_LOST);
     if (ETH) { CHECK(iob_dc_find()); run(20, true); iob_dc_view_t d; iob_dc_view(&d); CHECK_EQ(d.result, IOB_CM_NO_REPLY); }
+    plat_cmd_t c = { .id = PARAM_ID_IOB_LINK, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_U32, .v.u = cur_link };
+    CHECK_EQ(param_apply(&c), PERR_INTERLOCK);  /* no port for that link on this board: refused */
     iob_init(&bus.port);
     iob_init_eth(&net.port, &net.disc);
+    iob_init_ioport(&io.port, &io.disc);
+    CHECK_EQ(param_apply(&c), PERR_OK);
 }
 /* ---------------- Ethernet only ---------------- */
 #define MASK24 0xFFFFFF00u
@@ -951,7 +966,7 @@ void test_iobus_all(void) {
     RUN(t_rtu_frames);
     RUN(t_node_rules);
     RUN(t_net_codec);
-    for (cur_link = IOB_LINK_RS485; cur_link <= IOB_LINK_ETH; ++cur_link) {
+    for (cur_link = IOB_LINK_RS485; cur_link <= IOB_LINK_IOPORT; ++cur_link) {
         RUN(t_off_by_default);
         RUN(t_connect_and_io);
         RUN(t_channel_ranges);

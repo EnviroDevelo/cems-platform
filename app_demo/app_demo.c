@@ -101,7 +101,8 @@ const size_t app_demo_n_retain = sizeof app_demo_retain / sizeof app_demo_retain
 /* Modbus: holding 0-1 start delay (U32), 2-3 run seconds (U32), 10-15 valve name,
  * 20 alarm acknowledge; coils 0-3 acknowledge bits; discrete inputs 0 start input,
  * 1 valve output; input registers 0 alarms active, 1 alarms unacknowledged, 2 common alarm,
- * 10-25 active bits, 30-45 unacknowledged bits (K12: the master sees both). */
+ * 10-25 active bits, 30-45 unacknowledged bits (K12: the master sees both), 50 instrument state,
+ * 52-83 measurement quality, 100 the level x 10. */
 const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_HOLDING,  0, DEMO_PARAM_START_DELAY, MBF_U32),
     MB_ENTRY(MB_HOLDING,  2, DEMO_PARAM_RUN_HOURS,   MBF_U32),
@@ -115,6 +116,14 @@ const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_INPUT,    2, PARAM_ID_ALARM_COMMON,  MBF_U16),     /* common alarm: alarms routed to Modbus, relay states */
     MB_ENTRY(MB_INPUT,   10, PARAM_ID_ALARM_ACTIVE_BITS, MBF_ARRAY), /* 16 registers: bit (ID % 16) of register 10 + ID / 16 */
     MB_ENTRY(MB_INPUT,   30, PARAM_ID_ALARM_UNACK_BITS,  MBF_ARRAY),
+    MB_ENTRY(MB_INPUT,   50, PARAM_ID_STATE,             MBF_U16),   /* instrument state, PLAT_ST_* */
+    MB_ENTRY(MB_INPUT,   52, PARAM_ID_MEAS_Q,            MBF_ARRAY), /* 32 registers: quality of measurement 0.., PLAT_Q_* */
+    MB_ENTRY_X(MB_INPUT, 100, DEMO_PARAM_LEVEL,          MBF_I16, 0, 1), /* the level, x 10 */
+};
+
+/* Measured values (plat_state.h): each carries a quality on Modbus, the web page and the touchscreen. */
+static const plat_meas_def_t app_demo_meas[] = {
+    { .id = DEMO_PARAM_LEVEL, .index = PLAT_MEAS_NO_INDEX, .max_age_ms = 1000, .lo = 10.0f, .hi = 90.0f },
 };
 
 /* Data-log channels: the logic hands one sample per scan to each (plat_log_put). */
@@ -148,6 +157,8 @@ static void logic(void) {            /* "Function1" */
     if (ValveOut) { run_ms += g_dt_ms; while (run_ms >= 1000) { run_ms -= 1000; RunSeconds++; } }
     alarm_set(DEMO_ALARM_FAULT, DemoFault);
     alarm_set_range(DEMO_ALARM_LEVEL, DemoLevel, 10.0f, 90.0f, 2.0f);
+    plat_app_state(PLAT_ST_MEASURING);           /* a real instrument warms up first */
+    plat_meas_update(0, PLAT_Q_VALID);           /* the level is "measured" every scan */
     plat_log_put(0, StartIn ? 1.0f : 0.0f, LQ_OK);
     plat_log_put(1, ValveOut ? 1.0f : 0.0f, LQ_OK);
     plat_log_put(2, StartIn ? (float)StartDelay.Current / 1000.0f : 0.0f, StartIn ? LQ_OK : LQ_NA);
@@ -189,6 +200,7 @@ const plat_app_t app_demo_plat = {
     .fw_safe = fw_safe,
     .alarms = app_demo_alarms, .n_alarms = sizeof app_demo_alarms / sizeof app_demo_alarms[0],
     .ui = &demo_ui,
+    .meas = app_demo_meas, .n_meas = sizeof app_demo_meas / sizeof app_demo_meas[0],
 };
 
 const plat_app_t *app_select(void) { return &app_demo_plat; }

@@ -389,7 +389,7 @@ def main():
           and len(lines) == len(ev) + 1, f"event CSV ({len(lines) - 1} rows)")
     st, j = web.json("/api/log/info")
     check(st == 200 and j["status"] == 0 and j["events"]["used"] == len(ev), "log info")
-    n_events = len([e for e in ev if not e["event"].startswith("alarm")])   # the platform's own alarms come and go
+    n_events = len([e for e in ev if not e["event"].startswith(("alarm", "state"))])   # the platform's own alarms and the state they force come and go
 
     time.sleep(1.5)                                  # let the store save
     log = unit.stop()
@@ -409,7 +409,7 @@ def main():
     check(st == 200, "changed admin password survived the restart")
     st, j = web.json("/api/log/events?n=200")
     allev = j["events"] if st == 200 else []
-    ev = [e for e in allev if not e["event"].startswith("alarm")]
+    ev = [e for e in allev if not e["event"].startswith(("alarm", "state"))]
     check(len(ev) == n_events + 3 and [e["event"] for e in ev[:3]] == ["login", "login_fail", "power_up"],
           "event log continues across the restart")
     check([e["seq"] for e in allev] == list(range(len(allev), 0, -1)), "sequence numbers contiguous")
