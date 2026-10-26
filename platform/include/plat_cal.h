@@ -110,6 +110,7 @@ bool        plat_cal_history(unsigned i, plat_cal_record_t *out);         /* i =
 /* When the channel is next due (local s since 1970); 0 = no due date (no interval, nothing in
  * force, or the record has no time). */
 uint32_t    plat_cal_due(unsigned channel);
+bool        plat_cal_overdue(unsigned channel);   /* has a due date and the clock is past it */
 bool        plat_cal_any_due(void);               /* alarm 21 */
 const char *plat_cal_outcome_name(uint8_t outcome);   /* "pass", "fail", "aborted", "reverted" */
 

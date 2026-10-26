@@ -24,7 +24,7 @@
  *   GET  /api/alarms       alarms shown (active or unacknowledged), most urgent first, and counts
  *   GET  /api/alarms/config every alarm with its actions (email, Modbus, relays) and the relay set-up
  *   POST /api/alarms/ack   id=<alarm ID>|all  (any login; logged with the login and source)
- *   GET  /api/time         the clock (local standard time), UTC offset, SNTP status
+ *   GET  /api/time         the clock (local standard time), UTC offset, quality (synced, sync_time, source), SNTP status
  *   POST /api/time         t=<local seconds since 1970> sets it; sync=1 asks the time server now (admin)
  *   GET  /api/cal          calibration records (plat_cal.h): channels (in force, factory, due), history
  *   POST /api/cal          cmd=begin&ch=N | accept | abort | revert&ch=N (level from setting 321; revert factory)

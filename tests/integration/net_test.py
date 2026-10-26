@@ -387,6 +387,7 @@ def main():
           f"factory record in force ({rec})")
     check(cal["channels"][0]["factory"] == rec and len(cal["history"]) == 1, "factory record and history")
     check(cal["channels"][0]["due_time"] == rec.get("time", -1) + 90 * 86400, "due in 90 days")
+    check(cal["channels"][0]["overdue"] is False, "not overdue")
     fac.req("/api/logout", {})
     st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "admin password changed")

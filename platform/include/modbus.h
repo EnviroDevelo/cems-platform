@@ -73,7 +73,7 @@ typedef struct {
 
 /* The platform's own block, the same in every product (CIP-01.6, 14.4, 15.1, 15.2): input
  * registers 9000-9199 (PLAT_MB_BLOCK_ADDR), added to every map. 0-based addresses:
- *   9000 block layout version (1)       9001 the application's map version (mb_ident_t)
+ *   9000 block layout version (2)       9001 the application's map version (mb_ident_t)
  *   9002 heartbeat: +1 every 100 ms      9003 instrument state (PLAT_ST_*)
  *   9004 s since the last Modbus or web request (65535 = none, or longer)
  *   9005 alarms active                   9006 common alarm bits (ACOM_*)
@@ -83,8 +83,11 @@ typedef struct {
  *   9018-9019 state entered (U32, local s since 1970)
  *   9020-9051 quality of measurement 0..31 (PLAT_Q_*)
  *   9052-9067 product (32 bytes text)    9068-9075 vendor (16)    9076-9083 firmware version (16)
+ *   layout 2 (added; nothing above moved):
+ *   9084-9085 clock (U32, local s since 1970; 0 = not set)   9086 clock synchronised (0/1)
+ *   9087 clock source (PLAT_CLK_SRC_*)  9088-9089 clock last set or confirmed (U32)
  * 32-bit values high word first; text two bytes per register, first byte high, NUL padded. */
-#define MB_BLOCK_REGS 84u
+#define MB_BLOCK_REGS 90u
 void mb_block_scan(uint32_t now_ms);     /* scan task: heartbeat, link age, uptime */
 
 /* Build the map index: the platform's block plus the application's map. Checks that every ID

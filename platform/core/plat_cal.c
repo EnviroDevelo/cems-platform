@@ -247,14 +247,15 @@ uint32_t plat_cal_due(unsigned ch) {
     return r.time + (uint32_t)C[ch].interval_days * 86400u;
 }
 
+bool plat_cal_overdue(unsigned ch) {
+    uint32_t d = plat_cal_due(ch), t = clock_now();
+    return d && t && t >= d;
+}
+
 void plat_cal_scan(uint32_t now_ms) {
     if (running && (uint32_t)(now_ms - started_ms) > PLAT_CAL_TIMEOUT_MS) finish(PLAT_CAL_ABORTED, "timed out");
-    uint32_t t = clock_now();
     bool due = false;
-    for (unsigned ch = 0; ch < n_ch && t; ++ch) {
-        uint32_t d = plat_cal_due(ch);
-        if (d && t >= d) due = true;
-    }
+    for (unsigned ch = 0; ch < n_ch; ++ch) due = due || plat_cal_overdue(ch);
     any_due = due;
 }
 

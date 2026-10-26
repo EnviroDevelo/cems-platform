@@ -65,6 +65,44 @@ static void t_request(void) {
     m.v.u = PARAM_MODE_LOCAL; param_apply(&m);
 }
 
+static void t_quality(void) {                /* CIP-02.6 */
+    bsp_host_reset();
+    bsp_host.ms = 1000;
+    plat_clock_reset_for_test();
+    CHECK_EQ(param_init(NULL, 0), PERR_OK);
+    param_bind(NULL, NULL);
+    rtc_to_globals();
+    plat_clock_scan();
+    CHECK(!plat_clock_synced());                                              /* the RTC alone: not synchronised */
+    CHECK_EQ(plat_clock_source(), PLAT_CLK_SRC_NONE);
+    CHECK_EQ(plat_clock_sync_time(), 0u);
+    uint32_t t = plat_unix_from_civil(2026, 10, 26, 9, 0, 0);
+    CHECK_EQ(plat_clock_request(t, PLAT_SRC_WEB, 2, "web"), 0);
+    plat_clock_scan();
+    CHECK(plat_clock_synced());
+    CHECK_EQ(plat_clock_source(), PLAT_CLK_SRC_WEB);
+    CHECK_EQ(plat_clock_sync_time(), t);
+    rtc_to_globals();
+    bsp_host_advance_ms(60000);
+    plat_clock_sntp_ok();                                                     /* SNTP agrees: no step, but confirmed */
+    plat_clock_scan();
+    CHECK_EQ(plat_clock_source(), PLAT_CLK_SRC_SNTP);
+    CHECK(!strcmp(plat_clock_source_name(plat_clock_source()), "sntp"));
+    param_publish();
+    plat_val_t v;
+    CHECK(param_read(PARAM_ID_CLOCK_SYNCED, &v) && v.b);
+    CHECK(param_read(PARAM_ID_CLOCK_SOURCE, &v) && v.u == PLAT_CLK_SRC_SNTP);
+    bsp_host_advance_ms(PLAT_CLOCK_SYNC_MAX_S * 1000u + 1000u);
+    plat_clock_scan();
+    CHECK(!plat_clock_synced());                                              /* nothing heard for a day */
+    CHECK_EQ(plat_clock_source(), PLAT_CLK_SRC_SNTP);                         /* still says where it came from */
+    plat_clock_request(t, PLAT_SRC_INTERNAL, 0, "sntp");                      /* an SNTP step */
+    plat_clock_scan();
+    CHECK(plat_clock_synced());
+    plat_clock_reset_for_test();
+}
+
 void test_clock_all(void) {
     RUN(t_request);
+    RUN(t_quality);
 }

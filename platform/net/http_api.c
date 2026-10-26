@@ -905,6 +905,7 @@ static void get_cal(http_out_t *o) {
         if (ch) out_str(o, ",");
         out_str(o, "{\"name\":"); json_str(o, plat_cal_name(ch));
         out_str(o, ",\"due_time\":"); json_uint(o, plat_cal_due(ch));
+        out_str(o, ",\"overdue\":"); json_bool(o, plat_cal_overdue(ch));
         out_str(o, ",\"in_force\":"); if (plat_cal_in_force(ch, &c)) cal_record(o, &c); else out_str(o, "null");
         out_str(o, ",\"factory\":"); if (plat_cal_factory(ch, &c)) cal_record(o, &c); else out_str(o, "null");
         out_str(o, "}");
@@ -951,6 +952,9 @@ static void get_time(http_out_t *o) {
     out_str(o, ",\"unix\":"); json_uint(o, t);
     out_str(o, ",\"text\":"); json_str(o, set ? b : "");
     out_str(o, ",\"utc_offset_min\":"); json_int(o, plat_clock_utc_offset_s() / 60);
+    out_str(o, ",\"synced\":"); json_bool(o, plat_clock_synced());
+    out_str(o, ",\"sync_time\":"); json_uint(o, plat_clock_sync_time());
+    out_str(o, ",\"source\":"); json_str(o, plat_clock_source_name(plat_clock_source()));
     out_str(o, ",\"sntp\":{\"on\":"); json_bool(o, ip != 0);
     out_str(o, ",\"last_ok_s_ago\":"); if (s.last_ok_ms) json_uint(o, (bsp_ms() - s.last_ok_ms) / 1000u); else out_str(o, "null");
     out_str(o, ",\"diff_s\":"); json_int(o, s.last_diff_s);
