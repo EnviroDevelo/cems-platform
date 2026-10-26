@@ -66,6 +66,9 @@ async def run(say):
         stsum, stl = await pg.inner_text("#stsum"), await pg.inner_text("#stlist")
         check(stsum.startswith("FAILED: Calibration") and "RAM: pass" in stl and "Ethernet: not checked" in stl and "demo_counter: pass" in stl,
               f"self-test shown ({stsum!r})")
+        al = await pg.inner_text("#alarmrows")
+        check("What to check:" in al, f"alarms show what to check ({[l for l in al.splitlines() if 'What to check' in l][:1]})")
+        check(" core " in await pg.inner_text("#ident"), "the core platform version is shown next to the firmware")
         # service history (CIP-22, 23.4)
         crc = await pg.inner_text("#svccrc")
         check(len(crc) == 8 and (await pg.inner_text("#svchours")).endswith(" h"), f"service: hours and settings checksum shown ({crc})")

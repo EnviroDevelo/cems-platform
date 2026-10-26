@@ -1025,7 +1025,8 @@ without a login (`tests/integration/cal_web_test.py`, `docs/web_service.png`).
 (with what to check), self-test checks, fault record codes, reset causes, event codes and
 firmware update refusals. `make fault-codes` writes it from the firmware's own tables
 (`tools/fault_codes.c`), and `make test` fails if it is out of date or if a platform alarm has
-no help text. A product's own list: `make fault-codes APP=<dir>`.
+no help text. A product's own list: `make fault-codes APP=<dir>`. `/api/alarms` carries the same help text
+(`help`), and the web page's alarm list shows it under each alarm as "What to check".
 
 ## 6. Integration rules for the application (VM/MUX) code
 

@@ -893,7 +893,7 @@ async function refreshInfo() {
   try {
     const i = await api("/api/info");
     $("product").textContent = i.product;
-    $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}${i.build && i.build !== "dev" ? " (" + i.build + ")" : ""}` +
+    $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}${i.build && i.build !== "dev" ? " (" + i.build + ")" : ""}${i.core ? "  ·  core " + i.core : ""}` +
       `${i.board_rev !== undefined && i.board_rev !== null ? "  ·  board rev " + i.board_rev : ""}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
     showAlarmBadge(i.alarms);
@@ -958,6 +958,7 @@ async function pollAlarms() {
         const name = td(""); const dot = document.createElement("span"); dot.className = "sev sev-" + a.severity;
         name.append(dot, `${a.text} `); const small = document.createElement("span"); small.className = "note";
         small.textContent = `${a.severity}, ${a.name} (${a.id})`; name.appendChild(small);
+        if (a.help) { const h = document.createElement("div"); h.className = "note alhelp"; h.textContent = "What to check: " + a.help; name.appendChild(h); }
         td(state + (a.latch && a.active && a.unacked ? " (latched)" : ""));
         const act = td("");
         if (a.unacked && level >= 1) {
