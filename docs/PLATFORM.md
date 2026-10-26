@@ -209,8 +209,14 @@ the end and the block version goes up.
 **Web interface.** One page (4.6 KB gzip) loads once, then polls JSON: values every
 0.5 s, status every 2 s. Viewing needs no login. Changes need a login (operator, admin
 or factory); a session allows changes for 10 minutes after the login or the last change.
-Five wrong passwords lock login for 30 s. Passwords are stored as salted SHA-256 in FRAM,
-outside the readable table. Every POST must carry an `X-CEMS: 1` header and the cookie
+Five wrong passwords lock login for 30 s. Passwords are stored as PBKDF2-HMAC-SHA256 (4096
+rounds, per-unit salt; CIP-20.3) in FRAM, outside the readable table; one set by older firmware
+still works and is re-stored that way at its next good login. New admin and factory passwords need
+8 characters or more (the operator PIN for the touchscreen stays at 4). **Lost passwords
+(CIP-19.3):** a one-time token from the developer, signed with the developer key over the chip ID
+and the unit's reset count (`tools/reset_token.py`; `GET /api/auth/reset` shows what to sign,
+`POST /api/auth/reset sig=..` needs no login), puts all three back to the defaults and ends every
+session; a wrong token counts as a failed login, and both are logged. Every POST must carry an `X-CEMS: 1` header and the cookie
 is `HttpOnly; SameSite=Strict`, so another web page cannot submit changes. If the
 instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner appears
 and the values grey out until polling recovers. Admin users can download a parameter
