@@ -135,9 +135,10 @@ static void t_auth(void) {
     CHECK(auth_check(PLAT_LVL_ADMIN, "2222")); CHECK(!auth_check(4, "2222")); CHECK(!auth_check(0, "x"));
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "has space"), AUTH_INVALID);
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "abc"), AUTH_INVALID);
-    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "1234567"), AUTH_INVALID);       /* admin and factory: 8 or more */
-    CHECK_EQ(auth_set_password(PLAT_LVL_OPERATOR, "4321"), AUTH_OK);            /* the operator PIN: 4 */
+    CHECK_EQ(auth_set_password(PLAT_LVL_OPERATOR, "4321"), AUTH_OK);            /* every level: 4 or more */
     CHECK(auth_check(PLAT_LVL_OPERATOR, "4321"));
+    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "2345"), AUTH_OK);
+    CHECK(auth_check(PLAT_LVL_ADMIN, "2345"));
     CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 1);
     {   /* PBKDF2-HMAC-SHA256 against Python's hashlib.pbkdf2_hmac (CIP-20.3) */
         uint8_t salt[16], out[32];
