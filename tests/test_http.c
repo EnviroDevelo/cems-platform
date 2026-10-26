@@ -135,9 +135,36 @@ static void t_auth(void) {
     CHECK(auth_check(PLAT_LVL_ADMIN, "2222")); CHECK(!auth_check(4, "2222")); CHECK(!auth_check(0, "x"));
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "has space"), AUTH_INVALID);
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "abc"), AUTH_INVALID);
+    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "1234567"), AUTH_INVALID);       /* admin and factory: 8 or more */
+    CHECK_EQ(auth_set_password(PLAT_LVL_OPERATOR, "4321"), AUTH_OK);            /* the operator PIN: 4 */
+    CHECK(auth_check(PLAT_LVL_OPERATOR, "4321"));
+    CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 1);
+    {   /* PBKDF2-HMAC-SHA256 against Python's hashlib.pbkdf2_hmac (CIP-20.3) */
+        uint8_t salt[16], out[32];
+        for (int k = 0; k < 16; ++k) salt[k] = (uint8_t)k;
+        static const char *const want[3] = { "a5e556d185d2e6fa2389864492499123ec3fadd0d5a49d42e1e6be1b6092b450",
+                                             "c901a76139a32bc474b1a03ffcfe8e22d8fefc94383fe941f5806e3962e9ab40",
+                                             "00ac497b56b5da7d97ace8b1cee6cadf7184e18d69dfedd27d289255a76ddef8" };
+        char longpw[71]; memset(longpw, 'x', 70); longpw[70] = 0;
+        const char *pw[3] = { "Cems-2026", "Cems-2026", longpw };
+        const uint32_t it[3] = { 1, 4096, 3 };
+        for (int t = 0; t < 3; ++t) {
+            auth_pbkdf2_for_test(pw[t], salt, 2, it[t], out);
+            char hx[65];
+            for (int k = 0; k < 32; ++k) snprintf(hx + 2 * k, 3, "%02x", out[k]);
+            CHECK(!strcmp(hx, want[t]));
+        }
+    }
+    /* a password stored by older firmware still works, and is re-stored the slow way */
+    auth_set_legacy_for_test(PLAT_LVL_OPERATOR, "5555");
+    CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 0);
+    CHECK(!auth_check(PLAT_LVL_OPERATOR, "4321"));
+    CHECK(auth_check(PLAT_LVL_OPERATOR, "5555"));
+    CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 1);
+    CHECK(auth_check(PLAT_LVL_OPERATOR, "5555"));
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "Str0ng!pw"), AUTH_OK);
     CHECK(!auth_check(PLAT_LVL_ADMIN, "2222")); CHECK(auth_check(PLAT_LVL_ADMIN, "Str0ng!pw"));
-    CHECK(!auth_is_default(PLAT_LVL_ADMIN)); CHECK(auth_is_default(PLAT_LVL_OPERATOR));
+    CHECK(!auth_is_default(PLAT_LVL_ADMIN)); CHECK(!auth_is_default(PLAT_LVL_OPERATOR)); CHECK(auth_is_default(PLAT_LVL_FACTORY));
     /* survives a reboot (salt and hash are in FRAM) */
     for (int k = 0; k < 3; ++k) store_tick();
     tnow += 2000; store_tick(); store_tick();
@@ -158,12 +185,12 @@ static void t_auth(void) {
     CHECK_EQ(auth_session(NULL, now, NULL), 0);
     /* lockout after five wrong passwords, open again after 30 s */
     for (int k = 0; k < 5; ++k) CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "0000", now, t2), AUTH_BAD);
-    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "1111", now + 1000, t2), AUTH_LOCKED);
+    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "5555", now + 1000, t2), AUTH_LOCKED);
     CHECK(auth_locked_ms(now + 1000) > 28000);
-    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "1111", now + 31000, t2), AUTH_OK);
+    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "5555", now + 31000, t2), AUTH_OK);
     /* sessions are capped: the least recently used one is replaced */
     char t[AUTH_SESSIONS + 1][AUTH_TOKEN_LEN + 1];
-    for (int k = 0; k <= AUTH_SESSIONS; ++k) CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "1111", now + 40000 + (uint32_t)k, t[k]), AUTH_OK);
+    for (int k = 0; k <= AUTH_SESSIONS; ++k) CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "5555", now + 40000 + (uint32_t)k, t[k]), AUTH_OK);
     CHECK_EQ(auth_session(t[0], now + 40010, NULL), 0);
     CHECK_EQ(auth_session(t[AUTH_SESSIONS], now + 40010, NULL), PLAT_LVL_OPERATOR);
     auth_logout(t[AUTH_SESSIONS]);

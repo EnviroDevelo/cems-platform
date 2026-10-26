@@ -31,6 +31,8 @@
  *   GET  /api/service      operating hours, configuration checksum, service log, manufacturing test record
  *   POST /api/service/log  tech=..&work=.. (factory): a service log entry; restarts "since service"
  *   POST /api/service/test station=..&r=1,1,2,.. (factory): the manufacturing test record
+ *   GET  /api/auth/reset   chip ID and the text a credential-recovery token signs (web_auth.h)
+ *   POST /api/auth/reset   sig=<128 hex> (no login): all passwords back to the defaults
  *   GET  /api/mail         alarm email status: queue, last result, the server's certificate fingerprint, the pin
  *   POST /api/mail/test    send a test email (admin)
  *   POST /api/mail/trust   trust=1 pins the certificate the mail server last presented, trust=0 unpins (admin)

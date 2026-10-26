@@ -41,6 +41,16 @@ static void log_it(uint8_t src, uint8_t level, uint32_t old_s, double new_v, con
     plat_log_event(LOG_EV_SERIAL, src, level, old_s, (double)old_s, new_v, why);
 }
 
+bool plat_dev_token_ok(const char *msg, size_t n, const uint8_t sig[64]) {
+    if (!key() || !n) return false;
+    uint8_t h[32];
+    sha256_t s;
+    sha256_init(&s);
+    sha256_update(&s, msg, n);
+    sha256_final(&s, h);
+    return plat_p256_verify(key(), h, sig);
+}
+
 int plat_serial_assign(uint32_t new_serial, const uint8_t sig[64], uint8_t src, uint8_t level) {
     uint32_t old_s = plat_serial();
     if (!key()) { log_it(src, level, old_s, NAN, "no developer key"); return SER_E_NO_KEY; }
@@ -48,12 +58,7 @@ int plat_serial_assign(uint32_t new_serial, const uint8_t sig[64], uint8_t src, 
     if (new_serial == old_s) return SER_E_SAME;
     char msg[SERIAL_MSG_MAX];
     size_t n = plat_serial_message(new_serial, msg, sizeof msg);
-    uint8_t h[32];
-    sha256_t s;
-    sha256_init(&s);
-    sha256_update(&s, msg, n);
-    sha256_final(&s, h);
-    if (!n || !plat_p256_verify(key(), h, sig)) { log_it(src, level, old_s, (double)new_serial, "token refused"); return SER_E_SIG; }
+    if (!plat_dev_token_ok(msg, n, sig)) { log_it(src, level, old_s, (double)new_serial, "token refused"); return SER_E_SIG; }
     if (param_post(PARAM_ID_SERIAL, PLAT_VAL_U32, (plat_val_t){ .u = new_serial }, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY) != PERR_OK)
         return SER_E_BUSY;
     log_it(src, level, old_s, (double)new_serial, "developer token");

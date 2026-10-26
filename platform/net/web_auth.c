@@ -5,6 +5,9 @@
 #include "plat_sha256.h"
 #include "plat_port.h"
 #include "bsp.h"
+#include "plat_serial.h"
+#include "plat_cmdq.h"
+#include <stdio.h>
 
 #define LEVELS 3
 #define FAIL_LIMIT 5
@@ -12,11 +15,15 @@
 
 static uint8_t a_salt[16];
 static uint8_t a_hash[LEVELS][32];
+static uint8_t a_kdf[LEVELS];          /* how each hash was made: 0 = one SHA-256 (older firmware), 1 = PBKDF2 */
+static uint32_t a_resets;              /* recovery tokens used so far (factory region: survives restore defaults) */
 static const char *const defaults[LEVELS] = { "1111", "2222", "9999" };
 
 static const retain_def_t blocks[] = {
     { .id = 900, .size = sizeof a_salt, .ptr = a_salt, .flags = RF_SECRET, .name = "auth_salt" },
     { .id = 901, .size = sizeof a_hash, .ptr = a_hash, .flags = RF_SECRET, .name = "auth_hash" },
+    { .id = 908, .size = sizeof a_kdf, .ptr = a_kdf, .flags = RF_SECRET, .name = "auth_kdf" },
+    { .id = 909, .size = sizeof a_resets, .ptr = &a_resets, .flags = RF_FACTORY | RF_UNIT, .name = "auth_resets" },
 };
 const retain_def_t *plat_store_blocks(size_t *n) { *n = sizeof blocks / sizeof blocks[0]; return blocks; }
 
@@ -35,13 +42,44 @@ static bool same(const void *a, const void *b, size_t n) {
     return d == 0;
 }
 
-static void hash_pw(uint8_t level, const char *pw, uint8_t out[32]) {
-    sha256_t s;
+/* PBKDF2-HMAC-SHA256, one 32-byte block: the password is the HMAC key, salt | level the salt */
+static void pbkdf2(const char *pw, const uint8_t salt[16], uint8_t level, uint32_t iter, uint8_t out[32]) {
+    uint8_t k[64] = { 0 }, pad[64], u[32];
+    size_t n = strlen(pw);
+    if (n > 64) { sha256_t s; sha256_init(&s); sha256_update(&s, pw, n); sha256_final(&s, k); }
+    else memcpy(k, pw, n);
+    sha256_t in, outer;                                /* the keyed inner and outer states, reused every round */
+    for (int j = 0; j < 64; ++j) pad[j] = (uint8_t)(k[j] ^ 0x36);
+    sha256_init(&in); sha256_update(&in, pad, 64);
+    for (int j = 0; j < 64; ++j) pad[j] = (uint8_t)(k[j] ^ 0x5c);
+    sha256_init(&outer); sha256_update(&outer, pad, 64);
+    static const uint8_t one[4] = { 0, 0, 0, 1 };
+    sha256_t s = in;
+    sha256_update(&s, salt, 16); sha256_update(&s, &level, 1); sha256_update(&s, one, 4);
+    sha256_final(&s, u);
+    s = outer; sha256_update(&s, u, 32); sha256_final(&s, u);
+    memcpy(out, u, 32);
+    for (uint32_t r = 1; r < iter; ++r) {
+        s = in; sha256_update(&s, u, 32); sha256_final(&s, u);
+        s = outer; sha256_update(&s, u, 32); sha256_final(&s, u);
+        for (int j = 0; j < 32; ++j) out[j] ^= u[j];
+    }
+    memset(k, 0, sizeof k); memset(pad, 0, sizeof pad);
+}
+
+static void hash_pw(uint8_t level, const char *pw, uint8_t kdf, uint8_t out[32]) {
+    if (kdf) { pbkdf2(pw, a_salt, level, AUTH_KDF_ITER, out); return; }
+    sha256_t s;                                        /* how older firmware stored it */
     sha256_init(&s);
     sha256_update(&s, a_salt, sizeof a_salt);
     sha256_update(&s, &level, 1);
     sha256_update(&s, pw, strlen(pw));
     sha256_final(&s, out);
+}
+
+static void store_hash(uint8_t level, const uint8_t h[32]) {
+    /* the scan copies these blocks for the store: don't let it see half a hash */
+    PLAT_CRIT_ENTER(); memcpy(a_hash[level - 1], h, 32); a_kdf[level - 1] = 1; PLAT_CRIT_EXIT();
 }
 
 void auth_init(void) {
@@ -69,21 +107,55 @@ bool auth_check(uint8_t level, const char *pw) {
         strcpy(d, defaults[level - 1]); memcpy(p, pw, n);
         return same(d, p, sizeof d);
     }
-    uint8_t h[32];
-    hash_pw(level, pw, h);
-    return same(h, a_hash[level - 1], 32);
+    uint8_t h[32], kdf = a_kdf[level - 1];
+    hash_pw(level, pw, kdf, h);
+    if (!same(h, a_hash[level - 1], 32)) return false;
+    if (!kdf) { hash_pw(level, pw, 1, h); store_hash(level, h); }   /* re-store it the slow way */
+    return true;
 }
 
 auth_rc_t auth_set_password(uint8_t level, const char *pw) {
     if (!valid_level(level) || !pw) return AUTH_INVALID;
     size_t n = strlen(pw);
-    if (n < AUTH_PW_MIN || n > AUTH_PW_MAX) return AUTH_INVALID;
+    if (n < (level >= PLAT_LVL_ADMIN ? AUTH_PW_MIN_HIGH : AUTH_PW_MIN) || n > AUTH_PW_MAX) return AUTH_INVALID;
     for (size_t k = 0; k < n; ++k) if (pw[k] < 0x21 || pw[k] > 0x7E) return AUTH_INVALID;   /* printable, no spaces */
     uint8_t h[32];
-    hash_pw(level, pw, h);
+    hash_pw(level, pw, 1, h);
     if (all_zero(h, 32)) return AUTH_INVALID;          /* would read as "default" (never in practice) */
-    /* the scan copies this block for the store: don't let it see half a hash */
-    PLAT_CRIT_ENTER(); memcpy(a_hash[level - 1], h, 32); PLAT_CRIT_EXIT();
+    store_hash(level, h);
+    return AUTH_OK;
+}
+
+/* ---- for tests ---- */
+void auth_pbkdf2_for_test(const char *pw, const uint8_t salt[16], uint8_t level, uint32_t iter, uint8_t out[32]) {
+    pbkdf2(pw, salt, level, iter, out);
+}
+void auth_set_legacy_for_test(uint8_t level, const char *pw) {   /* as older firmware stored it */
+    uint8_t h[32];
+    hash_pw(level, pw, 0, h);
+    memcpy(a_hash[level - 1], h, 32); a_kdf[level - 1] = 0;
+}
+uint8_t auth_kdf_for_test(uint8_t level) { return a_kdf[level - 1]; }
+
+size_t auth_reset_message(char *buf, size_t cap) {
+    char uid[25];
+    plat_serial_uid_hex(uid);
+    int n = snprintf(buf, cap, "CEMS-RESET v1 uid=%s n=%lu", uid, (unsigned long)a_resets);
+    return n > 0 && (size_t)n < cap ? (size_t)n : 0;
+}
+
+auth_rc_t auth_reset_with_token(const uint8_t sig[64], uint32_t now) {
+    if (auth_locked_ms(now)) return AUTH_LOCKED;
+    if (!plat_serial_key_present()) return AUTH_NO_KEY;
+    char msg[AUTH_RESET_MSG_MAX];
+    size_t n = auth_reset_message(msg, sizeof msg);
+    if (!sig || !plat_dev_token_ok(msg, n, sig)) {
+        if (++fails >= FAIL_LIMIT) { locked = true; lock_until = now + LOCK_MS; }
+        return AUTH_BAD;
+    }
+    PLAT_CRIT_ENTER(); memset(a_hash, 0, sizeof a_hash); a_resets++; PLAT_CRIT_EXIT();
+    auth_reset_sessions();
+    fails = 0;
     return AUTH_OK;
 }
 
