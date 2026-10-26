@@ -1,4 +1,5 @@
-/* test_serial.c - serial number changes need a developer token (plat_serial.h, D25). */
+/* test_serial.c - serial number changes need a developer token (plat_serial.h, D25).
+ * Requirements proved here: CIP-01.1, 01.7, 19.3. */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
@@ -213,10 +214,75 @@ static void t_web(void) {
     mbedtls_ctr_drbg_free(&rng);
 }
 
+/* credential recovery by developer token (web_auth.h, CIP-19.3) */
+static void sign_text(int which, const char *msg, uint8_t sig[64]) {
+    uint8_t h[32]; sha256_t s; sha256_init(&s); sha256_update(&s, msg, strlen(msg)); sha256_final(&s, h);
+    mbedtls_mpi r, ss; mbedtls_mpi_init(&r); mbedtls_mpi_init(&ss);
+    CHECK_EQ(mbedtls_ecdsa_sign(&sk[which].MBEDTLS_PRIVATE(grp), &r, &ss, &sk[which].MBEDTLS_PRIVATE(d), h, 32,
+                                mbedtls_ctr_drbg_random, &rng), 0);
+    mbedtls_mpi_write_binary(&r, sig, 32); mbedtls_mpi_write_binary(&ss, sig + 32, 32);
+    mbedtls_mpi_free(&r); mbedtls_mpi_free(&ss);
+}
+
+static void t_reset(void) {
+    memset(fram, 0, sizeof fram);
+    boot();
+    keys();
+    char msg[AUTH_RESET_MSG_MAX];
+    CHECK(auth_reset_message(msg, sizeof msg) > 0);
+    CHECK(!strcmp(msg, "CEMS-RESET v1 uid=00112233445566778899aabb n=0"));
+    uint8_t sig[64], other[64];
+    sign_text(0, msg, sig);
+    sign_text(1, msg, other);
+    CHECK_EQ(auth_reset_with_token(sig, 1000), AUTH_NO_KEY);           /* firmware without a developer key */
+    plat_serial_key_override_for_test(pub[0]);
+    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "Lost-pass1"), AUTH_OK);
+    CHECK_EQ(auth_set_password(PLAT_LVL_FACTORY, "Lost-pass2"), AUTH_OK);
+    char tok[AUTH_TOKEN_LEN + 1];
+    CHECK_EQ(auth_login(PLAT_LVL_ADMIN, "Lost-pass1", 1000, tok), AUTH_OK);
+    CHECK_EQ(auth_reset_with_token(other, 1000), AUTH_BAD);            /* another key */
+    CHECK(!auth_is_default(PLAT_LVL_FACTORY));
+    CHECK_EQ(auth_reset_with_token(sig, 1000), AUTH_OK);
+    CHECK(auth_is_default(PLAT_LVL_ADMIN) && auth_is_default(PLAT_LVL_FACTORY));
+    CHECK(auth_check(PLAT_LVL_FACTORY, "9999"));
+    CHECK_EQ(auth_session(tok, 1001, NULL), 0);                         /* every session ended */
+    CHECK_EQ(auth_reset_with_token(sig, 1000), AUTH_BAD);              /* once only: the count moved on */
+    settle();
+    boot();                                                             /* the count survives a restart */
+    CHECK(auth_reset_message(msg, sizeof msg) > 0);
+    CHECK(!strcmp(msg, "CEMS-RESET v1 uid=00112233445566778899aabb n=1"));
+    /* wrong tokens count towards the lockout */
+    for (int k = 0; k < 5; ++k) CHECK_EQ(auth_reset_with_token(other, 2000), AUTH_BAD);
+    sign_text(0, msg, sig);
+    CHECK_EQ(auth_reset_with_token(sig, 2001), AUTH_LOCKED);
+    CHECK_EQ(auth_reset_with_token(sig, 40000), AUTH_OK);
+    /* on the web page: no login needed */
+    http_cfg_t c = { .product = "CEMS Supervisor", .fw_version = "0.1.0-test", .scratch = scratch,
+                     .scratch_size = sizeof scratch, .wait = store_tick };
+    http_api_init(&c);
+    sid[0] = 0;
+    CHECK_EQ(call("GET", "/api/auth/reset", NULL), 200);
+    CHECK(has("\"message\":\"CEMS-RESET v1 uid=00112233445566778899aabb n=2\""));
+    CHECK(has("\"key\":true"));
+    char hex[129], body[160];
+    hex_encode(other, 64, hex);
+    snprintf(body, sizeof body, "sig=%s", hex);
+    CHECK_EQ(call("POST", "/api/auth/reset", body), 403);
+    sign_text(0, "CEMS-RESET v1 uid=00112233445566778899aabb n=2", sig);
+    hex_encode(sig, 64, hex);
+    snprintf(body, sizeof body, "sig=%s", hex);
+    CHECK_EQ(call("POST", "/api/auth/reset", body), 200);
+    CHECK_EQ(call("POST", "/api/auth/reset", "sig=00"), 400);
+    plat_serial_key_override_for_test(NULL);
+    for (int k = 0; k < 2; ++k) mbedtls_ecdsa_free(&sk[k]);
+    mbedtls_ctr_drbg_free(&rng);
+}
+
 void test_serial_all(void) {
     RUN(t_ordinary_writes_refused);
     RUN(t_message);
     RUN(t_assign);
     RUN(t_backup);
     RUN(t_web);
+    RUN(t_reset);
 }

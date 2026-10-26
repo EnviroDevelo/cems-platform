@@ -28,6 +28,16 @@
 #ifdef CHECK_WITH_RS485
 #define BSP_RS485_HUART huart2
 #endif
+#ifdef CHECK_WITH_W5500
+#define W5500_CS_Pin GPIO_PIN_11
+#define W5500_CS_GPIO_Port GPIOE
+#define W5500_RST_Pin GPIO_PIN_10
+#define W5500_RST_GPIO_Port GPIOE
+#endif
+#ifdef CHECK_WITH_SUPPLY
+#define SUPPLY_SENSE_Pin GPIO_PIN_0
+#define SUPPLY_SENSE_GPIO_Port GPIOC
+#endif
 #ifdef CHECK_WITH_FRAM
 #define FRAM_CS_Pin GPIO_PIN_4
 #define FRAM_CS_GPIO_Port GPIOE

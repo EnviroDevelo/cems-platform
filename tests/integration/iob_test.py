@@ -61,7 +61,8 @@ def screenshot():
     async def run():
         async with async_playwright() as p:
             b = await p.chromium.launch(executable_path=CHROME)
-            pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True)
+            pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True,
+                                  bypass_csp=True)   # wait_for_function evaluates strings; the page's CSP forbids that
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             await pg.goto(BASE + "/")
@@ -89,7 +90,8 @@ def commission():
     async def run():
         async with async_playwright() as p:
             b = await p.chromium.launch(executable_path=CHROME)
-            pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True)
+            pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True,
+                                  bypass_csp=True)   # wait_for_function evaluates strings; the page's CSP forbids that
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
@@ -128,7 +130,8 @@ def net_commission():
     async def run():
         async with async_playwright() as p:
             b = await p.chromium.launch(executable_path=CHROME)
-            pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True)
+            pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True,
+                                  bypass_csp=True)   # wait_for_function evaluates strings; the page's CSP forbids that
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))

@@ -2,6 +2,9 @@
 #include <math.h>
 #include <string.h>
 #include "modbus.h"
+#include "plat_config.h"
+#include "plat_state.h"
+#include "fw_update.h"
 
 #ifndef MB_MAX_ENTRIES
 #define MB_MAX_ENTRIES 512
@@ -18,8 +21,65 @@ typedef struct { const mb_map_t *m; const param_def_t *d; uint16_t span; } ent_t
 
 static ent_t      idx[MB_MAX_ENTRIES];
 static size_t     n_idx;
-static mb_ident_t ident = { "CEMS", "CEMS Supervisor", "0.0", PLAT_LVL_OPERATOR };
+static mb_ident_t ident = { "CEMS", "CEMS Supervisor", "0.0", PLAT_LVL_OPERATOR, 0 };
 static mb_stats_t st;
+
+/* ---------------- the platform's own block (modbus.h) ---------------- */
+uint16_t plat_mb_heartbeat, plat_mb_link_age_s = 0xFFFFu, plat_mb_block_version = PLAT_MB_BLOCK_VERSION;
+uint16_t plat_mb_map_version, plat_mb_api_version = PLAT_API_VERSION;
+uint32_t plat_mb_fw_version, plat_mb_uptime_s;
+char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
+
+#define B(OFF) (PLAT_MB_BLOCK_ADDR + (OFF))
+static const mb_map_t block[] = {
+    MB_ENTRY(MB_INPUT, B(0),  PARAM_ID_MB_BLOCK_VERSION, MBF_U16),
+    MB_ENTRY(MB_INPUT, B(1),  PARAM_ID_MB_MAP_VERSION,   MBF_U16),
+    MB_ENTRY(MB_INPUT, B(2),  PARAM_ID_HEARTBEAT,        MBF_U16),
+    MB_ENTRY(MB_INPUT, B(3),  PARAM_ID_STATE,            MBF_U16),
+    MB_ENTRY(MB_INPUT, B(4),  PARAM_ID_LINK_AGE_S,       MBF_U16),
+    MB_ENTRY(MB_INPUT, B(5),  PARAM_ID_ALARM_ACTIVE,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(6),  PARAM_ID_ALARM_COMMON,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(7),  PARAM_ID_HW_REV,           MBF_U32),
+    MB_ENTRY(MB_INPUT, B(9),  PARAM_ID_SERIAL,           MBF_U32),
+    MB_ENTRY(MB_INPUT, B(11), PARAM_ID_FW_VERSION_NUM,   MBF_U32),
+    MB_ENTRY(MB_INPUT, B(13), PARAM_ID_API_VERSION,      MBF_U16),
+    MB_ENTRY(MB_INPUT, B(14), PARAM_ID_UPTIME_S,         MBF_U32),
+    MB_ENTRY(MB_INPUT, B(16), PARAM_ID_SUPPLY_MV,        MBF_U32),
+    MB_ENTRY(MB_INPUT, B(18), PARAM_ID_STATE_SINCE,      MBF_U32),
+    MB_ENTRY(MB_INPUT, B(20), PARAM_ID_MEAS_Q,           MBF_ARRAY),
+    MB_ENTRY(MB_INPUT, B(52), PARAM_ID_PRODUCT,          MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(68), PARAM_ID_VENDOR,           MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(76), PARAM_ID_FW_TEXT,          MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(84), PARAM_ID_CLOCK_UNIX,       MBF_U32),     /* layout 2 (CIP-02.6) */
+    MB_ENTRY(MB_INPUT, B(86), PARAM_ID_CLOCK_SYNCED,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(87), PARAM_ID_CLOCK_SOURCE,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(88), PARAM_ID_CLOCK_SYNC_TIME,  MBF_U32),
+};
+#define N_BLOCK (sizeof block / sizeof block[0])
+
+static void copy_text(char *dst, size_t cap, const char *src) {
+    memset(dst, 0, cap);
+    for (size_t k = 0; src && src[k] && k < cap; ++k) dst[k] = src[k];   /* NUL padded, not terminated when full */
+}
+
+static void block_ident(void) {
+    copy_text(plat_mb_product, sizeof plat_mb_product, ident.product);
+    copy_text(plat_mb_vendor, sizeof plat_mb_vendor, ident.vendor);
+    copy_text(plat_mb_fw_text, sizeof plat_mb_fw_text, ident.revision);
+    plat_mb_fw_version = ident.revision ? fw_parse_version(ident.revision) : 0u;
+    plat_mb_map_version = ident.map_version;
+    plat_mb_block_version = PLAT_MB_BLOCK_VERSION;
+    plat_mb_api_version = PLAT_API_VERSION;
+}
+
+void mb_block_scan(uint32_t now_ms) {
+    static uint32_t beat_ms;
+    if (!beat_ms || (uint32_t)(now_ms - beat_ms) >= 100u) { beat_ms = now_ms ? now_ms : 1u; plat_mb_heartbeat++; }
+    uint32_t age = plat_link_age_ms(now_ms);
+    plat_mb_link_age_s = (uint16_t)(age / 1000u > 0xFFFFu ? 0xFFFFu : age / 1000u);
+    plat_mb_uptime_s = now_ms / 1000u;
+    if (!plat_mb_product[0]) block_ident();              /* after a restore of defaults cleared the texts */
+}
 
 /* ---------------- map ---------------- */
 static uint8_t elem_size(const param_def_t *d) { return (uint8_t)param_ctype_size(d->ctype); }
@@ -51,11 +111,18 @@ int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
     n_idx = 0;
     memset(&st, 0, sizeof st);
     if (id) ident = *id;
-    if (n > MB_MAX_ENTRIES) return (int)MB_MAX_ENTRIES + 1;
+    block_ident();
+    if (n + N_BLOCK > MB_MAX_ENTRIES) return (int)MB_MAX_ENTRIES + 1;
+    for (size_t k = 0; k < N_BLOCK; ++k) {
+        const param_def_t *d = param_find(block[k].id);
+        if (d) idx[n_idx++] = (ent_t){ &block[k], d, span_of(&block[k], d) };
+    }
     for (size_t k = 0; k < n; ++k) {
         const param_def_t *d = param_find(map[k].id);
         uint16_t sp = span_of(&map[k], d);
         if (map[k].table > MB_INPUT || sp == 0 || (uint32_t)map[k].addr + sp > 65536u) return (int)k + 1;
+        if (map[k].table == MB_INPUT && map[k].addr <= PLAT_MB_BLOCK_END && (uint32_t)map[k].addr + sp > PLAT_MB_BLOCK_ADDR)
+            return (int)k + 1;                         /* the platform's block (R5: reserved in every product) */
         idx[n_idx++] = (ent_t){ &map[k], d, sp };
     }
     for (size_t i = 1; i < n_idx; ++i) {          /* sort by (table, addr) */
@@ -66,11 +133,18 @@ int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
     }
     for (size_t i = 1; i < n_idx; ++i)
         if (idx[i].m->table == idx[i - 1].m->table && (uint32_t)idx[i - 1].m->addr + idx[i - 1].span > idx[i].m->addr)
-            return (int)(idx[i].m - map) + 1;
+            return (int)((idx[i].m >= map && idx[i].m < map + n ? idx[i].m : idx[i - 1].m) - map) + 1;
     return 0;
 }
 
 mb_stats_t mb_stats(void) { return st; }
+
+size_t mb_entry_count(void) { return n_idx; }
+const mb_map_t *mb_entry_at(size_t i, uint16_t *span) {
+    if (i >= n_idx) return NULL;
+    if (span) *span = idx[i].span;
+    return idx[i].m;
+}
 
 static const ent_t *find(uint8_t table, uint16_t a) {
     size_t lo = 0, hi = n_idx;                     /* last entry with (table, addr) <= (table, a) */

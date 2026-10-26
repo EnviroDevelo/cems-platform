@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include "scan_engine.h"
 #include "plat_sys.h"
+#include "plat_cal.h"
 #include "param.h"
 #include "param_store.h"
 #include "modbus.h"
@@ -44,6 +45,8 @@
 #include "iobus.h"
 #include "iob_node_sim.h"
 #include "iob_tcp.h"
+#include "iob_w5500.h"
+#include "w5500_sim.h"
 #include <math.h>
 
 /* ---------------- critical sections ---------------- */
@@ -108,6 +111,8 @@ static uint16_t locked_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_
 }
 static iob_port_t sim_rs485 = { .xfer = locked_xfer };
 struct iob_port *bsp_rs485(void) { return &sim_rs485; }
+bool bsp_supply_mv(uint32_t *mv) { (void)mv; return false; }   /* not measured here */
+bool bsp_hw_straps(uint8_t *rev) { *rev = 0; return true; }    /* a Rev A board */
 
 /* Ethernet: the same two boards on a simulated network, or real boards over sockets when
  * CEMS_IOB_TCP is set (CEMS_IOB_TCP_PORT, CEMS_IOB_DISC_PORT and CEMS_IOB_DISC_TO=a.b.c.d change
@@ -115,6 +120,11 @@ struct iob_port *bsp_rs485(void) { return &sim_rs485; }
  * board's IP: the io-node virtual board, build/vnode_net, on 127.0.0.1) */
 static iob_simnet_t simnet;
 static iob_tcp_t    realnet;
+/* the I/O port (iob_link 2, the default): a simulated W5500 in front of the same simulated network */
+static w5500_sim_t  iochip;
+static iob_w5500_t  ioport;
+static void io_lock(bool on) { if (on) plat_host_crit_enter(); else plat_host_crit_exit(); }
+static void io_wait(w5500_bus_t *b, uint32_t ms) { (void)b; struct timespec t = { 0, (long)ms * 1000000L }; nanosleep(&t, NULL); }
 static uint16_t locked_net_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t t) {
     (void)p;
     plat_host_crit_enter();
@@ -151,14 +161,24 @@ static void eth_init(void) {
         if ((e = getenv("CEMS_IOB_TCP_HOST")) != NULL && sscanf(e, "%u.%u.%u.%u", &a, &b, &c, &d) == 4)
             realnet.host = a << 24 | b << 16 | c << 8 | d;
         iob_init_eth(&realnet.port, &realnet.disc);
-        fprintf(stderr, "netsim: I/O boards on Ethernet over sockets, Modbus TCP port %u, discovery port %u\n",
-                realnet.tcp_port, realnet.disc_port);
+        fprintf(stderr, "netsim: I/O boards on Ethernet over sockets, Modbus TCP port %u, discovery port %u "
+                "(the main-port link: \"set 102 1\")\n", realnet.tcp_port, realnet.disc_port);
         return;
     }
     iob_simnet_init(&simnet, param_tag_get(param_find(PARAM_ID_NET_IP)).u);
     simnet.now = bsp_ms;
     for (unsigned k = 0; k < 2; ++k) iob_simnet_add(&simnet, &simnode[k]);
     iob_init_eth(&sim_tcp, &sim_disc);
+    w5500_sim_init(&iochip);
+    w5500_sim_simnet(&iochip, &simnet);
+    iochip.lock = io_lock;
+    iochip.bus.ms = bsp_ms;
+    iochip.bus.wait = io_wait;
+    uint8_t uid[12], mac[6];
+    bsp_chip_uid(uid);
+    iob_w5500_mac(uid, mac);
+    iob_w5500_init(&ioport, &iochip.bus, mac);
+    iob_init_ioport(&ioport.port, &ioport.disc);
 }
 
 /* FRAM: RAM image written through to a file */
@@ -274,7 +294,7 @@ static void *store_thread(void *a) {
     (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
     uint32_t fw_t = bsp_ms(), fw_scans = 0;
     while (running) {
-        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms());
+        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); plat_selftest_poll(bsp_ms());
         uint32_t now = bsp_ms();
         if (now - fw_t >= 1000u) { uint32_t sc = scan_stats(&plat_scan).scans; fw_service(now, sc - fw_scans >= 50u); fw_scans = sc; fw_t = now; }
     }
@@ -383,11 +403,15 @@ int main(int argc, char **argv) {
     /* the same start-up order as plat_start() */
     const plat_app_t *app = app_select();     /* whichever application is linked in (make netsim APP=...) */
     plat_diag_boot(bsp_reset_cause());
+    { char why[64]; int ce = plat_app_check(app, why, sizeof why);
+      if (ce) { fprintf(stderr, "application contract error %d: %s\n", ce, why); return 1; } }
     plat_cmdq_init(&plat_cmdq);
     scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, 10);
     if (param_init(app->params, app->n_params) != PERR_OK) { fprintf(stderr, "param table error at id %u\n", param_table_error()); return 1; }
     { uint16_t ub = ui_app_check(app->ui); if (ub) { fprintf(stderr, "screen/record description error at id %u\n", ub); return 1; } }
     ui_app_set(app->ui);
+    { int ce = plat_cal_init(app->cal, app->n_cal);
+      if (ce) { fprintf(stderr, "calibration table error at channel %d\n", ce - 1); return 1; } }
     if (!param_store_init(bsp_param_nvm(), NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) { fprintf(stderr, "store table error\n"); return 1; }
     param_store_boot();
     {
@@ -401,8 +425,11 @@ int main(int argc, char **argv) {
         fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* may "reset" (exit 3) to roll back */
         fw_safe_check = app->fw_safe;
     }
+    if (plat_selftest_init(app->selftests, app->n_selftests, bsp_ms()) != 0) { fprintf(stderr, "more than %u product self-tests\n", PLAT_STEST_APP_MAX); return 1; }
     { int ae = alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause);
       if (ae) { fprintf(stderr, "alarm table error at id %d\n", ae); return 1; } }
+    { int me = plat_state_init(app->meas, app->n_meas);
+      if (me) { fprintf(stderr, "measurement table error at entry %d\n", me - 1); return 1; } }
     param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
     iob_simbus_init(&simbus);

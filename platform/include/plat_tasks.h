@@ -27,6 +27,9 @@
 #include "plat_log.h"
 #include "plat_alarm.h"
 #include "ui_app.h"
+#include "plat_state.h"
+#include "plat_cal.h"
+#include "plat_selftest.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -48,6 +51,12 @@ typedef struct plat_app_s {
     bool (*fw_safe)(char *why, size_t cap);   /* safe to restart for a firmware update? false + reason refuses it (NULL = always) */
     size_t              n_alarms;
     const ui_app_t     *ui;              /* its own screens and record editors (ui_app.h; may be NULL) */
+    const plat_meas_def_t *meas;         /* its measured values: each carries a quality (plat_state.h; may be NULL) */
+    size_t              n_meas;
+    const plat_cal_channel_t *cal;       /* its calibrated channels (plat_cal.h; may be NULL) */
+    size_t              n_cal;
+    const plat_selftest_def_t *selftests; /* its own start-up checks (plat_selftest.h; may be NULL) */
+    size_t              n_selftests;
 } plat_app_t;
 
 typedef enum {
@@ -69,6 +78,16 @@ void plat_start(const plat_app_t *app);   /* never returns */
  * app_vmmux ...), so main(), the networked simulation and the target check take
  * whichever application is linked in (request R1). */
 const plat_app_t *app_select(void);
+
+/* The start-up contract check (spec section 9.3): the rules an application's description must
+ * keep that its tables' own checks (param_init, alarm_init, mb_init, plat_state_init,
+ * plat_cal_init, ui_app_check) do not cover, or cover without saying why: a scan program,
+ * vendor/product/revision (MAJOR.MINOR.PATCH), layout_version >= 1, each list and its count
+ * agreeing, parameter and alarm IDs outside the core's ranges (R5), log channel names, at most
+ * 6 home tiles and 8 self-tests. 0 = keeps the contract; otherwise a code and the reason in why.
+ * plat_start refuses to start (outputs safe) on a failure; the host tests and make conformance
+ * run it too. */
+int plat_app_check(const plat_app_t *app, char *why, size_t cap);
 const plat_app_t *plat_app(void);          /* the application passed to plat_start */
 
 /* Shared platform objects, for the service modules. */
@@ -96,6 +115,7 @@ void plat_http_task_body(void);
 void plat_ui_task_body(void);
 void plat_net_task_body(void);           /* network bring-up and upkeep (port) */
 void plat_iobus_task_body(void);         /* RS-485 I/O boards (iobus.h) */
+bool plat_ui_fitted(void);               /* this hardware has a display (plat_ui_task.c; weak default false) */
 bool plat_ui_healthy(void);              /* display working or not fitted (plat_ui_task.c; weak default true) */
 
 #endif

@@ -50,6 +50,7 @@
 #include <stdbool.h>
 #include "plat_io.h"
 #include "iob_net.h"
+#include "plat_cmdq.h"         /* plat_val_t */
 
 #define IOB_BOARDS       3u
 #define IOB_OUTS         18u   /* per board: 8 bank A + 8 bank B + 2 relays */
@@ -215,8 +216,11 @@ typedef struct iob_dgram {
     void *ctx;
 } iob_dgram_t;
 
-/* the link to the boards (parameter 102 iob_link) */
-enum { IOB_LINK_RS485 = 0, IOB_LINK_ETH = 1 };
+/* the link to the boards (parameter 102 iob_link): RS-485, Ethernet on the main (client) port
+ * through lwIP, or Ethernet on the I/O port (the W5500, a separate network: iob_w5500.h). Both
+ * Ethernet links carry the same Modbus TCP and discovery. */
+enum { IOB_LINK_RS485 = 0, IOB_LINK_ETH = 1, IOB_LINK_IOPORT = 2 };
+#define IOB_LINK_IS_ETH(l) ((l) == IOB_LINK_ETH || (l) == IOB_LINK_IOPORT)
 
 /* board states */
 enum { IOB_S_OFF = 0,        /* not enabled */
@@ -266,6 +270,8 @@ typedef struct {
 
 void iob_init(iob_port_t *port);       /* plat_start (NULL: no RS-485 port, boards report not responding) */
 void iob_init_eth(iob_port_t *tcp, iob_dgram_t *disc);   /* plat_start: the Ethernet link (NULL: none) */
+void iob_init_ioport(iob_port_t *tcp, iob_dgram_t *disc);   /* plat_start: the I/O port link (NULL: none) */
+int  iob_link_interlock(uint16_t id, plat_val_t v);           /* setting 102: refuses a link with no port */
 void iob_cycle(uint32_t now_ms);       /* iobus task */
 void iob_safe_state(void);             /* any task: send all-off from now on (until the next reset) */
 bool iob_board_view(unsigned board, iob_view_t *v);   /* board 0..IOB_BOARDS-1 */
@@ -322,7 +328,13 @@ typedef struct {
 extern iob_board_tags_t iob_tags[IOB_BOARDS];
 extern uint16_t iob_hold_s;          /* parameter 100: node hold time, s (1..600) */
 extern uint8_t  iob_filter_ms;       /* parameter 101 */
-extern uint8_t  iob_link;            /* parameter 102: IOB_LINK_* (default Ethernet) */
+extern uint8_t  iob_link;            /* parameter 102: IOB_LINK_* (default the I/O port) */
+extern uint32_t iob_port_ip;         /* parameter 103: the I/O port's own IP (W5500, its own network) */
+extern uint8_t  iob_port_prefix;     /* parameter 104: its subnet as a prefix length (24 = 255.255.255.0) */
+#define IOB_PORT_MASK(prefix) ((prefix) >= 8u && (prefix) <= 30u ? 0xFFFFFFFFu << (32u - (prefix)) : 0xFFFFFF00u)
+extern uint8_t  iob_port_status;     /* parameter 105, RO: IOBP_* (written by the bus task) */
+#define IOBP_FOUND 0x01u             /* the W5500 answers and is set up */
+#define IOBP_LINK  0x02u             /* its Ethernet link is up (cable in, switch on) */
 
 /* Commissioning from the web page: find a board and give it its address (node requirements FW-61).
  * A new board has no address and answers on RS-485 only at IOB_COMMISSION_ADDR, so only one new

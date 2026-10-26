@@ -18,6 +18,7 @@ static volatile uint32_t disp_frames_at;
 
 /* healthy for the firmware trial: the display works, or none is fitted */
 bool plat_ui_healthy(void) { return !disp_fitted || disp_up; }
+bool plat_ui_fitted(void) { return disp_fitted; }
 
 void plat_ui_task_body(void) {
     eve_bus_t *bus = bsp_eve_bus();

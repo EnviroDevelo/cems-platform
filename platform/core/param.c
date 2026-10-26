@@ -6,6 +6,8 @@
 #include "plat_port.h"
 #include "plat_seqlock.h"
 #include "iobus.h"
+#include "plat_state.h"
+#include "plat_cal.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -39,7 +41,9 @@ static uint32_t  p_fw_min;
 static int16_t   p_utc_off;
 static uint32_t  p_sntp_ip, p_clock_set;
 static uint16_t  p_sntp_min;
-extern uint32_t  plat_clock_unix;                                           /* plat_clock.c */
+extern uint32_t  plat_clock_unix, plat_clock_sync_time_tag;                 /* plat_clock.c */
+extern bool      plat_clock_synced_tag;
+extern uint8_t   plat_clock_source_tag;
 static bool      p_mail_en, p_mail_on_clear;
 static uint32_t  p_mail_ip;
 static uint16_t  p_mail_port, p_mail_gap;
@@ -52,6 +56,18 @@ extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alar
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
 extern bool     plat_alarm_relay_inv[4];
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);
+extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
+extern bool     plat_maint_tag;
+extern uint32_t plat_state_since_tag, plat_supply_mv_tag;                   /* plat_state.c, plat_power.c */
+extern uint16_t plat_board_rev_tag;                                         /* fw_update.c */
+extern uint32_t plat_svc_hours_tag, plat_svc_since_tag, plat_config_crc_tag;   /* plat_service.c */
+extern uint32_t plat_selftest_tag;                                         /* plat_selftest.c */
+extern uint32_t plat_cal_cmd_tag;                                          /* plat_cal.c */
+extern uint8_t  plat_cal_level_tag;
+extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
+extern uint32_t plat_mb_fw_version, plat_mb_uptime_s;
+extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
 
 #define IOB_DEFS(K, N) \
     PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
@@ -141,7 +157,37 @@ static const param_def_t plat_defs[] = {
     /* I/O boards on RS-485 (iobus.h, D27): settings at admin (technician) level, LOCAL only */
     PARAM_UINT(PARAM_ID_IOB_HOLD, "iob_hold", iob_hold_s, CT_U16, 1, 600, 300, PLAT_LVL_ADMIN, PF_PERSIST, "s"),
     PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 8, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
-    PARAM_UINT(PARAM_ID_IOB_LINK, "iob_link", iob_link, CT_U8, 0, 1, IOB_LINK_ETH, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
+    { .id = PARAM_ID_IOB_LINK, .ctype = CT_U8, .ptype = PT_UINT, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = &iob_link,
+      .vmin.u = 0, .vmax.u = 2, .vdef.u = IOB_LINK_IOPORT, .name = "iob_link", .interlock = iob_link_interlock },   /* a link with no port is refused */
+    PARAM_UINT(PARAM_ID_IOB_PORT_IP, "iob_port_ip", iob_port_ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Cu, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
+    PARAM_UINT(PARAM_ID_IOB_PORT_PREFIX, "iob_port_prefix", iob_port_prefix, CT_U8, 8, 30, 24, PLAT_LVL_ADMIN, PF_PERSIST, "bits"),
+    PARAM_UINT(PARAM_ID_IOB_PORT_STATUS, "iob_port_status", iob_port_status, CT_U8, 0, 3, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_STATE, "state", plat_state_tag, CT_U8, 0, PLAT_ST_COUNT - 1, PLAT_ST_STARTING, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_BIT (PARAM_ID_MAINTENANCE, "maintenance", plat_maint_tag, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
+    PARAM_UINT(PARAM_ID_STATE_SINCE, "state_since", plat_state_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_ARRAY_UINT(PARAM_ID_MEAS_Q, "meas_q", plat_meas_q, CT_U8, 0, PLAT_Q_COUNT - 1, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_SUPPLY_MV, "supply_mv", plat_supply_mv_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "mV"),
+    PARAM_UINT(PARAM_ID_HEARTBEAT, "heartbeat", plat_mb_heartbeat, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_LINK_AGE_S, "link_age_s", plat_mb_link_age_s, CT_U16, 0, 0xFFFFu, 0xFFFFu, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_UINT(PARAM_ID_MB_BLOCK_VERSION, "mb_block_version", plat_mb_block_version, CT_U16, 0, 0xFFFFu, PLAT_MB_BLOCK_VERSION, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_MAP_VERSION, "mb_map_version", plat_mb_map_version, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_FW_VERSION_NUM, "fw_version_num", plat_mb_fw_version, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_API_VERSION, "api_version", plat_mb_api_version, CT_U16, 0, 0xFFFFu, PLAT_API_VERSION, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_UPTIME_S, "uptime_s", plat_mb_uptime_s, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_TEXT(PARAM_ID_PRODUCT, "product", plat_mb_product, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_VENDOR, "vendor", plat_mb_vendor, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_FW_TEXT, "fw_text", plat_mb_fw_text, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_BIT (PARAM_ID_CLOCK_SYNCED, "clock_synced", plat_clock_synced_tag, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_CLOCK_SYNC_TIME, "clock_sync_time", plat_clock_sync_time_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_UINT(PARAM_ID_CLOCK_SOURCE, "clock_source", plat_clock_source_tag, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_RUN_HOURS, "run_hours", plat_svc_hours_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "0.1 h"),
+    PARAM_UINT(PARAM_ID_SERVICE_HOURS, "service_hours", plat_svc_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "0.1 h"),
+    PARAM_UINT(PARAM_ID_CONFIG_CRC, "config_crc", plat_config_crc_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_SELFTEST, "selftest_fail", plat_selftest_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_BOARD_REV, "board_rev", plat_board_rev_tag, CT_U16, 0, 65535, 65535, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
+               PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
@@ -156,6 +202,8 @@ static uint8_t            blob_shadow[PARAM_BLOB_POOL];
 static plat_cmdq_t       *bound_q;
 static plat_seqlock_t    *bound_lock;
 static volatile uint32_t  last_remote_ms;
+static volatile uint32_t  link_ms;           /* any supervisory request, in any mode (CIP-15.2) */
+static volatile bool      link_seen;
 static volatile bool      remote_entered;     /* mode just switched to REMOTE */
 void (*param_on_restore_defaults)(void);
 void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);
@@ -239,6 +287,7 @@ param_err_t param_init(const param_def_t *app_defs, size_t n_app) {
     record_reset();
     n_tab = 0;
     tab_err_id = 0;
+    link_seen = false;
     if (N_PLAT + n_app > PARAM_MAX) { tab_err_id = 0xFFFF; return PERR_TABLE; }
     for (size_t k = 0; k < N_PLAT; ++k) tab[n_tab++] = &plat_defs[k];
     for (size_t k = 0; k < n_app; ++k) {
@@ -408,6 +457,7 @@ param_err_t param_apply(const plat_cmd_t *c) {
     if (d->interlock && d->interlock(d->id, n) != 0) return PERR_INTERLOCK;
 
     if (d->id == PARAM_ID_RESTORE_DEFAULTS) {          /* momentary command */
+        if (n.b && !plat_state_allows(PLAT_ACT_RESTORE_DEFAULTS)) { p_restore = false; return PERR_INTERLOCK; }
         if (n.b) {
             if (param_on_change) param_on_change(d, (plat_val_t){ .u = 0 }, n, c->src, c->level);
             if (param_on_restore_defaults) param_on_restore_defaults();
@@ -421,6 +471,11 @@ param_err_t param_apply(const plat_cmd_t *c) {
         if (n.u && plat_clock_request(n.u, c->src, c->level, how[c->src & 3u]) != 0) { p_clock_set = 0; return PERR_RANGE; }
         p_clock_set = 0;
         return PERR_OK;
+    }
+    if (d->id == PARAM_ID_CAL_CMD) {                   /* momentary: hand it to the calibration records (logged there) */
+        plat_cal_cmd_tag = 0;
+        if (!n.u) return PERR_OK;
+        return param_on_cal_cmd ? param_on_cal_cmd(n.u, c->src, c->level) : PERR_INTERLOCK;
     }
     if (d->id == PARAM_ID_ALARM_ACK) {                 /* momentary command, logged by the alarm manager */
         if (param_on_alarm_ack && n.u) param_on_alarm_ack((uint16_t)n.u, c->src, c->level);
@@ -457,7 +512,13 @@ uint8_t param_ctrl_mode(void) { return p_mode; }
 bool param_remote_link_lost(void) { return p_link_lost; }
 
 void param_comms_activity(uint8_t src, uint32_t now_ms) {
-    if (src == PLAT_SRC_WEB || src == PLAT_SRC_MODBUS) last_remote_ms = now_ms;
+    if (src == PLAT_SRC_WEB || src == PLAT_SRC_MODBUS) { last_remote_ms = now_ms; link_ms = now_ms; link_seen = true; }
+}
+
+uint32_t plat_link_age_ms(uint32_t now_ms) {
+    if (!link_seen) return UINT32_MAX;
+    uint32_t a = now_ms - link_ms;
+    return a == UINT32_MAX ? a - 1u : a;
 }
 
 void param_scan_service(uint32_t now_ms) {

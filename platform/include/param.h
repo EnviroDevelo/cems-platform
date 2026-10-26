@@ -145,7 +145,10 @@ enum {
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
     PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
-    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet (iob_net.h) */
+    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet on the main port, 2 the I/O port (W5500, iob_w5500.h) */
+    PARAM_ID_IOB_PORT_IP      = 103, /* the I/O port's own IP (its own network, not the main port's) */
+    PARAM_ID_IOB_PORT_PREFIX  = 104, /* the I/O port's subnet, prefix length 8..30 */
+    PARAM_ID_IOB_PORT_STATUS  = 105, /* RO: IOBP_* bits (chip found, link up) */
     PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
     /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,
          +4 open-circuit check (bank A outputs 1-8, bits), +5 wire-break check (inputs 1-8, bits),
@@ -158,6 +161,31 @@ enum {
          +5 calibration offset (6 x 0.01 degC), +6 calibration span (gain - 1, 6 x 0.01 %), +7 PWM frequency (Hz),
          +8 tacho pulses per revolution, +9 RO temperatures (6 x 0.1 degC), +10 RO channel states (6 x IOB_TS_*),
          +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %) */
+    PARAM_ID_STATE            = 300, /* RO: instrument state, PLAT_ST_* (plat_state.h) */
+    PARAM_ID_MAINTENANCE      = 301, /* operator selects MAINTENANCE (1) or leaves it (0) */
+    PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */
+    PARAM_ID_MEAS_Q           = 303, /* RO: one PLAT_Q_* per declared measurement (a Modbus status block) */
+    PARAM_ID_SUPPLY_MV        = 305, /* RO: the 24 V supply, mV (0 = not measured; plat_power.h) */
+    PARAM_ID_HEARTBEAT        = 306, /* RO: +1 every 100 ms (the platform's Modbus block, modbus.h) */
+    PARAM_ID_LINK_AGE_S       = 307, /* RO: s since the last Modbus or web request (65535 = none or longer) */
+    PARAM_ID_MB_BLOCK_VERSION = 308, /* RO: layout version of the platform's Modbus block */
+    PARAM_ID_MB_MAP_VERSION   = 309, /* RO: the application's register map version */
+    PARAM_ID_FW_VERSION_NUM   = 310, /* RO: firmware version, major<<16 | minor<<8 | patch */
+    PARAM_ID_API_VERSION      = 311, /* RO: web API version (/api/info "api") */
+    PARAM_ID_UPTIME_S         = 312, /* RO: s since start */
+    PARAM_ID_PRODUCT          = 313, /* RO text: product (Modbus identity) */
+    PARAM_ID_VENDOR           = 314, /* RO text: vendor */
+    PARAM_ID_FW_TEXT          = 315, /* RO text: firmware version as text */
+    PARAM_ID_CLOCK_SYNCED     = 316, /* RO: the clock is synchronised (plat_clock.h, CIP-02.6) */
+    PARAM_ID_CLOCK_SYNC_TIME  = 317, /* RO: when it was last set or confirmed (local s since 1970; 0 = not since start) */
+    PARAM_ID_CLOCK_SOURCE     = 318, /* RO: PLAT_CLK_SRC_* of that */
+    PARAM_ID_BOARD_REV        = 319, /* RO: board revision from its straps (65535 = no straps; fw_update.h, CIP-01.3) */
+    PARAM_ID_CAL_CMD          = 320, /* calibration command (plat_cal.h): command << 8 | channel; momentary */
+    PARAM_ID_CAL_LEVEL        = 321, /* factory: login level that may calibrate (CIP-19.3; default admin) */
+    PARAM_ID_RUN_HOURS        = 330, /* RO: powered hours x 10 (plat_service.h, CIP-22.2) */
+    PARAM_ID_SERVICE_HOURS    = 331, /* RO: hours since the last service log entry x 10 */
+    PARAM_ID_CONFIG_CRC       = 332, /* RO: checksum of the user settings (CIP-05.4) */
+    PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
@@ -310,6 +338,7 @@ void    param_scan_service(uint32_t now_ms);   /* scan task, every scan */
 extern void (*param_on_restore_defaults)(void);
 /* Called by param_apply when PARAM_ID_ALARM_ACK is written (set by alarm_init). */
 extern void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+extern param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);   /* plat_cal.c */
 /* Called in the scan task after an external write changed a value (the event log
  * sets it). Scalars: old and new value. Blocks and the restore command: values 0. */
 extern void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);

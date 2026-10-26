@@ -1,6 +1,7 @@
 /* test_tls.c - the unit's HTTPS key and certificate: made once, kept in FRAM (not in
  * backups), the same certificate every start, a new one when the address changes.
- * The handshake itself is tested against real clients in tests/integration. */
+ * The handshake itself is tested against real clients in tests/integration.
+ * Requirements proved here: CIP-20.6. */
 #include <string.h>
 #include "tst.h"
 #include "tls.h"

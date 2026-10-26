@@ -2,7 +2,8 @@
  * driven by simulated touches: navigation, login, editing every kind of entry,
  * mode changes with confirmation, events, firmware activation, idle behaviour.
  * With UI_DUMP=<dir> set, each screen's command list is written there for
- * tools/eve_preview.py. */
+ * tools/eve_preview.py.
+ * Requirements proved here: CIP-01.5, 21.1, 21.3, 21.6. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,9 +66,10 @@ static bool tap(const char *label) {
 }
 static bool shows(const char *s) { return eve_sim_has_text(&sim, s); }
 /* page the settings list until the row shows, then tap it */
+static bool on_page(const char *name) { return eve_sim_tag_of(&sim, name) > 0; }   /* the row itself, not a longer name */
 static bool row(const char *name) {
-    for (int k = 0; k < 80 && eve_sim_tag_of(&sim, "Up") > 0 && !shows(name); ++k) tap("Up");
-    if (!shows(name)) for (int k = 0; k < 80 && !shows(name); ++k) if (!tap("Down")) break;
+    for (int k = 0; k < 200 && eve_sim_tag_of(&sim, "Up") > 0 && !on_page(name); ++k) tap("Up");
+    if (!on_page(name)) for (int k = 0; k < 200 && !on_page(name); ++k) if (!tap("Down")) break;
     return tap(name);
 }
 static void type(const char *s) { for (; *s; ++s) press((uint8_t)*s); }

@@ -1,0 +1,25 @@
+# Mandatory requirements of docs/INSTRUMENT_PLATFORM_SPEC.md that no test names, with the reason.
+# tools/cip_coverage.py (run by make test) fails when an M requirement is neither tested nor
+# listed here, or when one listed here gains a test, so this list only shrinks.
+#
+# ID       reason
+CIP-02.1   hardware: the RTC crystal and battery are on the core board (CORE_PCB.md); bench test
+CIP-03.1   documentation: the technician's update procedure is still to be written
+CIP-04.1   missing: first-stage bootloader, needs the DK (section 8, firmware item 11)
+CIP-04.2   partial: a corrupted running image needs the bootloader (CIP-04.1)
+CIP-07.1   hardware: supply requirements are a CORE_PCB.md design figure
+CIP-08.3   checked by make rtos (the stuck-task run must end in a watchdog reset with outputs safe)
+CIP-11.3   checked by make test itself (fault-codes-check: docs/FAULT_CODES.md current, every platform alarm has help)
+CIP-13.5   documentation: the guide to adding an interface is still to be written
+CIP-14.5   policy: checked by the interface snapshots (make snapshots-check) and the version rules in plat_version.h
+CIP-20.4   partial: production debug lock, with the PCB thread
+CIP-21.2   touchscreen and web page: in the HMI and HTTPS pull requests
+CIP-21.4   touchscreen and web page: in the HMI and HTTPS pull requests
+CIP-21.5   partial: the touchscreen's supervisory-link indicator is in the HMI pull request
+CIP-21.7   documentation: the UI convention page is still to be written
+CIP-24.1   hardware: grounding and shielding design basis (CORE_PCB.md); EMC test lab
+CIP-24.2   hardware: ESD and surge target levels; EMC test lab
+CIP-25.4   documentation: CHANGELOG.md and release notes start with the first core release
+CIP-25.5   documentation: the supported-combinations matrix starts with the first release
+CIP-26.6   needs hardware: the same tests on the DK, then the core board, and the 72-hour soak
+CIP-26.7   documentation: operator manual, service manual, Modbus register map document
