@@ -43,6 +43,7 @@ runs on top of it.
 | 24 V supply monitoring, SUPPLY alarm and power-fail write hold (CIP-07) | `plat_power.h`, `platform/core/plat_power.c`, `port/stm32h5/supply_stm32h5.c` | Done, host-tested; ADC read compiled and linked |
 | Instrument state and quality of live values (Common Instrument Platform Specification CIP-09, CIP-10): one state (STARTING ... SAFE_MODE), forced FAULT, maintenance from the touchscreen or web, per-measurement quality with automatic stale detection, on Modbus, `/api/*` and for the touchscreen; the supervisory link age (CIP-15.2) | `plat_state.h`, `platform/core/plat_state.c` | Done, host-tested (5l) |
 | Calibration records (CIP-18, CIP-17.6, CIP-19.3): per channel a factory record and the record in force, a history of the last 12 (any outcome), begin/accept/abort/revert with a permission level, a product check hook, due dates and alarm 21, `/api/cal` | `plat_cal.h`, `platform/core/plat_cal.c` | Done, host-tested and end-to-end (5m) |
+| Service history (CIP-22.2, 22.4, 23.4, 05.4): operating hours and hours since service, a service log, the manufacturing test record, a configuration checksum, `/api/service` | `plat_service.h`, `platform/core/plat_service.c` | Done, host-tested and end-to-end (5n) |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -954,6 +955,19 @@ at factory login, Revert to factory; while a channel is calibrating, a box with 
 Abort; the history with outcome, who, the points (reference, as found, as left) and the
 coefficients. Refusals show the instrument's reason. `tests/integration/cal_web_test.py`
 runs a calibration and an abort through the page. Screenshot: `docs/web_cal.png`.
+
+## 5n. Service history (CIP-22, CIP-23.4, CIP-05.4)
+
+| Record | What | Where it shows |
+|---|---|---|
+| Operating hours | powered hours, and hours since the last service log entry, in 0.1 h steps (up to 6 minutes per power cycle is not counted) | parameters 330, 331; `/api/info` `run_hours`; `/api/service` |
+| Service log | the last 8 entries (2 on the 32 KB part): date, login level, technician, work done; entered at factory login (`POST /api/service/log tech=..&work=..`); each entry restarts "since service" and logs a `service` event | `/api/service` |
+| Test record | the manufacturing test: date, station, pass/fail per test (up to 24, in the test procedure's order), overall pass; written at factory login (`POST /api/service/test station=..&r=1,1,2`) | `/api/service` |
+| Configuration checksum | CRC-32 over the ID and value of every user setting (not factory, not secret, not status), worked out every second: two units with the same checksum have the same settings | parameter 332; `/api/info` and `/api/service` `config_crc` (8 hex digits) |
+
+The first three are in the FRAM factory region (dual copy; survive firmware updates and restore
+defaults) and belong to the unit: a backup carries them for reference, but restoring it into
+another unit never copies them (`RF_UNIT`, like the serial number).
 
 ## 6. Integration rules for the application (VM/MUX) code
 

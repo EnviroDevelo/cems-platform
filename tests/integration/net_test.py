@@ -388,6 +388,20 @@ def main():
     check(cal["channels"][0]["factory"] == rec and len(cal["history"]) == 1, "factory record and history")
     check(cal["channels"][0]["due_time"] == rec.get("time", -1) + 90 * 86400, "due in 90 days")
     check(cal["channels"][0]["overdue"] is False, "not overdue")
+    # ---------------- service history (CIP-22.2, 22.4, 23.4, 05.4) ----------------
+    st, j = web.json("/api/service/log", {"tech": "Sam", "work": "Pump replaced"})
+    check(st == 403, "service log needs factory login")
+    st, j = fac.json("/api/service/log", {"tech": "Sam", "work": "Pump replaced"})
+    check(st == 200, "service log entry")
+    st, j = fac.json("/api/service/test", {"station": "EOL-1", "r": "1,1,1,2"})
+    check(st == 200, "test record")
+    time.sleep(0.1)
+    st, sv = web.json("/api/service")
+    check(st == 200 and sv["log"] and sv["log"][0]["tech"] == "Sam" and sv["log"][0]["level"] == "factory"
+          and sv["test"]["passed"] is False and sv["test"]["results"] == [1, 1, 1, 2], f"service history ({sv})")
+    st, info = web.json("/api/info")
+    check(len(info["config_crc"]) == 8 and info["config_crc"] == sv["config_crc"] and info["board_rev"] == 0
+          and info["build"], "config checksum, board revision, build on /api/info")
     fac.req("/api/logout", {})
     st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "admin password changed")
@@ -436,6 +450,9 @@ def main():
     check(st == 200, "changed admin password survived the restart")
     st, cal = web.json("/api/cal")
     check((cal["channels"][0]["factory"] or {}).get("outcome") == "pass", "calibration record survived the restart")
+    st, sv = web.json("/api/service")
+    check(sv["log"] and sv["log"][0]["work"] == "Pump replaced" and sv["test"]["station"] == "EOL-1",
+          "service history survived the restart")
     st, j = web.json("/api/log/events?n=200")
     allev = j["events"] if st == 200 else []
     ev = [e for e in allev if not e["event"].startswith(("alarm", "state"))]

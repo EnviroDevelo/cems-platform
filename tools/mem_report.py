@@ -21,7 +21,7 @@ MODULES = [  # (module, object-name patterns)
     ("Parameter table", r"^param\.o"),
     ("Parameter store (FRAM)", r"param_store|plat_crc32|nvm_|plat_store_task"),
     ("Event log / data logger", r"plat_log|nor_|log_csv"),
-    ("Alarm manager, state, supply, calibration", r"plat_alarm|plat_state|plat_power|plat_cal"),
+    ("Alarm manager, state, supply, calibration, service", r"plat_alarm|plat_state|plat_power|plat_cal|plat_service"),
     ("Alarm email (SMTP client)", r"^mail\.o"),
     ("Clock + SNTP", r"plat_clock|^sntp\.o"),
     ("Firmware update, signatures, serial", r"fw_update|fw_flash|fw_sig|fw_pubkey|plat_serial|dev_pubkey"),
@@ -185,7 +185,7 @@ server's buffer, which holds a whole backup file for restore.
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC1MT, 128 KB; D6, Gary 20 Oct) | 128 KB | user image: the VM/MUX application's 13.4 KB including the platform settings, of 40 KB per copy (34 %); factory 4 KB per copy, of which the calibration records take 2.4 KB (8 channels, 12 history records; 2 and 3 on the 32 KB part); log pointer, boot record, HTTPS key record and firmware update history 848 B | the 32 KB breakout (MB85RC256V) still fits the application (90 % per copy) with PLAT_FRAM_SIZE=32768u; the driver refuses a part smaller than the build's map |
+| FRAM (MB85RC1MT, 128 KB; D6, Gary 20 Oct) | 128 KB | user image: the VM/MUX application's 13.4 KB including the platform settings, of 40 KB per copy (34 %); factory 4 KB per copy, of which the calibration records take 2.4 KB (8 channels, 12 history records; 2 and 3 on the 32 KB part) and the service history 0.6 KB; log pointer, boot record, HTTPS key record and firmware update history 848 B | the 32 KB breakout (MB85RC256V) still fits the application (90 % per copy) with PLAT_FRAM_SIZE=32768u; the driver refuses a part smaller than the build's map |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |
 """
     open(out, "w").write(doc)
