@@ -336,6 +336,7 @@ static void t_ui(void) {
     for (int k = 0; k < 32; ++k) plat_power_sample();
     frame();
     CHECK(shows("24.1 V"));
+    CHECK(shows("Clock, not synced"));             /* clock quality (CIP-02.6): never set from outside in this test */
     dump("system");
     bsp_host.supply_mv = 0; plat_power_reset_for_test();
     uint32_t swaps = fs.swaps;

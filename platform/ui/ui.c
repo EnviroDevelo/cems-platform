@@ -1010,26 +1010,26 @@ static void draw_system(uint32_t now) {
     else snprintf(b, sizeof b, "%s%s", c, have ? (link ? "  (link up)" : "  (no link)") : "");
     kv(544, BODY_Y + 202, "Address", b);
     if (have) { snprintf(b, sizeof b, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); kv(544, BODY_Y + 226, "MAC", b); }
-    color(C_INK); text(544, BODY_Y + 252, F_TEXT, 0, "Storage");
-    kv(544, BODY_Y + 286, "Calibration", param_store_calibration_valid() ? "valid" : "INVALID");
+    color(C_INK); text(544, BODY_Y + 250, F_TEXT, 0, "Storage");
+    kv(544, BODY_Y + 280, "Calibration", param_store_calibration_valid() ? "valid" : "INVALID");
     uint32_t ls = plat_log_status();
     snprintf(b, sizeof b, "%s%s%s", ls & LSTAT_NOR_FAULT ? "FAULT " : "", ls & LSTAT_VOLATILE ? "RAM only (no flash) " : "",
              (ls & (LSTAT_NOR_FAULT | LSTAT_VOLATILE)) ? "" : "ok");
-    kv(544, BODY_Y + 312, "Log", b);
+    kv(544, BODY_Y + 302, "Log", b);
     snprintf(b, sizeof b, "0x%04lx", (unsigned long)param_store_status());
-    kv(544, BODY_Y + 338, "Store status", b);
+    kv(544, BODY_Y + 324, "Store status", b);
     if (plat_health.valid) {
         unsigned lo = 0xFFFFu; const char *ln = "";
         for (unsigned i = 0; i < plat_health.n_tasks && i < PLAT_HEALTH_TASKS; ++i)
             if (plat_health.task[i].free_words < lo) { lo = plat_health.task[i].free_words; ln = plat_health.task[i].name; }
         snprintf(b, sizeof b, "heap %lu KB free at worst, stack %.11s %u words", (unsigned long)(plat_health.heap_min / 1024u), ln, lo);
-        kv(544, BODY_Y + 390, "Memory", b);
+        kv(544, BODY_Y + 368, "Memory", b);
     }
     uint32_t ct;
     if (plat_clock_now(&ct))                          /* day first, no seconds (the header has them): clears the buttons */
         snprintf(b, sizeof b, "%02u/%02u/%04u %02u:%02u", RTC_Date.Day_In_Month, RTC_Date.Month, RTC_Date.Year, RTC_Time.Hours, RTC_Time.Minutes);
     else snprintf(b, sizeof b, "NOT SET");
-    kv(544, BODY_Y + 364, "Clock", b);
+    kv(544, BODY_Y + 346, plat_clock_synced() ? "Clock" : "Clock, not synced", b);   /* CIP-02.6 */
     button(T_CLOCK, 884, BODY_Y + 318, 116, 64, "Set clock", C_ACCENT, true);
     button(T_IOB, 884, BODY_Y + 244, 116, 64, "I/O boards", C_ACCENT, true);
     if (plat_cal_count()) button(T_CAL, 884, BODY_Y + 40, 116, 64, plat_cal_any_due() ? "Cal DUE" : "Calibrate", plat_cal_any_due() ? C_WARN : C_ACCENT, true);
