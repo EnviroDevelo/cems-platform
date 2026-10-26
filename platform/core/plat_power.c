@@ -15,6 +15,7 @@ static unsigned head, have;
 static volatile uint32_t avg_mv;
 static volatile bool failing;
 static uint32_t above;                       /* ms in a row above the restore level while failing */
+static unsigned low_raw;                     /* raw readings in a row below the failing level */
 static bool     told;                        /* the event for the current failing state was logged */
 
 void plat_power_sample(void) {
@@ -23,11 +24,14 @@ void plat_power_sample(void) {
     sum = sum - ring[head] + mv;
     ring[head] = mv;
     head = (head + 1u) % AVG_N;
+    low_raw = mv < PLAT_SUPPLY_FAIL_MV ? low_raw + 1u : 0u;
     if (have < AVG_N && ++have < AVG_N) return;   /* a full average before acting on it */
     uint32_t a = sum / AVG_N;
     avg_mv = a;
     if (!failing) {
-        if (a < PLAT_SUPPLY_FAIL_MV) { failing = true; above = 0; }
+        /* two raw readings in a row, not the average: the hold-up time from 16 V is about 20 ms
+         * at full load (CORE_PCB.md 5a), so every ms of detection counts */
+        if (low_raw >= 2u) { failing = true; above = 0; }
     } else if (a > PLAT_SUPPLY_RESTORE_MV) {
         if (++above >= 1000u) failing = false;
     } else {
@@ -50,6 +54,6 @@ void plat_power_scan(uint32_t now_ms) {
 
 void plat_power_reset_for_test(void) {
     for (unsigned k = 0; k < AVG_N; ++k) ring[k] = 0;
-    sum = 0; head = 0; have = 0; avg_mv = 0; failing = false; above = 0; told = false;
+    sum = 0; head = 0; have = 0; avg_mv = 0; failing = false; above = 0; told = false; low_raw = 0;
     plat_supply_mv_tag = 0;
 }

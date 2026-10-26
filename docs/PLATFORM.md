@@ -188,6 +188,20 @@ mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes
 (a PLC that rebooted without closing would otherwise hold a slot). Optional single
 allowed client IP. TCP keepalive notices a vanished client in about 50 s.
 
+**The platform's block (CIP-01.6, 14.4, 15.1, 15.2).** Whatever the application maps, the
+platform adds its own read-only block at input registers 9000-9083 (9000-9199 reserved), the
+same in every product, so a PLC or DAHS can identify and supervise any CEMS instrument the same
+way: block layout version (9000), the application's map version (9001, `mb_ident_t.map_version`),
+a heartbeat that counts every 100 ms (9002), the instrument state (9003), seconds since the last
+Modbus or web request (9004), alarms active and the common alarm word (9005-9006), hardware
+revision, serial number and firmware version (9007-9012), web API version (9013), uptime
+(9014-9015), the supply voltage (9016-9017), when the state was entered (9018-9019), the quality
+of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083). The full
+layout is in `modbus.h`. An application map entry in that range of the input registers stops the
+start-up ("modbus map"). Function 43/14 (device identification) gives vendor, product and firmware
+as before. Compatibility (CIP-14.5): addresses in the block never move; a new value is added at
+the end and the block version goes up.
+
 **Web interface.** One page (4.6 KB gzip) loads once, then polls JSON: values every
 0.5 s, status every 2 s. Viewing needs no login. Changes need a login (operator, admin
 or factory); a session allows changes for 10 minutes after the login or the last change.
@@ -833,7 +847,7 @@ remotely, and platform alarm 19 SAFE_MODE is raised (email, Modbus). A power cyc
 **Supply and power-fail shutdown (CIP-07.3, CIP-07.5).** The ctrl task reads the 24 V supply
 every ms (`bsp_supply_mv`, `CUBEMX_SETUP.md` 3i) into a 16-reading average, shown as parameter
 305 (`supply_mv`, mV; 0 = not measured on this board). Outside 19-30 V for 2 s: alarm 20 SUPPLY
-(warning, email, Modbus). Below 16 V the supply is failing: the store task starts no new FRAM
+(warning, email, Modbus). Two readings in a row below 16 V (2 ms; not the average, since the board holds up for only about 20 ms from 16 V at full load, `CORE_PCB.md` 5a) and the supply is failing: the store task starts no new FRAM
 image write or log-flash write (it lets the event log run for 60 ms more so the `power_fail`
 event, with the voltage, is written first). FRAM images are dual-copy with CRC anyway, so the
 hold is to keep both copies and the log's current page intact, not to save the last settings.

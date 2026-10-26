@@ -7,6 +7,7 @@
 #include "plat_clock.h"
 #include "plat_state.h"
 #include "plat_power.h"
+#include "modbus.h"
 
 static int sys_apply(const plat_cmd_t *c) {
     param_err_t e = param_apply(c);
@@ -23,6 +24,7 @@ static void sys_pre_logic(uint32_t now_ms) {
     alarm_scan(now_ms);                /* delays and states; conditions set by last scan's logic */
     plat_state_scan(now_ms);           /* instrument state and the quality of each measurement */
     plat_power_scan(now_ms);           /* supply voltage, power-fail events */
+    mb_block_scan(now_ms);             /* the platform's Modbus block: heartbeat, link age, uptime */
 }
 
 const scan_sys_t plat_sys = { .apply = sys_apply, .pre_logic = sys_pre_logic, .publish = param_publish,

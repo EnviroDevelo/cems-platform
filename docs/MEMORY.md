@@ -8,15 +8,15 @@ module, and before choosing hardware. Last run: 2026-10-26.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 416.5 KB | 1016.0 KB | 41 % | 599.5 KB |
-| RAM (STM32H573/H563, 640 KB) | 468.7 KB | 640.0 KB | 73 % | 171.3 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 417.8 KB | 1016.0 KB | 41 % | 598.2 KB |
+| RAM (STM32H573/H563, 640 KB) | 468.8 KB | 640.0 KB | 73 % | 171.2 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 20.6 | 0.1 |
-| Parameter table | 12.1 | 25.7 |
+| Scan engine, queue, watchdog, diag | 20.7 | 0.1 |
+| Parameter table | 12.6 | 25.7 |
 | Parameter store (FRAM) | 5.3 | 57.2 |
 | Event log / data logger | 14.6 | 6.8 |
 | Alarm manager, instrument state, supply | 7.2 | 3.3 |
@@ -24,7 +24,7 @@ module, and before choosing hardware. Last run: 2026-10-26.
 | Clock + SNTP | 1.7 | 0.1 |
 | Firmware update, signatures, serial | 6.0 | 1.6 |
 | I/O boards (Ethernet/RS-485 master) | 18.8 | 1.7 |
-| Modbus TCP | 6.0 | 17.5 |
+| Modbus TCP | 6.5 | 17.6 |
 | Web server + page + logins | 50.4 | 73.4 |
 | HTTPS (tls.c + mbedTLS) | 96.4 | 46.9 |
 | Touch UI + EVE driver | 52.2 | 2.5 |
@@ -40,12 +40,12 @@ module, and before choosing hardware. Last run: 2026-10-26.
 
 ## With the VM/MUX application (app_vmmux)
 
-The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own changes since (25 Oct: +72.5 KB RAM for the larger stacks and heaps; +2.4 KB flash for the fault handlers and the W5500 I/O port; 26 Oct: +4.6 KB flash, +0.4 KB RAM for the instrument state, quality, safe mode and supply monitoring); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
+The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own changes since (25 Oct: +72.5 KB RAM for the larger stacks and heaps; +2.4 KB flash for the fault handlers and the W5500 I/O port; 26 Oct: +5.9 KB flash, +0.5 KB RAM for the instrument state, quality, safe mode, supply monitoring and the platform Modbus block); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash | 492.3 KB | 1016.0 KB | 48 % | 523.7 KB |
-| RAM | 511.3 KB | 640.0 KB | 80 % | 128.7 KB |
+| Flash | 493.6 KB | 1016.0 KB | 49 % | 522.4 KB |
+| RAM | 511.4 KB | 640.0 KB | 80 % | 128.6 KB |
 
 The application itself: 83.5 KB of flash, 46.1 KB of RAM (its tags, timers and tables).
 

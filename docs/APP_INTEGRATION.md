@@ -59,7 +59,7 @@ const plat_app_t app = {
     .retain     = retain,  .n_retain = N,      /* RETAIN() blocks: retained tags not in the table */
     .layout_version = 1, .migrate = NULL,      /* bump the version when a stored record changes meaning */
     .modbus_map = map,     .n_modbus_map = N,  /* mb_map_t */
-    .ident      = { .vendor, .product, .revision = "x.y.z", .write_level },
+    .ident      = { .vendor, .product, .revision = "x.y.z", .write_level, .map_version },   /* bump map_version when an address moves */
     .log_chans  = chans,   .n_log_chans = N,   /* data-log columns */
     .ui_home_ids = ids,    .n_ui_home = N,     /* up to 6 tiles on the home screen */
     .alarms     = alarms,  .n_alarms = N,      /* alarm_def_t, IDs 100..255 */
@@ -78,6 +78,13 @@ Mandatory for every instrument. In `logic()`:
   quality (`PLAT_Q_FAULT` for a broken sensor, `PLAT_Q_UNAVAILABLE` for one not fitted). A value
   that stops being updated goes stale on its own after its `max_age_ms`.
 - Mark an alarm `AL_STOPS` if measurement cannot go on while it is active (the instrument goes to FAULT).
+
+### Reserved numbers (spec R5)
+
+Parameters 1-999, alarms 1-99 and Modbus **input registers 9000-9199** belong to the platform and
+mean the same in every product (the platform's block: identity, heartbeat, state, link age,
+versions; PLATFORM.md 5). Products use parameters from 1000, alarms from 100, and any Modbus
+address outside that input-register range.
 
 ### The scan (`scan_app_t`), one call per 10 ms
 

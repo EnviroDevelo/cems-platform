@@ -48,9 +48,10 @@
 #include "web_auth.h"
 #include "scan_engine.h"
 #include "plat_log.h"
+#include "plat_config.h"
 
-/* /api/info "api": bumped on any change a client could break on (1 = before 26 Oct 2026) */
-#define HTTP_API_VERSION 2u
+/* /api/info "api": bumped on any change a client could break on (plat_config.h) */
+#define HTTP_API_VERSION PLAT_API_VERSION
 
 typedef struct {
     char     method[8];

@@ -4,6 +4,7 @@
 #include <string.h>
 #include "tst.h"
 #include "modbus.h"
+#include "plat_config.h"
 #include "mbtcp.h"
 
 static int16_t  m_mode, m_count;          /* status, read-only */
@@ -71,7 +72,7 @@ static void setup(void) {
     param_set_defaults(PARAM_ALL);
     plat_cmdq_init(&q);
     param_bind(&q, NULL);
-    mb_ident_t id = { "Acme", "CEMS Supervisor", "1.2.3", PLAT_LVL_OPERATOR };
+    mb_ident_t id = { "Acme", "CEMS Supervisor", "1.2.3", PLAT_LVL_OPERATOR, 7 };
     CHECK_EQ(mb_init(map, sizeof map / sizeof map[0], &id), 0);
     remote(true);
     scan();
@@ -282,6 +283,36 @@ static void t_mbtcp_framing(void) {
     rx.n = 0; CHECK_EQ(mbtcp_feed(&rx, bad, 12, &used, out, sizeof out), -1);
 }
 
+/* the platform's own block at input registers 9000-9083, the same in every product (CIP-01.6, 15.1, 14.4) */
+static void t_platform_block(void) {
+    setup();
+    mb_block_scan(5000);
+    scan();
+    rd(4, 9000, MB_BLOCK_REGS);
+    CHECK_EQ(rl, 2 + 2 * MB_BLOCK_REGS);
+    CHECK_EQ(reg(0), PLAT_MB_BLOCK_VERSION);
+    CHECK_EQ(reg(1), 7);                                  /* the application's map version */
+    uint16_t beat = reg(2);
+    CHECK_EQ(reg(4), 0xFFFF);                             /* no supervisory request yet */
+    CHECK_EQ(reg(11), 0x0001); CHECK_EQ(reg(12), 0x0203); /* firmware 1.2.3 */
+    CHECK_EQ(reg(13), PLAT_API_VERSION);
+    CHECK_EQ(reg(15), 5);                                 /* uptime 5 s */
+    CHECK_EQ(reg(52), ('C' << 8) | 'E');                  /* "CEMS Supervisor" */
+    CHECK_EQ(reg(68), ('A' << 8) | 'c');                  /* "Acme" */
+    CHECK_EQ(reg(76), ('1' << 8) | '.');
+    /* the heartbeat moves every 100 ms; the link age counts from the last request */
+    param_comms_activity(PLAT_SRC_MODBUS, 5000);
+    mb_block_scan(5050); mb_block_scan(5100); mb_block_scan(5150); mb_block_scan(7300);
+    scan();
+    rd(4, 9002, 3);
+    CHECK_EQ(reg(0), (uint16_t)(beat + 2));
+    CHECK_EQ(reg(2), 2);                                  /* 2.3 s since the request */
+    /* an application entry inside the block is refused at start-up */
+    mb_map_t clash[2] = { MB_ENTRY(MB_HOLDING, 9000, P_MODE, MBF_I16), MB_ENTRY(MB_INPUT, 9083, P_IN, MBF_U16) };
+    CHECK_EQ(mb_init(clash, 2, NULL), 2);                 /* holding 9000 is fine, input 9083 is not */
+    setup();
+}
+
 void test_modbus_all(void) {
     RUN(t_mbtcp_framing);
     RUN(t_map_validation);
@@ -294,4 +325,5 @@ void test_modbus_all(void) {
     RUN(t_permissions);
     RUN(t_busy);
     RUN(t_device_id);
+    RUN(t_platform_block);
 }

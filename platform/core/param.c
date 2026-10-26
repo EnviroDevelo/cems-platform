@@ -56,6 +56,9 @@ void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
 extern bool     plat_maint_tag;
 extern uint32_t plat_state_since_tag, plat_supply_mv_tag;                   /* plat_state.c, plat_power.c */
+extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
+extern uint32_t plat_mb_fw_version, plat_mb_uptime_s;
+extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
 
 #define IOB_DEFS(K, N) \
     PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
@@ -155,6 +158,16 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_STATE_SINCE, "state_since", plat_state_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_MEAS_Q, "meas_q", plat_meas_q, CT_U8, 0, PLAT_Q_COUNT - 1, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_SUPPLY_MV, "supply_mv", plat_supply_mv_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "mV"),
+    PARAM_UINT(PARAM_ID_HEARTBEAT, "heartbeat", plat_mb_heartbeat, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_LINK_AGE_S, "link_age_s", plat_mb_link_age_s, CT_U16, 0, 0xFFFFu, 0xFFFFu, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_UINT(PARAM_ID_MB_BLOCK_VERSION, "mb_block_version", plat_mb_block_version, CT_U16, 0, 0xFFFFu, PLAT_MB_BLOCK_VERSION, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_MAP_VERSION, "mb_map_version", plat_mb_map_version, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_FW_VERSION_NUM, "fw_version_num", plat_mb_fw_version, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_API_VERSION, "api_version", plat_mb_api_version, CT_U16, 0, 0xFFFFu, PLAT_API_VERSION, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_UPTIME_S, "uptime_s", plat_mb_uptime_s, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_TEXT(PARAM_ID_PRODUCT, "product", plat_mb_product, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_VENDOR, "vendor", plat_mb_vendor, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_FW_TEXT, "fw_text", plat_mb_fw_text, NULL, PLAT_LVL_VIEW, PF_RO),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])

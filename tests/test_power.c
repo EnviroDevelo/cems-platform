@@ -58,15 +58,18 @@ static void t_supply(void) {
     scans(250);
     CHECK(!alarm_active(ALARM_ID_SUPPLY));
 
-    /* one noisy reading does not trip it: the average must fall below 16 V */
+    /* one noisy reading does not trip it */
     bsp_host.supply_mv = 8000; ms(1);
     bsp_host.supply_mv = 24000; ms(1);
     CHECK(!plat_power_failing());
 
-    /* failing: within a few ms of the average falling */
-    bsp_host.supply_mv = 12000;
-    ms(10);
+    /* failing: on the second raw reading below 16 V, not after the 16-reading average */
+    bsp_host.supply_mv = 15000;
+    ms(1);
+    CHECK(!plat_power_failing());
+    ms(1);
     CHECK(plat_power_failing());
+    CHECK(plat_supply_mv() > 16000u);                      /* the average has hardly moved yet */
     scans(1);
     /* a dip, not a loss: back above 18 V for a whole second before writes resume */
     bsp_host.supply_mv = 24000;
