@@ -244,9 +244,20 @@ static void do_data(log_csv_t *c, http_out_t *o) {
         }
         out_str(o, "\r\n");
         c->header_out = true;
+        c->have_last = false;
     }
     char tb[32];
-    log_fmt_time(tb, sizeof tb, t, !(s0[1] & LOG_F_NOCLOCK));
+    bool clock = !(s0[1] & LOG_F_NOCLOCK);
+    if (clock && c->have_last && c->iv && t > c->last_t && t - c->last_t > 2u * (uint32_t)c->iv) {
+        log_fmt_time(tb, sizeof tb, c->last_t + c->iv, true);    /* power-off gap (CIP-16.6) */
+        out_str(o, tb);
+        for (unsigned ch = 0; ch < c->nch; ++ch) out_str(o, ",,GAP");
+        out_str(o, "\r\n");
+        c->rows++;
+    }
+    c->have_last = clock;
+    c->last_t = t;
+    log_fmt_time(tb, sizeof tb, t, clock);
     out_str(o, tb);
     for (unsigned ch = 0; ch < c->nch; ++ch) {
         float v = NAN;

@@ -304,6 +304,11 @@ Changes made by the unit itself are not audit events.
 column set changed (L3). Here a configuration change writes a schema record (channel
 names, units, decimals, interval) and the CSV gets a new header line at that point.
 
+**Gaps (CIP-16.6).** When two consecutive data rows with the clock set are more than two
+intervals apart (the unit was off, or the clock was stepped forward), the CSV has one row
+at the first missing interval with every value empty and every quality `GAP`, so a
+spreadsheet shows the hole instead of drawing across it. The power-up event says why.
+
 **Power cuts.** Records are 64-byte slots (a data record with up to 32 channels is 4
 slots; the schema up to 17), each with its own CRC-32, written only into erased flash and
 read back to verify. A cut loses at most the record being written. The write position
