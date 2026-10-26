@@ -829,6 +829,7 @@ static void get_alarms(http_out_t *o) {
         out_str(o, "{\"id\":"); json_uint(o, v.id);
         out_str(o, ",\"name\":"); json_str(o, v.name);
         out_str(o, ",\"text\":"); json_str(o, v.text);
+        out_str(o, ",\"help\":"); json_str(o, v.help ? v.help : "");    /* what to check (docs/FAULT_CODES.md) */
         out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
         out_str(o, ",\"active\":"); json_bool(o, v.active);
         out_str(o, ",\"unacked\":"); json_bool(o, v.unacked);

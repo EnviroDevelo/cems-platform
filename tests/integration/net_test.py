@@ -316,6 +316,7 @@ def main():
     j, a = alarms()
     check(1 in a and a[1]["severity"] == "fault" and a[1]["active"] and a[1]["name"] == "CAL_INVALID",
           "platform alarm: calibration invalid")
+    check(a[1]["help"].startswith("Neither copy of the factory data"), "alarm list carries what to check (help)")
     web.json("/api/write", {"id": 1007, "v": 1}); time.sleep(0.3)
     j, a = alarms()
     check(100 in a and a[100]["active"] and a[100]["unacked"] and a[100]["latch"], "application alarm raised (latching)")
