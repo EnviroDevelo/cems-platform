@@ -40,6 +40,7 @@ runs on top of it.
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
 | I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
 | I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
+| Instrument state and quality of live values (Common Instrument Platform Specification CIP-09, CIP-10): one state (STARTING ... SAFE_MODE), forced FAULT, maintenance from the touchscreen or web, per-measurement quality with automatic stale detection, on Modbus, `/api/*` and for the touchscreen; the supervisory link age (CIP-15.2) | `plat_state.h`, `platform/core/plat_state.c` | Done, host-tested (5l) |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -770,6 +771,54 @@ interrupts and receives to line idle; the task sleeps meanwhile.
 **The simulated board** (`platform/bsp/iob_node_sim.c`) implements the register map exactly
 as the node firmware must; it is the master's test partner, and netsim runs two of them
 (console: `node 1 open 4`, `node 2 power 0`, `node 1 wdg` ...).
+
+## 5l. Instrument state and quality (CIP-09, CIP-10)
+
+Agreed with Gary 26 Oct (`INSTRUMENT_PLATFORM_SPEC.md` sections 6 and 7). The aim is principle P1: a
+plausible number from a stalled or faulted instrument never looks valid.
+
+**State.** Parameter 300 (`state`, read-only) holds one of STARTING, INITIALISING, WARMING_UP,
+READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT, SAFE_MODE. The application sets WARMING_UP,
+READY or MEASURING with `plat_app_state()` and asks for CALIBRATION the same way. The operator
+selects MAINTENANCE with parameter 301 (`maintenance`, operator level, kept across a restart so a
+reset during maintenance does not report valid data). The platform forces FAULT while
+CAL_INVALID or an application alarm marked `AL_STOPS` is active, and SAFE_MODE after a reboot
+loop (CIP-08.5, next). Precedence: SAFE_MODE, FAULT, CALIBRATION, MAINTENANCE, then the
+application's state. Every change except the normal start is an event (`state`). Parameter 302
+holds the clock when the state was entered.
+
+Actions the state refuses (`plat_state_allows`): a firmware restart and restore defaults in
+CALIBRATION (the web page shows "not allowed in CALIBRATION"); a calibration in WARMING_UP,
+FAULT and SAFE_MODE; the application's logic in SAFE_MODE.
+
+**Quality.** The application lists its measured values in `plat_app_t.meas`
+(`plat_meas_def_t`: parameter ID, array index, maximum age, valid range; up to 32) and calls
+`plat_meas_update(i, own_quality)` whenever it writes one. Each scan the platform works out the
+reported quality:
+
+| Condition | Quality |
+|---|---|
+| State not MEASURING | WARMING_UP: warmup; MAINTENANCE: maint; CALIBRATION: cal; FAULT: fault; otherwise unavailable |
+| Never updated | unavailable |
+| The value's own quality is not valid | that quality |
+| Not updated for longer than its maximum age | stale |
+| Outside its range, or NaN | range |
+| Otherwise | valid |
+
+Codes (`PLAT_Q_*`, in this order): 0 valid, 1 stale, 2 unavailable, 3 range, 4 warmup, 5 maint,
+6 cal, 7 fault. The data log keeps OK/FLAG/BAD/N/A as its summary.
+
+**Where it shows.** Modbus: parameter 300 for the state and parameter 303 (`meas_q`, one register
+per measurement, in table order) as a status block; the application's map places them (the demo:
+input registers 50 and 52-83). Web: `/api/info` has `"api":2`, `"state"` and `"state_since"`;
+`/api/values` has a sparse `"q"` with only the values that are not valid
+(`{"1002":"stale","1010.3":"cal"}`); `/api/params` marks measurements with `"q":true`.
+Touchscreen: `plat_state()`, `plat_state_name()`, `param_quality(id, index)`,
+`plat_quality_name()`, `plat_link_age_ms()` (time since the last Modbus or web request, for the
+header's link indicator) and `plat_state_request()` to enter or leave maintenance.
+
+A measurement table that names a missing or non-numeric parameter stops the start-up like the
+other tables (fault record "meas table").
 
 ## 6. Integration rules for the application (VM/MUX) code
 

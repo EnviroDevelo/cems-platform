@@ -6,9 +6,10 @@
  * drop-outs, reboots and laptop sleep recover on the next poll.
  *
  *   GET  /                 the page (gzip)
- *   GET  /api/info         unit status: product, firmware, serial, mode, alarms, store, scan, session
- *   GET  /api/params       the parameter table definitions (names, types, limits, levels)
- *   GET  /api/values[?ids=1,2,3]   current values {"t":ms,"v":{"id":value,...}}
+ *   GET  /api/info         unit status: product, firmware, API version, state, serial, mode, alarms, store, scan, session
+ *   GET  /api/params       the parameter table definitions (names, types, limits, levels; "q":true = carries quality)
+ *   GET  /api/values[?ids=1,2,3]   current values {"t":ms,"v":{"id":value,...},"q":{"id":"stale",...}}
+ *                          "q" lists only measurements whose quality is not valid ("id.index" for an array element)
  *   POST /api/login        level=operator|admin|factory&password=...      -> session cookie
  *   POST /api/logout
  *   POST /api/write        id=..&v=..[&o=..]  (repeat for several; all or nothing)
@@ -47,6 +48,9 @@
 #include "web_auth.h"
 #include "scan_engine.h"
 #include "plat_log.h"
+
+/* /api/info "api": bumped on any change a client could break on (1 = before 26 Oct 2026) */
+#define HTTP_API_VERSION 2u
 
 typedef struct {
     char     method[8];

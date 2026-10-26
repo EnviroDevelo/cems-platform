@@ -161,6 +161,10 @@ enum {
          +5 calibration offset (6 x 0.01 degC), +6 calibration span (gain - 1, 6 x 0.01 %), +7 PWM frequency (Hz),
          +8 tacho pulses per revolution, +9 RO temperatures (6 x 0.1 degC), +10 RO channel states (6 x IOB_TS_*),
          +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %) */
+    PARAM_ID_STATE            = 300, /* RO: instrument state, PLAT_ST_* (plat_state.h) */
+    PARAM_ID_MAINTENANCE      = 301, /* operator selects MAINTENANCE (1) or leaves it (0) */
+    PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */
+    PARAM_ID_MEAS_Q           = 303, /* RO: one PLAT_Q_* per declared measurement (a Modbus status block) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

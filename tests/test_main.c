@@ -23,6 +23,7 @@ void test_ui_app_all(void);
 void test_iobus_all(void);
 void test_iobtcp_all(void);
 void test_w5500_all(void);
+void test_state_all(void);
 
 int main(void) {
     test_scan_all();
@@ -45,6 +46,7 @@ int main(void) {
     test_iobus_all();
     test_iobtcp_all();
     test_w5500_all();
+    test_state_all();
     test_tls_all();
     printf("\n%d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;

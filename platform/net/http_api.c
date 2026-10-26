@@ -20,6 +20,7 @@
 #include "plat_health.h"
 #include "plat_serial.h"
 #include "ui_app.h"
+#include "plat_state.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -200,6 +201,9 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"product\":"); json_str(o, cfg.product);
     out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    out_str(o, ",\"api\":"); json_uint(o, HTTP_API_VERSION);
+    out_str(o, ",\"state\":"); json_str(o, plat_state_key(plat_state()));
+    out_str(o, ",\"state_since\":"); json_uint(o, plat_state_since());
     out_str(o, ",\"serial\":"); json_uint(o, param_read(PARAM_ID_SERIAL, &v) ? v.u : 0);
     out_str(o, ",\"hw_rev\":"); json_uint(o, param_read(PARAM_ID_HW_REV, &v) ? v.u : 0);
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
@@ -272,6 +276,7 @@ static void get_params(http_out_t *o) {
         }
         if (d->ptype <= PT_FLOAT) { out_str(o, ",\"def\":"); json_val(o, d->ptype, d->vdef); }
         if (PARAM_IS_BLOB(d)) { out_str(o, ",\"size\":"); json_uint(o, d->size); }
+        if (param_has_quality(d->id, PLAT_MEAS_NO_INDEX)) out_str(o, ",\"q\":true");
         out_str(o, ",\"level\":"); json_uint(o, d->level);
         out_str(o, ",\"flags\":["); bool f = false;
         static const struct { uint16_t bit; const char *n; } fl[] = {
@@ -327,6 +332,36 @@ static void value_json(http_out_t *o, const param_def_t *d) {
     }
 }
 
+/* is id in the comma-separated list (NULL: every ID)? */
+static bool listed(const char *ids, uint16_t id) {
+    if (!ids) return true;
+    for (const char *p = ids; *p;) {
+        char *e; unsigned long x = strtoul(p, &e, 10);
+        if (e == p) return false;
+        if (x == id) return true;
+        if (*e != ',') return false;
+        p = e + 1;
+    }
+    return false;
+}
+
+/* the measurements whose quality is not valid: {"1002":"stale","1010.3":"cal"} */
+static void quality_json(http_out_t *o, const char *ids) {
+    out_str(o, ",\"q\":{");
+    bool first = true;
+    for (size_t i = 0; i < plat_meas_count(); ++i) {
+        const plat_meas_def_t *m = plat_meas_at(i);
+        uint8_t q = plat_meas_quality(i);
+        if (q == PLAT_Q_VALID || !listed(ids, m->id)) continue;
+        if (!first) out_str(o, ",");
+        first = false;
+        out_str(o, "\""); json_uint(o, m->id);
+        if (m->index != PLAT_MEAS_NO_INDEX) { out_str(o, "."); json_uint(o, m->index); }
+        out_str(o, "\":"); json_str(o, plat_quality_code(q));
+    }
+    out_str(o, "}");
+}
+
 static void get_values(const http_req_t *r, http_out_t *o, uint32_t now) {
     char ids[sizeof r->query];
     bool filter = form_get(r->query, strlen(r->query), "ids", ids, sizeof ids);
@@ -352,7 +387,9 @@ static void get_values(const http_req_t *r, http_out_t *o, uint32_t now) {
             out_str(o, "\""); json_uint(o, d->id); out_str(o, "\":"); value_json(o, d);
         }
     }
-    out_str(o, "}}");
+    out_str(o, "}");
+    quality_json(o, filter ? ids : NULL);
+    out_str(o, "}");
 }
 
 /* ---------------- writes ---------------- */

@@ -420,6 +420,8 @@ int main(int argc, char **argv) {
     }
     { int ae = alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause);
       if (ae) { fprintf(stderr, "alarm table error at id %d\n", ae); return 1; } }
+    { int me = plat_state_init(app->meas, app->n_meas);
+      if (me) { fprintf(stderr, "measurement table error at entry %d\n", me - 1); return 1; } }
     param_bind(&plat_cmdq, &plat_snap_lock);
     scan_set_sys(&plat_scan, &plat_sys);
     iob_simbus_init(&simbus);

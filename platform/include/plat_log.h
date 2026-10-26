@@ -89,6 +89,7 @@ typedef enum {
     LOG_EV_MAIL,             /* alarm email: arg = alarm events in it, new = 1 sent / 0 failed, text = result */
     LOG_EV_SERIAL,           /* serial number: old -> new (NaN = refused before checking), text = result */
     LOG_EV_IOB,              /* I/O board: arg = board 1..3, text = what happened (online, out 3 open circuit ...) */
+    LOG_EV_STATE,            /* instrument state (plat_state.h): old -> new, text = the new state */
     LOG_EV_APP = 100
 } log_event_code_t;
 

@@ -208,6 +208,10 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "alarm table", 0, bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
+    if (plat_state_init(app->meas, app->n_meas) != 0) {        /* a measurement names a missing or non-numeric ID */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "meas table", (uint32_t)plat_state_init(app->meas, app->n_meas), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {

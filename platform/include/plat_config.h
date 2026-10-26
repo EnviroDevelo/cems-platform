@@ -108,6 +108,10 @@
 #define PLAT_SILENCE_IOBUS_MS     1000u
 
 /* ---- I/O bus, RS-485 or Ethernet (iobus.h, D27) ---- */
+#ifndef PLAT_MEAS_MAX
+#define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
+#endif
+
 #ifndef PLAT_IOB_PERIOD_MS
 #define PLAT_IOB_PERIOD_MS        20u    /* one request per running board per cycle */
 #endif

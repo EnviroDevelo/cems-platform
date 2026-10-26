@@ -6,6 +6,7 @@
 #include "plat_port.h"
 #include "plat_seqlock.h"
 #include "iobus.h"
+#include "plat_state.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -52,6 +53,9 @@ extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alar
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
 extern bool     plat_alarm_relay_inv[4];
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
+extern bool     plat_maint_tag;
+extern uint32_t plat_state_since_tag;
 
 #define IOB_DEFS(K, N) \
     PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
@@ -146,6 +150,10 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_IOB_PORT_IP, "iob_port_ip", iob_port_ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Cu, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
     PARAM_UINT(PARAM_ID_IOB_PORT_PREFIX, "iob_port_prefix", iob_port_prefix, CT_U8, 8, 30, 24, PLAT_LVL_ADMIN, PF_PERSIST, "bits"),
     PARAM_UINT(PARAM_ID_IOB_PORT_STATUS, "iob_port_status", iob_port_status, CT_U8, 0, 3, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_STATE, "state", plat_state_tag, CT_U8, 0, PLAT_ST_COUNT - 1, PLAT_ST_STARTING, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_BIT (PARAM_ID_MAINTENANCE, "maintenance", plat_maint_tag, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
+    PARAM_UINT(PARAM_ID_STATE_SINCE, "state_since", plat_state_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_ARRAY_UINT(PARAM_ID_MEAS_Q, "meas_q", plat_meas_q, CT_U8, 0, PLAT_Q_COUNT - 1, PLAT_LVL_VIEW, PF_RO),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
@@ -160,6 +168,8 @@ static uint8_t            blob_shadow[PARAM_BLOB_POOL];
 static plat_cmdq_t       *bound_q;
 static plat_seqlock_t    *bound_lock;
 static volatile uint32_t  last_remote_ms;
+static volatile uint32_t  link_ms;           /* any supervisory request, in any mode (CIP-15.2) */
+static volatile bool      link_seen;
 static volatile bool      remote_entered;     /* mode just switched to REMOTE */
 void (*param_on_restore_defaults)(void);
 void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);
@@ -243,6 +253,7 @@ param_err_t param_init(const param_def_t *app_defs, size_t n_app) {
     record_reset();
     n_tab = 0;
     tab_err_id = 0;
+    link_seen = false;
     if (N_PLAT + n_app > PARAM_MAX) { tab_err_id = 0xFFFF; return PERR_TABLE; }
     for (size_t k = 0; k < N_PLAT; ++k) tab[n_tab++] = &plat_defs[k];
     for (size_t k = 0; k < n_app; ++k) {
@@ -412,6 +423,7 @@ param_err_t param_apply(const plat_cmd_t *c) {
     if (d->interlock && d->interlock(d->id, n) != 0) return PERR_INTERLOCK;
 
     if (d->id == PARAM_ID_RESTORE_DEFAULTS) {          /* momentary command */
+        if (n.b && !plat_state_allows(PLAT_ACT_RESTORE_DEFAULTS)) { p_restore = false; return PERR_INTERLOCK; }
         if (n.b) {
             if (param_on_change) param_on_change(d, (plat_val_t){ .u = 0 }, n, c->src, c->level);
             if (param_on_restore_defaults) param_on_restore_defaults();
@@ -461,7 +473,13 @@ uint8_t param_ctrl_mode(void) { return p_mode; }
 bool param_remote_link_lost(void) { return p_link_lost; }
 
 void param_comms_activity(uint8_t src, uint32_t now_ms) {
-    if (src == PLAT_SRC_WEB || src == PLAT_SRC_MODBUS) last_remote_ms = now_ms;
+    if (src == PLAT_SRC_WEB || src == PLAT_SRC_MODBUS) { last_remote_ms = now_ms; link_ms = now_ms; link_seen = true; }
+}
+
+uint32_t plat_link_age_ms(uint32_t now_ms) {
+    if (!link_seen) return UINT32_MAX;
+    uint32_t a = now_ms - link_ms;
+    return a == UINT32_MAX ? a - 1u : a;
 }
 
 void param_scan_service(uint32_t now_ms) {

@@ -27,6 +27,7 @@
 #include "plat_log.h"
 #include "plat_alarm.h"
 #include "ui_app.h"
+#include "plat_state.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -48,6 +49,8 @@ typedef struct plat_app_s {
     bool (*fw_safe)(char *why, size_t cap);   /* safe to restart for a firmware update? false + reason refuses it (NULL = always) */
     size_t              n_alarms;
     const ui_app_t     *ui;              /* its own screens and record editors (ui_app.h; may be NULL) */
+    const plat_meas_def_t *meas;         /* its measured values: each carries a quality (plat_state.h; may be NULL) */
+    size_t              n_meas;
 } plat_app_t;
 
 typedef enum {
