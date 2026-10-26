@@ -1,6 +1,6 @@
 # Common Instrument Platform Specification
 
-Rev 0.1 (draft for review), 26 Oct 2026. Written from Gary's 26-item baseline (26 Oct).
+Rev 0.2, 26 Oct 2026 (Rev 0.1: first draft. Rev 0.2: Gary's decisions; section 9, keeping the core common). Written from Gary's 26-item baseline (26 Oct).
 
 This document sets out what every instrument in the CEMS / environmental monitoring family
 gets from the common platform. Measurement-specific functions are added separately: pumps,
@@ -179,7 +179,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-09.4 | State shown on every interface | M | Missing | Touchscreen header, web header, a Modbus register |
 | CIP-09.5 | State changes logged | M | Missing | Event log |
 
-A proposed state/action matrix is in section 7.
+The agreed state/action matrix is in section 7.
 
 ### 4.10 Measurement validity and quality flags
 
@@ -386,17 +386,19 @@ Proposal: "factory reset" is restore defaults plus erasing the TLS key and mail 
 at factory level only, logged. Nothing a user can do erases identity, calibration or the logs;
 only a developer-signed token could clear the logs (for refurbishing a unit).
 
-## 6. Decisions for Gary
+## 6. Decisions
 
-| # | Question | Recommendation |
+All decided by Gary on 26 Oct 2026.
+
+| # | Question | Decision |
 |---|---|---|
 | 1 | The baseline says store timestamps in UTC. D22 stores local standard time. | **Decided (Gary, 26 Oct): keep D22 local standard time.** CIP-02.4 is a documented exception |
-| 2 | Adopt the state model in section 7 as the platform's? | Yes, with the application allowed to stay in READY/MEASURING and to request MAINTENANCE and CALIBRATION |
-| 3 | Quality codes: 8 platform values (valid, stale, unavailable, out-of-range, warming-up, maintenance, calibration, fault) | Yes; the data log keeps OK/FLAG/BAD/N/A as a summary so existing CSV readers still work |
-| 4 | Credential recovery by developer-signed token | Yes; it reuses the serial number mechanism |
-| 5 | EMC basis IEC 61326-1 (industrial) | Yes, to be confirmed against the customer specification |
+| 2 | Adopt the state model in section 7 as the platform's? | **Yes (Gary, 26 Oct).** The application sets READY/MEASURING and requests MAINTENANCE and CALIBRATION; the platform forces FAULT and SAFE_MODE |
+| 3 | Quality codes: 8 platform values (valid, stale, unavailable, out-of-range, warming-up, maintenance, calibration, fault) | **Yes (Gary, 26 Oct).** The data log keeps OK/FLAG/BAD/N/A as a summary so existing CSV readers still work |
+| 4 | Credential recovery by developer-signed token | **Yes (Gary, 26 Oct).** It reuses the serial number mechanism |
+| 5 | EMC basis IEC 61326-1 (industrial) | **Yes (Gary, 26 Oct)**, to be confirmed against each customer specification |
 
-## 7. Proposed state model
+## 7. State model (agreed)
 
 | State | Entered when | Readings get quality | Allowed | Refused |
 |---|---|---|---|---|
@@ -412,8 +414,8 @@ only a developer-signed token could clear the logs (for refurbishing a unit).
 
 ## 8. Gaps by owning thread
 
-Ordered by what protects the three principles first. To be sent to the threads after
-Gary's review.
+Ordered by what protects the three principles first. Sent to the owning threads on 26 Oct
+after Gary's review.
 
 **Firmware (CORE)**
 1. Quality status on live values, stale detection, quality enum (CIP-10) and the state model (CIP-09).
@@ -444,7 +446,69 @@ Gary's review.
 2. EMC and environmental design basis with target levels (CIP-24).
 3. Production debug lock and recovery route, with the firmware thread (CIP-04.4, 20.4).
 
+**Platform governance (Firmware thread, section 9)**
+1. `make conformance APP=<dir>`, start-up contract checks, requirement IDs in tests, interface snapshots.
+2. Core version tags and the core version shown beside the product version; `PROFILE.md` template.
+
 **Documentation (any thread)**
 1. Operator manual, service manual, Modbus register map document (CIP-26.7).
 2. `CHANGELOG.md`, release notes, supported-combinations matrix (CIP-25.4, 25.5).
 3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5); UI convention page (CIP-21.7).
+
+## 9. Keeping the core common across the product family
+
+Gary asked (26 Oct): once instrument-specific models exist, how do the core items stay true
+for every instrument without slowing each product down? The answer is to keep the core as
+one shared, versioned layer that products build on and never edit. Products then differ
+only in what the core lets them choose. The rules below make that hold.
+
+### 9.1 One core, many applications
+
+| Rule | How |
+|---|---|
+| R1. The core is one code base, shared by every product | `platform/`, `port/`, `web/` and the core board stay in this repository. Each instrument is an application directory (`app_<product>/`, as `app_demo/` and `app_vmmux/` are today) built with `APP=<dir>`. A product in its own repository pulls the core in as a git submodule pinned to a core release tag |
+| R2. Products never edit the core | Already integration rule 6 (`PLATFORM.md` 6, `APP_INTEGRATION.md`). A product that needs something new asks the core thread for it, and the core adds it once for every product. A product-side patch to `platform/` is refused at review |
+| R3. The application contract is the only interface | `plat_app_t` / `scan_app_t`, `param.h`, `plat_alarm.h`, `plat_log.h`, `ui_app.h`, `iobus.h`. Product code reaches the hardware, FreeRTOS and the network only through them |
+| R4. The core is released with semantic versions | `core-MAJOR.MINOR.PATCH` tags. MINOR adds features and keeps every product building and behaving the same. MAJOR may change the contract and comes with a migration note. Each product states which core version it is built on, shown on the System screen and `/api/info` next to its own version |
+| R5. Reserved number ranges | Parameters 1-999, alarms 1-99, the Modbus identity, status and heartbeat block, and the platform's event codes belong to the core. They mean the same thing in every product. Products use parameters from 1000 and alarms from 100 |
+
+### 9.2 What a product may choose, and what it may not
+
+Each product has a short **product profile** (`app_<product>/PROFILE.md`). It lists:
+
+- the **O** (optional) items it fits, such as the touchscreen, the I/O network, alarm email,
+  relays and log flash size;
+- its measurement channels, with the quality behaviour of each;
+- its states (when it is warming up, measuring, in calibration);
+- any **exception** to an **M** item, with the reason and Gary's sign-off. CIP-02.4 (local
+  standard time) is the pattern.
+
+**M** items cannot be switched off. The core builds them in, so a product gets them by
+building on the core, and leaving one out takes deliberate work that review will see. The
+product profile is the only place an exception is recorded.
+
+### 9.3 Automatic checks
+
+These checks keep the core items true without anyone re-reading this spec for every release.
+
+| Check | What it catches | When |
+|---|---|---|
+| **Conformance suite** (`make conformance APP=<dir>`): the shared tests of CIP-26 (start-up, power cut, corrupted settings, comms loss, update failure) run against each product build, not only the demo | A product that breaks a core behaviour, such as an application that blocks the scan so the watchdog fires | Every pull request, for every product in the repository |
+| **Start-up contract checks** (like `ui_app_check()` today): the core refuses to start a product whose tables break the rules, for example a parameter or alarm ID in the core's range, a measured value with no quality source, or a missing state hook | Contract mistakes, caught on the bench the first time the product runs | At every start-up; also in the host tests |
+| **Requirement IDs in tests**: each test names the `CIP-nn.m` it proves. A script lists any **M** requirement with no test | An M item quietly losing its test | Every pull request |
+| **Interface snapshots**: the Modbus register map and `/api/*` are generated from the tables and compared with the last release | A core address or field moved or removed by accident (CIP-14.5) | Every pull request; a difference needs a MINOR or MAJOR version bump |
+| **Compatibility matrix** (CIP-25.5) | A product released on a core version or board revision that was never tested together | Every release |
+
+### 9.4 Changing a core item
+
+1. The change goes to this spec first: a new requirement, a change to one, or a new exception.
+   The spec revision goes up.
+2. The core thread builds it once, with a test that names the requirement.
+3. The conformance suite runs it against every product. A product that breaks gets fixed in
+   the same pull request, or the change waits.
+4. The release notes say which products need anything done to take the new core version
+   (usually nothing).
+
+This keeps products agile. A product team only writes its measurement, its screens and its
+profile, takes core improvements by changing a version tag, and gets told by the checks if it
+has stepped outside the common platform.
