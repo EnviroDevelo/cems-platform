@@ -52,8 +52,10 @@ link, the alarm pill (tap it for the list), and the time ("--:--:--" when the cl
 | Control | LOCAL / REMOTE | REMOTE: C_OK. LOCAL: neutral |
 | Supervisory link (CIP-21.5) | LINK OK / LINK LOST / NO LINK | C_OK / C_BAD / neutral. LOST means no request for `comms_timeout`. NO LINK means none since start, or the timeout is 0 |
 
-The web page shows the same elements with the same words. While the page itself cannot reach
-the instrument, it adds its red "Connection lost" banner and greys every value.
+The web page shows the same elements with the same words, plus a "live" / "offline" badge for
+the page's own connection to the instrument. While that connection is down, it also shows the red
+"Connection lost" banner and greys every value. The time joins the web header once `/api/info`
+carries the clock.
 
 ## 4. Values and their quality (CIP-10, 21.4)
 
@@ -78,6 +80,8 @@ the instrument, it adds its red "Connection lost" banner and greys every value.
 - No screen shows a non-valid reading in the valid style, including tiles, grids and the I/O
   boards screen. Where there is no room for the word, the tile's border takes the word's colour
   and the word goes on the second line.
+- Quality is per element: an array (a grid of valves, inlets or channels) marks each cell by
+  its own quality (`param_quality(id, index)`, web key `id.index`), never the whole grid by its worst.
 - A channel with a fault shows "fault" beside it, and the reason appears in words in the card's
   fault lines ("Temp 2: open circuit").
 
