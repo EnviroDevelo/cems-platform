@@ -1,5 +1,6 @@
 /* test_store.c - parameter store: boot, save, dual copies, power cuts, migration,
- * fail-safe, restore defaults, export/import. */
+ * fail-safe, restore defaults, export/import.
+ * Requirements proved here: CIP-05.1, 05.3, 05.5, 05.6, 06.1, 06.2, 06.3, 18.1, 18.5, 26.2, 26.3. */
 #include <string.h>
 #include "tst.h"
 #include "param.h"

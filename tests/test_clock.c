@@ -1,5 +1,6 @@
 /* test_clock.c - setting the clock: range, the RTC write (calendar and weekday), the
- * Modbus/parameter path, and the log not reporting the step twice. */
+ * Modbus/parameter path, and the log not reporting the step twice.
+ * Requirements proved here: CIP-02.2, 02.6. */
 #include <string.h>
 #include "tst.h"
 #include "plat_clock.h"

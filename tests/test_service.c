@@ -1,7 +1,8 @@
 /* test_service.c - the unit's service history (CIP-22.2, 22.4, 23.4, 05.4): operating hours in
  * 0.1 h steps, the service log (newest first, wraps, restarts "since service"), the test record,
  * the factory-level gate, survival across a restart and restore defaults, a backup restore that
- * does not copy them into another unit, and the configuration checksum. */
+ * does not copy them into another unit, and the configuration checksum.
+ * Requirements proved here: CIP-25.3 (with test_cal.c). */
 #include <string.h>
 #include "tst.h"
 #include "plat_service.h"

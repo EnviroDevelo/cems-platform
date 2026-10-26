@@ -1,4 +1,5 @@
-/* test_misc.c - command queue, seqlock, task monitor, diagnostic record. */
+/* test_misc.c - command queue, seqlock, task monitor, diagnostic record.
+ * Requirements proved here: CIP-08.1, 08.2, 08.4. */
 #include <string.h>
 #include "tst.h"
 #include "plat_cmdq.h"

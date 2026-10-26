@@ -1,4 +1,5 @@
-/* test_fw.c - firmware upload, staging, activation, trial, confirm and rollback. */
+/* test_fw.c - firmware upload, staging, activation, trial, confirm and rollback.
+ * Requirements proved here: CIP-03.2, 03.3, 03.4, 03.5, 03.6, 03.7, 17.3, 20.2, 25.1, 19.2. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

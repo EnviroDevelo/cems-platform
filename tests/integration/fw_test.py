@@ -3,6 +3,7 @@
 tools/mkfwimage.py is uploaded over HTTP, activated (netsim swaps its file-backed
 banks and exits as if reset), started again as the new version, confirmed after a
 healthy trial; then a second update whose trial "crashes" is rolled back."""
+# Requirements proved here: CIP-03.5, 03.6, 26.5, 17.3, 11.1.
 import http.cookiejar, ssl, json, os, random, subprocess, sys, tempfile, time, urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

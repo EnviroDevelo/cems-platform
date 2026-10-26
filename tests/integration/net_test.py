@@ -9,6 +9,7 @@ backup/restore, concurrent clients, and that everything survives a restart.
 
     PYTHONPATH=<pymodbus source> python3 tests/integration/net_test.py
 """
+# Requirements proved here: CIP-07.6, 26.1, 26.4, 05.5, 12.3, 12.4, 15.4, 17.2, 17.5, 20.1, 13.1.
 import http.cookiejar, ssl, json, os, signal, struct, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 
 from pymodbus.client import ModbusTcpClient

@@ -1,5 +1,6 @@
 /* test_alarm.c - the alarm manager: delays, latch, acknowledge, suppression,
- * range deadband, texts, ordering, the parameter interface and platform alarms. */
+ * range deadband, texts, ordering, the parameter interface and platform alarms.
+ * Requirements proved here: CIP-12.1, 12.2, 12.3, 12.5, 12.6, 06.6, 11.2, 08.4. */
 #include <math.h>
 #include <string.h>
 #include "tst.h"

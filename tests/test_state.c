@@ -1,7 +1,8 @@
 /* test_state.c - the instrument state and the quality of live values (CIP-09, CIP-10):
  * the table check, precedence, the quality each state gives, stale, range, own quality,
  * array elements, the state/action refusals, maintenance through parameter 301 and the
- * supervisory link age. */
+ * supervisory link age.
+ * Requirements proved here: CIP-01.3, 08.5, 09.1, 09.2, 09.3, 09.4, 09.5, 10.1, 10.2, 10.3, 10.4, 14.3, 25.2. */
 #include <math.h>
 #include <string.h>
 #include "tst.h"

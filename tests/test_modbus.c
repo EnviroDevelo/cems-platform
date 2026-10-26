@@ -1,12 +1,16 @@
 /* test_modbus.c - Modbus engine on a map shaped like the old UniLogic slave map
  * (stage4/4G/modbus_map.csv): INT16 status registers, 32-bit timer presets,
- * a REAL, 10-register name buffers, bit arrays on coils. */
+ * a REAL, 10-register name buffers, bit arrays on coils.
+ * Requirements proved here: CIP-01.6, 10.5, 14.2, 14.4, 15.1, 15.2, 13.3. */
 #include <string.h>
 #include "tst.h"
 #include "modbus.h"
 #include "plat_clock.h"
 #include "plat_config.h"
 #include "mbtcp.h"
+#include "plat_state.h"
+
+extern uint8_t plat_meas_q[PLAT_MEAS_MAX];    /* plat_state.c */
 
 static int16_t  m_mode, m_count;          /* status, read-only */
 static uint32_t m_preset;                 /* like ModbusTimer.Preset (ms) */
@@ -303,6 +307,13 @@ static void t_platform_block(void) {
     CHECK_EQ(reg(76), ('1' << 8) | '.');
     CHECK_EQ(reg(86), 0);                                 /* clock not synchronised (layout 2) */
     CHECK_EQ(reg(87), PLAT_CLK_SRC_NONE);
+    /* each measurement's quality sits in the block beside the values (CIP-10.5) */
+    plat_meas_q[0] = PLAT_Q_STALE; plat_meas_q[1] = PLAT_Q_RANGE;
+    param_publish(); scan();
+    rd(4, 9020, 2);
+    CHECK_EQ(reg(0), PLAT_Q_STALE); CHECK_EQ(reg(1), PLAT_Q_RANGE);
+    plat_meas_q[0] = plat_meas_q[1] = PLAT_Q_VALID;
+    rd(4, 9000, MB_BLOCK_REGS);
     /* the heartbeat moves every 100 ms; the link age counts from the last request */
     param_comms_activity(PLAT_SRC_MODBUS, 5000);
     mb_block_scan(5050); mb_block_scan(5100); mb_block_scan(5150); mb_block_scan(7300);

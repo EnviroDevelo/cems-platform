@@ -1,4 +1,5 @@
-/* test_log.c - event log, data logger, CSV export, power-cut and fault handling. */
+/* test_log.c - event log, data logger, CSV export, power-cut and fault handling.
+ * Requirements proved here: CIP-02.5, 06.4, 06.5, 16.1, 16.2, 16.4, 16.5, 16.6, 17.1, 17.4, 17.5, 26.2. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

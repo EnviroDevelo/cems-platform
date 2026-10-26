@@ -1,6 +1,6 @@
 # Common Instrument Platform Specification
 
-Rev 0.2, 26 Oct 2026 (Rev 0.1: first draft. Rev 0.2: Gary's decisions; section 9, keeping the core common). Written from Gary's 26-item baseline (26 Oct).
+Rev 0.3, 26 Oct 2026 (Rev 0.1: first draft. Rev 0.2: Gary's decisions; section 9, keeping the core common. Rev 0.3: CORE status refreshed after the section 8 firmware work; requirements unchanged). Written from Gary's 26-item baseline (26 Oct).
 
 This document sets out what every instrument in the CEMS / environmental monitoring family
 gets from the common platform. Measurement-specific functions are added separately: pumps,
@@ -48,34 +48,34 @@ These hold across every item below and override any item where they conflict.
 
 | # | Core item | Class | CORE status | Main gap | Owner |
 |---|---|---|---|---|---|
-| 1 | Instrument identity | M | Partial | No standard identity block on Modbus; hardware revision straps not read | Firmware, PCB |
-| 2 | Clock and timekeeping | M | Done | Local standard time kept by decision (D22, an exception to the baseline); clock quality not exposed (optional) | Firmware |
-| 3 | Firmware updates | M | Done | Compatibility check covers the product only, not the hardware revision | Firmware |
+| 1 | Instrument identity | M | Done | None at platform level (Modbus identity block, board straps read) | Firmware, PCB |
+| 2 | Clock and timekeeping | M | Done | Local standard time kept by decision (D22, an exception to the baseline) | Firmware |
+| 3 | Firmware updates | M | Done | None at platform level (hardware range and build ID in the header) | Firmware |
 | 4 | Bootloader and recovery | M (interface S) | Partial | No immutable first-stage bootloader; debug lock state undecided | Firmware, PCB |
-| 5 | Configuration management | M | Done | No visible configuration revision or checksum | Firmware |
+| 5 | Configuration management | M | Done | None at platform level (configuration checksum added) | Firmware |
 | 6 | Non-volatile storage | M | Done | Not yet proved on the real FRAM and NOR | Firmware |
-| 7 | Power management | M | Partial | Supply sense unused; no defined shutdown behaviour | Firmware, PCB |
-| 8 | Watchdog and fault recovery | M | Partial | No reboot-loop detection or safe mode | Firmware |
-| 9 | Instrument operating states | M | Missing | No shared state model; only LOCAL/REMOTE and firmware trial | Firmware (+ HMI, HTTPS) |
-| 10 | Measurement validity and quality flags | M | Partial | Live values carry no status (principle P1) | Firmware (+ HMI, HTTPS) |
-| 11 | Diagnostics and self-tests | M | Partial | No explicit start-up self-test set or fault code list | Firmware |
+| 7 | Power management | M | Done | Supply sense and shutdown built; not yet proved on the core board | Firmware, PCB |
+| 8 | Watchdog and fault recovery | M | Done | None at platform level (safe mode after a reboot loop) | Firmware |
+| 9 | Instrument operating states | M | Partial | State shown on the touchscreen and web header (HMI, HTTPS pull requests) | Firmware (+ HMI, HTTPS) |
+| 10 | Measurement validity and quality flags | M | Partial | Quality shown on every value on the touchscreen and web (HMI, HTTPS) | Firmware (+ HMI, HTTPS) |
+| 11 | Diagnostics and self-tests | M | Done | None at platform level (self-test list, published code list) | Firmware |
 | 12 | Alarm management | M | Done | None at platform level | Firmware |
 | 13 | Communications framework | M (interfaces O) | Done | No written framework document for new interfaces | Firmware |
-| 14 | Common data model | M | Partial | No versioned register map or API compatibility policy | Firmware, HTTPS |
-| 15 | Communications health | M | Partial | No heartbeat register or last-good-communication time exposed | Firmware |
-| 16 | Data logging | M (capacity O) | Done | Power-off gaps are implied, not marked in the data CSV | Firmware |
-| 17 | Event and audit logging | M | Done | Calibration actions wait on item 18 | Firmware |
-| 18 | Calibration framework | M | Partial | Storage only; no calibration record (dates, references, outcome, factory/field) | Firmware |
-| 19 | User and service access | M | Partial | No calibration level; no credential recovery | Firmware, HMI, HTTPS |
-| 20 | Cybersecurity | M | Partial | Debug lock, secure boot, short PINs | Firmware, PCB |
+| 14 | Common data model | M | Done | Compatibility policy enforced by the interface snapshots and core version rules | Firmware, HTTPS |
+| 15 | Communications health | M | Done | None at platform level (heartbeat and link age in the Modbus block) | Firmware |
+| 16 | Data logging | M (capacity O) | Done | None at platform level (GAP rows) | Firmware |
+| 17 | Event and audit logging | M | Done | None at platform level | Firmware |
+| 18 | Calibration framework | M | Done | The procedure itself is per product | Firmware |
+| 19 | User and service access | M | Done | None at platform level (calibration permission, token recovery) | Firmware, HMI, HTTPS |
+| 20 | Cybersecurity | M | Partial | Debug lock, secure boot (4-character passwords accepted by Gary) | Firmware, PCB |
 | 21 | User interface conventions | M (screen O) | Partial | No written convention; quality and comms health not on every value | HMI, HTTPS |
-| 22 | Service and maintenance support | S | Partial | No diagnostic package; no operating-hours counter; no service records | Firmware, HTTPS |
-| 23 | Factory provisioning and testing | S | Partial | No provisioning procedure, board test or stored test results | Firmware, PCB |
+| 22 | Service and maintenance support | S | Partial | Diagnostic package download; service manual | Firmware, HTTPS |
+| 23 | Factory provisioning and testing | S | Partial | No provisioning procedure or board test (test results are stored) | Firmware, PCB |
 | 24 | Electrical and environmental robustness | M | Partial | No written design basis (EMC levels, IP, humidity) or test plan | PCB |
-| 25 | Version control and traceability | M | Partial | No release notes, build ID or supported-combinations matrix | Firmware |
+| 25 | Version control and traceability | M | Partial | Release notes and the supported-combinations matrix | Firmware |
 | 26 | Verification and documentation | M | Partial | Nothing run on hardware; no operator, service or comms manuals | All |
 
-Score: 8 Done, 17 Partial, 1 Missing.
+Score: 16 Done, 10 Partial, 0 Missing (refreshed 26 Oct after the section 8 firmware work).
 
 ## 4. Requirements
 
@@ -88,10 +88,10 @@ Each table lists the requirements for one item, its class, the CORE status and w
 |---|---|---|---|---|
 | CIP-01.1 | Unique serial number, changeable only under developer authority, never copied by a backup restore | M | Done | D25, `plat_serial.c`, parameter 50 |
 | CIP-01.2 | Product/model identifier | M | Done | `cfg.product` in `/api/info`; `PLAT_FW_PRODUCT` in the image header |
-| CIP-01.3 | Hardware revision, read from the board | M | Partial | Parameter `hw_rev` is a factory setting. The board has revision straps (PE7, PE8 in `CORE_PCB.md`) but the firmware does not read them. **Gap:** read the straps at boot and refuse or warn when they disagree with `hw_rev` |
+| CIP-01.3 | Hardware revision, read from the board | M | Done (host) | Straps PE7/PE8 read at boot (`bsp_hw_straps`), parameter 319, `/api/info` `board_rev`; alarm 22 HW_REV when they differ from the factory `hw_rev` |
 | CIP-01.4 | Firmware version | M | Done | `/api/info`, System screen, power-up event |
 | CIP-01.5 | Identity readable locally (screen or service port) | M | Done | System screen; web page |
-| CIP-01.6 | Identity readable remotely over every supervisory interface | M | Partial | `/api/info` has it all. **Gap:** Modbus has no fixed identity block. Add Modbus function 43/14 (Read Device Identification) or a fixed register block that every product keeps at the same address |
+| CIP-01.6 | Identity readable remotely over every supervisory interface | M | Done | Modbus 43/14 and the platform block at input registers 9000-9199 (identity, versions); `/api/info` |
 | CIP-01.7 | Chip unique ID as the root of identity (MAC, serial tokens) | M | Done | `bsp_chip_uid` |
 
 ### 4.2 Clock and timekeeping
@@ -103,14 +103,13 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-02.3 | Detection of an invalid clock | M | Done | "clock not set"; the scan keeps the previous snapshot and counts it |
 | CIP-02.4 | Timestamps stored in UTC; local time applied for display | M | Done (exception) | **Exception by decision (Gary, 26 Oct): keep D22.** The RTC and records hold local standard time (no daylight saving) plus a UTC offset setting. Records never jump, because there is no daylight saving. A change of the offset is logged, and records are read with the offset in force when they were written |
 | CIP-02.5 | Every clock change logged with source and old/new time | M | Done | Event log, D22 |
-| CIP-02.6 | Clock quality exposed (synchronised, last sync time, source) | O | Missing | Not exposed on Modbus or the web API |
-
+| CIP-02.6 | Clock quality exposed (synchronised, last sync time, source) | O | Done | Parameters 316-318, Modbus 9084-9089, `/api/time` synced, sync time, source |
 ### 4.3 Firmware updates
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-03.1 | Documented local update method | M | Partial | Web upload by factory login (`PLATFORM.md` 5b). **Gap:** no technician's procedure document |
-| CIP-03.2 | Compatibility check before install | M | Partial | Product code, size, minimum version. **Gap:** add the supported hardware revision range and the settings layout version to the image header |
+| CIP-03.2 | Compatibility check before install | M | Done | Product, size, minimum version, and in header v2 the board revision range and settings layout (FW_E_HARDWARE at upload and activation) |
 | CIP-03.3 | Integrity verification | M | Done | SHA-256 while streaming and again after flash read-back |
 | CIP-03.4 | Authenticity verification | M | Done | ECDSA P-256 signature (D14). Production key still to be generated |
 | CIP-03.5 | Clear update status | M | Done | Progress, staged, trial countdown on web and touchscreen; update history (last 6) |
@@ -133,7 +132,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-05.1 | Persistent settings with defaults | M | Done | Parameter table, `PF_PERSIST` |
 | CIP-05.2 | Permitted ranges and validation on every route | M | Done | One check order for touchscreen, web and Modbus; re-checked in the scan |
 | CIP-05.3 | Version identification of the settings structure | M | Done | `layout_version` in each FRAM image |
-| CIP-05.4 | Version identification of a configuration (which settings a unit has) | O | Missing | **Gap:** a configuration checksum shown on the System screen and in exports, so two units can be compared |
+| CIP-05.4 | Version identification of a configuration (which settings a unit has) | O | Done | Configuration checksum, parameter 332, `/api/info` and `/api/service` `config_crc` |
 | CIP-05.5 | Export and import | M | Done | Backup/restore with CRCs; factory part only at factory level |
 | CIP-05.6 | Controlled migration when firmware changes the structure | M | Done | Records by ID; unknown skipped; missing defaulted; `migrate` hook; tested |
 
@@ -154,9 +153,9 @@ Each table lists the requirements for one item, its class, the CORE status and w
 |---|---|---|---|---|
 | CIP-07.1 | Defined supply requirements | M | Done | 24 VDC, 18-32 V (`CORE_PCB.md` 5) |
 | CIP-07.2 | Protection against expected supply faults | M | Done (design) | Fuse, reverse-polarity diode, TVS, 60 V buck. Schematic in PR #5, not built |
-| CIP-07.3 | Brownout detection | M | Partial | MCU BOR; brown-out reset recorded and alarmed. **Gap:** supply-sense ADC (PC0) not read by the firmware |
+| CIP-07.3 | Brownout detection | M | Done (host) | MCU BOR, and the supply-sense ADC (PC0) averaged; alarm 20 SUPPLY outside 19-30 V (`plat_power.h`) |
 | CIP-07.4 | Predictable start-up | M | Done | Always LOCAL, outputs all off, settings loaded before the first scan |
-| CIP-07.5 | Predictable shutdown | M | Missing | **Gap:** on falling supply, stop log and FRAM writes before the brown-out, log "power fail", show supply voltage on the System screen |
+| CIP-07.5 | Predictable shutdown | M | Done (host) | On falling supply, log and FRAM writes stop after a `power_fail` event; resume on `power_restored`; supply voltage parameter 305 |
 | CIP-07.6 | Automatic recovery after power restoration | M | Done | No operator action needed; network, I/O boards and logging resume |
 
 ### 4.8 Watchdog and fault recovery
@@ -167,37 +166,34 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-08.2 | Software task supervision | M | Done | `task_monitor` with per-task silence limits |
 | CIP-08.3 | Recovery from stalled operations | M | Done | Outputs to safe state, then reset; display and I/O boards retried without a reset |
 | CIP-08.4 | Reset cause recorded | M | Done | `plat_diag`, power-up event, UNEXPECTED_RESET; CPU fault handlers in PR #3 |
-| CIP-08.5 | Repeated reboot failures detected | M | Partial | `boots` and `wdg_resets` are counted. **Gap:** after N resets within M minutes, start in a safe mode (no application logic, network and service only) and raise an alarm |
-
+| CIP-08.5 | Repeated reboot failures detected | M | Done | Crashes in a short window start SAFE_MODE: no application, outputs off, network and service only; alarm 19 |
 ### 4.9 Instrument operating states
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-09.1 | One shared state model: STARTING, INITIALISING, WARMING_UP, READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT (and SAFE_MODE from CIP-08.5) | M | Missing | The platform has LOCAL/REMOTE, firmware trial, CAL_INVALID and the application's own states, but no common state. **Gap:** a platform state variable the application sets through `plat_app_t`, with the platform forcing FAULT or SAFE_MODE |
-| CIP-09.2 | Defined data permitted in each state (which quality flag readings get) | M | Missing | Ties to CIP-10: e.g. every reading is "maintenance" while in MAINTENANCE |
-| CIP-09.3 | Defined actions permitted in each state | M | Partial | `fw_safe()` already refuses updates during a calibration. **Gap:** a state/action matrix (update, calibrate, restore defaults, mode change) |
-| CIP-09.4 | State shown on every interface | M | Missing | Touchscreen header, web header, a Modbus register |
-| CIP-09.5 | State changes logged | M | Missing | Event log |
-
+| CIP-09.1 | One shared state model: STARTING, INITIALISING, WARMING_UP, READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT (and SAFE_MODE from CIP-08.5) | M | Done | `plat_state.h`: the agreed states (section 7), parameter, Modbus, `/api/info` `state` |
+| CIP-09.2 | Defined data permitted in each state (which quality flag readings get) | M | Done | The state forces each value's quality (warming up, maintenance, calibration, fault) |
+| CIP-09.3 | Defined actions permitted in each state | M | Done | State/action rules in `plat_state.h` (update, calibrate, restore defaults); `fw_safe()` |
+| CIP-09.4 | State shown on every interface | M | Partial | Modbus block and `/api/info`; touchscreen and web headers in the HMI and HTTPS pull requests |
+| CIP-09.5 | State changes logged | M | Done | `state` event on every change |
 The agreed state/action matrix is in section 7.
 
 ### 4.10 Measurement validity and quality flags
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-10.1 | Every reported measurement carries a status | M | Partial | Logged values: yes. Inputs: fault bits and analog status. **Gap:** live values on Modbus, `/api/values` and the touchscreen have none |
-| CIP-10.2 | Status codes distinguish: valid, stale, unavailable, out-of-range, warming-up, maintenance, calibration (plus fault) | M | Partial | The log has OK / FLAG / BAD / N/A. **Gap:** one platform quality enum with these 8 values; the log keeps its 4 as a summary of it |
-| CIP-10.3 | A value not updated within its expected period becomes "stale" automatically | M | Missing | **Gap:** the platform stamps each measured value with its update time and marks it stale itself, so a stalled application cannot leave a good-looking number |
-| CIP-10.4 | Instrument state forces quality (CIP-09.2) | M | Missing | |
-| CIP-10.5 | Status readable on Modbus next to the value | M | Missing | Proposal: a status register per measurement, at a fixed offset from the value |
-
+| CIP-10.1 | Every reported measurement carries a status | M | Done | Each declared measurement carries a quality: Modbus block, `/api/values`, the log |
+| CIP-10.2 | Status codes distinguish: valid, stale, unavailable, out-of-range, warming-up, maintenance, calibration (plus fault) | M | Done | One quality enum (`PLAT_Q_*`, 8 values); the log keeps OK/FLAG/BAD/N/A as its summary |
+| CIP-10.3 | A value not updated within its expected period becomes "stale" automatically | M | Done | The platform stamps each value and marks it stale itself after its period |
+| CIP-10.4 | Instrument state forces quality (CIP-09.2) | M | Done | See CIP-09.2 |
+| CIP-10.5 | Status readable on Modbus next to the value | M | Done | Modbus input registers 9020-9051: the quality of measurement 0-31 |
 ### 4.11 Diagnostics and self-tests
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-11.1 | Start-up checks of essential functions | M | Partial | FRAM image CRCs and device ID, NOR position rebuild, display probe, font CRCs, I/O board identification. **Gap:** a named start-up self-test list (firmware image CRC, RAM test, RTC running, FRAM and NOR IDs, PHY link) with one pass/fail result each |
+| CIP-11.1 | Start-up checks of essential functions | M | Done | Named start-up self-test list (`plat_selftest.h`): image hash, RAM, RTC, settings, calibration, log flash, PHY, I/O port, display, product checks; parameter 333, alarm 23, `/api/info` |
 | CIP-11.2 | Ongoing checks | M | Done | Heap and stack margins, scan overruns, store and log status, display, I/O boards, IP conflict |
-| CIP-11.3 | Consistent fault codes with descriptions | M | Partial | Platform alarms 1-18 have IDs and texts; `plat_fault_t` codes. **Gap:** one published fault/alarm code list for the family (IDs 1-99 platform, 100+ product) |
+| CIP-11.3 | Consistent fault codes with descriptions | M | Done | `docs/FAULT_CODES.md`, generated from the tables by `make fault-codes`; every platform alarm has a "what to check" text, also on `/api/alarms` |
 | CIP-11.4 | Service access to diagnostic information | S | Done | `/api/info` (health, scan, last fault, boots), System screen |
 
 ### 4.12 Alarm management
@@ -227,8 +223,8 @@ The agreed state/action matrix is in section 7.
 |---|---|---|---|---|
 | CIP-14.1 | Consistent parameter names, units, types, ranges | M | Done | One `param_def_t` table with name, unit, type, range |
 | CIP-14.2 | Scaling and byte/word order defined per value | M | Done | `mb_map_t` flags and `dec` |
-| CIP-14.3 | Shared status definitions | M | Partial | Waits on CIP-09 and CIP-10 |
-| CIP-14.4 | Versioned register map and API | M | Missing | **Gap:** a map version register and a `"api"` version in `/api/info`; a generated register map document per product release |
+| CIP-14.3 | Shared status definitions | M | Done | The state and quality enums are shared by every interface (CIP-09, CIP-10) |
+| CIP-14.4 | Versioned register map and API | M | Done | Map version (input register 9001), block layout version, `/api/info` `api`; interface snapshots in `docs/interface/` |
 | CIP-14.5 | Compatibility policy | M | Missing | Proposal: addresses never move within a major version; new values only added; removed values read as "unavailable" for one major version |
 | CIP-14.6 | Platform parameters 1-999 the same in every product; product parameters from 1000 | M | Done | Already the numbering rule |
 
@@ -236,8 +232,8 @@ The agreed state/action matrix is in section 7.
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-15.1 | Heartbeat or health indication | M | Partial | **Gap:** a heartbeat counter register the PLC can watch (the PLC's own watchdog then covers a stopped core, as decided for the system-OK relay) |
-| CIP-15.2 | Last successful communication tracked | M | Partial | Tracked internally for REMOTE mode and per I/O board. **Gap:** expose "seconds since last supervisory request" and per-board last-good time |
+| CIP-15.1 | Heartbeat or health indication | M | Done | Heartbeat counter in the Modbus block |
+| CIP-15.2 | Last successful communication tracked | M | Done | Seconds since the last supervisory request in the Modbus block (input register 9004); I/O boards marked lost after 1 s |
 | CIP-15.3 | Stale commands and data detected | M | Done | I/O outputs: sequence numbers, all-off after 250 ms of no scan output; boards marked lost after 1 s |
 | CIP-15.4 | Defined behaviour on loss and restoration of the supervisory link | M | Done | REMOTE_LINK_LOST after `comms_timeout`, application safe state; recovers on traffic |
 
@@ -250,8 +246,7 @@ The agreed state/action matrix is in section 7.
 | CIP-16.3 | Defined retention | O | Done | Set by NOR size (capacity table in `PLATFORM.md` 5a) |
 | CIP-16.4 | Storage-full behaviour | M | Done | Overwrite oldest (D12) |
 | CIP-16.5 | Export format | M | Done | CSV with schema headers; date range |
-| CIP-16.6 | Gaps and clock changes handled | M | Partial | Clock steps close the interval. **Gap:** mark a power-off gap explicitly in the data CSV (a row with quality N/A or a comment line) rather than only in the event log |
-
+| CIP-16.6 | Gaps and clock changes handled | M | Done | Clock steps close the interval; a power-off gap is one row with empty values and quality GAP |
 ### 4.17 Event and audit logging
 
 | ID | Requirement | Class | Status | Where / gap |
@@ -261,7 +256,7 @@ The agreed state/action matrix is in section 7.
 | CIP-17.3 | Firmware updates | M | Done | Every step, plus the update history |
 | CIP-17.4 | Clock changes | M | Done | |
 | CIP-17.5 | Configuration changes with old and new values and source | M | Done | Touchscreen/web/Modbus and login level |
-| CIP-17.6 | Calibration actions | M | Missing | Comes with CIP-18 |
+| CIP-17.6 | Calibration actions | M | Done | `cal` events: start, accept, abort, revert, with channel and outcome |
 | CIP-17.7 | Operator identity where available | O | Partial | Login level only; no named users |
 
 ### 4.18 Calibration framework
@@ -269,9 +264,9 @@ The agreed state/action matrix is in section 7.
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-18.1 | Common storage of calibration data | M | Done | FACTORY region, dual copies |
-| CIP-18.2 | A calibration record: coefficients, date and time, reference values, outcome (pass/fail/aborted), who | M | Missing | **Gap:** a platform `cal_record_t` per calibrated channel, with a short history (e.g. last 8) |
-| CIP-18.3 | Factory calibration distinguished from field calibration | M | Missing | Proposal: factory record kept separately and never overwritten in the field; field calibration stored as its own record; "revert to factory calibration" available at factory level |
-| CIP-18.4 | Changes validated before use | M | Partial | Range checks on the values. **Gap:** a product hook to accept or reject a whole calibration (as `check_block` does for records) |
+| CIP-18.2 | A calibration record: coefficients, date and time, reference values, outcome (pass/fail/aborted), who | M | Done | Calibration record per channel (coefficients, time, references, as-found/as-left, outcome, level) and a history (12, 3 on 32 KB FRAM) |
+| CIP-18.3 | Factory calibration distinguished from field calibration | M | Done | Factory record kept apart; field calibration its own record; revert to factory at factory level |
+| CIP-18.4 | Changes validated before use | M | Done | All-or-nothing coefficient write with range checks, plus the channel's `check` hook |
 | CIP-18.5 | Calibration survives firmware updates and restore defaults | M | Done | Tested (`t_migration`, `t_restore_defaults_cmd`) |
 | CIP-18.6 | Invalid calibration blocks measurement | M | Done | CAL_INVALID |
 | CIP-18.7 | The procedure itself | O | n/a | Product-specific, out of platform scope |
@@ -280,9 +275,9 @@ The agreed state/action matrix is in section 7.
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-19.1 | Separate permission levels: view, operation, configuration, calibration, engineering | M | Partial | View, operator, admin, factory (+ developer token for the serial). **Gap:** a calibration level (or a calibration permission) between admin and factory |
+| CIP-19.1 | Separate permission levels: view, operation, configuration, calibration, engineering | M | Done | View, operator, admin, factory, and a calibration permission (parameter 321, default admin) |
 | CIP-19.2 | Sensitive actions protected | M | Done | Levels, confirmations (`PF_CONFIRM`), touchscreen confirmation of web firmware restarts |
-| CIP-19.3 | Controlled credential recovery | M | Missing | **Gap:** today a lost admin PIN needs the factory PIN. Proposal: a one-time reset token signed by the developer key and bound to the chip ID (the same mechanism as the serial), entered on the touchscreen |
+| CIP-19.3 | Controlled credential recovery | M | Done | One-time reset token signed by the developer key and bound to the chip ID (`POST /api/auth/reset`, `tools/reset_token.py`) |
 | CIP-19.4 | Lockout against guessing | M | Done | 5 tries, 30 s |
 | CIP-19.5 | Session expiry | M | Done | 10 minutes |
 
@@ -292,7 +287,7 @@ The agreed state/action matrix is in section 7.
 |---|---|---|---|---|
 | CIP-20.1 | Changes authenticated | M | Done | Logins on web; HttpOnly SameSite cookie; `X-CEMS` header |
 | CIP-20.2 | Updates authenticated | M | Done | Signed images (D14) |
-| CIP-20.3 | Credentials protected | M | Partial | Salted SHA-256, write-only secrets, not in backups. **Gap:** 4-digit PINs; a slow hash (PBKDF2) and longer passwords for web logins |
+| CIP-20.3 | Credentials protected | M | Done | PBKDF2-HMAC-SHA256 (4096 rounds, per-unit salt), write-only, not in backups. 4-character minimum at every level by Gary's decision (26 Oct) |
 | CIP-20.4 | Unnecessary interfaces restricted | M | Partial | Separate I/O network; port 80 redirect can be closed; Modbus read-only and IP filter; no outbound connections by default. **Gap:** production debug lock (RDP / product state) |
 | CIP-20.5 | External inputs validated | M | Done | One check path; strict JSON and Modbus parsing; CSP (PR #6) |
 | CIP-20.6 | Secure network communications | M | Done | HTTPS only (D11); SMTP over TLS with pinning |
@@ -316,11 +311,10 @@ The agreed state/action matrix is in section 7.
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-22.1 | Exportable diagnostic package | S | Missing | **Gap:** one download (zip or JSON) with `/api/info`, settings (no secrets), event log, last fault, firmware history, I/O board status |
-| CIP-22.2 | Operating-hours counters | S | Missing | **Gap:** total hours and hours since last service, in FRAM META, kept over updates and restore defaults |
+| CIP-22.2 | Operating-hours counters | S | Done | Total and since-service hours (0.1 h), parameters 330/331, kept over updates and restore defaults |
 | CIP-22.3 | Fault history | S | Done | Event log; last fault; firmware history |
-| CIP-22.4 | Service records | S | Missing | **Gap:** a short service log (date, technician, work done) entered at factory level |
-| CIP-22.5 | Identify and diagnose without source code | S | Partial | Most information is on screen. Needs CIP-11.3 and a service manual |
-
+| CIP-22.4 | Service records | S | Done | Service log (8 entries) at factory level, `/api/service` |
+| CIP-22.5 | Identify and diagnose without source code | S | Partial | Most information is on screen; `docs/FAULT_CODES.md` (CIP-11.3). Needs a service manual |
 ### 4.23 Factory provisioning and testing
 
 | ID | Requirement | Class | Status | Where / gap |
@@ -328,7 +322,7 @@ The agreed state/action matrix is in section 7.
 | CIP-23.1 | Controlled assignment of identity | S | Done | Serial token tool (D25) |
 | CIP-23.2 | Loading of firmware and defaults | S | Partial | SWD for first programming. **Gap:** a written provisioning sequence (program, sign, set serial, set hw_rev, calibrate, test) |
 | CIP-23.3 | Hardware test procedures | S | Missing | **Gap:** a board test (FRAM, NOR, RTC, both PHYs, display, supply sense) runnable from the service UART or the web at factory level |
-| CIP-23.4 | Retained manufacturing test results | S | Missing | **Gap:** a test result record in the FACTORY region (date, station, pass/fail per test) |
+| CIP-23.4 | Retained manufacturing test results | S | Done | Manufacturing test record in the FACTORY region (`POST /api/service/test`) |
 | CIP-23.5 | Factory-only settings protected | S | Done | `PF_FACTORY`, factory level, never restored from a user-level backup |
 
 ### 4.24 Electrical and environmental robustness
@@ -345,9 +339,9 @@ The agreed state/action matrix is in section 7.
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-25.1 | Traceable firmware revisions | M | Partial | Git and a version number. **Gap:** build ID (git hash) in the image and on `/api/info` |
-| CIP-25.2 | Traceable hardware revisions | M | Partial | `hw_rev`; schematic in git. Needs CIP-01.3 |
-| CIP-25.3 | Traceable configuration and calibration revisions | M | Missing | CIP-05.4 and CIP-18.2 |
+| CIP-25.1 | Traceable firmware revisions | M | Done | Version, build ID (git hash) in the image header and on `/api/info`; core version (`plat_version.h`) |
+| CIP-25.2 | Traceable hardware revisions | M | Done (host) | Board straps and the factory `hw_rev` (CIP-01.3); schematic in git |
+| CIP-25.3 | Traceable configuration and calibration revisions | M | Done | Configuration checksum (CIP-05.4) and calibration history (CIP-18.2) |
 | CIP-25.4 | Release notes | M | Missing | **Gap:** `CHANGELOG.md` and a release note per version |
 | CIP-25.5 | Supported combinations identified | M | Missing | **Gap:** a matrix of firmware × core hardware revision × I/O board register map version |
 

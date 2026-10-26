@@ -1,7 +1,8 @@
 /* test_iobus.c - the I/O bus on both links (RS-485 and Ethernet): RTU framing, the master against simulated I/O boards
  * (connect, outputs and inputs, channel ranges, stale and safe outputs, a board that
  * stops answering and comes back, node restarts, faults, wrong type, settings conflicts,
- * lost replies, the node's comms timeout) and the simulated node's own rules. */
+ * lost replies, the node's comms timeout) and the simulated node's own rules.
+ * Requirements proved here: CIP-13.2, 13.3, 15.3, 26.4. */
 #include <string.h>
 #include "tst.h"
 #include "iobus.h"

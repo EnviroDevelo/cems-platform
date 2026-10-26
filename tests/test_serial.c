@@ -1,4 +1,5 @@
-/* test_serial.c - serial number changes need a developer token (plat_serial.h, D25). */
+/* test_serial.c - serial number changes need a developer token (plat_serial.h, D25).
+ * Requirements proved here: CIP-01.1, 01.7, 19.3. */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
