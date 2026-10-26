@@ -33,12 +33,24 @@ typedef struct {
     uint32_t fault_cfsr;        /* hard fault: SCB->CFSR (which fault: mem, bus, usage) */
     uint32_t fault_hfsr;        /* hard fault: SCB->HFSR (escalated, vector table read) */
     uint32_t fault_addr;        /* hard fault: the data address that faulted (MMFAR/BFAR), 0 if not known */
+    uint32_t up_ms;             /* this boot's uptime, refreshed by the supervisor (how long the last boot ran) */
+    uint32_t fault_armed;       /* a fault was recorded since this boot: a software reset after it is a crash */
+    uint32_t loop_crashes;      /* crashes in a row, with less than PLAT_LOOP_WINDOW_MS of running between the first and now */
+    uint32_t loop_run_ms;       /* running time since the first of them */
     uint32_t check;             /* ~ of the sum of the words above */
 } plat_diag_t;
 
 extern plat_diag_t plat_diag;
 
 void plat_diag_boot(bsp_reset_cause_t cause);   /* once, early in plat_start() */
+
+/* Reboot loop (CIP-08.5). A crash is a watchdog reset, or a software reset after a recorded
+ * fault (plat_diag_fault: task silent, stack, heap, assert, CPU fault). PLAT_LOOP_RESETS
+ * crashes with less than PLAT_LOOP_WINDOW_MS of running in total is a loop: the unit starts in
+ * SAFE_MODE. A power cycle, a clean restart (firmware update) or a boot that runs for the
+ * whole window clears it. */
+void plat_diag_tick(uint32_t now_ms);           /* supervisor: keeps up_ms; clears the count after a long run */
+bool plat_diag_reboot_loop(void);
 void plat_diag_fault(plat_fault_t f, int32_t task, const char *name, uint32_t arg, uint32_t now_ms);
 bool plat_diag_valid(void);
 

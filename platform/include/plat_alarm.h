@@ -110,6 +110,7 @@ enum {
     ALARM_ID_IOB_SUPPLY        = 16,  /* an I/O board's field 24 V supply is missing */
     ALARM_ID_IOB_NODE_RESET    = 17,  /* an I/O board was restarted by its watchdog */
     ALARM_ID_IOB_TEMP_FAULT    = 18,  /* an I/O board temperature input: open, short, out of range, converter fault */
+    ALARM_ID_SAFE_MODE         = 19,  /* restarted repeatedly: safe mode, the application stopped (CIP-08.5) */
 };
 
 /* A copy of one alarm, for lists. */

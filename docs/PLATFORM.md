@@ -783,7 +783,7 @@ READY or MEASURING with `plat_app_state()` and asks for CALIBRATION the same way
 selects MAINTENANCE with parameter 301 (`maintenance`, operator level, kept across a restart so a
 reset during maintenance does not report valid data). The platform forces FAULT while
 CAL_INVALID or an application alarm marked `AL_STOPS` is active, and SAFE_MODE after a reboot
-loop (CIP-08.5, next). Precedence: SAFE_MODE, FAULT, CALIBRATION, MAINTENANCE, then the
+loop (below). Precedence: SAFE_MODE, FAULT, CALIBRATION, MAINTENANCE, then the
 application's state. Every change except the normal start is an event (`state`). Parameter 302
 holds the clock when the state was entered.
 
@@ -819,6 +819,15 @@ header's link indicator) and `plat_state_request()` to enter or leave maintenanc
 
 A measurement table that names a missing or non-numeric parameter stops the start-up like the
 other tables (fault record "meas table").
+
+**Reboot loop and safe mode (CIP-08.5).** The fault record (`plat_diag`, kept across a reset)
+counts crashes: a watchdog reset, or a software reset after a recorded fault (task silent, stack,
+heap, assert, CPU fault). Three crashes (`PLAT_LOOP_RESETS`) with less than 10 minutes
+(`PLAT_LOOP_WINDOW_MS`) of running between them in total start the unit in SAFE_MODE: none of the
+application's code runs, not even its `init`, and every output stays off. The network, the web
+page, Modbus, the touchscreen and firmware update all run, so the unit can be looked at and fixed
+remotely, and platform alarm 19 SAFE_MODE is raised (email, Modbus). A power cycle, a clean restart
+(a firmware update) or a boot that runs for the whole window starts normally again.
 
 ## 6. Integration rules for the application (VM/MUX) code
 

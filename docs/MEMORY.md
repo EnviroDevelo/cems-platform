@@ -8,18 +8,18 @@ module, and before choosing hardware. Last run: 2026-10-26.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 414.4 KB | 1016.0 KB | 41 % | 601.6 KB |
-| RAM (STM32H573/H563, 640 KB) | 468.5 KB | 640.0 KB | 73 % | 171.5 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 414.7 KB | 1016.0 KB | 41 % | 601.3 KB |
+| RAM (STM32H573/H563, 640 KB) | 468.6 KB | 640.0 KB | 73 % | 171.4 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 20.3 | 0.1 |
+| Scan engine, queue, watchdog, diag | 20.5 | 0.1 |
 | Parameter table | 12.0 | 25.7 |
 | Parameter store (FRAM) | 5.3 | 57.2 |
 | Event log / data logger | 14.5 | 6.8 |
-| Alarm manager, instrument state | 6.7 | 3.2 |
+| Alarm manager, instrument state | 6.8 | 3.2 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 1.7 | 0.1 |
 | Firmware update, signatures, serial | 6.0 | 1.6 |
@@ -28,7 +28,7 @@ module, and before choosing hardware. Last run: 2026-10-26.
 | Web server + page + logins | 50.4 | 73.4 |
 | HTTPS (tls.c + mbedTLS) | 96.4 | 46.9 |
 | Touch UI + EVE driver | 52.2 | 2.5 |
-| Task layer (FreeRTOS glue) | 2.7 | 99.7 |
+| Task layer (FreeRTOS glue) | 2.8 | 99.7 |
 | Board support (BSP) | 0.9 | 0.6 |
 | lwIP + Ethernet driver | 53.5 | 51.4 |
 | FreeRTOS kernel + heap | 9.8 | 64.8 |
@@ -40,12 +40,12 @@ module, and before choosing hardware. Last run: 2026-10-26.
 
 ## With the VM/MUX application (app_vmmux)
 
-The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own changes since (25 Oct: +72.5 KB RAM for the larger stacks and heaps; +2.4 KB flash for the fault handlers and the W5500 I/O port; 26 Oct: +2.5 KB flash, +0.2 KB RAM for the instrument state and quality); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
+The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own changes since (25 Oct: +72.5 KB RAM for the larger stacks and heaps; +2.4 KB flash for the fault handlers and the W5500 I/O port; 26 Oct: +2.8 KB flash, +0.3 KB RAM for the instrument state, quality and safe mode); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash | 490.2 KB | 1016.0 KB | 48 % | 525.8 KB |
-| RAM | 511.1 KB | 640.0 KB | 80 % | 128.9 KB |
+| Flash | 490.5 KB | 1016.0 KB | 48 % | 525.5 KB |
+| RAM | 511.2 KB | 640.0 KB | 80 % | 128.8 KB |
 
 The application itself: 83.5 KB of flash, 46.1 KB of RAM (its tags, timers and tables).
 

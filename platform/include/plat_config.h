@@ -108,6 +108,13 @@
 #define PLAT_SILENCE_IOBUS_MS     1000u
 
 /* ---- I/O bus, RS-485 or Ethernet (iobus.h, D27) ---- */
+#ifndef PLAT_LOOP_RESETS
+#define PLAT_LOOP_RESETS          3u     /* crashes ... (CIP-08.5) */
+#endif
+#ifndef PLAT_LOOP_WINDOW_MS
+#define PLAT_LOOP_WINDOW_MS       600000u /* ... within this much running time: start in SAFE_MODE */
+#endif
+
 #ifndef PLAT_MEAS_MAX
 #define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
 #endif

@@ -12,6 +12,8 @@
 #include "bsp_host.h"
 #include "param_store.h"
 #include "nvm.h"
+#include "plat_diag.h"
+#include "plat_config.h"
 
 extern uint8_t plat_meas_q[];
 
@@ -229,7 +231,64 @@ static void t_request_and_link(void) {
     CHECK_EQ(plat_link_age_ms(bsp_ms()), 1234u);
 }
 
+/* CIP-08.5: crashes in a row with little running between them */
+static void crash(bsp_reset_cause_t how, uint32_t ran_ms) {
+    plat_diag_tick(ran_ms);
+    if (how == BSP_RESET_SOFTWARE) plat_diag_fault(PLAT_FAULT_TASK_SILENT, 1, "scan", 0, ran_ms);
+    plat_diag_boot(how);
+}
+
+static void t_reboot_loop(void) {
+    plat_diag_boot(BSP_RESET_POWER_ON);
+    CHECK(!plat_diag_reboot_loop());
+    crash(BSP_RESET_IWDG, 30000);
+    crash(BSP_RESET_SOFTWARE, 30000);                                   /* a fault, then the reset */
+    CHECK(!plat_diag_reboot_loop());
+    CHECK_EQ(plat_diag.loop_crashes, 2u);
+    crash(BSP_RESET_IWDG, 30000);
+    CHECK(plat_diag_reboot_loop());                                     /* 3 in 90 s of running */
+    CHECK_EQ(plat_diag.fault_armed, 0u);
+    plat_diag_boot(BSP_RESET_POWER_ON);                                 /* a power cycle clears it */
+    CHECK(!plat_diag_reboot_loop());
+
+    /* a clean software restart (firmware update, no fault recorded) is not a crash, and ends a series */
+    crash(BSP_RESET_IWDG, 1000); crash(BSP_RESET_IWDG, 1000);
+    plat_diag_tick(5000); plat_diag_boot(BSP_RESET_SOFTWARE);
+    CHECK_EQ(plat_diag.loop_crashes, 0u);
+    crash(BSP_RESET_IWDG, 1000);
+    CHECK(!plat_diag_reboot_loop());
+
+    /* crashes far apart are not a loop: the window counts running time */
+    plat_diag_boot(BSP_RESET_POWER_ON);
+    crash(BSP_RESET_IWDG, PLAT_LOOP_WINDOW_MS / 2);
+    crash(BSP_RESET_IWDG, PLAT_LOOP_WINDOW_MS / 2);
+    crash(BSP_RESET_IWDG, PLAT_LOOP_WINDOW_MS / 2);                    /* over the window: a new series */
+    CHECK(!plat_diag_reboot_loop());
+    CHECK_EQ(plat_diag.loop_crashes, 1u);
+    /* a boot that runs for the whole window clears the count */
+    crash(BSP_RESET_IWDG, 1000);
+    CHECK_EQ(plat_diag.loop_crashes, 2u);
+    plat_diag_tick(PLAT_LOOP_WINDOW_MS + 1u);
+    CHECK_EQ(plat_diag.loop_crashes, 0u);
+    CHECK(plat_diag_valid());
+    plat_diag_boot(BSP_RESET_POWER_ON);
+}
+
+/* safe mode raises its alarm and keeps the application's logic from running */
+static void t_safe_mode_alarm(void) {
+    setup();
+    plat_state_safe_mode(true);
+    scan(1);
+    CHECK_EQ(plat_state(), PLAT_ST_SAFE_MODE);
+    scan(21);
+    CHECK(alarm_active(ALARM_ID_SAFE_MODE));
+    CHECK_EQ(param_quality(1200, PLAT_MEAS_NO_INDEX), PLAT_Q_UNAVAILABLE);
+    plat_state_safe_mode(false);
+    scan(21);
+    CHECK(!alarm_active(ALARM_ID_SAFE_MODE));
+}
+
 void test_state_all(void) {
-    RUN(t_table); RUN(t_states); RUN(t_cal_invalid); RUN(t_quality); RUN(t_request_and_link);
+    RUN(t_table); RUN(t_states); RUN(t_cal_invalid); RUN(t_quality); RUN(t_request_and_link); RUN(t_reboot_loop); RUN(t_safe_mode_alarm);
     plat_state_reset_for_test();
 }
