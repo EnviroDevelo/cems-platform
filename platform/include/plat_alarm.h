@@ -113,6 +113,7 @@ enum {
     ALARM_ID_SAFE_MODE         = 19,  /* restarted repeatedly: safe mode, the application stopped (CIP-08.5) */
     ALARM_ID_SUPPLY            = 20,  /* the 24 V supply outside 19-30 V (plat_power.h) */
     ALARM_ID_CAL_DUE           = 21,  /* a channel's calibration is overdue (plat_cal.h, CIP-18) */
+    ALARM_ID_HW_REV            = 22,  /* the board's revision straps disagree with the factory hw_rev (CIP-01.3) */
 };
 
 /* A copy of one alarm, for lists. */

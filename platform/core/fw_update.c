@@ -100,7 +100,8 @@ const char *fw_err_name(fw_err_t e) {
     static const char *const n[] = { "ok", "busy", "state", "not a firmware image", "wrong product", "size",
                                      "flash error", "checksum mismatch", "signature not valid", "no image",
                                      "not safe to restart now", "older than the minimum version allowed",
-                                     "waiting for confirmation on the touchscreen" };
+                                     "waiting for confirmation on the touchscreen",
+                                     "built for another board revision" };
     return (unsigned)e < sizeof n / sizeof n[0] ? n[e] : "error";
 }
 
@@ -115,7 +116,7 @@ uint32_t fw_parse_version(const char *s) {
 }
 
 bool fw_header_ok(const fw_header_t *h) {
-    return h->magic == FW_MAGIC && h->hdr_size == FW_HDR_SIZE && h->hdr_version == 1u &&
+    return h->magic == FW_MAGIC && h->hdr_size == FW_HDR_SIZE && (h->hdr_version == 1u || h->hdr_version == 2u) &&
            h->hdr_crc == plat_crc32(0, h, (uint32_t)offsetof(fw_header_t, hdr_crc));
 }
 
@@ -216,8 +217,23 @@ size_t fw_history(fw_hist_t *out, size_t max) {
     return n;
 }
 
+#ifndef PLAT_BUILD_ID
+#define PLAT_BUILD_ID "dev"
+#endif
+uint16_t plat_board_rev_tag = 0xFFFFu;          /* parameter 319 */
+const char *fw_build_id(void) { return PLAT_BUILD_ID; }
+int fw_board_rev(void) { return plat_board_rev_tag == 0xFFFFu ? -1 : (int)plat_board_rev_tag; }
+
+/* does the image's header allow this board? (v1 images state no range) */
+static bool hw_fits(const fw_header_t *h) {
+    int rev = fw_board_rev();
+    return h->hdr_version < 2u || rev < 0 || (rev >= h->hw_min && rev <= h->hw_max);
+}
+
 void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char *running_version) {
     memset(&F, 0, sizeof F);
+    uint8_t rev;
+    plat_board_rev_tag = bsp_hw_straps(&rev) ? rev : 0xFFFFu;
     F.fl = flash;
     F.fram = fram && fram->persistent ? fram : NULL;
     F.fram_addr = fram_addr;
@@ -319,6 +335,7 @@ fw_err_t fw_upload_data(const uint8_t *p, uint32_t n) {
                 if (!fw_header_ok(&F.hdr)) return fail(FW_E_HEADER);
                 if (F.hdr.product != PLAT_FW_PRODUCT) return fail(FW_E_PRODUCT);
                 if (F.hdr.version < min_version()) return fail(FW_E_OLD);
+                if (!hw_fits(&F.hdr)) return fail(FW_E_HARDWARE);
                 if (F.hdr.image_size != F.total - FW_HDR_SIZE || F.hdr.image_size > trailer_off()) return fail(FW_E_SIZE);
                 F.hdr_ok = true;
             }
@@ -343,7 +360,10 @@ fw_err_t fw_upload_end(void) {
     if (memcmp(dig, F.hdr.sha256, 32) != 0) return fail(FW_E_HASH);
     if (F.hdr.flags & FW_F_SIGNED) {
         sha256_t s; uint8_t h[32];
-        sha256_init(&s); sha256_update(&s, &F.hdr, FW_SIGNED_LEN); sha256_final(&s, h);
+        sha256_init(&s); sha256_update(&s, &F.hdr, FW_SIGNED_LEN);
+        if (F.hdr.hdr_version >= 2u)            /* v2 signs the fields after the signature too */
+            sha256_update(&s, (const uint8_t *)&F.hdr + FW_SIGNED2_OFF, (uint32_t)offsetof(fw_header_t, hdr_crc) - FW_SIGNED2_OFF);
+        sha256_final(&s, h);
         if (!fw_signature_check(h, F.hdr.sig)) return fail(FW_E_SIGNATURE);
     } else if (fw_signing_required()) {
         return fail(FW_E_SIGNATURE);
@@ -366,6 +386,7 @@ fw_err_t fw_request_activate_from(uint8_t src, uint8_t level) {
     if (F.rec.state == FW_ST_TRIAL) return FW_E_STATE;       /* confirm or roll back first */
     if (!F.staged) return FW_E_NO_IMAGE;
     if (F.staged_hdr.version < min_version()) return FW_E_OLD;
+    if (!hw_fits(&F.staged_hdr)) return FW_E_HARDWARE;
     if (!safe()) {
         plat_log_event(LOG_EV_FW_UPDATE, src, level, 0, NAN, NAN, "refused: not safe");
         return FW_E_NOT_SAFE;
@@ -462,6 +483,14 @@ void fw_status(fw_status_t *o) {
     o->upload_total = F.total;
     o->staged = F.staged;
     if (F.staged) copy_ver(o->staged_version, sizeof o->staged_version, F.staged_hdr.version_str);
+    o->staged_hw_min = 0; o->staged_hw_max = 255; o->staged_build[0] = 0;
+    if (F.staged && F.staged_hdr.hdr_version >= 2u) {
+        o->staged_hw_min = F.staged_hdr.hw_min; o->staged_hw_max = F.staged_hdr.hw_max;
+        size_t k = 0;
+        for (; k + 1 < sizeof o->staged_build && k < sizeof F.staged_hdr.build_id && F.staged_hdr.build_id[k]; ++k)
+            o->staged_build[k] = F.staged_hdr.build_id[k];
+        o->staged_build[k] = 0;
+    }
     copy_ver(o->running_version, sizeof o->running_version, F.running);
     o->trial_left_ms = F.rec.state == FW_ST_TRIAL ? F.trial_left : 0;
     o->last_error = F.last_err;

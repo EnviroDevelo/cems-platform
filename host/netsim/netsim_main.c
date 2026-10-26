@@ -112,6 +112,7 @@ static uint16_t locked_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_
 static iob_port_t sim_rs485 = { .xfer = locked_xfer };
 struct iob_port *bsp_rs485(void) { return &sim_rs485; }
 bool bsp_supply_mv(uint32_t *mv) { (void)mv; return false; }   /* not measured here */
+bool bsp_hw_straps(uint8_t *rev) { *rev = 0; return true; }    /* a Rev A board */
 
 /* Ethernet: the same two boards on a simulated network, or real boards over sockets when
  * CEMS_IOB_TCP is set (CEMS_IOB_TCP_PORT, CEMS_IOB_DISC_PORT and CEMS_IOB_DISC_TO=a.b.c.d change

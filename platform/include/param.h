@@ -179,6 +179,7 @@ enum {
     PARAM_ID_CLOCK_SYNCED     = 316, /* RO: the clock is synchronised (plat_clock.h, CIP-02.6) */
     PARAM_ID_CLOCK_SYNC_TIME  = 317, /* RO: when it was last set or confirmed (local s since 1970; 0 = not since start) */
     PARAM_ID_CLOCK_SOURCE     = 318, /* RO: PLAT_CLK_SRC_* of that */
+    PARAM_ID_BOARD_REV        = 319, /* RO: board revision from its straps (65535 = no straps; fw_update.h, CIP-01.3) */
     PARAM_ID_CAL_CMD          = 320, /* calibration command (plat_cal.h): command << 8 | channel; momentary */
     PARAM_ID_CAL_LEVEL        = 321, /* factory: login level that may calibrate (CIP-19.3; default admin) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
