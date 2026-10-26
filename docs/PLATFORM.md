@@ -216,7 +216,10 @@ factory) needs 4 characters or more. **Lost passwords
 (CIP-19.3):** a one-time token from the developer, signed with the developer key over the chip ID
 and the unit's reset count (`tools/reset_token.py`; `GET /api/auth/reset` shows what to sign,
 `POST /api/auth/reset sig=..` needs no login), puts all three back to the defaults and ends every
-session; a wrong token counts as a failed login, and both are logged. Every POST must carry an `X-CEMS: 1` header and the cookie
+session; a wrong token counts as a failed login, and both are logged. On the web page, the login row has a
+"Lost passwords?" panel that shows the line to send the developer (with a Copy button) and a box
+for the token, which is checked as 128 hex digits before it is sent; firmware without a developer
+key says recovery is not possible (`tests/integration/reset_web_test.py`, `docs/web_reset.png`). Every POST must carry an `X-CEMS: 1` header and the cookie
 is `HttpOnly; SameSite=Strict`, so another web page cannot submit changes. If the
 instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner appears
 and the values grey out until polling recovers. Admin users can download a parameter
@@ -960,6 +963,13 @@ overdue. Commands go through parameter 320 like every other write, so the local/
 apply (web and Modbus only in REMOTE; Modbus never). `GET /api/cal` gives the channels (in force,
 factory, due time, overdue), the history (newest first) and which channel is calibrating.
 
+**On the web page** (Calibration section, shown when the product declares channels): each
+channel's record in force, its factory record and its due date (marked overdue); Begin and,
+at factory login, Revert to factory; while a channel is calibrating, a box with Accept and
+Abort; the history with outcome, who, the points (reference, as found, as left) and the
+coefficients. Refusals show the instrument's reason. `tests/integration/cal_web_test.py`
+runs a calibration and an abort through the page. Screenshot: `docs/web_cal.png`.
+
 ## 5n. Service history (CIP-22, CIP-23.4, CIP-05.4)
 
 | Record | What | Where it shows |
@@ -972,6 +982,15 @@ factory, due time, overdue), the history (newest first) and which channel is cal
 The first three are in the FRAM factory region (dual copy; survive firmware updates and restore
 defaults) and belong to the unit: a backup carries them for reference, but restoring it into
 another unit never copies them (`RF_UNIT`, like the serial number).
+
+On the web page, the Service section shows operating hours, hours since service, the
+configuration checksum, the service log and the last manufacturing test (PASSED/FAILED badge
+plus a pass/fail/not-run count per station). At factory login it also shows two forms: add a
+log entry (technician up to 15 characters, work up to 39) and record a test result (station up
+to 11 characters, results as `1,1,2,...` where 1 = pass, 2 = fail, 0 = not run; anything else
+is refused before it is sent). Below factory login the forms are hidden and a 403 says so. The
+section hides itself on firmware without `/api/service`. Checked by
+`tests/integration/cal_web_test.py`; screenshot `docs/web_service.png`.
 
 ## 5o. Start-up self-test (CIP-11.1)
 
@@ -998,6 +1017,10 @@ every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a ch
 has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
 CAL_INVALID and DISPLAY_FAULT).
 
+On the web page, the Service section shows the self-test as one badge per check (pass, fail,
+"not checked" for skipped, or pending), with a summary line naming any that failed. It is visible
+without a login (`tests/integration/cal_web_test.py`, `docs/web_service.png`).
+
 **Keeping the core common (spec section 9).** The core has its own version (`plat_version.h`,
 `/api/info` `core`). `plat_app_check()` refuses an application description that breaks the
 contract before anything starts. `make test` also checks that every mandatory requirement is
@@ -1012,7 +1035,8 @@ web API snapshot (`tools/api_snapshot.py`) and the shared CIP-26 tests
 (with what to check), self-test checks, fault record codes, reset causes, event codes and
 firmware update refusals. `make fault-codes` writes it from the firmware's own tables
 (`tools/fault_codes.c`), and `make test` fails if it is out of date or if a platform alarm has
-no help text. A product's own list: `make fault-codes APP=<dir>`.
+no help text. A product's own list: `make fault-codes APP=<dir>`. `/api/alarms` carries the same help text
+(`help`), and the web page's alarm list shows it under each alarm as "What to check".
 
 ## 6. Integration rules for the application (VM/MUX) code
 

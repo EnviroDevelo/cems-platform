@@ -96,6 +96,12 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <span class="note">Viewing needs no login. Changes need one.</span>
       <span class="err" id="loginerr"></span>
     </div>
+    <details id="rstbox"><summary class="note">Lost passwords?</summary>
+      <p class="note" id="rstnote">If every password is lost, the developer can send a one-time token that puts all of them back to the factory defaults. Send the developer the line below.</p>
+      <div class="row" id="rstmsgrow"><input id="rstmsg" readonly size="48" aria-label="Message for the developer"><button class="ghost" type="button" id="rstcopy">Copy</button></div>
+      <div class="row" id="rstform"><input id="rsttok" maxlength="128" size="48" placeholder="Token from the developer (128 hex digits)" autocomplete="off" spellcheck="false"><button type="button" id="rstbtn">Reset passwords</button></div>
+      <span class="err" id="rsterr"></span>
+    </details>
     <div class="row" id="userrow" style="display:none">
       <span>Logged in as <b id="who"></b>. Changes allowed for <span id="left"></span> more without activity.</span>
       <button class="ghost" id="logoutbtn">Log out</button>
@@ -132,6 +138,50 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <div class="row" style="margin-bottom:8px"><select id="tradd"><option value="">Add a value to trend</option></select><span class="row" id="trpens"></span></div>
     <canvas class="trc" id="trc"></canvas>
     <p class="note" id="trnote">Up to 4 values, each on its own scale; click a value's name for its scale. Recorded in this browser while the page is open (last 60 min). The data CSV under Event log holds the instrument's own record.</p>
+  </section>
+
+  <section id="calsec" style="display:none">
+    <div class="row" style="justify-content:space-between">
+      <h2>Calibration</h2>
+      <span class="row"><span class="err" id="calerr"></span></span>
+    </div>
+    <div class="dlg" id="calrun" style="display:none"><b id="calruntxt"></b>
+      <div class="row" style="margin-top:6px"><button id="calaccept">Accept</button><button class="ghost" id="calabort">Abort</button></div></div>
+    <table>
+      <thead><tr><th>Channel</th><th>In force</th><th>Factory</th><th>Due</th><th></th></tr></thead>
+      <tbody id="calrows"></tbody>
+    </table>
+    <details style="margin-top:8px"><summary class="note">History</summary>
+      <table><thead><tr><th>Time</th><th>Channel</th><th>Kind</th><th>Outcome</th><th>By</th><th>Points (reference, as found, as left)</th><th>Coefficients</th></tr></thead>
+      <tbody id="calhist"></tbody></table></details>
+    <p class="note">Calibrating needs REMOTE mode and the calibration login level. A calibration at factory login replaces the factory record; field calibrations never change it. Revert puts the factory record back in force (factory login).</p>
+  </section>
+
+  <section id="svcsec" style="display:none">
+    <h2>Service</h2>
+    <div class="wrow">
+      <div class="tile"><div class="k">Operating hours</div><div class="v" id="svchours">-</div></div>
+      <div class="tile"><div class="k">Since last service</div><div class="v" id="svcsince">-</div></div>
+      <div class="tile" title="Two units with the same checksum have the same settings"><div class="k">Settings checksum</div><div class="v" id="svccrc">-</div></div>
+    </div>
+    <table><thead><tr><th>Date</th><th>Technician</th><th>Work done</th><th>Login</th></tr></thead><tbody id="svclog"></tbody></table>
+    <div class="row" id="svcform" style="display:none;margin-top:8px">
+      <input id="svctech" maxlength="15" placeholder="Technician" style="width:140px">
+      <input id="svcwork" maxlength="39" placeholder="Work done" style="flex:1;min-width:200px">
+      <button id="svcadd">Add to service log</button>
+    </div>
+    <h2 style="margin-top:12px">Start-up self-test</h2>
+    <p class="note" id="stsum">-</p>
+    <div class="row" id="stlist"></div>
+    <h2 style="margin-top:12px">Manufacturing test</h2>
+    <p id="svctest" class="note">-</p>
+    <div class="row" id="svctestform" style="display:none">
+      <input id="svcstation" maxlength="11" placeholder="Station" style="width:120px">
+      <input id="svcres" placeholder="Results in test order: 1 pass, 2 fail, 0 not run (e.g. 1,1,2)" style="flex:1;min-width:260px">
+      <button class="ghost" id="svcrec">Record test</button>
+    </div>
+    <span class="err" id="svcerr"></span>
+    <p class="note">Entries are kept in the instrument's factory memory: they survive firmware updates and restore defaults, and a backup restored into another unit never copies them. Adding to the log or recording a test needs the factory login.</p>
   </section>
 
   <section id="iobsec" style="display:none">
@@ -270,6 +320,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note">The instrument keeps the site's local standard time (no daylight saving), so records never jump.
       Every change of the clock is in the event log.</p>
     <p id="clocknow" style="font-size:16px">-</p>
+    <p id="clockq" style="display:none"></p>
     <div class="row">
       <button id="clockpc">Set to this computer's time</button>
       <input id="clockin" type="datetime-local" step="1">
@@ -772,6 +823,28 @@ function showState(st) {
                 ({ WARMING_UP: 1, MAINTENANCE: 1, CALIBRATION: 1 }[st] ? "b-warn" : ""));
 }
 
+/* start-up self-test (CIP-11.1): one badge per check, from /api/info */
+const ST_NAMES = { image: "Firmware image", ram: "RAM", rtc: "Clock", settings: "Settings memory", calibration: "Calibration",
+                   log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display" };
+let stKey = "";
+function showSelftest(st) {
+  if (!st || !Array.isArray(st.tests)) { $("stsum").textContent = "Not reported by this firmware."; $("stlist").replaceChildren(); return; }
+  const key = JSON.stringify(st);
+  if (key === stKey) return;
+  stKey = key;
+  const fails = st.tests.filter(t => t.result === "fail");
+  $("stsum").textContent = !st.done ? "Running..." : fails.length
+    ? `FAILED: ${fails.map(t => ST_NAMES[t.name] || t.name).join(", ")}. See the event log and the alarm list.` : "All checks passed.";
+  $("stsum").style.color = st.done && fails.length ? "var(--bad)" : "";
+  $("stlist").replaceChildren(...st.tests.map(t => {
+    const b = document.createElement("span");
+    b.className = "badge " + ({ pass: "b-ok", fail: "b-bad", pending: "b-warn" }[t.result] || "");
+    b.textContent = `${ST_NAMES[t.name] || t.name}: ${t.result === "skipped" ? "not checked" : t.result}`;
+    b.title = t.name;
+    return b;
+  }));
+}
+
 /* ---- diagnostic package (CIP-22.1): one file from the existing endpoints, put together here ---- */
 async function diagPackage() {
   const btn = $("diagbtn"); btn.disabled = true; btn.textContent = "Collecting...";
@@ -820,10 +893,12 @@ async function refreshInfo() {
   try {
     const i = await api("/api/info");
     $("product").textContent = i.product;
-    $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
+    $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}${i.build && i.build !== "dev" ? " (" + i.build + ")" : ""}${i.core ? "  ·  core " + i.core : ""}` +
+      `${i.board_rev !== undefined && i.board_rev !== null ? "  ·  board rev " + i.board_rev : ""}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
     showAlarmBadge(i.alarms);
     showState(i.state);
+    showSelftest(i.selftest);
     const lk = $("link");                                 /* supervisory link (CIP-21.5): LINK OK / LINK LOST */
     const ct = defs.find(d => d.name === "comms_timeout"), off = ct && lastValues[ct.id] === 0;   /* no watchdog: NO LINK */
     if (typeof i.link_lost === "boolean") {
@@ -836,6 +911,7 @@ async function refreshInfo() {
     const changed = newLevel !== level || i.mode !== mode;
     level = newLevel; mode = i.mode;
     $("loginrow").style.display = level ? "none" : "flex";
+    $("rstbox").style.display = level ? "none" : "block";
     $("userrow").style.display = level ? "flex" : "none";
     $("who").textContent = i.session.level;
     $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
@@ -882,6 +958,7 @@ async function pollAlarms() {
         const name = td(""); const dot = document.createElement("span"); dot.className = "sev sev-" + a.severity;
         name.append(dot, `${a.text} `); const small = document.createElement("span"); small.className = "note";
         small.textContent = `${a.severity}, ${a.name} (${a.id})`; name.appendChild(small);
+        if (a.help) { const h = document.createElement("div"); h.className = "note alhelp"; h.textContent = "What to check: " + a.help; name.appendChild(h); }
         td(state + (a.latch && a.active && a.unacked ? " (latched)" : ""));
         const act = td("");
         if (a.unacked && level >= 1) {
@@ -1162,6 +1239,15 @@ async function refreshClock() {
     const t = await api("/api/time");
     $("clocknow").textContent = t.set ? `Instrument clock: ${t.text} (UTC${t.utc_offset_min >= 0 ? "+" : "-"}${pad(Math.floor(Math.abs(t.utc_offset_min) / 60))}:${pad(Math.abs(t.utc_offset_min) % 60)})`
                                       : "Instrument clock: NOT SET (records use time since start-up)";
+    const q = $("clockq");                                /* clock quality (CIP-02.6): set or confirmed from outside in the last 24 h */
+    if (typeof t.synced === "boolean") {
+      const src = { sntp: "the time server", web: "the web page", touchscreen: "the touchscreen", modbus: "the PLC (Modbus)" }[t.source] || "";
+      q.style.display = ""; q.innerHTML = '<span class="badge"></span> <span class="note"></span>';
+      q.children[0].textContent = t.synced ? "SYNCHRONISED" : "NOT SYNCHRONISED";
+      q.children[0].className = "badge " + (t.synced ? "b-ok" : "b-warn");
+      q.children[1].textContent = t.sync_time ? `Last set or confirmed ${calT(t.sync_time)}${src ? " from " + src : ""}.` +
+        (t.synced ? "" : " More than 24 h ago: records may drift.") : "Not set or confirmed since start-up: the clock runs on its battery.";
+    }
     const s = t.sntp;
     $("sntpstat").textContent = !s.on ? "No time server: the clock is set by hand, from the PLC (parameter 85) or from this page."
       : s.error ? `Time server: ${s.error} (tries ${s.tries}).`
@@ -1259,6 +1345,118 @@ async function pollIob() {
   setTimeout(pollIob, 1000);
 }
 pollIob();
+
+/* ---- calibration records (CIP-18, /api/cal): channels, the one calibrating, history ---- */
+const calT = t => { if (!t) return "-"; const d = new Date(t * 1000), z = n => String(n).padStart(2, "0");   /* the unit's local time */
+  return `${d.getUTCFullYear()}-${z(d.getUTCMonth() + 1)}-${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}`; };
+const calRec = c => c ? `${calT(c.time)}, ${c.kind}${c.outcome !== "pass" ? " (" + c.outcome + ")" : ""}` : "none";
+const calNum = x => typeof x === "number" ? (Number.isInteger(x) ? String(x) : x.toPrecision(5)) : "-";
+let calLast = null;
+async function calCmd(body, ask) {
+  if (ask && !confirm(ask)) return;
+  $("calerr").textContent = "";
+  try { await api("/api/cal", form(body)); }
+  catch (e) { $("calerr").textContent = e.status === 401 ? "Please log in" : explain(e); }
+  pollCal(true);
+}
+async function pollCal(once) {
+  try {
+    const j = await api("/api/cal");
+    calLast = j;
+    $("calsec").style.display = j.channels.length ? "block" : "none";
+    if (j.channels.length) {
+      const run = j.active !== null && j.active !== undefined;
+      $("calrun").style.display = run ? "block" : "none";
+      if (run) $("calruntxt").textContent = `Calibrating ${j.channels[j.active] ? j.channels[j.active].name : "channel " + j.active}. When the procedure has finished, accept to put the new coefficients in force, or abort to keep the old ones.`;
+      const tb = $("calrows"); tb.textContent = "";
+      j.channels.forEach((c, k) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td>";
+        tr.children[0].textContent = c.name;
+        tr.children[1].textContent = calRec(c.in_force);
+        tr.children[2].textContent = calRec(c.factory);
+        tr.children[3].textContent = calT(c.due_time);
+        const over = c.overdue !== undefined ? c.overdue : j.due && j.channels.length === 1;   /* the instrument judges "due" */
+        if (over) { tr.children[3].className = "err"; tr.children[3].textContent += " (overdue)"; }
+        if (level && !run) {
+          const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Begin";
+          b.onclick = () => calCmd({ cmd: "begin", ch: k }, `Begin calibrating ${c.name}? The instrument goes to CALIBRATION.`);
+          b.style.marginRight = "4px"; tr.children[4].appendChild(b);
+          if (level >= 3 && c.factory) {
+            const r = document.createElement("button"); r.className = "ghost"; r.textContent = "Revert to factory";
+            r.onclick = () => calCmd({ cmd: "revert", ch: k }, `Put ${c.name}'s factory calibration back in force?`);
+            tr.children[4].appendChild(r);
+          }
+        }
+        tb.appendChild(tr);
+      });
+      const hb = $("calhist"); hb.textContent = "";
+      for (const h of j.history) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td></td><td></td>";
+        tr.children[0].textContent = calT(h.time);
+        tr.children[1].textContent = j.channels[h.ch] ? j.channels[h.ch].name : h.ch;
+        tr.children[2].textContent = h.kind;
+        tr.children[3].textContent = h.outcome;
+        if (h.outcome === "fail") tr.children[3].className = "err";
+        tr.children[4].textContent = `${h.src || ""} / ${h.level || ""}`;
+        tr.children[5].textContent = (h.points || []).map(p => p.map(calNum).join(", ")).join("; ") || "-";
+        tr.children[6].textContent = (h.coef || []).map(calNum).join(", ") || "-";
+        hb.appendChild(tr);
+      }
+      if (!j.history.length) hb.innerHTML = '<tr><td colspan="7" class="note">No calibrations recorded yet</td></tr>';
+    }
+  } catch (e) { /* the value poll shows the connection state */ }
+  if (!once) setTimeout(pollCal, calLast && calLast.active !== null && calLast.active !== undefined ? 1000 : 3000);
+}
+/* ---- service history (CIP-22.2, 22.4, 23.4, 05.4, /api/service) ---- */
+async function pollSvc(once) {
+  try {
+    const j = await api("/api/service");
+    $("svcsec").style.display = "block";
+    $("svchours").textContent = j.run_hours.toFixed(1) + " h";
+    $("svcsince").textContent = j.since_service_hours.toFixed(1) + " h";
+    $("svccrc").textContent = j.config_crc.toUpperCase();
+    const tb = $("svclog"); tb.textContent = "";
+    for (const e of j.log) {
+      const tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td><td></td><td></td>";
+      [calT(e.time), e.tech, e.work, e.level].forEach((x, k) => tr.children[k].textContent = x);
+      tb.appendChild(tr);
+    }
+    if (!j.log.length) tb.innerHTML = '<tr><td colspan="4" class="note">No service entries yet</td></tr>';
+    const t = j.test, words = ["not run", "pass", "fail"];
+    $("svctest").innerHTML = "";
+    if (!t) $("svctest").textContent = "No manufacturing test recorded.";
+    else {
+      const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : "b-bad"); b.textContent = t.passed ? "PASSED" : "FAILED";
+      const n = document.createElement("span");
+      n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${k + 1} ${words[r] || r}`).join(", ");
+      $("svctest").append(b, n);
+    }
+    $("svcform").style.display = $("svctestform").style.display = level >= 3 ? "flex" : "none";
+  } catch (e) { if (e.status === 404) { $("svcsec").style.display = "none"; return; } }
+  if (!once) setTimeout(pollSvc, 10000);
+}
+async function svcPost(path, body) {
+  $("svcerr").textContent = "";
+  try { await api(path, form(body)); return true; }
+  catch (e) { $("svcerr").textContent = e.status === 403 ? "Needs the factory login" : e.status === 400 ? "Check the entry: " + e.message : explain(e); return false; }
+}
+$("svcadd").onclick = async () => {
+  const tech = $("svctech").value.trim(), work = $("svcwork").value.trim();
+  if (!tech || !work) { $("svcerr").textContent = "Enter the technician and the work done"; return; }
+  if (await svcPost("/api/service/log", { tech, work })) { $("svcwork").value = ""; pollSvc(true); }
+};
+$("svcrec").onclick = async () => {
+  const r = $("svcres").value.replace(/\s/g, "");
+  if (!/^[012](,[012])*$/.test(r)) { $("svcerr").textContent = "Results: digits 0, 1 or 2 separated by commas"; return; }
+  if (await svcPost("/api/service/test", { station: $("svcstation").value.trim(), r })) pollSvc(true);
+};
+pollSvc();
+
+$("calaccept").onclick = () => calCmd({ cmd: "accept" }, "Accept this calibration and put it in force?");
+$("calabort").onclick = () => calCmd({ cmd: "abort" }, "Abort this calibration? The coefficients in force stay.");
+pollCal();
 /* zero capture: the channel's offset is set so it reads the reference thermometer now */
 $("iobcards").onclick = async ev => {
   const btn = ev.target.closest(".tz");
@@ -1327,6 +1525,36 @@ $("loginbtn").onclick = async () => {
   try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
   catch (e) { $("loginerr").textContent = e.message === "locked" ? "Too many attempts, wait 30 s" : "Wrong password"; }
 };
+/* credential recovery (CIP-19.3): a developer token signed over this chip's ID and its reset count */
+async function loadReset() {
+  try {
+    const j = await api("/api/auth/reset");
+    $("rstmsg").value = j.message || "";
+    const ok = j.key && j.message;
+    $("rstmsgrow").style.display = $("rstform").style.display = ok ? "flex" : "none";
+    if (!ok) $("rstnote").textContent = "This firmware has no developer key, so passwords cannot be recovered from the web page. Contact the developer.";
+  } catch (e) {
+    $("rstmsgrow").style.display = $("rstform").style.display = "none";
+    $("rstnote").textContent = e.status === 404 ? "This firmware cannot recover passwords from the web page. Contact the developer." : explain(e);
+  }
+}
+$("rstbox").ontoggle = () => { if ($("rstbox").open) { $("rsterr").textContent = ""; loadReset(); } };
+$("rstcopy").onclick = () => { $("rstmsg").select(); navigator.clipboard?.writeText($("rstmsg").value).catch(() => {}); };
+$("rstbtn").onclick = async () => {
+  const t = $("rsttok").value.trim().toLowerCase();
+  if (!/^[0-9a-f]{128}$/.test(t)) { $("rsterr").textContent = "The token is 128 hex digits (0-9, a-f)"; return; }
+  $("rsterr").textContent = ""; $("rsterr").style.color = "";
+  try {
+    await api("/api/auth/reset", form({ sig: t }));
+    $("rsttok").value = "";
+    $("rsterr").style.color = "var(--ok)";
+    $("rsterr").textContent = "Done: all passwords are back to the factory defaults. Log in and change them.";
+    await refreshInfo(); loadReset();
+  } catch (e) {
+    $("rsterr").textContent = e.status === 429 ? "Too many attempts, wait 30 s" : e.status === 403 ? "That token is not valid for this unit (or was already used)"
+      : e.status === 409 ? "This firmware has no developer key" : explain(e);
+  }
+};
 $("pw").onkeydown = e => { if (e.key === "Enter") $("loginbtn").click(); };
 $("logoutbtn").onclick = async () => { await api("/api/logout", "").catch(() => {}); await refreshInfo(); };
 $("filter").oninput = build;
@@ -1339,10 +1567,11 @@ let fwHistKey = "";
 async function refreshFw() {
   try {
     const f = await api("/api/fw");
-    let t = `Running ${f.running}`;
+    let t = `Running ${f.running}${f.build ? " (build " + f.build + ")" : ""}`;
     if (f.state === "trial") t += ` (on trial: keeps itself in ${f.trial_left_s} s)`;
     if (f.rolled_back) t += ". The last update failed its trial and was rolled back";
-    if (f.staged) t += `. Ready in the spare bank: ${f.staged}`;
+    if (f.staged) t += `. Ready in the spare bank: ${f.staged}` + (f.staged_build ? ` (build ${f.staged_build})` : "") +
+                       (Array.isArray(f.staged_hw) && !(f.staged_hw[0] === 0 && f.staged_hw[1] >= 255) ? `, for board revisions ${f.staged_hw[0]}-${f.staged_hw[1]}` : "");
     if (!f.signing_required) t += ". Development build: unsigned firmware is accepted";
     if (f.waiting_local) t += `. Waiting for someone at the instrument to confirm the restart (${f.waiting_left_s} s left)`;
     if (f.not_safe) t += `. Last restart refused: ${f.not_safe}`;
