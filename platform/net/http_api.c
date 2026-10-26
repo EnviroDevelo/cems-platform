@@ -23,6 +23,7 @@
 #include "plat_state.h"
 #include "plat_cal.h"
 #include "plat_service.h"
+#include "plat_selftest.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -217,6 +218,15 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     { char cb[12]; snprintf(cb, sizeof cb, "%08lx", (unsigned long)plat_config_crc());
       out_str(o, ",\"config_crc\":"); json_str(o, cb); }
     out_str(o, ",\"run_hours\":"); json_float(o, (float)plat_service_hours_x10() / 10.0f);
+    out_str(o, ",\"selftest\":{\"done\":"); json_bool(o, plat_selftest_done());   /* CIP-11.1 */
+    out_str(o, ",\"failed\":"); json_uint(o, plat_selftest_failed());
+    out_str(o, ",\"tests\":[");
+    { const char *nm; uint8_t res;
+      for (unsigned i = 0; plat_selftest_get(i, &nm, &res); ++i) {
+          out_str(o, i ? ",{\"name\":" : "{\"name\":"); json_str(o, nm);
+          out_str(o, ",\"result\":"); json_str(o, plat_selftest_result_name(res)); out_str(o, "}");
+      } }
+    out_str(o, "]}");
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
     out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());

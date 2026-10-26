@@ -21,7 +21,7 @@ MODULES = [  # (module, object-name patterns)
     ("Parameter table", r"^param\.o"),
     ("Parameter store (FRAM)", r"param_store|plat_crc32|nvm_|plat_store_task"),
     ("Event log / data logger", r"plat_log|nor_|log_csv"),
-    ("Alarm manager, state, supply, calibration, service", r"plat_alarm|plat_state|plat_power|plat_cal|plat_service"),
+    ("Alarm manager, state, supply, calibration, service, self-test", r"plat_alarm|plat_state|plat_power|plat_cal|plat_service|plat_selftest"),
     ("Alarm email (SMTP client)", r"^mail\.o"),
     ("Clock + SNTP", r"plat_clock|^sntp\.o"),
     ("Firmware update, signatures, serial", r"fw_update|fw_flash|fw_sig|fw_pubkey|plat_serial|dev_pubkey"),

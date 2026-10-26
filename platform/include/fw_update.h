@@ -207,6 +207,12 @@ extern void (*fw_before_swap)(void);
 bool     fw_header_ok(const fw_header_t *h);
 uint32_t fw_parse_version(const char *s);     /* "1.2.3-dev" -> 0x010203 */
 
+/* Start-up self-test (CIP-11.1): the running image against the SHA-256 in the header an update
+ * left in its bank, max_bytes per call (store task). 1 = matches, 0 = not finished (call again),
+ * -1 = differs or unreadable, -2 = nothing to check against (no header: programmed with the
+ * debugger, or a header for another version; or no flash interface). */
+int fw_running_check(uint32_t max_bytes);
+
 void fw_reset_for_test(void);
 
 #endif

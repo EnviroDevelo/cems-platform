@@ -973,6 +973,31 @@ The first three are in the FRAM factory region (dual copy; survive firmware upda
 defaults) and belong to the unit: a backup carries them for reference, but restoring it into
 another unit never copies them (`RF_UNIT`, like the serial number).
 
+## 5o. Start-up self-test (CIP-11.1)
+
+After every start the unit works through a fixed list of checks (`plat_selftest.h`), each
+with one result: pass, fail or skipped.
+
+| Check | Pass when | Skipped when |
+|---|---|---|
+| `image` | the running firmware hashes to the SHA-256 in the header the update left in its flash bank (16 KB per store-task pass, about 0.6 s for 500 KB) | no header for this version (programmed with the debugger) |
+| `ram` | a March C- test of a 1 KB block passes (before the tasks start; the H573's SRAM also has ECC) | - |
+| `rtc` | the clock's seconds move on within 3 s | the clock has never been set |
+| `settings` | the FRAM answers and holds (not the RAM fallback; no write or table error) | - |
+| `calibration` | a valid factory image was loaded | - |
+| `log_flash` | the log flash answers and is large enough | the RAM stand-in (no flash fitted: the DK) |
+| `net_phy` | the LAN8742A answered when the Ethernet driver started | nothing reported it (PC simulation) |
+| `io_port` | the I/O-port W5500 answered when the I/O bus first used it | not used in the first 10 s (none fitted, no board enabled) |
+| `display` | the touchscreen answers | no display on this hardware |
+| product checks | up to 8 of the product's own (`plat_app_t.selftests`), run once at 10 s | the check says so |
+
+The first six are known within about a second; the rest 10 s after start. Then parameter 333
+holds the failed bits (bit *i* = check *i* above, bit 16 + *j* = product check *j*), the event
+log gets one `selftest` event ("passed", or the failed names), `/api/info` `selftest` lists
+every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a check failed that
+has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
+CAL_INVALID and DISPLAY_FAULT).
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2

@@ -91,6 +91,15 @@ accepts or aborts; your channel's `check` hook may refuse a result that is out o
 ending and the CALIBRATION state are the platform's: do not call `plat_app_state(PLAT_ST_CALIBRATION)`
 for a calibration declared this way.
 
+### Start-up checks (CIP-11.1; PLATFORM.md 5o)
+
+The platform checks its own hardware after every start. A product with hardware of its own to
+check (a pump that must draw current, a sensor that must answer) adds up to 8 entries to
+`plat_app_t.selftests`: `{ "pump", pump_check }`, where the function returns 1 pass, 0 fail or
+-1 skipped. They run once, from the store task, 10 s after start, so keep each one short and do
+not wait in it. Results join the platform's on `/api/info`, in parameter 333 (bits 16 up) and in
+alarm 23.
+
 ### Reserved numbers (spec R5)
 
 Parameters 1-999, alarms 1-99 and Modbus **input registers 9000-9199** belong to the platform and

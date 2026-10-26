@@ -3,6 +3,7 @@
 #include "plat_state.h"
 #include "plat_power.h"
 #include "plat_cal.h"
+#include "plat_selftest.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -53,6 +54,8 @@ static const alarm_def_t core_defs[] = {
       .text = "Calibration due" },
     { .id = ALARM_ID_HW_REV, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "HW_REV",
       .text = "Board revision differs from the factory record" },
+    { .id = ALARM_ID_SELFTEST, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SELFTEST",
+      .text = "Start-up self-test failed: see System information" },
     { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "FW_ROLLED_BACK",
       .text = "Firmware update failed its trial and was undone" },
     { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
@@ -219,6 +222,7 @@ static void poll_platform(void) {
     alarm_set(ALARM_ID_CAL_INVALID, !param_store_calibration_valid());
     alarm_set(ALARM_ID_SAFE_MODE, plat_state() == PLAT_ST_SAFE_MODE);
     alarm_set(ALARM_ID_CAL_DUE, plat_cal_any_due());
+    alarm_set(ALARM_ID_SELFTEST, (plat_selftest_failed() & ~PLAT_STEST_OWN_ALARM) != 0);
     { plat_val_t hw;                      /* only once there is a factory record to compare with */
       alarm_set(ALARM_ID_HW_REV, fw_board_rev() >= 0 && param_store_calibration_valid() &&
                                  param_read(PARAM_ID_HW_REV, &hw) && hw.u != (uint32_t)fw_board_rev()); }

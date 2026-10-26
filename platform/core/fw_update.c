@@ -171,6 +171,42 @@ static bool bank_hash_ok(const fw_header_t *h) {
     return memcmp(dig, h->sha256, 32) == 0;
 }
 
+/* ---------------- the running image (start-up self-test, CIP-11.1) ---------------- */
+static struct {
+    int         result;            /* fw_running_check's answer once known (0 = not yet) */
+    bool        busy;              /* hashing */
+    fw_header_t h;
+    sha256_t    sha;
+    uint32_t    off;
+} RC;
+
+int fw_running_check(uint32_t max_bytes) {
+    if (RC.result) return RC.result;
+    if (!RC.busy) {
+        /* the header an update left in this bank's last sector; none (programmed by the
+         * debugger) or one for another version (the debugger wrote over an updated bank)
+         * leaves nothing to check against */
+        if (!F.fl || F.fl->read(F.fl, true, trailer_off(), &RC.h, sizeof RC.h) != 0 || !fw_header_ok(&RC.h) ||
+            RC.h.image_size > trailer_off() || strncmp(RC.h.version_str, F.running, sizeof RC.h.version_str) != 0)
+            return RC.result = -2;
+        sha256_init(&RC.sha);
+        RC.off = 0;
+        RC.busy = true;
+    }
+    uint8_t buf[WBUF];
+    for (uint32_t done = 0; RC.off < RC.h.image_size && done < max_bytes; done += WBUF) {
+        uint32_t n = RC.h.image_size - RC.off < WBUF ? RC.h.image_size - RC.off : WBUF;
+        if (F.fl->read(F.fl, true, RC.off, buf, n) != 0) return RC.result = -1;
+        sha256_update(&RC.sha, buf, n);
+        RC.off += n;
+    }
+    if (RC.off < RC.h.image_size) return 0;
+    uint8_t dig[32];
+    sha256_final(&RC.sha, dig);
+    RC.busy = false;
+    return RC.result = memcmp(dig, RC.h.sha256, 32) == 0 ? 1 : -1;
+}
+
 /* ---------------- update history ---------------- */
 static void hist_save(void) {
     if (!F.fram) return;
@@ -502,4 +538,4 @@ void fw_status(fw_status_t *o) {
     memcpy(o->not_safe, F.not_safe, sizeof o->not_safe);
 }
 
-void fw_reset_for_test(void) { memset(&F, 0, sizeof F); fw_before_swap = NULL; fw_safe_check = NULL; }
+void fw_reset_for_test(void) { memset(&F, 0, sizeof F); memset(&RC, 0, sizeof RC); fw_before_swap = NULL; fw_safe_check = NULL; }
