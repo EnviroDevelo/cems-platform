@@ -320,6 +320,7 @@ static void t_due(void) {
     set_clock(2026, 11, 26);                               /* 31 days on */
     scan(25);
     CHECK(plat_cal_any_due());
+    CHECK(plat_cal_overdue(0));
     CHECK(alarm_active(ALARM_ID_CAL_DUE));
     run(PLAT_LVL_ADMIN, g, 2, true);
     scan(25);

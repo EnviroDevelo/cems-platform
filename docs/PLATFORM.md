@@ -190,14 +190,16 @@ mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes
 allowed client IP. TCP keepalive notices a vanished client in about 50 s.
 
 **The platform's block (CIP-01.6, 14.4, 15.1, 15.2).** Whatever the application maps, the
-platform adds its own read-only block at input registers 9000-9083 (9000-9199 reserved), the
+platform adds its own read-only block at input registers 9000-9089 (9000-9199 reserved), the
 same in every product, so a PLC or DAHS can identify and supervise any CEMS instrument the same
 way: block layout version (9000), the application's map version (9001, `mb_ident_t.map_version`),
 a heartbeat that counts every 100 ms (9002), the instrument state (9003), seconds since the last
 Modbus or web request (9004), alarms active and the common alarm word (9005-9006), hardware
 revision, serial number and firmware version (9007-9012), web API version (9013), uptime
 (9014-9015), the supply voltage (9016-9017), when the state was entered (9018-9019), the quality
-of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083). The full
+of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083); layout 2 adds the
+clock and its quality (9084-9089: the clock, synchronised, source, when last set or confirmed).
+Registers are only ever added, never moved, and each addition raises the layout version. The full
 layout is in `modbus.h`. An application map entry in that range of the input registers stops the
 start-up ("modbus map"). Function 43/14 (device identification) gives vendor, product and firmware
 as before. Compatibility (CIP-14.5): addresses in the block never move; a new value is added at
@@ -562,6 +564,13 @@ Every change goes to the event log once, with its source and login level (the
 logger's own "clock stepped" detection stays for unexplained jumps). A request is
 applied by the scan task, between scans, so no scan sees a half-set clock. The
 logger closes its averaging interval at a step, as before.
+
+**Clock quality (CIP-02.6).** Parameters 316 `clock_synced`, 317 `clock_sync_time` and 318
+`clock_source` (also in the Modbus block and `/api/time` `synced`, `sync_time`, `source`) say
+whether the clock is trustworthy: synchronised means set or confirmed from outside (an SNTP
+answer, even one that did not need a step; a setting from the web, touchscreen or Modbus) within
+the last 24 h (`PLAT_CLOCK_SYNC_MAX_S`). It is not kept across a restart: after power-up the clock
+runs on the RTC battery and shows "not synchronised" until SNTP answers or someone sets it.
 
 The product board needs a VBAT supply for the RTC (`docs/CUBEMX_SETUP.md`).
 
@@ -928,7 +937,7 @@ and 12 history records on the 128 KB part, 2 and 3 on the 32 KB part. A channel'
 record in force plus its interval; alarm 21 CAL_DUE (warning, email, Modbus) while any channel is
 overdue. Commands go through parameter 320 like every other write, so the local/remote mode rules
 apply (web and Modbus only in REMOTE; Modbus never). `GET /api/cal` gives the channels (in force,
-factory, due time), the history (newest first) and which channel is calibrating.
+factory, due time, overdue), the history (newest first) and which channel is calibrating.
 
 ## 6. Integration rules for the application (VM/MUX) code
 

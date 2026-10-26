@@ -73,6 +73,7 @@ static bool query(uint32_t ip) {
     S.last_ok_ms = bsp_ms() ? bsp_ms() : 1u;
     S.last_diff_s = set ? (int32_t)diff : 0;
     S.error[0] = 0;
+    plat_clock_sntp_ok();                             /* confirmed, whether or not it steps (CIP-02.6) */
     if (!set || diff >= STEP_S || diff <= -STEP_S) {
         if (plat_clock_request(local, PLAT_SRC_INTERNAL, 0, "sntp") == 0) S.steps++;
     }

@@ -4,6 +4,7 @@
 #include <string.h>
 #include "tst.h"
 #include "modbus.h"
+#include "plat_clock.h"
 #include "plat_config.h"
 #include "mbtcp.h"
 
@@ -283,7 +284,7 @@ static void t_mbtcp_framing(void) {
     rx.n = 0; CHECK_EQ(mbtcp_feed(&rx, bad, 12, &used, out, sizeof out), -1);
 }
 
-/* the platform's own block at input registers 9000-9083, the same in every product (CIP-01.6, 15.1, 14.4) */
+/* the platform's own block at input registers 9000-9089, the same in every product (CIP-01.6, 15.1, 14.4) */
 static void t_platform_block(void) {
     setup();
     mb_block_scan(5000);
@@ -300,6 +301,8 @@ static void t_platform_block(void) {
     CHECK_EQ(reg(52), ('C' << 8) | 'E');                  /* "CEMS Supervisor" */
     CHECK_EQ(reg(68), ('A' << 8) | 'c');                  /* "Acme" */
     CHECK_EQ(reg(76), ('1' << 8) | '.');
+    CHECK_EQ(reg(86), 0);                                 /* clock not synchronised (layout 2) */
+    CHECK_EQ(reg(87), PLAT_CLK_SRC_NONE);
     /* the heartbeat moves every 100 ms; the link age counts from the last request */
     param_comms_activity(PLAT_SRC_MODBUS, 5000);
     mb_block_scan(5050); mb_block_scan(5100); mb_block_scan(5150); mb_block_scan(7300);

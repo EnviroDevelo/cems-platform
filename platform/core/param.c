@@ -41,7 +41,9 @@ static uint32_t  p_fw_min;
 static int16_t   p_utc_off;
 static uint32_t  p_sntp_ip, p_clock_set;
 static uint16_t  p_sntp_min;
-extern uint32_t  plat_clock_unix;                                           /* plat_clock.c */
+extern uint32_t  plat_clock_unix, plat_clock_sync_time_tag;                 /* plat_clock.c */
+extern bool      plat_clock_synced_tag;
+extern uint8_t   plat_clock_source_tag;
 static bool      p_mail_en, p_mail_on_clear;
 static uint32_t  p_mail_ip;
 static uint16_t  p_mail_port, p_mail_gap;
@@ -172,6 +174,9 @@ static const param_def_t plat_defs[] = {
     PARAM_TEXT(PARAM_ID_PRODUCT, "product", plat_mb_product, NULL, PLAT_LVL_VIEW, PF_RO),
     PARAM_TEXT(PARAM_ID_VENDOR, "vendor", plat_mb_vendor, NULL, PLAT_LVL_VIEW, PF_RO),
     PARAM_TEXT(PARAM_ID_FW_TEXT, "fw_text", plat_mb_fw_text, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_BIT (PARAM_ID_CLOCK_SYNCED, "clock_synced", plat_clock_synced_tag, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_CLOCK_SYNC_TIME, "clock_sync_time", plat_clock_sync_time_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_UINT(PARAM_ID_CLOCK_SOURCE, "clock_source", plat_clock_source_tag, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
                PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),

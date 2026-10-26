@@ -31,6 +31,24 @@ void plat_clock_scan(void);                 /* scan task, pre_logic: applies a r
 bool plat_clock_now(uint32_t *local_unix);  /* any task: the clock as of the last scan; false = never set */
 int32_t plat_clock_utc_offset_s(void);      /* parameter 82, in seconds */
 
+/* Clock quality (CIP-02.6). The source of the last setting or confirmation, when it was, and
+ * whether the clock counts as synchronised: set or confirmed by any outside source (an SNTP
+ * answer, whether or not it stepped the clock; a setting from the web, touchscreen or Modbus)
+ * within PLAT_CLOCK_SYNC_MAX_S. Not kept across a restart: after power-up the clock runs on
+ * the RTC battery and is "not synchronised" until the next SNTP answer or setting.
+ * Parameters 316 clock_synced, 317 clock_sync_time, 318 clock_source; the Modbus block;
+ * /api/time. */
+#ifndef PLAT_CLOCK_SYNC_MAX_S
+#define PLAT_CLOCK_SYNC_MAX_S 86400u
+#endif
+enum { PLAT_CLK_SRC_NONE = 0, PLAT_CLK_SRC_SNTP, PLAT_CLK_SRC_TOUCH, PLAT_CLK_SRC_WEB, PLAT_CLK_SRC_MODBUS };
+void        plat_clock_sntp_ok(void);       /* net task: a good SNTP answer (sntp.c) */
+bool        plat_clock_synced(void);        /* any task */
+uint32_t    plat_clock_sync_time(void);     /* local s since 1970 of the last setting or confirmation; 0 = none since start */
+uint8_t     plat_clock_source(void);        /* PLAT_CLK_SRC_* */
+const char *plat_clock_source_name(uint8_t s);   /* "sntp", "touchscreen", "web", "modbus", "" */
+void        plat_clock_reset_for_test(void);
+
 /* SNTP client (platform/net/sntp.c), net task. */
 typedef struct {
     uint32_t last_ok_ms;      /* uptime of the last good answer, 0 = none yet */

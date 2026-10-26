@@ -50,6 +50,10 @@ static const mb_map_t block[] = {
     MB_ENTRY(MB_INPUT, B(52), PARAM_ID_PRODUCT,          MBF_BYTES),
     MB_ENTRY(MB_INPUT, B(68), PARAM_ID_VENDOR,           MBF_BYTES),
     MB_ENTRY(MB_INPUT, B(76), PARAM_ID_FW_TEXT,          MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(84), PARAM_ID_CLOCK_UNIX,       MBF_U32),     /* layout 2 (CIP-02.6) */
+    MB_ENTRY(MB_INPUT, B(86), PARAM_ID_CLOCK_SYNCED,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(87), PARAM_ID_CLOCK_SOURCE,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(88), PARAM_ID_CLOCK_SYNC_TIME,  MBF_U32),
 };
 #define N_BLOCK (sizeof block / sizeof block[0])
 
