@@ -275,6 +275,8 @@ static void t_api(void) {
     }
     CHECK_EQ(call("GET", "/api/cal", NULL, false), 200);          /* calibration records (CIP-18): none declared */
     CHECK(has("{\"active\":null,\"due\":false,\"channels\":[],\"history\":[]}"));
+    CHECK_EQ(call("GET", "/api/service", NULL, false), 200);      /* service history (CIP-22, 23.4, 05.4) */
+    CHECK(has("\"run_hours\":0,\"since_service_hours\":0,\"config_crc\":\"") && has("\"log\":[],\"test\":null}"));
     CHECK_EQ(call("GET", "/api/nothing", NULL, false), 404);
     CHECK_EQ(call("PUT", "/api/values", NULL, false), 405);
 
@@ -289,6 +291,8 @@ static void t_api(void) {
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=500", true), 400); CHECK(has("\"error\":\"range\""));
     CHECK_EQ(call("POST", "/api/cal", "cmd=begin&ch=0", true), 400); CHECK(has("\"error\":\"no such channel\""));
     CHECK_EQ(call("POST", "/api/cal", "cmd=fly", true), 400);
+    CHECK_EQ(call("POST", "/api/service/log", "tech=Sam&work=Pump", true), 403);   /* factory only */
+    CHECK_EQ(call("POST", "/api/service/test", "station=A&r=1,3", true), 400);
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=abc", true), 400); CHECK(has("\"error\":\"value\""));
     CHECK_EQ(call("POST", "/api/write", "id=1003&v=2", true), 403);   /* admin entry */
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=50&id=1002&v=Stack%20A&id=1004&o=1&v=-5,5", true), 200);

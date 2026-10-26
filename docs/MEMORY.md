@@ -8,26 +8,26 @@ module, and before choosing hardware. Last run: 2026-10-26.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 430.2 KB | 1016.0 KB | 42 % | 585.8 KB |
-| RAM (STM32H573/H563, 640 KB) | 471.3 KB | 640.0 KB | 74 % | 168.7 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 433.3 KB | 1016.0 KB | 43 % | 582.7 KB |
+| RAM (STM32H573/H563, 640 KB) | 472.0 KB | 640.0 KB | 74 % | 168.0 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 21.6 | 0.1 |
-| Parameter table | 12.9 | 25.8 |
-| Parameter store (FRAM) | 5.3 | 57.2 |
+| Scan engine, queue, watchdog, diag | 21.9 | 0.1 |
+| Parameter table | 13.1 | 25.8 |
+| Parameter store (FRAM) | 5.4 | 57.2 |
 | Event log / data logger | 14.6 | 6.8 |
-| Alarm manager, state, supply, calibration | 10.6 | 5.7 |
+| Alarm manager, state, supply, calibration, service | 12.1 | 6.4 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 2.0 | 0.1 |
 | Firmware update, signatures, serial | 6.3 | 1.6 |
 | I/O boards (Ethernet/RS-485 master) | 18.8 | 1.7 |
 | Modbus TCP | 6.6 | 17.6 |
-| Web server + page + logins | 56.9 | 73.5 |
+| Web server + page + logins | 58.1 | 73.5 |
 | HTTPS (tls.c + mbedTLS) | 96.5 | 46.9 |
-| Touch UI + EVE driver | 52.4 | 2.5 |
+| Touch UI + EVE driver | 52.3 | 2.5 |
 | Task layer (FreeRTOS glue) | 2.9 | 99.7 |
 | Board support (BSP) | 1.1 | 0.8 |
 | lwIP + Ethernet driver | 53.5 | 51.4 |
@@ -40,12 +40,12 @@ module, and before choosing hardware. Last run: 2026-10-26.
 
 ## With the VM/MUX application (app_vmmux)
 
-The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own changes since (25 Oct: +72.5 KB RAM for the larger stacks and heaps; +2.4 KB flash for the fault handlers and the W5500 I/O port; 26 Oct: +5.9 KB flash, +0.5 KB RAM for the instrument state, quality, safe mode, supply monitoring and the platform Modbus block; +10.9 KB flash, +2.5 KB RAM for the calibration records and the web page's trend charts; +0.7 KB flash for clock quality; +0.8 KB for the board straps, build ID and image header version 2); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
+The same build with the real application linked in (`make target APP=...`). Measured 2026-10-22 and carried forward by the platform's own changes since (25 Oct: +72.5 KB RAM for the larger stacks and heaps; +2.4 KB flash for the fault handlers and the W5500 I/O port; 26 Oct: +5.9 KB flash, +0.5 KB RAM for the instrument state, quality, safe mode, supply monitoring and the platform Modbus block; +10.9 KB flash, +2.5 KB RAM for the calibration records and the web page's trend charts; +0.7 KB flash for clock quality; +0.8 KB for the board straps, build ID and image header version 2; +3.1 KB flash, +0.7 KB RAM for the service history); the application directory is not in this tree, and `tools/check_target.sh` measures this section again when it is.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash | 506.0 KB | 1016.0 KB | 50 % | 510.0 KB |
-| RAM | 513.9 KB | 640.0 KB | 80 % | 126.1 KB |
+| Flash | 509.1 KB | 1016.0 KB | 50 % | 506.9 KB |
+| RAM | 514.6 KB | 640.0 KB | 80 % | 125.4 KB |
 
 The application itself: 83.5 KB of flash, 46.1 KB of RAM (its tags, timers and tables).
 
@@ -69,5 +69,5 @@ server's buffer, which holds a whole backup file for restore.
 
 | Store | Size | Used | Note |
 |---|---|---|---|
-| FRAM (MB85RC1MT, 128 KB; D6, Gary 20 Oct) | 128 KB | user image: the VM/MUX application's 13.4 KB including the platform settings, of 40 KB per copy (34 %); factory 4 KB per copy, of which the calibration records take 2.4 KB (8 channels, 12 history records; 2 and 3 on the 32 KB part); log pointer, boot record, HTTPS key record and firmware update history 848 B | the 32 KB breakout (MB85RC256V) still fits the application (90 % per copy) with PLAT_FRAM_SIZE=32768u; the driver refuses a part smaller than the build's map |
+| FRAM (MB85RC1MT, 128 KB; D6, Gary 20 Oct) | 128 KB | user image: the VM/MUX application's 13.4 KB including the platform settings, of 40 KB per copy (34 %); factory 4 KB per copy, of which the calibration records take 2.4 KB (8 channels, 12 history records; 2 and 3 on the 32 KB part) and the service history 0.6 KB; log pointer, boot record, HTTPS key record and firmware update history 848 B | the 32 KB breakout (MB85RC256V) still fits the application (90 % per copy) with PLAT_FRAM_SIZE=32768u; the driver refuses a part smaller than the build's map |
 | Log flash (W25Q128, 16 MB) | 16 MB | ring buffer, always "full" by design | events ~16,000; data 45 days at 10 channels / 60 s |

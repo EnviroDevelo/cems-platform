@@ -8,6 +8,7 @@
 #include "plat_state.h"
 #include "plat_power.h"
 #include "plat_cal.h"
+#include "plat_service.h"
 #include "modbus.h"
 
 static int sys_apply(const plat_cmd_t *c) {
@@ -26,6 +27,7 @@ static void sys_pre_logic(uint32_t now_ms) {
     plat_cal_scan(now_ms);             /* calibration timeout, due dates (before the state: it may end CALIBRATION) */
     plat_state_scan(now_ms);           /* instrument state and the quality of each measurement */
     plat_power_scan(now_ms);           /* supply voltage, power-fail events */
+    plat_service_scan(now_ms);         /* operating hours, service and test records, configuration checksum */
     mb_block_scan(now_ms);             /* the platform's Modbus block: heartbeat, link age, uptime */
 }
 

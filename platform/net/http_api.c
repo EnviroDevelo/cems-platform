@@ -22,6 +22,7 @@
 #include "ui_app.h"
 #include "plat_state.h"
 #include "plat_cal.h"
+#include "plat_service.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -213,6 +214,9 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"hw_rev\":"); json_uint(o, param_read(PARAM_ID_HW_REV, &v) ? v.u : 0);
     out_str(o, ",\"board_rev\":"); if (fw_board_rev() >= 0) json_uint(o, (unsigned long)fw_board_rev()); else out_str(o, "null");
     out_str(o, ",\"build\":"); json_str(o, fw_build_id());
+    { char cb[12]; snprintf(cb, sizeof cb, "%08lx", (unsigned long)plat_config_crc());
+      out_str(o, ",\"config_crc\":"); json_str(o, cb); }
+    out_str(o, ",\"run_hours\":"); json_float(o, (float)plat_service_hours_x10() / 10.0f);
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
     out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
@@ -944,6 +948,68 @@ static void post_cal(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- service history (plat_service.h) ---------------- */
+static void get_service(http_out_t *o) {
+    static const char *const lvl[] = { "view", "operator", "admin", "factory" };
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"run_hours\":"); json_float(o, (float)plat_service_hours_x10() / 10.0f);
+    out_str(o, ",\"since_service_hours\":"); json_float(o, (float)plat_service_since_x10() / 10.0f);
+    { char cb[12]; snprintf(cb, sizeof cb, "%08lx", (unsigned long)plat_config_crc());
+      out_str(o, ",\"config_crc\":"); json_str(o, cb); }
+    out_str(o, ",\"log\":[");
+    plat_svc_entry_t e;
+    for (unsigned i = 0; plat_service_entry(i, &e); ++i) {
+        if (i) out_str(o, ",");
+        out_str(o, "{\"time\":"); json_uint(o, e.time);
+        out_str(o, ",\"level\":"); json_str(o, lvl[e.level & 3u]);
+        out_str(o, ",\"tech\":"); json_strn(o, e.tech, blen(e.tech, sizeof e.tech));
+        out_str(o, ",\"work\":"); json_strn(o, e.work, blen(e.work, sizeof e.work));
+        out_str(o, "}");
+    }
+    out_str(o, "],\"test\":");
+    plat_test_record_t t;
+    if (plat_service_test_record(&t)) {
+        out_str(o, "{\"time\":"); json_uint(o, t.time);
+        out_str(o, ",\"station\":"); json_strn(o, t.station, blen(t.station, sizeof t.station));
+        out_str(o, ",\"passed\":"); json_bool(o, t.passed);
+        out_str(o, ",\"results\":[");
+        for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_uint(o, t.result[k]); }
+        out_str(o, "]}");
+    } else out_str(o, "null");
+    out_str(o, "}");
+}
+
+static void service_result(http_out_t *o, int r) {
+    if (r == -3) { json_error(o, 403, "factory login needed", -1); return; }
+    if (r == -2) { json_error(o, 400, "value", -1); return; }
+    if (r == -1) { json_error(o, 503, "busy", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* tech=<name>&work=<what was done> */
+static void post_service_log(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char tech[16], work[40];
+    if (!form_get((const char *)r->body, r->body_len, "tech", tech, sizeof tech) ||
+        !form_get((const char *)r->body, r->body_len, "work", work, sizeof work)) { json_error(o, 400, "tech, work", -1); return; }
+    service_result(o, plat_service_log(tech, work, PLAT_SRC_WEB, lvl));
+}
+
+/* station=<name>&r=1,1,2,... (1 pass, 2 fail, 0 not run; in the test procedure's order) */
+static void post_service_test(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char station[12] = "", rs[3 * PLAT_SVC_TESTS + 4];
+    uint8_t res[PLAT_SVC_TESTS];
+    unsigned n = 0;
+    (void)form_get((const char *)r->body, r->body_len, "station", station, sizeof station);
+    if (!form_get((const char *)r->body, r->body_len, "r", rs, sizeof rs)) { json_error(o, 400, "r", -1); return; }
+    for (const char *p = rs; *p; ) {
+        if (n >= PLAT_SVC_TESTS || *p < '0' || *p > '2') { json_error(o, 400, "r", -1); return; }
+        res[n++] = (uint8_t)(*p++ - '0');
+        if (*p == ',') ++p; else if (*p) { json_error(o, 400, "r", -1); return; }
+    }
+    service_result(o, plat_service_test(station, res, n, PLAT_SRC_WEB, lvl));
+}
+
 /* ---------------- clock ---------------- */
 static void get_time(http_out_t *o) {
     uint32_t t;
@@ -1610,6 +1676,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
     else if (get && !strcmp(r->path, "/api/cal")) get_cal(o);
+    else if (get && !strcmp(r->path, "/api/service")) get_service(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
     else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
@@ -1636,6 +1703,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
         else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
         else if (!strcmp(r->path, "/api/cal")) post_cal(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/log")) post_service_log(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/test")) post_service_test(r, o, lvl);
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
