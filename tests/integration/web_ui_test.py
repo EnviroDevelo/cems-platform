@@ -50,6 +50,30 @@ async def run(unit):
         await ph.close()
         print("phone width: page", sw[0], "px in a", sw[1], "px window"); ok &= sw[0] <= sw[1]
         print("page under its Content-Security-Policy, violations:", csp); ok &= not csp
+        # instrument state and value quality (CIP-09/10), as the firmware will report them: injected into the replies
+        async def add_q(route):
+            r = await route.fetch(); j = await r.json(); j["q"] = {"1002": "cal"}
+            await route.fulfill(response=r, json=j)
+        async def add_state(route):
+            r = await route.fetch(); j = await r.json(); j["state"] = "CALIBRATION"
+            await route.fulfill(response=r, json=j)
+        await pg.route("**/api/values", add_q)
+        await pg.route("**/api/info", add_state)
+        await pg.wait_for_timeout(2500)
+        qcls = await pg.evaluate("[document.getElementById('v1002').className, document.getElementById('v1002').dataset.q, document.getElementById('v1001').className]")
+        stt = await pg.inner_text("#state")
+        await pg.unroute("**/api/values"); await pg.unroute("**/api/info")
+        print("quality on run_seconds:", qcls, "| state badge:", repr(stt))
+        ok &= "q" in qcls[0].split() and qcls[1] == "calibration" and "q" not in qcls[2].split() and stt == "CALIBRATION"
+        # diagnostic package (CIP-22.1): one JSON file, no secrets
+        async with pg.expect_download(timeout=30000) as dl:
+            await pg.click("#diagbtn")
+        import json as _json
+        pkg = _json.load(open(await (await dl.value).path()))
+        names = {x["name"] for x in pkg["settings"]}
+        print("diagnostic package:", sorted(k for k in pkg if not k.startswith("_"))[:14], "| settings", len(pkg["settings"]))
+        ok &= pkg["kind"] == "cems-diagnostic-package" and pkg["events_csv"].startswith("seq,time,event") and "serial" in pkg["info"] \
+              and "mail_password" not in names and "start_delay" in names and "boards" in pkg["iob"] and "error" not in pkg["firmware"]
         await pg.fill("#pw", "1111")
         await pg.click("#loginbtn")
         await pg.wait_for_selector("#userrow", state="visible")

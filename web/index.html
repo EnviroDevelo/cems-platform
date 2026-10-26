@@ -45,6 +45,7 @@ td.c{text-align:center}
 .tile{border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-width:150px;cursor:default}
 .tile .k{font-size:12px;color:var(--mute)}.tile .v{font-size:18px;font-variant-numeric:tabular-nums}
 .tile.can{cursor:pointer;border-color:var(--accent)}
+.q{color:#8a94a6}.q::after{content:" " attr(data-q);font-size:12px;color:var(--warn)}.q.qbad::after{color:var(--bad)}.q.qgrey::after{color:#8a94a6}
 button.lit{background:var(--ok);border-color:var(--ok)}
 button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 .gitem{min-width:46px}
@@ -78,7 +79,9 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 <header>
   <h1 id="product">CEMS Supervisor</h1>
   <span class="meta" id="ident"></span>
+  <span class="badge" id="state" style="display:none"></span>
   <span class="badge" id="mode">-</span>
+  <span class="badge" id="link" style="display:none"></span>
   <a href="#alarms" class="badge" id="alarmbadge" style="display:none;text-decoration:none"></a>
   <span class="badge" id="conn">connecting</span>
 </header>
@@ -155,6 +158,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <span class="row">
         <a href="/api/log/events.csv"><button class="ghost" type="button">Events CSV</button></a>
         <a href="/api/log/data.csv"><button class="ghost" type="button">Data CSV</button></a>
+        <button class="ghost" type="button" id="diagbtn" title="Information, settings (no passwords), alarms, firmware, I/O boards and the event log in one file, for service">Diagnostic package</button>
       </span>
     </div>
     <table>
@@ -480,6 +484,7 @@ function renderApp() {
       t.innerHTML = '<div class="k"></div><div class="v val"></div>';
       t.children[0].textContent = w.label || (d ? d.name : w.value);
       t.children[1].textContent = d ? fmt(d, v) : "-";
+      if (d) markQ(t.children[1], d.id, w.index);
       if (d && w.index === undefined && writable(d)) {
         t.classList.add("can"); t.title = "Change in Parameters";
         t.onclick = () => { $("filter").value = String(d.id); build(); $("filter").scrollIntoView({ behavior: "smooth" }); };
@@ -607,7 +612,7 @@ async function recSave() {
 
 /* ---- live trends: recorded in the browser from the value polls, no extra requests ---- */
 const TR_MAX_S = 3600, TR_COL = ["#1f5fae", "#b42318", "#16794a", "#a15c00"];
-let trPens = [], trT = [], trV = {}, trFocus = 0, trHoldAt = 0, trHover = null;
+let trPens = [], trT = [], trV = {}, trQ = {}, trFocus = 0, trHoldAt = 0, trHover = null;
 const trendable = d => ["bool", "int", "uint", "float"].includes(d.type) && !d.flags.includes("secret") &&
   !((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint");
 function trSave() { try { localStorage.setItem("cems.trend", JSON.stringify(trPens)); } catch (e) {} }
@@ -629,11 +634,11 @@ function trSetup() {
 }
 function trAdd(id) {
   if (trPens.includes(id) || trPens.length >= TR_COL.length) return;
-  trPens.push(id); trV[id] = new Array(trT.length).fill(null);
+  trPens.push(id); trV[id] = new Array(trT.length).fill(null); trQ[id] = new Array(trT.length).fill("");
   trSave(); trPensShow(); trDraw();
 }
 function trRemove(id) {
-  trPens = trPens.filter(x => x !== id); delete trV[id];
+  trPens = trPens.filter(x => x !== id); delete trV[id]; delete trQ[id];
   trFocus = Math.min(trFocus, Math.max(0, trPens.length - 1));
   trSave(); trPensShow(); trDraw();
 }
@@ -649,13 +654,13 @@ function trPensShow() {
   });
   $("tradd").disabled = trPens.length >= TR_COL.length;
 }
-function trRecord(v) {
+function trRecord(v, q) {
   const now = Date.now();
   trT.push(now);
-  for (const id of trPens) { const x = v[id]; trV[id].push(typeof x === "boolean" ? (x ? 1 : 0) : (typeof x === "number" ? x : null)); }
+  for (const id of trPens) { const x = v[id]; trV[id].push(typeof x === "boolean" ? (x ? 1 : 0) : (typeof x === "number" ? x : null)); trQ[id].push(q[id] && q[id] !== "valid" ? q[id] : ""); }
   let cut = 0;
   while (cut < trT.length && trT[cut] < now - TR_MAX_S * 1000) cut++;
-  if (cut) { trT.splice(0, cut); for (const id of trPens) trV[id].splice(0, cut); }
+  if (cut) { trT.splice(0, cut); for (const id of trPens) { trV[id].splice(0, cut); trQ[id].splice(0, cut); } }
   trDraw();
 }
 function trNice(lo, hi) {
@@ -708,8 +713,8 @@ function trDraw() {
     let pen = false, py = 0;
     for (let i = i0; i < trT.length && trT[i] <= t1 + 1000; i++) {
       const y = trV[id][i];
-      if (y === null || (i > 0 && trT[i] - trT[i - 1] > 3000)) pen = false;   /* gap: no data, or the link was down */
-      if (y === null) continue;
+      if (y === null || trQ[id][i] || (i > 0 && trT[i] - trT[i - 1] > 3000)) pen = false;   /* gap: no data, not valid, or the link was down */
+      if (y === null || trQ[id][i]) continue;
       const x = X(trT[i]), yy = Y(y);
       if (!pen) g.moveTo(x, yy); else { if (bool) g.lineTo(x, py); g.lineTo(x, yy); }
       pen = true; py = yy;
@@ -729,27 +734,78 @@ function trCursor(t0, span, L, T, pw, ph, g) {
     g.strokeStyle = "#1d2330"; g.lineWidth = 1; g.beginPath(); g.moveTo(Math.round(x) + 0.5, T); g.lineTo(Math.round(x) + 0.5, T + ph); g.stroke();
     if (trT[idx]) { g.fillStyle = "#1d2330"; g.textAlign = x > L + pw - 80 ? "right" : "left"; g.textBaseline = "top"; g.fillText(new Date(trT[idx]).toLocaleTimeString(), x + (g.textAlign === "left" ? 4 : -4), T + 2); }
   }
-  for (const id of trPens) { const c = $("trv" + id); if (c) c.textContent = idx < 0 ? "-" : trNum(byId[id], trV[id][idx]); }
+  for (const id of trPens) {
+    const c = $("trv" + id); if (!c) continue;
+    c.textContent = idx < 0 ? "-" : trNum(byId[id], trV[id][idx]);
+    const q = idx < 0 ? "" : trQ[id][idx];
+    c.classList.toggle("q", !!q); if (q) c.dataset.q = QTXT[q] || q; else delete c.dataset.q;
+  }
 }
 function trCsv() {
-  const head = ["time"].concat(trPens.map(id => byId[id].name + (byId[id].unit ? " (" + byId[id].unit + ")" : "")));
+  const anyQ = trPens.some(id => trQ[id].some(x => x));                 /* a quality column only when something was not valid */
+  const head = ["time"].concat(...trPens.map(id => { const n = byId[id].name + (byId[id].unit ? " (" + byId[id].unit + ")" : ""); return anyQ ? [n, byId[id].name + " quality"] : [n]; }));
   const pad = n => String(n).padStart(2, "0"), ts = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}`; };
   const lines = [head.map(h => '"' + h.replace(/"/g, '""') + '"').join(",")];
-  trT.forEach((t, i) => trPens.some(id => trV[id][i] !== null) && lines.push([ts(t)].concat(trPens.map(id => trV[id][i] === null ? "" : trV[id][i])).join(",")));
+  trT.forEach((t, i) => trPens.some(id => trV[id][i] !== null) && lines.push([ts(t)].concat(...trPens.map(id => { const x = trV[id][i] === null ? "" : trV[id][i]; return anyQ ? [x, trQ[id][i] || "valid"] : [x]; })).join(",")));
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([lines.join("\r\n") + "\r\n"], { type: "text/csv" }));
   a.download = "trend-" + ts(Date.now()).replace(/[ :]/g, "-").slice(0, 19) + ".csv";
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/* ---- instrument state and value quality (CIP-09, CIP-10): shown when the instrument reports them ---- */
+const QTXT = { stale: "stale", unavailable: "unavailable", range: "out of range", warmup: "warming up", maint: "maintenance", cal: "calibration", fault: "fault" };
+let lastQ = {};
+function markQ(el, id, idx) {                          /* the key is "id", or "id.index" for an array element */
+  const q = idx === undefined ? lastQ[id] : lastQ[id + "." + idx];
+  el.classList.toggle("q", !!q && q !== "valid");
+  el.classList.toggle("qbad", q === "fault" || q === "range");          /* colours as docs/UI_CONVENTIONS.md section 4 */
+  el.classList.toggle("qgrey", q === "unavailable");
+  if (q === "unavailable") el.textContent = "----";
+  if (q && q !== "valid") el.dataset.q = QTXT[q] || q; else delete el.dataset.q;
+}
+function showState(st) {
+  const e = $("state");
+  if (!st) { e.style.display = "none"; return; }
+  e.style.display = ""; e.textContent = st.replace(/_/g, " ");
+  e.className = "badge " + ({ MEASURING: "b-ok", READY: "b-ok", FAULT: "b-bad", SAFE_MODE: "b-bad" }[st] ||
+                ({ WARMING_UP: 1, MAINTENANCE: 1, CALIBRATION: 1 }[st] ? "b-warn" : ""));
+}
+
+/* ---- diagnostic package (CIP-22.1): one file from the existing endpoints, put together here ---- */
+async function diagPackage() {
+  const btn = $("diagbtn"); btn.disabled = true; btn.textContent = "Collecting...";
+  const pkg = { kind: "cems-diagnostic-package", version: 1, generated: new Date().toISOString(), page_url: location.origin };
+  const get = async (k, path, text) => {
+    try {
+      if (text) { const r = await fetch(path, { signal: AbortSignal.timeout(20000) }); pkg[k] = r.ok ? await r.text() : { error: r.status }; }
+      else pkg[k] = await api(path);
+    } catch (e) { pkg[k] = { error: e.message }; }
+  };
+  for (const [k, path] of [["info", "/api/info"], ["time", "/api/time"], ["alarms", "/api/alarms"], ["alarm_actions", "/api/alarms/config"],
+                           ["firmware", "/api/fw"], ["log", "/api/log/info"], ["iob", "/api/iob"], ["iob_net", "/api/iob/net"]]) await get(k, path);
+  await get("values", "/api/values");
+  const secret = new Set(defs.filter(d => d.flags.includes("secret")).map(d => String(d.id)));
+  if (pkg.values && pkg.values.v) for (const id of Object.keys(pkg.values.v)) if (secret.has(id)) delete pkg.values.v[id];
+  pkg.settings = defs.filter(d => !d.flags.includes("secret")).map(d => ({ id: d.id, name: d.name, value: pkg.values && pkg.values.v ? pkg.values.v[d.id] : undefined,
+                                                                            unit: d.unit, quality: pkg.values && pkg.values.q ? pkg.values.q[d.id] : undefined }));
+  await get("events_csv", "/api/log/events.csv", true);
+  const sn = pkg.info && pkg.info.serial ? String(pkg.info.serial).replace(/[^\w.-]/g, "") : "unit";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(pkg, null, 1)], { type: "application/json" }));
+  a.download = `cems-diag-${sn}-${pkg.generated.slice(0, 19).replace(/[:T]/g, "-")}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  btn.disabled = false; btn.textContent = "Diagnostic package";
+}
+
 let lastValues = {};
 async function pollValues() {
   try {
     const j = await api("/api/values");
-    lastValues = j.v; lastOk = Date.now();
+    lastValues = j.v; lastQ = j.q || {}; lastOk = Date.now();
     renderApp();
-    trRecord(j.v);
-    for (const d of defs) { const c = $("v" + d.id); if (c) c.textContent = fmt(d, j.v[d.id]); }
+    trRecord(j.v, lastQ);
+    for (const d of defs) { const c = $("v" + d.id); if (c) { c.textContent = fmt(d, j.v[d.id]); markQ(c, d.id); } }
     document.body.classList.remove("stale");
     $("conn").textContent = "live"; $("conn").className = "badge b-ok";
   } catch (e) {
@@ -767,6 +823,13 @@ async function refreshInfo() {
     $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
     showAlarmBadge(i.alarms);
+    showState(i.state);
+    const lk = $("link");                                 /* supervisory link (CIP-21.5): LINK OK / LINK LOST */
+    const ct = defs.find(d => d.name === "comms_timeout"), off = ct && lastValues[ct.id] === 0;   /* no watchdog: NO LINK */
+    if (typeof i.link_lost === "boolean") {
+      lk.style.display = ""; lk.textContent = off ? "NO LINK" : i.link_lost ? "LINK LOST" : "LINK OK";
+      lk.className = "badge " + (off ? "" : i.link_lost ? "b-bad" : "b-ok");
+    }
     if (i.tls_fingerprint) $("tlsfp").textContent = i.tls_fingerprint;
     $("defpw").style.display = i.default_passwords ? "block" : "none";
     const newLevel = LV.indexOf(i.session.level);
@@ -1342,6 +1405,7 @@ $("restorebtn").onclick = async () => {
   }
   defs.forEach(d => byId[d.id] = d);
   try { UI = await api("/api/ui"); } catch (e) { UI = { screens: [], records: [] }; }
+  $("diagbtn").onclick = diagPackage;
   build(); trSetup(); pollValues(); pollInfo(); pollEvents(); pollAlarms();
 })();
 </script>

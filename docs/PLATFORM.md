@@ -204,6 +204,16 @@ same 0.5 s value polls, so it costs the instrument no requests, no RAM and no AP
 record is the data logger (5a). The chosen values are remembered by the browser.
 Screenshot: `docs/web_trend.png`.
 
+**State, quality and service (CIP-09, 10, 21, 22.1).** The header shows the instrument
+state (`/api/info` "state") and the supervisory link (LINK OK / LINK LOST / NO LINK), and
+any value whose quality is not valid (`/api/values` "q", keyed "id" or "id.index") is
+greyed with its word, in the words and colours of `docs/UI_CONVENTIONS.md`; trend lines
+break where a sample was not valid, and the trend CSV gains a quality column. The page
+reads these fields when the instrument sends them. **Diagnostic package** (Event log
+section, no login): one JSON file put together in the browser from `/api/info`, time,
+alarms and their actions, firmware (with its update history), log status, I/O boards,
+every setting with its value and quality (secret entries left out) and the event log CSV.
+
 **Phones and tablets.** The page fits a phone's width (390 px) without sideways
 scrolling: the parameter and alarm lists stack into cards, and wider tables (alarm
 actions) scroll inside their own section. `web_ui_test.py` checks this.
