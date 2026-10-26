@@ -1345,11 +1345,19 @@ static void draw_app(void) {
                 char b[24]; item_label(w, k, b, sizeof b);
                 if (strlen(b) > 10) b[10] = 0;
                 bool en = item_enabled(w, k);
+                /* the item's state element, if it is a measurement, carries its own quality (UI_CONVENTIONS 4) */
+                uint8_t q = w->state_id && is_arr(w->state_id) ? param_quality(w->state_id, (uint16_t)(k - 1u)) : PLAT_Q_VALID;
                 U.tmap_w[tag] = (uint8_t)(i + 1u); U.tmap_i[tag] = (uint16_t)k;
                 eve_tag(E, en ? (uint8_t)tag : 0);
-                eve_fgcolor(E, !en ? C_GREY : U.pressed == tag ? C_PRESS : item_lit(w, k) ? C_OK : 0x5B6577u);
+                bool qv = q == PLAT_Q_VALID;
+                eve_fgcolor(E, !qv ? (U.pressed == tag ? 0xDCE6F5u : 0xE4E7ECu) : !en ? C_GREY : U.pressed == tag ? C_PRESS : item_lit(w, k) ? C_OK : 0x5B6577u);
                 color(0xFFFFFFu);
-                ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, b);
+                if (qv) ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, b);
+                else {                                       /* light, not lit or unlit: the name and the quality word under it */
+                    ebutton(ix, iy, 104, 56, F_SMALL, OPT_FLAT, "");
+                    color(en ? C_INK : C_GREY); text((int16_t)(ix + 52), (int16_t)(iy + 17), F_SMALL, OPT_CENTER, b);
+                    color(q_color(q)); text((int16_t)(ix + 52), (int16_t)(iy + 38), F_SMALL, OPT_CENTER, plat_quality_name(q));
+                }
                 eve_tag(E, 0);
                 tag++; c++;
             }
