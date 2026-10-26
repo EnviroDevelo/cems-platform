@@ -24,6 +24,7 @@
 #include "plat_state.h"
 #include "plat_power.h"
 #include "plat_cal.h"
+#include "plat_service.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -946,7 +947,8 @@ static void draw_system(uint32_t now) {
     /* firmware */
     fw_status_t st; fw_status(&st);
     color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Firmware");
-    kv(32, BODY_Y + 44, "Running", st.running_version);
+    snprintf(b, sizeof b, "%.15s, build %.11s", st.running_version, fw_build_id());
+    kv(32, BODY_Y + 44, "Running", b);
     if (st.state == FW_ST_TRIAL) { snprintf(b, sizeof b, "on trial, keeps itself in %u s", (unsigned)((st.trial_left_ms + 999u) / 1000u)); kv(32, BODY_Y + 72, "State", b); }
     else {
         fw_hist_t h;
@@ -992,8 +994,15 @@ static void draw_system(uint32_t now) {
     /* unit */
     color(C_INK); text(544, BODY_Y + 10, F_TEXT, 0, "Unit");
     plat_val_t v;
-    snprintf(b, sizeof b, "%lu", (unsigned long)(param_read(PARAM_ID_SERIAL, &v) ? v.u : 0)); kv(544, BODY_Y + 44, "Serial", b);
-    snprintf(b, sizeof b, "%lu", (unsigned long)(param_read(PARAM_ID_HW_REV, &v) ? v.u : 0)); kv(544, BODY_Y + 70, "Hardware", b);
+    {   unsigned long sn = param_read(PARAM_ID_SERIAL, &v) ? v.u : 0, hw = param_read(PARAM_ID_HW_REV, &v) ? v.u : 0;
+        int br = fw_board_rev();                     /* -1 = no revision straps on this board */
+        if (br >= 0) snprintf(b, sizeof b, "%lu, hardware %lu, board rev %d", sn, hw, br);
+        else snprintf(b, sizeof b, "%lu, hardware %lu", sn, hw);
+        kv(544, BODY_Y + 44, "Serial", b); }
+    {   uint32_t h = plat_service_hours_x10(), sv = plat_service_since_x10();   /* CIP-05: operating hours */
+        snprintf(b, sizeof b, "%lu.%lu total, %lu.%lu since service", (unsigned long)(h / 10u), (unsigned long)(h % 10u),
+                 (unsigned long)(sv / 10u), (unsigned long)(sv % 10u));
+        kv(544, BODY_Y + 70, "Hours", b); }
     snprintf(b, sizeof b, "%lu h %lu min", (unsigned long)(now / 3600000u), (unsigned long)((now / 60000u) % 60u)); kv(544, BODY_Y + 96, "Up", b);
     snprintf(b, sizeof b, "%lu%s%.15s", (unsigned long)plat_diag.boots, plat_diag.fault ? ", last fault: " : "", plat_diag.fault ? plat_diag.fault_name : "");
     kv(544, BODY_Y + 122, "Restarts", b);
@@ -1015,9 +1024,10 @@ static void draw_system(uint32_t now) {
     uint32_t ls = plat_log_status();
     snprintf(b, sizeof b, "%s%s%s", ls & LSTAT_NOR_FAULT ? "FAULT " : "", ls & LSTAT_VOLATILE ? "RAM only (no flash) " : "",
              (ls & (LSTAT_NOR_FAULT | LSTAT_VOLATILE)) ? "" : "ok");
-    kv(544, BODY_Y + 302, "Log", b);
-    snprintf(b, sizeof b, "0x%04lx", (unsigned long)param_store_status());
-    kv(544, BODY_Y + 324, "Store status", b);
+    snprintf(b + strlen(b), sizeof b - strlen(b), ", store 0x%04lx", (unsigned long)param_store_status());
+    kv(544, BODY_Y + 302, "Log, store", b);
+    snprintf(b, sizeof b, "%08lX", (unsigned long)plat_config_crc());
+    kv(544, BODY_Y + 324, "Config", b);                 /* CIP-05.4: configuration checksum, 8 hex digits */
     if (plat_health.valid) {
         unsigned lo = 0xFFFFu; const char *ln = "";
         for (unsigned i = 0; i < plat_health.n_tasks && i < PLAT_HEALTH_TASKS; ++i)
