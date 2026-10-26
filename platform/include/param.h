@@ -165,6 +165,7 @@ enum {
     PARAM_ID_MAINTENANCE      = 301, /* operator selects MAINTENANCE (1) or leaves it (0) */
     PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */
     PARAM_ID_MEAS_Q           = 303, /* RO: one PLAT_Q_* per declared measurement (a Modbus status block) */
+    PARAM_ID_SUPPLY_MV        = 305, /* RO: the 24 V supply, mV (0 = not measured; plat_power.h) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

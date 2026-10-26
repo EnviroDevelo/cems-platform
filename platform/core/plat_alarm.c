@@ -1,5 +1,7 @@
 /* plat_alarm.c - the alarm manager (plat_alarm.h). */
 #include "plat_alarm.h"
+#include "plat_state.h"
+#include "plat_power.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -42,6 +44,10 @@ static const alarm_def_t core_defs[] = {
       .text = "Remote control: no messages from the control system" },
     { .id = ALARM_ID_UNEXPECTED_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "UNEXPECTED_RESET",
       .text = "The unit restarted itself (watchdog or supply dip)" },
+    { .id = ALARM_ID_SAFE_MODE, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SAFE_MODE",
+      .text = "Restarted repeatedly: safe mode, application stopped" },
+    { .id = ALARM_ID_SUPPLY, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SUPPLY",
+      .text = "Supply voltage outside 19-30 V", .on_delay_ms = 2000, .off_delay_ms = 2000 },
     { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "FW_ROLLED_BACK",
       .text = "Firmware update failed its trial and was undone" },
     { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
@@ -206,6 +212,9 @@ static void tell(size_t i, uint8_t what, uint8_t src, uint8_t level) {
 static void poll_platform(void) {
     uint32_t ps = param_store_status(), ls = plat_log_status();
     alarm_set(ALARM_ID_CAL_INVALID, !param_store_calibration_valid());
+    alarm_set(ALARM_ID_SAFE_MODE, plat_state() == PLAT_ST_SAFE_MODE);
+    { uint32_t mv = plat_supply_mv();
+      alarm_set(ALARM_ID_SUPPLY, mv != 0 && (mv < PLAT_SUPPLY_LOW_MV || mv > PLAT_SUPPLY_HIGH_MV)); }
     alarm_set(ALARM_ID_PARAM_WRITE_FAIL, (ps & (PSTAT_WRITE_ERROR | PSTAT_NVM_VOLATILE)) != 0);
     alarm_set(ALARM_ID_LOG_STORAGE_FAULT, (ls & LSTAT_NOR_FAULT) != 0);
     alarm_set(ALARM_ID_IP_CONFLICT, (plat_net_status_word & NETST_CONFLICT) != 0);

@@ -88,7 +88,7 @@ void scan_step(scan_engine_t *s) {
 
     /* 5. logic */
     Ladder_Initial_Cycle = !s->started;
-    app->logic();
+    if (app->logic) app->logic();           /* none in safe mode */
     Ladder_Initial_Cycle = false;
     s->started = true;
 

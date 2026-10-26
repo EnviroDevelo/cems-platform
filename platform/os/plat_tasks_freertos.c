@@ -19,6 +19,7 @@
 #include "iobus.h"
 #include "iob_tcp.h"
 #include "iob_w5500.h"
+#include "plat_power.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -54,6 +55,7 @@ static void ctrl_task(void *arg) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_CTRL_PERIOD_MS));
+        plat_power_sample();                     /* the 24 V supply, for the power-fail shutdown */
         plat_ctrl_tick();
         plat_checkin(PLAT_TASK_CTRL);
     }
@@ -100,6 +102,7 @@ static void supervisor_task(void *arg) {
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_SUPERVISOR_PERIOD_MS));
         if (n++ % (5000u / PLAT_SUPERVISOR_PERIOD_MS) == 0) health_sample();
+        plat_diag_tick(bsp_ms());                /* how long this boot ran, for the reboot-loop check */
         int bad = tm_check(&plat_monitor, bsp_ms());
         if (bad == TM_ALL_OK) { bsp_wdg_kick(); continue; }
         fatal(PLAT_FAULT_TASK_SILENT, bad, tm_name(&plat_monitor, bad), 0);
@@ -180,7 +183,11 @@ void plat_start(const plat_app_t *app) {
 
     plat_cmdq_init(&plat_cmdq);
     plat_snap_lock.seq = 0;
-    scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
+    /* CIP-08.5: after a reboot loop, no application code at all (not even its init); outputs stay
+     * off, and the network, the touchscreen and firmware update run so it can be serviced */
+    static const scan_app_t safe_scan = { 0 };
+    bool safe = plat_diag_reboot_loop();
+    scan_init(&plat_scan, safe ? &safe_scan : app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
 
     /* A table error is a programming error: stop here with outputs safe, the
      * watchdog fed, and the offending ID in the fault record (debugger or next boot). */
@@ -212,6 +219,7 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "meas table", (uint32_t)plat_state_init(app->meas, app->n_meas), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
+    plat_state_safe_mode(safe);
     param_bind(&plat_cmdq, &plat_snap_lock);
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {

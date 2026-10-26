@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "plat_diag.h"
+#include "plat_config.h"
 
 #define DIAG_MAGIC 0xCE5D1A60u
 
@@ -30,6 +31,16 @@ void plat_diag_boot(bsp_reset_cause_t cause) {
     }
     plat_diag.boots++;
     if (cause == BSP_RESET_IWDG) plat_diag.wdg_resets++;
+    bool crash = cause == BSP_RESET_IWDG || cause == BSP_RESET_WWDG || (cause == BSP_RESET_SOFTWARE && plat_diag.fault_armed);
+    if (!crash) {
+        plat_diag.loop_crashes = 0; plat_diag.loop_run_ms = 0;
+    } else if (plat_diag.loop_crashes == 0 || plat_diag.loop_run_ms + plat_diag.up_ms > PLAT_LOOP_WINDOW_MS) {
+        plat_diag.loop_crashes = 1; plat_diag.loop_run_ms = plat_diag.up_ms;   /* the first of a new series */
+    } else {
+        plat_diag.loop_crashes++; plat_diag.loop_run_ms += plat_diag.up_ms;
+    }
+    plat_diag.up_ms = 0;
+    plat_diag.fault_armed = 0;
     plat_diag.last_reset_cause = (uint32_t)cause;
     plat_diag.check = diag_sum(&plat_diag);
 }
@@ -40,11 +51,20 @@ void plat_diag_fault(plat_fault_t f, int32_t task, const char *name, uint32_t ar
     plat_diag.fault_task = task;
     plat_diag.fault_ms = now_ms;
     plat_diag.fault_arg = arg;
+    plat_diag.fault_armed = 1;
     plat_diag.fault_lr = plat_diag.fault_cfsr = plat_diag.fault_hfsr = plat_diag.fault_addr = 0;
     memset(plat_diag.fault_name, 0, sizeof plat_diag.fault_name);
     if (name) strncpy(plat_diag.fault_name, name, sizeof plat_diag.fault_name - 1u);
     plat_diag.check = diag_sum(&plat_diag);
 }
+
+void plat_diag_tick(uint32_t now_ms) {
+    plat_diag.up_ms = now_ms;
+    if (plat_diag.loop_crashes && now_ms > PLAT_LOOP_WINDOW_MS) { plat_diag.loop_crashes = 0; plat_diag.loop_run_ms = 0; }
+    plat_diag.check = diag_sum(&plat_diag);
+}
+
+bool plat_diag_reboot_loop(void) { return plat_diag.loop_crashes >= PLAT_LOOP_RESETS; }
 
 /* CFSR bits used below (ARMv8-M) */
 #define CFSR_MMARVALID  (1u << 7)

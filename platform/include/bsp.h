@@ -68,6 +68,10 @@ struct iob_port *bsp_rs485(void);
 struct w5500_bus;
 struct w5500_bus *bsp_w5500(void);
 
+/* One reading of the 24 V supply in mV (supply-sense divider on PC0, CORE_PCB.md 12); false if
+ * this board does not measure it. Called every ms by the ctrl task: keep it to one conversion. */
+bool bsp_supply_mv(uint32_t *mv);
+
 void bsp_random(void *buf, uint32_t len);
 void bsp_chip_uid(uint8_t uid[12]);       /* the MCU's 96-bit unique ID (serial-number tokens, D25) */
 

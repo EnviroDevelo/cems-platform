@@ -55,7 +55,7 @@ extern bool     plat_alarm_relay_inv[4];
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
 extern bool     plat_maint_tag;
-extern uint32_t plat_state_since_tag;
+extern uint32_t plat_state_since_tag, plat_supply_mv_tag;                   /* plat_state.c, plat_power.c */
 
 #define IOB_DEFS(K, N) \
     PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
@@ -154,6 +154,7 @@ static const param_def_t plat_defs[] = {
     PARAM_BIT (PARAM_ID_MAINTENANCE, "maintenance", plat_maint_tag, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
     PARAM_UINT(PARAM_ID_STATE_SINCE, "state_since", plat_state_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_MEAS_Q, "meas_q", plat_meas_q, CT_U8, 0, PLAT_Q_COUNT - 1, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_SUPPLY_MV, "supply_mv", plat_supply_mv_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "mV"),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
