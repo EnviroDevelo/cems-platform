@@ -1,0 +1,4792 @@
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 1
+Highlights
+• Single-Chip Ethernet Physical Layer Transceiver 
+(PHY)
+• Cable diagnostic support
+• Wake on LAN (WoL) support
+• Comprehensive flexPWR technology 
+- Flexible power management architecture
+- LVCMOS Variable I/O voltage range: +1.8 V to 
++3.3 V
+- Integrated 1.2 V regulator with disable feature
+• HP Auto-MDIX support
+• Miniature 24-pin VQFN, RoHS-compliant package (4 x 4 x 0.9 mm height)
+Target Applications
+• Set-Top Boxes
+• Networked Printers and Servers
+• Test Instrumentation
+• LAN on Motherboard
+• Embedded Telecom Applications
+• Video Record/Playback Systems
+• Cable Modems/Routers
+• DSL Modems/Routers
+• Digital Video Recorders
+• IP and Video Phones
+• Wireless Access Points
+• Digital Televisions
+• Digital Media Adapters/Servers
+• Gaming Consoles
+• POE Applications 
+(Refer to Microchip Application Note 17.18)
+Key Benefits
+• High-performance 10/100 Ethernet transceiver
+- Compliant with IEEE802.3/802.3u (Fast Ethernet)
+- Compliant with ISO 802-3/IEEE 802.3 
+(10BASE-T)
+- Loop-back modes
+- Auto-negotiation
+- Automatic polarity detection and correction
+- Link status change wake-up detection
+- Vendor specific register functions
+- Supports the reduced pin count RMII interface
+• Power and I/Os
+- Various low power modes
+- Integrated power-on reset circuit
+- Two status LED outputs
+- May be used with a single 3.3 V supply
+• Additional Features
+- Ability to use a low cost 25 MHz crystal for 
+reduced BOM
+• Packaging
+- 24-pin VQFN (4 x 4 mm), RoHS-compliant package with RMII
+• Environmental
+- Commercial temperature range (0°C to +70°C)
+- Industrial temperature range (-40°C to +85°C)
+LAN8742A/LAN8742Ai
+Small Footprint RMII 10/100 Ethernet Transceiver with HP 
+Auto-MDIX and flexPWR® Technology
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 2  2013-2015 Microchip Technology Inc.
+TO OUR VALUED CUSTOMERS
+It is our intention to provide our valued customers with the best documentation possible to ensure successful use of your Microchip
+products. To this end, we will continue to improve our publications to better suit your needs. Our publications will be refined and
+enhanced as new volumes and updates are introduced. 
+If you have any questions or comments regarding this publication, please contact the Marketing Communications Department via
+E-mail at docerrors@microchip.com. We welcome your feedback.
+Most Current Data Sheet
+To obtain the most up-to-date version of this data sheet, please register at our Worldwide Web site at:
+http://www.microchip.com
+You can determine the version of a data sheet by examining its literature number found on the bottom outside corner of any page.
+The last character of the literature number is the version number, (e.g., DS30000000A is version A of document DS30000000).
+Errata
+An errata sheet, describing minor operational differences from the data sheet and recommended workarounds, may exist for current
+devices. As device/documentation issues become known to us, we will publish an errata sheet. The errata will specify the revision
+of silicon and revision of document to which it applies.
+To determine if an errata sheet exists for a particular device, please check with one of the following:
+• Microchip’s Worldwide Web site: http://www.microchip.com
+• Your local Microchip sales office (see last page)
+When contacting a sales office, please specify which device, revision of silicon and data sheet (include -literature number) you are
+using.
+Customer Notification System
+Register on our web site at www.microchip.com to receive the most current information on all of our products.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 3
+LAN8742A/LAN8742Ai
+Table of Contents
+1.0 Introduction ..................................................................................................................................................................................... 4
+2.0 Pin Description and Configuration .................................................................................................................................................. 6
+3.0 Functional Description .................................................................................................................................................................. 16
+4.0 Register Descriptions .................................................................................................................................................................... 57
+5.0 Operational Characteristics ......................................................................................................................................................... 103
+6.0 Package Outline .......................................................................................................................................................................... 116
+Appendix A: Revision History ............................................................................................................................................................ 119
+The Microchip Web Site .................................................................................................................................................................... 121
+Customer Change Notification Service ............................................................................................................................................. 121
+Customer Support ............................................................................................................................................................................. 121
+Product Identification System ........................................................................................................................................................... 122
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 4  2013-2015 Microchip Technology Inc.
+1.0 INTRODUCTION
+1.1 General Terms and Conventions
+The following is a list of the general terms used throughout this document:
+1.2 General Description
+The LAN8742A/LAN8742Ai is a low-power 10BASE-T/100BASE-TX physical layer (PHY) transceiver with variable I/O
+voltage that is compliant with the IEEE 802.3 and 802.3u standards. 
+The LAN8742A/LAN8742Ai supports communication with an Ethernet MAC via a standard RMII interface. It contains a
+full-duplex 10-BASE-T/100BASE-TX transceiver and supports 10 Mbps (10BASE-T) and 100 Mbps (100BASE-TX)
+operation. The LAN8742A/LAN8742Ai implements auto-negotiation to automatically determine the best possible speed
+and duplex mode of operation. HP Auto-MDIX support allows the use of direct connect or cross-over LAN cables. Integrated Wake on LAN (WoL) support provides a mechanism to trigger an interrupt upon reception of a perfect DA, broadcast, magic packet, or wakeup frame.
+The LAN8742A/LAN8742Ai supports both IEEE 802.3-2005 compliant and vendor-specific register functions. However,
+no register access is required for operation. The initial configuration may be selected via the configuration pins as
+described in Section 3.7, "Configuration Straps". Register-selectable configuration options may be used to further define
+the functionality of the transceiver.
+The LAN8742A/LAN8742Ai can be programmed to support wake-on-LAN at the physical layer, allowing detection of
+configurable Wake-up Frame and Magic packets. This feature allows filtering of packets at the PHY layer, without requiring MAC intervention. Additionally, the LAN8742A/LAN8742Ai supports cable diagnostics which allow the device to
+identify opens/shorts and their location on the cable via vendor-specific registers.
+Per IEEE 802.3-2005 standards, all digital interface pins are tolerant to 3.6 V. The device can be configured to operate
+on a single 3.3 V supply utilizing an integrated 3.3 V to 1.2 V linear regulator. The linear regulator may be optionally
+disabled, allowing usage of a high efficiency external regulator for lower system power dissipation.
+The LAN8742A/LAN8742Ai is available in commercial (0°C to +70°C) and industrial (-40°C to +85°C) temperature
+range versions. A typical system application is shown in Figure 1-1. Figure 1-2 provides an internal block diagram of the
+device. 
+BYTE 8 bits
+FIFO First In First Out buffer; often used for elasticity buffer
+MAC Media Access Controller
+RMII™ Reduced Media Independent Interface 
+N/A Not Applicable
+X Indicates that a logic state is “don’t care” or undefined.
+RESERVED Refers to a reserved bit field or address. Unless otherwise noted, reserved bits must always be zero 
+for write operations. Unless otherwise noted, values are not guaranteed when reading reserved bits. 
+Unless otherwise noted, do not read or write to reserved addresses.
+SMI Serial Management Interface
+FIGURE 1-1: SYSTEM BLOCK DIAGRAM
+LAN8742A/
+LAN8742Ai
+10/100 
+Ethernet
+MAC
+RMII
+Mode LED
+Transformer
+Crystal or 
+Clock 
+Oscillator
+MDI RJ45
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 5
+LAN8742A/LAN8742Ai
+FIGURE 1-2: ARCHITECTURAL OVERVIEW RMII Logic
+Interrupt 
+Generator
+LEDs
+PLL
+Receiver
+DSP System: Clock
+Data Recovery 
+Equalizer
+Squeltch 
+& Filters
+Analog-toDigital
+10M RX 
+Logic
+100M RX 
+Logic
+100M PLL
+10M PLL
+Transmitter
+10M 
+Transmitter
+100M 
+Transmitter
+10M TX 
+Logic
+100M TX 
+Logic
+Central Bias
+PHY Address 
+Latches
+LAN8742A/LAN8742Ai
+RBIAS
+LED1
+nINT/
+REFCLKO
+XTAL2
+XTAL1/CLKIN
+LED2
+Management 
+Control
+Mode Control
+Reset Control
+MDIX 
+Control
+HP Auto-MDIX
+RXP/RXN
+TXP/TXN
+TXD[0:1]
+TXEN
+RXD[0:1]
+RXER
+CRS_DV
+MDC
+MDIO
+AutonRST Negotiation
+MODE[0:2]
+SMI
+PHYAD0
+WoL
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 6  2013-2015 Microchip Technology Inc.
+2.0 PIN DESCRIPTION AND CONFIGURATION
+FIGURE 2-1: 24-VQFN PIN ASSIGNMENTS (TOP VIEW)
+Note: When a lower case “n” is used at the beginning of the signal name, it indicates that the signal is active low.
+For example, nRST indicates that the reset signal is active low.
+Note: The buffer type for each signal is indicated in the BUFFER TYPE column. A description of the buffer types
+is provided in Section 2.2.
+VSS
+NOTE: Exposed pad (VSS) on bottom of package must be connected to ground
+LAN8742A/LAN8742Ai
+24 PIN VQFN
+(TOP VIEW)
+MDIO
+1
+2
+3
+4
+5
+6
+789
+101112
+18
+17
+16
+15
+14
+13
+242322212019
+VDDCR
+XTAL1/CLKIN
+XTAL2
+LED1/nINT/nPME/REGOFF
+LED2/nINT/nPME/nINTSEL
+VDD2A TXD1
+TXD0
+TXEN
+nRST
+nINT/REFCLKO
+MDC
+RBIASRXPRXNTXPTXNVDD1A
+CRS_DV/MODE2
+RXER/PHYAD0
+VDDIO
+RXD1/MODE1
+RXD0/MODE0
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 7
+LAN8742A/LAN8742Ai
+TABLE 2-1: RMII SIGNALS
+Num Pins Name Symbol Buffer Type Description
+1 Transmit 
+Data 0
+TXD0 VIS The MAC transmits data to the transceiver using 
+this signal. 
+1 Transmit 
+Data 1
+TXD1 VIS The MAC transmits data to the transceiver using 
+this signal.
+1 Transmit 
+Enable
+TXEN VIS
+(PD)
+Indicates that valid transmission data is present on 
+TXD[1:0].
+1 Receive 
+Data 0
+RXD0 VO8 Bit 0 of the 2 data bits that are sent by the transceiver on the receive path.
+PHY Operating Mode 0 
+Configuration 
+Strap
+MODE0 VIS
+(PU)
+Combined with MODE1 and MODE2, this configuration strap sets the default PHY mode. 
+See Note 1 for more information on configuration 
+straps. 
+Note: Refer to Section 3.7.2, "MODE[2:0]:
+Mode Configuration" for additional
+details.
+1 Receive 
+Data 1
+RXD1 VO8 Bit 1 of the 2 data bits that are sent by the transceiver on the receive path.
+PHY Operating Mode 1 
+Configuration 
+Strap
+MODE1 VIS
+(PU)
+Combined with MODE0 and MODE2, this configuration strap sets the default PHY mode. 
+See Note 1 for more information on configuration 
+straps. 
+Note: Refer to Section 3.7.2, "MODE[2:0]:
+Mode Configuration" for additional
+details.
+1 Receive Error RXER VO8 This signal is asserted to indicate that an error was 
+detected somewhere in the frame presently being 
+transferred from the transceiver.
+PHY Address 0
+Configuration 
+Strap
+PHYAD0 VIS
+(PD)
+This configuration strap sets the transceiver’s SMI 
+address.
+See Note 1 for more information on configuration 
+straps. 
+Note: Refer to Section 3.7.1, "PHYAD[0]: PHY 
+Address Configuration" for additional 
+information.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 8  2013-2015 Microchip Technology Inc.
+Note 1: Configuration strap values are latched on power-on reset and system reset. Configuration straps are identified by an underlined symbol name. Signals that function as configuration straps must be augmented with
+an external resistor when connected to a load. Refer to Section 3.7, "Configuration Straps" for additional
+information.
+1 Carrier Sense / 
+Receive Data 
+Valid
+CRS_DV VO8 This signal is asserted to indicate the receive 
+medium is non-idle. When a 10BASE-T packet is 
+received, CRS_DV is asserted, but RXD[1:0] is 
+held low until the SFD byte (10101011) is received. 
+Note: Per the RMII standard, transmitted data 
+is not looped back onto the receive data 
+pins in 10BASE-T half-duplex mode. 
+PHY Operating Mode 2 
+Configuration 
+Strap
+MODE2 VIS
+(PU)
+Combined with MODE0 and MODE1, this configuration strap sets the default PHY mode. 
+See Note 1 for more information on configuration 
+straps. 
+Note: Refer to Section 3.7.2, "MODE[2:0]: 
+Mode Configuration" for additional 
+details.
+TABLE 2-1: RMII SIGNALS (CONTINUED) 
+Num Pins Name Symbol Buffer Type Description
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 9
+LAN8742A/LAN8742Ai
+TABLE 2-2: LED PINS
+Num Pins Name Symbol Buffer Type Description
+1 LED 1 LED1 O12 This pin can be used to indicate link activity, link 
+speed, nINT, or nPME as configured via the LED1 
+Function Select field of the Wakeup Control and 
+Status Register (WUCSR).
+Note: Refer to Section 3.8.1, "LEDs" and Section 3.8.4, "Wake on LAN (WoL)" for 
+additional LED information.
+Interrupt OutputnINT O12 Active low interrupt output.
+Note: By default, the nINT signal is output on 
+the nINT/REFCLKO pin. The nINT signal can be optionally configured to output on the LED1 or LED2 pins. Refer to 
+Section 3.6, "Interrupt Management" for 
+additional details on device interrupts.
+Power Management Event 
+Output
+nPME O12 Active low Power Management Event (PME) output.
+Note: The nPME signal can be optionally configured to output on the LED1 or LED2 
+pins. Refer to Section 3.8.4, "Wake on 
+LAN (WoL)" for additional nPME and 
+WoL information.
+Regulator Off 
+Configuration 
+Strap
+REGOFF IS
+(PD)
+This configuration strap is used to disable the internal 1.2 V regulator. When the regulator is disabled, 
+external 1.2 V must be supplied to VDDCR.
+• When REGOFF is pulled high to VDD2A with 
+an external resistor, the internal regulator is 
+disabled. 
+• When REGOFF is floating or pulled low, the 
+internal regulator is enabled (default).
+See Note 1 for more information on configuration 
+straps. 
+Note: Refer to Section 3.7.3, "REGOFF: Internal +1.2 V Regulator Configuration" for 
+additional details.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 10  2013-2015 Microchip Technology Inc.
+Note 1: Configuration strap values are latched on power-on reset and system reset. Configuration straps are identified by an underlined symbol name. Signals that function as configuration straps must be augmented with
+an external resistor when connected to a load. Refer to Section 3.7, "Configuration Straps" for additional
+information.
+1 LED 2 LED2 O12 This pin can be used to indicate link activity, link 
+speed, nINT, or nPME as configured via the LED2 
+Function Select field of the Wakeup Control and 
+Status Register (WUCSR).
+Note: Refer to Section 3.8.1, "LEDs" and Section 3.8.4, "Wake on LAN (WoL)" for 
+additional LED information.
+Interrupt OutputnINT O12 Active low interrupt output.
+Note: By default, the nINT signal is output on 
+the nINT/REFCLKO pin. The nINT signal can be optionally configured to output on the LED1 or LED2 pins. Refer to 
+Section 3.6, "Interrupt Management" for 
+additional details on device interrupts.
+Power Management Event 
+Output
+nPME O12 Active low Power Management Event (PME) output.
+Note: The nPME signal can be optionally configured to output on the LED1 or LED2 
+pins. Refer to Section 3.8.4, "Wake on 
+LAN (WoL)" for additional nPME and 
+WoL information.
+nINT/
+REFCLKO 
+Function Select 
+Configuration 
+Strap
+nINTSEL IS
+(PU)
+This configuration strap selects the mode of the 
+nINT/REFCLKO pin. 
+• When nINTSEL is floated or pulled to VDD2A, 
+nINT is selected for operation on the 
+nINT/REFCLKO pin (default).
+• When nINTSEL is pulled low to VSS, REFCLKO is selected for operation on the 
+nINT/REFCLKO pin.
+See Note 1 for more information on configuration 
+straps. 
+Note: Refer to See Section 3.8.1.6, "nINTSEL 
+and LED2 Polarity Selection" for additional information.
+TABLE 2-2: LED PINS (CONTINUED) 
+Num Pins Name Symbol Buffer Type Description
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 11
+LAN8742A/LAN8742Ai
+TABLE 2-3: SERIAL MANAGEMENT INTERFACE (SMI) PINS
+Num Pins Name Symbol Buffer Type Description
+1 SMI Data 
+Input/Output
+MDIO VIS/
+VO8
+(PU)
+Serial Management Interface data input/output
+1 SMI Clock MDC VIS Serial Management Interface clock
+TABLE 2-4: ETHERNET PINS
+Num Pins Name Symbol Buffer Type Description
+1 Ethernet 
+TX/RX Positive Channel 
+1
+TXP AIO Transmit/Receive Positive Channel 1
+1 Ethernet 
+TX/RX Negative Channel 
+1
+TXN AIO Transmit/Receive Negative Channel 1
+1 Ethernet 
+TX/RX Positive Channel 
+2
+RXP AIO Transmit/Receive Positive Channel 2
+1 Ethernet 
+TX/RX Negative Channel 
+2
+RXN AIO Transmit/Receive Negative Channel 2
+TABLE 2-5: MISCELLANEOUS PINS
+Num Pins Name Symbol Buffer Type Description
+1 External 
+Crystal 
+Input
+XTAL1 ICLK External crystal input
+External 
+Clock Input
+CLKIN ICLK Single-ended clock oscillator input.
+Note: When using a single ended clock
+oscillator, XTAL2 should be left unconnected.
+1 External 
+Crystal Output
+XTAL2 OCLK External crystal output
+1 External 
+Reset
+nRST VIS
+(PU)
+System reset. This signal is active low.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 12  2013-2015 Microchip Technology Inc.
+1 Interrupt OutputnINT VOD8
+(PU)
+Active low interrupt output. Place an external 
+resistor pull-up to VDDIO.
+Note: The nINT signal can be optionally configured to output on the LED1 or LED2 
+pins. Refer to Section 3.6, "Interrupt 
+Management" for additional details on 
+device interrupts.
+Note: Refer to Section 3.8.1.6, "nINTSEL 
+and LED2 Polarity Selection" for 
+details on how the nINTSEL configuration strap is used to determine the 
+function of this pin.
+Reference 
+Clock Output
+REFCLKO VO8 This optional 50 MHz clock output is derived from 
+the 25 MHz crystal oscillator. REFCLKO is selectable via the nINTSEL configuration strap.
+Note: Refer to Section 3.7.4.2, "REF_CLK 
+Out Mode" for additional details on 
+device interrupts.
+Note: Refer to Section 3.8.1.6, "nINTSEL 
+and LED2 Polarity Selection" for 
+details on how the nINTSEL configuration strap is used to determine the 
+function of this pin.
+TABLE 2-6: ANALOG REFERENCE PINS
+Num Pins Name Symbol Buffer Type Description
+1 External 1% 
+Bias Resistor 
+Input
+RBIAS AI This pin requires connection of a 12.1 kΩ (1%) 
+resistor to ground. 
+Refer to the LAN8742A/LAN8742Ai reference 
+schematic for connection information.
+Note: The nominal voltage is 1.2 V and the
+resistor will dissipate approximately
+1 mW of power.
+TABLE 2-5: MISCELLANEOUS PINS (CONTINUED) 
+Num Pins Name Symbol Buffer Type Description
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 13
+LAN8742A/LAN8742Ai
+TABLE 2-7: POWER PINS
+Num Pins Name Symbol Buffer Type Description
+1 +1.8 V to +3.3 V 
+Variable I/O 
+Power
+VDDIO P +1.8 V to +3.3 V variable I/O power.
+Refer to the LAN8742A/LAN8742Ai reference 
+schematic for connection information.
+1 +1.2 V Digital 
+Core Power 
+Supply
+VDDCR P Supplied by the on-chip regulator unless configured for regulator off mode via the REGOFF configuration strap.
+Refer to the LAN8742A/LAN8742Ai reference 
+schematic for connection information.
+Note: 1 µF and 470 pF decoupling capacitors in parallel to ground should be
+used on this pin.
+1 +3.3 V Channel 
+1 Analog Port 
+Power
+VDD1A P +3.3 V Analog Port Power to Channel 1.
+Refer to the LAN8742A/LAN8742Ai reference 
+schematic for connection information.
+1 +3.3 V Channel 
+2 Analog Port 
+Power
+VDD2A P +3.3 V Analog Port Power to Channel 2 and the 
+internal regulator.
+Refer to the LAN8742A/LAN8742Ai reference 
+schematic for connection information.
+1 Ground VSS P Common ground. This exposed pad must be connected to the ground plane with a via array.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 14  2013-2015 Microchip Technology Inc.
+2.1 Pin Assignments
+TABLE 2-8: 24-VQFN PACKAGE PIN ASSIGNMENTS
+Pin Num Pin Name Pin Num Pin Name
+1 VDD2A 13 MDC
+2 LED2/nINT/nPME/nINTSEL 14 nINT/REFCLKO
+3 LED1/nINT/nPME/REGOFF 15 nRST
+4 XTAL2 16 TXEN
+5 XTAL1/CLKIN 17 TXD0
+6 VDDCR 18 TXD1
+7 RXD1/MODE1 19 VDD1A
+8 RXD0/MODE0 20 TXN
+9 VDDIO 21 TXP
+10 RXER/PHYAD0 22 RXN
+11 CRS_DV/MODE2 23 RXP
+12 MDIO 24 RBIAS
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 15
+LAN8742A/LAN8742Ai
+2.2 Buffer Types
+TABLE 2-9: BUFFER TYPES
+Buffer Type Description
+IS Schmitt-triggered input
+O12 Output with 12 mA sink and 12 mA source
+VIS Variable voltage Schmitt-triggered input
+VO8 Variable voltage output with 8 mA sink and 8 mA source
+VOD8 Variable voltage open-drain output with 8 mA sink
+PU 50 µA (typical) internal pull-up. Unless otherwise noted in the pin description, internal pull-ups 
+are always enabled. 
+Note: Internal pull-up resistors prevent unconnected inputs from floating. Do not rely on
+internal resistors to drive signals external to the device. When connected to a load
+that must be pulled high, an external resistor must be added.
+PD 50 µA (typical) internal pull-down. Unless otherwise noted in the pin description, internal pulldowns are always enabled.
+Note: Internal pull-down resistors prevent unconnected inputs from floating. Do not rely
+on internal resistors to drive signals external to the device. When connected to a
+load that must be pulled low, an external resistor must be added.
+AI Analog input
+AIO Analog bi-directional
+ICLK Crystal oscillator input pin
+OCLK Crystal oscillator output pin
+P Power pin
+Note: The digital signals are not 5 V tolerant. Refer to Section 5.1, "Absolute Maximum Ratings*" for additional
+buffer information.
+Note: Sink and source capabilities are dependent on the VDDIO voltage. Refer to Section 5.1, "Absolute Maximum Ratings*" for additional information.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 16  2013-2015 Microchip Technology Inc.
+3.0 FUNCTIONAL DESCRIPTION
+This chapter provides functional descriptions of the various device features. These features have been categorized into
+the following sections:
+• Transceiver
+• Auto-Negotiation
+• HP Auto-MDIX Support
+• MAC Interface
+• Serial Management Interface (SMI)
+• Interrupt Management
+• Configuration Straps
+• Miscellaneous Functions
+• Application Diagrams
+3.1 Transceiver
+3.1.1 100BASE-TX TRANSMIT
+The 100BASE-TX transmit data path is shown in Figure 3-1. Each major block is explained in the following subsections.
+3.1.1.1 100BASE-TX Transmit Data Across the RMII Interface
+The MAC controller drives the transmit data onto the TXD bus and asserts TXEN to indicate valid data. The data is
+latched by the transceiver’s RMII block on the rising edge of REF_CLK. The data is in the form of 2-bit wide 50 MHz data. 
+3.1.1.2 4B/5B Encoding
+The transmit data passes from the RMII block to the 4B/5B encoder. This block encodes the data from 4-bit nibbles to
+5-bit symbols (known as “code-groups”) according to Table 3-1. Each 4-bit data-nibble is mapped to 16 of the 32 possible code-groups. The remaining 16 code-groups are either used for control information or are not valid.
+The first 16 code-groups are referred to by the hexadecimal values of their corresponding data nibbles, 0 through F. The
+remaining code-groups are given letter designations with slashes on either side. For example, an IDLE code-group is
+/I/, a transmit error code-group is /H/, etc.
+FIGURE 3-1: 100BASE-TX TRANSMIT DATA PATH
+MAC
+Tx 
+Driver
+MLT-3 
+Converter
+NRZI 
+Converter
+4B/5B 
+Encoder
+RJ45 CAT-5
+25 MHz by
+5 bits
+NRZI
+MLT-3 MLT-3
+MLT-3
+Scrambler 
+and PISO RMII 25 MHz
+by 4 bits
+Ext Ref_CLK
+PLL
+RMII 50 MHz by 2 bits
+Magnetics MLT-3
+125 Mbps Serial
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 17
+LAN8742A/LAN8742Ai
+TABLE 3-1: 4B/5B CODE TABLE
+Code Group Sym Receiver Interpretation Transmitter Interpretation
+11110 0 0 0000 DATA 0 0000 DATA
+01001 1 1 0001 1 0001
+10100 2 2 0010 2 0010
+10101 3 3 0011 3 0011
+01010 4 4 0100 4 0100
+01011 5 5 0101 5 0101
+01110 6 6 0110 6 0110
+01111 7 7 0111 7 0111
+10010 8 8 1000 8 1000
+10011 9 9 1001 9 1001
+10110 A A 1010 A 1010
+10111 B B 1011 B 1011
+11010 C C 1100 C 1100
+11011 D D 1101 D 1101
+11100 E E 1110 E 1110
+11101 F F 1111 F 1111
+11111 I IDLE Sent after /T/R until TXEN
+11000 J First nibble of SSD, translated to “0101” 
+following IDLE, else RXER 
+Sent for rising TXEN
+10001 K Second nibble of SSD, translated to 
+“0101” following J, else RXER
+Sent for rising TXEN
+01101 T First nibble of ESD, causes de-assertion of 
+CRS if followed by /R/, else assertion of 
+RXER
+Sent for falling TXEN
+00111 R Second nibble of ESD, causes deassertion of CRS if following /T/, else assertion 
+of RXER
+Sent for falling TXEN
+00100 H Transmit Error Symbol Sent for rising TXER
+00110 V INVALID, RXER if during RXDV INVALID
+11001 V INVALID, RXER if during RXDV INVALID
+00000 V INVALID, RXER if during RXDV INVALID
+00001 V INVALID, RXER if during RXDV INVALID
+00010 V INVALID, RXER if during RXDV INVALID
+00011 V INVALID, RXER if during RXDV INVALID
+00101 V INVALID, RXER if during RXDV INVALID
+01000 V INVALID, RXER if during RXDV INVALID
+01100 V INVALID, RXER if during RXDV INVALID
+10000 V INVALID, RXER if during RXDV INVALID
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 18  2013-2015 Microchip Technology Inc.
+3.1.1.3 Scrambling
+Repeated data patterns (especially the IDLE code-group) can have power spectral densities with large narrow-band
+peaks. Scrambling the data helps eliminate these peaks and spread the signal power more uniformly over the entire
+channel bandwidth. This uniform spectral density is required by FCC regulations to prevent excessive EMI from being
+radiated by the physical wiring.
+The seed for the scrambler is generated from the transceiver address, PHYAD, ensuring that in multiple-transceiver
+applications, such as repeaters or switches, each transceiver will have its own scrambler sequence.
+The scrambler also performs the Parallel In Serial Out conversion (PISO) of the data.
+3.1.1.4 NRZI and MLT-3 Encoding
+The scrambler block passes the 5-bit wide parallel data to the NRZI converter where it becomes a serial 125 MHz NRZI
+data stream. The NRZI is encoded to MLT-3. MLT-3 is a tri-level code where a change in the logic level represents a
+code bit “1” and the logic output remaining at the same level represents a code bit “0”.
+3.1.1.5 100M Transmit Driver
+The MLT3 data is then passed to the analog transmitter, which drives the differential MLT-3 signal, on outputs TXP and
+TXN, to the twisted pair media across a 1:1 ratio isolation transformer. The 10BASE-T and 100BASE-TX signals pass
+through the same transformer so that common “magnetics” can be used for both. The transmitter drives into the 100 Ω
+impedance of the CAT-5 cable. Cable termination and impedance matching require external components.
+3.1.1.6 100M Phase Lock Loop (PLL)
+The 100M PLL locks onto reference clock and generates the 125 MHz clock used to drive the 125 MHz logic and the
+100BASE-TX transmitter.
+3.1.2 100BASE-TX RECEIVE
+The 100BASE-TX receive data path is shown in Figure 3-2. Each major block is explained in the following subsections.
+FIGURE 3-2: 100BASE-TX RECEIVE DATA PATH
+MAC
+A/D 
+Converter
+MLT-3 
+Converter
+NRZI 
+Converter
+4B/5B 
+Decoder
+Magnetics RJ45 CAT-5
+PLL
+RMII 50 MHz by 2 bits
+25 MHz by
+5 bits
+NRZI
+MLT-3 MLT-3 MLT-3
+6 bit Data
+Descrambler 
+and SIPO
+125 Mbps Serial
+DSP: Timing 
+recovery, Equalizer 
+and BLW Correction
+MLT-3
+RMII
+25 MHz
+by 4 bits
+Ext Ref_CLK
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 19
+LAN8742A/LAN8742Ai
+3.1.2.1 100M Receive Input
+The MLT-3 from the cable is fed into the transceiver (on inputs RXP and RXN) via a 1:1 ratio transformer. The ADC
+samples the incoming differential signal at a rate of 125M samples per second. Using a 64-level quanitizer, it generates
+6 digital bits to represent each sample. The DSP adjusts the gain of the ADC according to the observed signal levels
+such that the full dynamic range of the ADC can be used.
+3.1.2.2 Equalizer, Baseline Wander Correction and Clock and Data Recovery
+The 6 bits from the ADC are fed into the DSP block. The equalizer in the DSP section compensates for phase and amplitude distortion caused by the physical channel consisting of magnetics, connectors, and CAT- 5 cable. The equalizer
+can restore the signal for any good-quality CAT-5 cable between 1 m and 100 m.
+If the DC content of the signal is such that the low-frequency components fall below the low frequency pole of the isolation transformer, then the droop characteristics of the transformer will become significant and Baseline Wander (BLW)
+on the received signal will result. To prevent corruption of the received data, the transceiver corrects for BLW and can
+receive the ANSI X3.263-1995 FDDI TP-PMD defined “killer packet” with no bit errors.
+The 100M PLL generates multiple phases of the 125 MHz clock. A multiplexer, controlled by the timing unit of the DSP,
+selects the optimum phase for sampling the data. This is used as the received recovered clock. This clock is used to
+extract the serial data from the received signal.
+3.1.2.3 NRZI and MLT-3 Decoding
+The DSP generates the MLT-3 recovered levels that are fed to the MLT-3 converter. The MLT-3 is then converted to an
+NRZI data stream. 
+3.1.2.4 Descrambling
+The descrambler performs an inverse function to the scrambler in the transmitter and also performs the Serial In Parallel
+Out (SIPO) conversion of the data.
+During reception of IDLE (/I/) symbols. the descrambler synchronizes its descrambler key to the incoming stream. Once
+synchronization is achieved, the descrambler locks on this key and is able to descramble incoming data.
+Special logic in the descrambler ensures synchronization with the remote transceiver by searching for IDLE symbols
+within a window of 4000 bytes (40 µs). This window ensures that a maximum packet size of 1514 bytes, allowed by the
+IEEE 802.3 standard, can be received with no interference. If no IDLE-symbols are detected within this time-period,
+receive operation is aborted and the descrambler re-starts the synchronization process.
+3.1.2.5 Alignment
+The de-scrambled signal is then aligned into 5-bit code-groups by recognizing the /J/K/ Start-of-Stream Delimiter (SSD)
+pair at the start of a packet. Once the code-word alignment is determined, it is stored and utilized until the next start of
+frame.
+3.1.2.6 5B/4B Decoding
+The 5-bit code-groups are translated into 4-bit data nibbles according to the 4B/5B table. The translated data is presented on the RXD[1:0] signal lines. The SSD, /J/K/, is translated to “0101 0101” as the first 2 nibbles of the MAC preamble. Reception of the SSD causes the transceiver to assert the receive data valid signal, indicating that valid data is
+available on the RXD bus. Successive valid code-groups are translated to data nibbles. Reception of either the End of
+Stream Delimiter (ESD) consisting of the /T/R/ symbols, or at least two /I/ symbols causes the transceiver to de-assert
+the carrier sense and receive data valid signals.
+Note: These symbols are not translated into data.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 20  2013-2015 Microchip Technology Inc.
+3.1.2.7 Receive Data Valid Signal
+The Receive Data Valid signal (RXDV) indicates that recovered and decoded nibbles are being presented on the
+RXD[1:0] outputs synchronous to RXCLK. RXDV becomes active after the /J/K/ delimiter has been recognized and RXD
+is aligned to nibble boundaries. It remains active until either the /T/R/ delimiter is recognized or link test indicates failure
+or SIGDET becomes false.
+RXDV is asserted when the first nibble of translated /J/K/ is ready for transfer over the Media Independent Interface (MII
+mode). 
+3.1.2.8 Receiver Errors
+During a frame, unexpected code-groups are considered receive errors. Expected code groups are the DATA set (0
+through F), and the /T/R/ (ESD) symbol pair. When a receive error occurs, the RXER signal is asserted and arbitrary
+data is driven onto the RXD[1:0] lines. Should an error be detected during the time that the /J/K/ delimiter is being
+decoded (bad SSD error), RXER is asserted true and the value ‘1110’ is driven onto the RXD[1:0] lines. Note that the
+Valid Data signal is not yet asserted when the bad SSD error occurs. 
+3.1.2.9 100M Receive Data Across the RMII Interface
+The 2-bit data nibbles are sent to the RMII block. These data nibbles are clocked to the controller at a rate of 50 MHz.
+The controller samples the data on the rising edge of XTAL1/CLKIN (REF_CLK). 
+3.1.3 10BASE-T TRANSMIT
+Data to be transmitted comes from the MAC layer controller. The 10BASE-T transmitter receives 4-bit nibbles from the
+MII at a rate of 2.5 MHz and converts them to a 10 Mbps serial data stream. The data stream is then Manchesterencoded and sent to the analog transmitter, which drives a signal onto the twisted pair via the external magnetics.
+The 10M transmitter uses the following blocks:
+• MII (digital)
+• TX 10M (digital)
+• 10M Transmitter (analog)
+• 10M PLL (analog)
+3.1.3.1 10M Transmit Data Across the MII/RMII Interface
+The MAC controller drives the transmit data onto the TXD bus. TXD[1:0] shall transition synchronously with respect to
+REF_CLK. When TXEN is asserted, TXD[1:0] are accepted for transmission by the device. TXD[1:0] shall be “00” to
+indicate idle when TXEN is deasserted. Values of TXD[1:0] other than “00” when TXEN is deasserted are reserved for
+out-of-band signaling (to be defined). Values other than “00” on TXD[1:0] while TXEN is deasserted shall be ignored by
+the device.TXD[1:0] shall provide valid data for each REF_CLK period while TXEN is asserted.
+In order to comply with legacy 10BASE-T MAC/Controllers, in half-duplex mode the transceiver loops back the transmitted data, on the receive path. This does not confuse the MAC/Controller since the COL signal is not asserted during
+this time. The transceiver also supports the SQE (Heartbeat) signal. 
+FIGURE 3-3: RELATIONSHIP BETWEEN RECEIVED DATA AND SPECIFIC MII SIGNALS
+RXD 5D 5 data data data data
+RX_DV
+RX_CLK
+CLEAR-TEXT JK 5D 5 5 data data data data
+5 55
+TR Idle
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 21
+LAN8742A/LAN8742Ai
+3.1.3.2 Manchester Encoding
+The 4-bit wide data is sent to the 10M TX block. The nibbles are converted to a 10 Mbps serial NRZI data stream. The
+10M PLL locks onto the external clock or internal oscillator and produces a 20 MHz clock. This is used to Manchester
+encode the NRZ data stream. When no data is being transmitted (TXEN is low), the 10M TX block outputs Normal Link
+Pulses (NLPs) to maintain communications with the remote link partner.
+3.1.3.3 10M Transmit Drivers
+The Manchester-encoded data is sent to the analog transmitter where it is shaped and filtered before being driven out
+as a differential signal across the TXP and TXN outputs.
+3.1.4 10BASE-T RECEIVE
+The 10BASE-T receiver gets the Manchester- encoded analog signal from the cable via the magnetics. It recovers the
+receive clock from the signal and uses this clock to recover the NRZI data stream. This 10M serial data is converted to
+4-bit data nibbles which are passed to the controller via MII at a rate of 2.5 MHz. 
+This 10M receiver uses the following blocks:
+• Filter and SQUELCH (analog)
+• 10M PLL (analog)
+• RX 10M (digital)
+• MII (digital)
+3.1.4.1 10M Receive Input and Squelch
+The Manchester signal from the cable is fed into the transceiver (on inputs RXP and RXN) via 1:1 ratio magnetics. It is
+first filtered to reduce any out-of-band noise. It then passes through a SQUELCH circuit. The SQUELCH is a set of
+amplitude and timing comparators that normally reject differential voltage levels below 300 mV and detect and recognize
+differential voltages above 585 mV. 
+3.1.4.2 Manchester Decoding
+The output of the SQUELCH goes to the 10M RX block where it is validated as Manchester encoded data. The polarity
+of the signal is also checked. If the polarity is reversed (local RXP is connected to RXN of the remote partner and vice
+versa), the condition is identified and corrected. The reversed condition is indicated by the XPOL bit of the Special Control/Status Indications Register. The 10M PLL is locked onto the received Manchester signal, from which the 20 MHz
+cock is generated. Using this clock, the Manchester encoded data is extracted and converted to a 10 MHz NRZI data
+stream. It is then converted from serial to 4-bit wide parallel data.
+The 10M RX block also detects valid 10BASE-T IDLE signals - Normal Link Pulses (NLPs) - to maintain the link. 
+3.1.4.3 10M Receive Data Across the RMII Interface
+The 2-bit data nibbles are sent to the RMII block. These data nibbles are valid on the rising edge of the RMII REF_CLK.
+3.1.4.4 Jabber Detection
+Jabber is a condition in which a station transmits for a period of time longer than the maximum permissible packet length,
+usually due to a fault condition, which results in holding the TXEN input for a long period. Special logic is used to detect
+the jabber state and abort the transmission to the line within 45 ms. Once TXEN is deasserted, the logic resets the jabber
+condition.
+As shown in Section 4.2.2, "Basic Status Register", the Jabber Detect bit indicates that a jabber condition was detected.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 22  2013-2015 Microchip Technology Inc.
+3.2 Auto-Negotiation
+The purpose of the auto-negotiation function is to automatically configure the transceiver to the optimum link parameters
+based on the capabilities of its link partner. Auto-negotiation is a mechanism for exchanging configuration information
+between two link-partners and automatically selecting the highest performance mode of operation supported by both
+sides. Auto-negotiation is fully defined in clause 28 of the IEEE 802.3 specification.
+Once auto-negotiation has completed, information about the resolved link can be passed back to the controller via the
+Serial Management Interface (SMI). The results of the negotiation process are reflected in the Speed Indication bits of
+the PHY Special Control/Status Register, as well as in the Auto Negotiation Link Partner Ability Register. The auto-negotiation protocol is a purely physical layer activity and proceeds independently of the MAC controller.
+The advertised capabilities of the transceiver are stored in the Auto Negotiation Advertisement Register. The default
+advertised by the transceiver is determined by user-defined on-chip signal options.
+The following blocks are activated during an auto-negotiation session:
+• Auto-negotiation (digital)
+• 100M ADC (analog)
+• 100M PLL (analog)
+• 100M equalizer/BLW/clock recovery (DSP)
+• 10M SQUELCH (analog)
+• 10M PLL (analog)
+• 10M Transmitter (analog)
+When enabled, auto-negotiation is started by the occurrence of one of the following events:
+• Hardware reset
+• Software reset
+• Power-down reset
+• Link status down
+• Setting the Restart Auto-Negotiate bit of the Basic Control Register
+On detection of one of these events, the transceiver begins auto-negotiation by transmitting bursts of Fast Link Pulses
+(FLP), which are bursts of link pulses from the 10M transmitter. They are shaped as Normal Link Pulses and can pass
+uncorrupted down CAT-3 or CAT-5 cable. A Fast Link Pulse Burst consists of up to 33 pulses. The 17 odd-numbered
+pulses, which are always present, frame the FLP burst. The 16 even-numbered pulses, which may be present or absent,
+contain the data word being transmitted. Presence of a data pulse represents a “1”, while absence represents a “0”. 
+The data transmitted by an FLP burst is known as a “Link Code Word.” These are defined fully in IEEE 802.3 clause 28.
+In summary, the transceiver advertises 802.3 compliance in its selector field (the first 5 bits of the Link Code Word). It
+advertises its technology ability according to the bits set in the Auto Negotiation Advertisement Register. 
+There are 4 possible matches of the technology abilities. In the order of priority these are:
+• 100M Full Duplex (Highest Priority) 
+• 100M Half Duplex
+• 10M Full Duplex 
+• 10M Half Duplex (Lowest Priority)
+If the full capabilities of the transceiver are advertised (100M, Full Duplex), and if the link partner is capable of 10M and
+100M, then auto-negotiation selects 100M as the highest performance mode. If the link partner is capable of half and
+full duplex modes, then auto-negotiation selects full duplex as the highest performance operation.
+Once a capability match has been determined, the link code words are repeated with the acknowledge bit set. Any difference in the main content of the link code words at this time will cause auto-negotiation to re-start. Auto-negotiation
+will also re-start if not all of the required FLP bursts are received.
+The capabilities advertised during auto-negotiation by the transceiver are initially determined by the logic levels latched
+on the MODE[2:0] configuration straps after reset completes. These configuration straps can also be used to disable
+auto-negotiation on power-up. Refer to Section 3.7.2, "MODE[2:0]: Mode Configuration" for additional information.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 23
+LAN8742A/LAN8742Ai
+Writing the bits 8 through 5 of the Auto Negotiation Advertisement Register allows software control of the capabilities
+advertised by the transceiver. Writing the Auto Negotiation Advertisement Register does not automatically re-start autonegotiation. The Restart Auto-Negotiate bit of the Basic Control Register must be set before the new abilities will be
+advertised. Auto-negotiation can also be disabled via software by clearing the Auto-Negotiation Enable bit of the Basic
+Control Register.
+3.2.1 PARALLEL DETECTION
+If the LAN8742A/LAN8742Ai is connected to a device lacking the ability to auto-negotiate (i.e., no FLPs are detected),
+it is able to determine the speed of the link based on either 100M MLT-3 symbols or 10M Normal Link Pulses. In this
+case the link is presumed to be half duplex per the IEEE standard. This ability is known as “Parallel Detection.” This
+feature ensures interoperability with legacy link partners. If a link is formed via parallel detection, then the Link Partner
+Auto-Negotiation Able bit of the Auto Negotiation Expansion Register is cleared to indicate that the Link Partner is not
+capable of auto-negotiation. The controller has access to this information via the management interface. If a fault occurs
+during parallel detection, the Parallel Detection Fault bit of Link Partner Auto-Negotiation Able is set.
+Auto Negotiation Link Partner Ability Register is used to store the link partner ability information, which is coded in the
+received FLPs. If the link partner is not auto-negotiation capable, then the Auto Negotiation Link Partner Ability Register
+is updated after completion of parallel detection to reflect the speed capability of the link partner.
+3.2.2 RESTARTING AUTO-NEGOTIATION
+Auto-negotiation can be restarted at any time by setting the Restart Auto-Negotiate bit of the Basic Control Register.
+Auto-negotiation will also restart if the link is broken at any time. A broken link is caused by signal loss. This may occur
+because of a cable break, or because of an interruption in the signal transmitted by the link partner. Auto-negotiation
+resumes in an attempt to determine the new link configuration.
+If the management entity re-starts auto-negotiation by setting the Restart Auto-Negotiate bit of the Basic Control Register, the LAN8742A/LAN8742Ai will respond by stopping all transmission/receiving operations. Once the break_link_-
+timer is completed in the auto-negotiation state-machine (approximately 1250 ms), auto-negotiation will re-start. In this
+case, the link partner will have also dropped the link due to lack of a received signal, so it too will resume auto-negotiation.
+3.2.3 DISABLING AUTO-NEGOTIATION
+Auto-negotiation can be disabled by setting the Auto-Negotiation Enable bit of the Basic Control Register to zero. The
+device will then force its speed of operation to reflect the information in the Basic Control Register (Speed Select bit and
+Duplex Mode bit). These bits should be ignored when auto-negotiation is enabled.
+3.2.4 HALF VS. FULL DUPLEX
+Half duplex operation relies on the CSMA/CD (Carrier Sense Multiple Access / Collision Detect) protocol to handle network traffic and collisions. In this mode, the carrier sense signal, CRS, responds to both transmit and receive activity. If
+data is received while the transceiver is transmitting, a collision results. 
+In full duplex mode, the transceiver is able to transmit and receive data simultaneously. In this mode, CRS responds
+only to receive activity. The CSMA/CD protocol does not apply and collision detection is disabled. 
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 24  2013-2015 Microchip Technology Inc.
+3.3 HP Auto-MDIX Support
+HP Auto-MDIX facilitates the use of CAT-3 (10BASE-T) or CAT-5 (100BASE-TX) media UTP interconnect cable without
+consideration of interface wiring scheme. If a user plugs in either a direct connect LAN cable, or a cross-over patch
+cable, as shown in Figure 3-4, the device’s Auto-MDIX transceiver is capable of configuring the TXP/TXN and RXP/RXN
+pins for correct transceiver operation.
+The internal logic of the device detects the TX and RX pins of the connecting device. Since the RX and TX line pairs
+are interchangeable, special PCB design considerations are needed to accommodate the symmetrical magnetics and
+termination of an Auto-MDIX design.
+The Auto-MDIX function can be disabled via the AMDIXCTRL bit in the Special Control/Status Indications Register.
+Note: When operating in 10BASE-T or 100BASE-TX manual modes, the Auto-MDIX crossover time can be
+extended via the Extend Manual 10/100 Auto-MDIX Crossover Time bit of the EDPD NLP/Crossover TimeRegister. Refer to Section 4.2.12, "EDPD NLP/Crossover TimeRegister" for additional information.
+FIGURE 3-4: DIRECT CABLE CONNECTION VS. CROSS-OVER CABLE CONNECTION
+1
+2
+3
+4
+5
+6
+7
+8
+TXP
+TXN
+RXP
+Not Used
+Not Used
+RXN
+Not Used
+Not Used
+1
+2
+3
+4
+5
+6
+7
+8
+TXP
+TXN
+RXP
+Not Used
+Not Used
+RXN
+Not Used
+Not Used
+Direct Connect Cable
+RJ-45 8-pin straight-through 
+for 10BASE-T/100BASE-TX 
+signaling
+1
+2
+3
+4
+5
+6
+7
+8
+TXP
+TXN
+RXP
+Not Used
+Not Used
+RXN
+Not Used
+Not Used
+1
+2
+3
+4
+5
+6
+7
+8
+TXP
+TXN
+RXP
+Not Used
+Not Used
+RXN
+Not Used
+Not Used
+Cross-Over Cable
+RJ-45 8-pin cross-over for 
+10BASE-T/100BASE-TX 
+signaling
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 25
+LAN8742A/LAN8742Ai
+3.4 MAC Interface
+3.4.1 RMII 
+The device supports the low pin count Reduced Media Independent Interface (RMII) intended for use between Ethernet
+transceivers and switch ASICs. Under IEEE 802.3, an MII comprised of 16 pins for data and control is defined. In devices
+incorporating many MACs or transceiver interfaces such as switches, the number of pins can add significant cost as the
+port counts increase. RMII reduces this pin count while retaining a management interface (MDIO/MDC) that is identical
+to MII. 
+The RMII interface has the following characteristics:
+• It is capable of supporting 10 Mbps and 100 Mbps data rates
+• A single clock reference is used for both transmit and receive
+• It provides independent 2-bit (di-bit) wide transmit and receive data paths
+• It uses LVCMOS signal levels, compatible with common digital CMOS ASIC processes
+The RMII includes the following interface signals (1 optional):
+• Transmit data - TXD[1:0]
+• Transmit strobe - TXEN
+• Receive data - RXD[1:0]
+• Receive error - RXER (Optional) 
+• Carrier sense - CRS_DV
+• Reference Clock - (RMII references usually define this signal as REF_CLK)
+3.4.1.1 CRS_DV - Carrier Sense/Receive Data Valid
+The CRS_DV is asserted by the device when the receive medium is non-idle. CRS_DV is asserted asynchronously on
+detection of carrier due to the criteria relevant to the operating mode. In 10BASE-T mode when squelch is passed, or
+in 100BASE-TX mode when 2 non-contiguous zeroes in 10 bits are detected, the carrier is said to be detected.
+Loss of carrier shall result in the deassertion of CRS_DV synchronous to the cycle of REF_CLK which presents the first
+di-bit of a nibble onto RXD[1:0] (i.e., CRS_DV is deasserted only on nibble boundaries). If the device has additional bits
+to be presented on RXD[1:0] following the initial deassertion of CRS_DV, then the device shall assert CRS_DV on cycles
+of REF_CLK which present the second di-bit of each nibble and de-assert CRS_DV on cycles of REF_CLK which present the first di-bit of a nibble. The result is, starting on nibble boundaries, CRS_DV toggles at 25 MHz in 100 Mbps mode
+and 2.5 MHz in 10 Mbps mode when CRS ends before RXDV (i.e., the FIFO still has bits to transfer when the carrier
+event ends). Therefore, the MAC can accurately recover RXDV and CRS.
+During a false carrier event, CRS_DV shall remain asserted for the duration of carrier activity. The data on RXD[1:0] is
+considered valid once CRS_DV is asserted. However, since the assertion of CRS_DV is asynchronous relative to
+REF_CLK, the data on RXD[1:0] shall be “00” until proper receive signal decoding takes place.
+3.4.1.2 Reference Clock (REF_CLK)
+The RMII REF_CLK is a continuous clock that provides the timing reference for CRS_DV, RXD[1:0], TXEN, TXD[1:0]
+and RXER. The device uses REF_CLK as the network clock such that no buffering is required on the transmit data path.
+However, on the receive data path, the receiver recovers the clock from the incoming data stream, and the device uses
+elasticity buffering to accommodate for differences between the recovered clock and the local REF_CLK.
+Note: The RMII interface can be disabled (outputs driven low) via the Interface Disable bit of the Wakeup Control
+and Status Register (WUCSR).
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 26  2013-2015 Microchip Technology Inc.
+3.5 Serial Management Interface (SMI)
+The Serial Management Interface is used to control the device and obtain its status. This interface supports registers 0
+through 6 as required by clause 22 of the 802.3 standard, as well as “vendor-specific” registers 16 to 31 allowed by the
+specification. Device registers are detailed in Chapter 4, "Register Descriptions".
+At the system level, SMI provides 2 signals: MDIO and MDC. The MDC signal is an aperiodic clock provided by the
+Station Management Controller (SMC). MDIO is a bi-directional data SMI input/output signal that receives serial data
+(commands) from the controller SMC and sends serial data (status) to the SMC. The minimum time between edges of
+the MDC is 160 ns. There is no maximum time between edges. The minimum cycle time (time between two consecutive
+rising or two consecutive falling edges) is 400 ns. These modest timing requirements allow this interface to be easily
+driven by the I/O port of a microcontroller.
+The data on the MDIO line is latched on the rising edge of the MDC. The frame structure and timing of the data is shown
+in Figure 3-5 and Figure 3-6. The timing relationships of the MDIO signals are further described in Section 5.6.5, "SMI
+Timing".
+FIGURE 3-5: MDIO TIMING AND FRAME STRUCTURE - READ CYCLE
+FIGURE 3-6: MDIO TIMING AND FRAME STRUCTURE - WRITE CYCLE
+MDC
+MDIO
+Read Cycle
+...
+32 1's 0 1 1 0 A4 A3 A2 A1 A0 R4 R3 R2 R1 R0 D15 D14 D0 ... D1
+Preamble Start of
+Frame
+OP 
+Code PHY Address Register Address Turn
+Around
+Data
+Data To Phy Data From Phy
+MDC
+MDIO 32 1's 0 1 1 0 A4 A3 A2 A1 A0 R4 R3 R2 R1 R0 ...
+Write Cycle
+D15 D14 D1 D0
+...
+Preamble Data Start of
+Frame
+OP 
+Code PHY Address Register Address Turn
+Around
+Data To Phy
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 27
+LAN8742A/LAN8742Ai
+3.6 Interrupt Management
+The device management interface supports an interrupt capability that is not a part of the IEEE 802.3 specification. This
+interrupt capability generates an active low asynchronous interrupt signal on the nINT output whenever certain events
+are detected as setup by the Interrupt Mask Register.
+The nINT signal can be selected to output on three different pins:
+• nINT/REFCLKO
+(See Section 3.7.4, "nINTSEL: nINT/REFCLKO Configuration" for configuration information)
+• LED1
+(See Section 3.8.1, "LEDs" for configuration information)
+• LED2
+(See Section 3.8.1, "LEDs" for configuration information)
+The device’s interrupt system provides two modes, a Primary interrupt mode and an Alternative interrupt mode. Both
+systems will assert the nINT pin low when the corresponding mask bit is set. These modes differ only in how they deassert the nINT interrupt output. These modes are detailed in the following subsections.
+Note: The Primary interrupt mode is the default interrupt mode after a power-up or hard reset. The Alternative
+interrupt mode requires setup after a power-up or hard reset.
+Note: In addition to the main interrupts described in this section, an nPME pin is provided exclusively for WoL
+specific interrupts. Refer to Section 3.8.4, "Wake on LAN (WoL)" for additional information on nPME.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 28  2013-2015 Microchip Technology Inc.
+3.6.1 PRIMARY INTERRUPT SYSTEM
+The Primary interrupt system is the default interrupt mode (ALTINT bit of the Mode Control/Status Register is “0”). The
+Primary interrupt system is always selected after power-up or hard reset. In this mode, to set an interrupt, set the corresponding mask bit in the Interrupt Mask Register (see Table 3-2). Then when the event to assert nINT is true, the nINT
+output will be asserted. When the corresponding event to deassert nINT is true, then the nINT will be de-asserted.
+Note 1: If the mask bit is enabled and nINT has been de-asserted while ENERGYON is still high, nINT will assert
+for 256 ms, approximately one second after ENERGYON goes low when the Cable is unplugged. To prevent
+an unexpected assertion of nINT, the ENERGYON interrupt mask should always be cleared as part of the
+ENERGYON interrupt service routine.
+TABLE 3-2: INTERRUPT MANAGEMENT TABLE
+Mask Interrupt Source Flag Interrupt Source Event to Assert 
+nINT
+Event to
+De-Assert nINT
+30.8 29.8 WoL 3.32784.7:4 nPME Rising 
+3.32784.7:4 
+or’ed together
+3.32784.7:4 or’ed together 
+low or reading register 29
+30.7 29.7 ENERGYON 17.1 ENERGYON Rising 17.1 (see 
+Note 1)
+Falling 17.1 or
+Reading register 29
+30.6 29.6 Auto-Negotiation 
+Complete
+1.5 Auto-Negotiate 
+Complete
+Rising 1.5 Falling 1.5 or
+Reading register 29
+30.5 29.5 Remote Fault 
+Detected
+1.4 Remote Fault Rising 1.4 Falling 1.4, or 
+Reading register 1 or 
+Reading register 29
+30.4 29.4 Link Down 1.2 Link Status Falling 1.2 Reading register 1 or
+Reading register 29
+30.3 29.3 Auto-Negotiation 
+LP Acknowledge
+5.14 Acknowledge Rising 5.14 Falling 5.14 or
+Reading register 29
+30.2 29.2 Parallel Detection 
+Fault
+6.4 Parallel Detection FaultRising 6.4 Falling 6.4 or 
+Reading register 6, or
+Reading register 29, or 
+Re-Auto Negotiate or
+Link down
+30.1 29.1 Auto-Negotiation 
+Page Received
+6.1 Page Received Rising 6.1 Falling 6.1 or
+Reading register 6, or
+Reading register 29, or
+Re-Auto Negotiate, or
+Link down.
+Note: The ENERGYON bit in the Mode Control/Status Register is defaulted to a ‘1’ at the start of the signal acquisition process, therefore the INT7 bit in the Interrupt Mask Register will also read as a ‘1’ at power-up. If no
+signal is present, then both ENERGYON and INT7 will clear within a few milliseconds.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 29
+LAN8742A/LAN8742Ai
+3.6.2 ALTERNATE INTERRUPT SYSTEM
+The Alternate interrupt system is enabled by setting the ALTINT bit of the Mode Control/Status Register to “1”. In this
+mode, to set an interrupt, set the corresponding bit of the in the Mask Register 30, (see Table 3-3). To Clear an interrupt,
+either clear the corresponding bit in the Interrupt Mask Register to deassert the nINT output, or clear the interrupt
+source, and write a ‘1’ to the corresponding Interrupt Source Flag. Writing a ‘1’ to the Interrupt Source Flag will cause
+the state machine to check the Interrupt Source to determine if the Interrupt Source Flag should clear or stay as a ‘1’. If
+the Condition to deassert is true, then the Interrupt Source Flag is cleared and nINT is also deasserted. If the Condition
+to deassert is false, then the Interrupt Source Flag remains set, and the nINT remains asserted.
+For example, setting the INT7 bit in the Interrupt Mask Register will enable the ENERGYON interrupt. After a cable is
+plugged in, the ENERGYON bit in the Mode Control/Status Register goes active and nINT will be asserted low. To deassert the nINT interrupt output, either clear the ENERGYON bit in the Mode Control/Status Register by removing the
+cable and then writing a ‘1’ to the INT7 bit in the Interrupt Mask Register, OR clear the INT7 mask (bit 7 of the Interrupt
+Mask Register).
+TABLE 3-3: ALTERNATIVE INTERRUPT SYSTEM MANAGEMENT TABLE
+Mask Interrupt Source Flag Interrupt Source Event to 
+Assert nINT
+Condition to
+DeAssert
+Bit to Clear 
+nINT
+30.8 29.8 WoL 3.32784.7:4 nPME Rising 
+3.32784.7:4 
+or’ed
+3.32784.7:4 
+all low
+29.8
+30.7 29.7 ENERGYON 17.1 ENERGYON Rising 17.1 17.1 low 29.7
+30.6 29.6 Auto-Negotiation 
+Complete
+1.5 Auto-Negotiate 
+Complete
+Rising 1.5 1.5 low 29.6
+30.5 29.5 Remote Fault 
+Detected
+1.4 Remote Fault Rising 1.4 1.4 low 29.5
+30.4 29.4 Link Down 1.2 Link Status Falling 1.2 1.2 high 29.4
+30.3 29.3 Auto-Negotiation 
+LP Acknowledge
+5.14 Acknowledge Rising 5.14 5.14 low 29.3
+30.2 29.2 Parallel Detection 
+Fault
+6.4 Parallel Detection FaultRising 6.4 6.4 low 29.2
+30.1 29.1 Auto-Negotiation 
+Page Received
+6.1 Page Received Rising 6.1 6.1 low 29.1
+Note: The ENERGYON bit in the Mode Control/Status Register is defaulted to a ‘1’ at the start of the signal acquisition process, therefore the INT7 bit in the Interrupt Mask Register will also read as a ‘1’ at power-up. If no
+signal is present, then both ENERGYON and INT7 will clear within a few milliseconds.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 30  2013-2015 Microchip Technology Inc.
+3.7 Configuration Straps
+Configuration straps allow various features of the device to be automatically configured to user defined values. Configuration straps are latched upon Power-On Reset (POR) and pin reset (nRST). Configuration straps include internal
+resistors in order to prevent the signal from floating when unconnected. If a particular configuration strap is connected
+to a load, an external pull-up or pull-down resistor should be used to augment the internal resistor to ensure that it
+reaches the required voltage level prior to latching. The internal resistor can also be overridden by the addition of an
+external resistor.
+3.7.1 PHYAD[0]: PHY ADDRESS CONFIGURATION
+The PHYAD0 bit is driven high or low to give each PHY a unique address. This address is latched into an internal register
+at the end of a hardware reset (default = 0b). In a multi-PHY application (such as a repeater), the controller is able to
+manage each PHY via the unique address. Each PHY checks each management data frame for a matching address in
+the relevant bits. When a match is recognized, the PHY responds to that particular frame. The PHY address is also used
+to seed the scrambler. In a multi-PHY application, this ensures that the scramblers are out of synchronization and disperses the electromagnetic radiation across the frequency spectrum.
+The device’s SMI address may be configured using hardware configuration to either the value 0 or 1. The user can configure the PHY address using Software Configuration if an address greater than 1 is required. The PHY address can be
+written (after SMI communication at some address is established) using the PHYAD bits of the Special Modes Register.
+The PHYAD0 hardware configuration strap is multiplexed with the RXER pin.
+3.7.2 MODE[2:0]: MODE CONFIGURATION
+The MODE[2:0] configuration straps control the configuration of the 10/100 digital block. When the nRST pin is deasserted, the register bit values are loaded according to the MODE[2:0] configuration straps. The 10/100 digital block is
+then configured by the register bit values. When a soft reset occurs via the Soft Reset bit of the Basic Control Register,
+the configuration of the 10/100 digital block is controlled by the register bit values and the MODE[2:0] configuration
+straps have no affect.
+The device’s mode may be configured using the hardware configuration straps as summarized in Table 3-4. The user
+may configure the transceiver mode by writing the SMI registers.
+Note: The system designer must guarantee that configuration strap pins meet the timing requirements specified
+in Section 5.6.3, "Power-On nRST & Configuration Strap Timing". If configuration strap pins are not at the
+correct voltage level prior to being latched, the device may capture incorrect strap values.
+Note: When externally pulling configuration straps high, the strap should be tied to VDDIO, except for REGOFF
+and nINTSEL which should be tied to VDD2A.
+TABLE 3-4: MODE[2:0] BUS
+MODE[2:0] Mode Definitions
+Default Register Bit Values
+Register 0 Register 4
+[13,12,10,8] [8,7,6,5]
+000 10BASE-T Half Duplex. Auto-negotiation disabled. 0000 N/A
+001 10BASE-T Full Duplex. Auto-negotiation disabled. 0001 N/A
+010 100BASE-TX Half Duplex. Auto-negotiation disabled.
+CRS is active during Transmit & Receive.
+1000 N/A
+011 100BASE-TX Full Duplex. Auto-negotiation disabled.
+CRS is active during Receive.
+1001 N/A
+100 100BASE-TX Half Duplex is advertised. Auto-negotiation enabled.
+CRS is active during Transmit & Receive.
+1100 0100
+101 Repeater mode. Auto-negotiation enabled. 
+100BASE-TX Half Duplex is advertised. 
+CRS is active during Receive.
+1100 0100
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 31
+LAN8742A/LAN8742Ai
+The MODE[2:0] hardware configuration pins are multiplexed with other signals as shown in Table 3-5.
+3.7.3 REGOFF: INTERNAL +1.2 V REGULATOR CONFIGURATION
+The incorporation of flexPWR technology provides the ability to disable the internal +1.2 V regulator. When the regulator
+is disabled, an external +1.2 V must be supplied to the VDDCR pin. Disabling the internal +1.2 V regulator makes it
+possible to reduce total system power, since an external switching regulator with greater efficiency (versus the internal
+linear regulator) can be used to provide +1.2 V to the transceiver circuitry.
+3.7.3.1 Disabling the Internal +1.2 V Regulator
+To disable the +1.2 V internal regulator, a pull-up strapping resistor should be connected from the REGOFF configuration strap to VDD2A. At power-on, after both VDDIO and VDD2A are within specification, the transceiver will sample
+REGOFF to determine whether the internal regulator should turn on. If the pin is sampled at a voltage greater than VIH,
+then the internal regulator is disabled and the system must supply +1.2 V to the VDDCR pin. The VDDIO voltage must
+be at least 80% of the operating voltage level (1.44 V when operating at 1.8 V, 2.0 V when operating at 2.5 V, 2.64 V
+when operating at 3.3 V) before voltage is applied to VDDCR. As described in Section 3.7.3.2, when REGOFF is left
+floating or connected to VSS, the internal regulator is enabled and the system is not required to supply +1.2 V to the
+VDDCR pin.
+3.7.3.2 Enabling the Internal +1.2 V Regulator
+The +1.2 V for VDDCR is supplied by the on-chip regulator unless the transceiver is configured for the regulator off mode
+using the REGOFF configuration strap as described in Section 3.7.3.1. By default, the internal +1.2 V regulator is
+enabled when REGOFF is floating (due to the internal pull-down resistor). During power-on, if REGOFF is sampled
+below VIL, then the internal +1.2 V regulator will turn on and operate with power from the VDD2A pin.
+110 Power-Down mode. In this mode the transceiver will 
+wake-up in Power-Down mode. The transceiver cannot be used when the MODE[2:0] bits are set to this 
+mode. To exit this mode, the MODE bits in Register 
+18.7:5 (see Section 4.2.14, "Special Modes Register") 
+must be configured to some other value and a soft 
+reset must be issued.
+N/A N/A
+111 All capable. Auto-negotiation enabled. X10X 1111
+TABLE 3-5: PIN NAMES FOR MODE BITS
+MODE Bit Pin Name
+MODE[0] RXD0/MODE0
+MODE[1] RXD1/MODE1
+MODE[2] CRS_DV/MODE2
+Note: Because the REGOFF configuration strap shares functionality with the LED1 pin, proper consideration
+must also be given to the LED polarity. Refer to Section 3.8.1, "LEDs" for additional information on the relation between REGOFF and the LED1 polarity.
+TABLE 3-4: MODE[2:0] BUS (CONTINUED) 
+MODE[2:0] Mode Definitions
+Default Register Bit Values
+Register 0 Register 4
+[13,12,10,8] [8,7,6,5]
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 32  2013-2015 Microchip Technology Inc.
+3.7.4 nINTSEL: nINT/REFCLKO CONFIGURATION
+The nINTSEL configuration strap is used to select between one of two available modes: REF_CLK In Mode (nINT) and
+REF_CLK Out Mode. The configured mode determines the function of the nINT/REFCLKO pin. The nINTSEL configuration strap is latched at POR and on the rising edge of the nRST. By default, nINTSEL is configured for nINT mode via
+the internal pull-up resistor. 
+The RMII REF_CLK is a continuous clock that provides the timing reference for CRS_DV, RXD[1:0], TXEN, TXD[1:0]
+and RXER. The device uses REF_CLK as the network clock such that no buffering is required on the transmit data path.
+However, on the receive data path, the receiver recovers the clock from the incoming data stream. The device uses
+elasticity buffering to accommodate for differences between the recovered clock and the local REF_CLK.
+In REF_CLK In Mode, the 50 MHz REF_CLK is driven on the XTAL1/CLKIN pin. This is the traditional system configuration when using RMII, and is described in Section 3.7.4.1. When configured for REF_CLK Out Mode, the device generates the 50 MHz RMII REF_CLK and the nINT interrupt is not available. REF_CLK Out Mode allows a low-cost
+25 MHz crystal to be used as the reference for REF_CLK. This configuration may result in reduced system cost and is
+described in Section 3.7.4.2.
+TABLE 3-6: nINTSEL CONFIGURATION
+Strap Value Mode REF_CLK Description
+nINTSEL = 0 REF_CLK Out Mode nINT/REFCLKO is the source of REF_CLK. 
+nINTSEL = 1 REF_CLK In Mode nINT/REFCLKO is an active low interrupt output. 
+The REF_CLK is sourced externally and must be driven 
+on the XTAL1/CLKIN pin.
+Note: Because the nINTSEL configuration strap shares functionality with the LED2 pin, proper consideration
+must also be given to the LED polarity. Refer to Section 3.8.1.6, "nINTSEL and LED2 Polarity Selection"
+for additional information on the relation between nINTSEL and the LED2 polarity.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 33
+LAN8742A/LAN8742Ai
+3.7.4.1 REF_CLK In Mode
+In REF_CLK In Mode, the 50 MHz REF_CLK is driven on the XTAL1/CLKIN pin. A 50 MHz source for REF_CLK must
+be available external to the device when using this mode. The clock is driven to both the MAC and PHY as shown in
+Figure 3-7.
+FIGURE 3-7: EXTERNAL 50 MHZ CLOCK SOURCES THE REF_CLK
+LAN8742A/LAN8742Ai
+10/100 PHY
+24-VQFN
+RMII
+TXP
+TXN
+Mag RJ45
+RXP
+RXN
+XTAL1/CLKIN
+XTAL2
+TXD[1:0]
+2
+RXD[1:0]
+CRS_DV
+2
+RMII
+LED[2:1]
+2
+Interface
+MDIO
+MDC
+nINT
+nRST
+TXEN
+MAC
+Accepts external 
+50MHz clock
+50MHz 
+Reference
+Clock
+All RMII signals are 
+synchronous to the supplied 
+clock
+REF_CLK
+RXER
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 34  2013-2015 Microchip Technology Inc.
+3.7.4.2 REF_CLK Out Mode
+To reduce BOM cost, the device includes a feature to generate the RMII REF_CLK signal from a low-cost, 25 MHz fundamental crystal. This type of crystal is inexpensive in comparison to 3rd overtone crystals that would normally be
+required for 50 MHz. The MAC must be capable of operating with an external clock to take advantage of this feature as
+shown in Figure 3-8. 
+In order to optimize package size and cost, the REFCLKO pin is multiplexed with the nINT pin. In REF_CLK Out mode,
+the nINT functionality is disabled to accommodate usage of REFCLKO as a 50 MHz clock to the MAC.
+Note: The REF_CLK Out Mode is not part of the RMII Specification. To ensure proper system operation, a timing
+analysis of the MAC and LAN8742A/LAN8742Ai must be performed.
+Note: In REF_CLK Out Mode, REFCLKO will not output when the device is in Energy Detect Power-Down Mode
+or General Power-Down Mode.
+FIGURE 3-8: SOURCING REF_CLK FROM A 25 MHZ CRYSTAL
+LAN8742A/LAN8742Ai
+10/100 PHY
+24-VQFN
+RMII
+TXP
+TXN
+Mag RJ45
+RXP
+RXN
+25 MHz
+XTAL1/CLKIN
+XTAL2
+LED[2:1]
+2
+Interface
+nRST
+TXD[1:0]
+2
+RXD[1:0]
+CRS_DV
+2
+RMII MDIO
+MDC
+TXEN
+REFCLKO
+MAC
+Capable of 
+accepting 50 MHz 
+clock
+Note: nINT not available in 
+this configuration
+RXER REF_CLK
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 35
+LAN8742A/LAN8742Ai
+In some system architectures, a 25 MHz clock source is available. The device can be used to generate the REF_CLK
+to the MAC as shown in Figure 3-9. It is important to note that in this specific example, only a 25 MHz clock can be used
+(clock cannot be 50 MHz). Similar to the 25 MHz crystal mode, the nINT function is disabled.
+FIGURE 3-9: SOURCING REF_CLK FROM EXTERNAL 25 MHZ SOURCE
+LAN8742A/LAN8742Ai
+10/100 PHY
+24-VQFN
+RMII
+TXP
+TXN
+Mag RJ45
+RXP
+RXN
+XTAL1/CLKIN
+XTAL2
+TXD[1:0]
+2
+RXD[1:0]
+CRS_DV
+2
+RMII
+LED[2:1]
+2
+Interface
+MDIO
+MDC
+nRST
+TXEN
+REFCLKO
+MAC
+Capable of 
+accepting 50 MHz 
+clock
+RXER
+25 MHz
+Clock
+REF_CLK
+Note: nINT is not available on the 
+REFCLKO/nINT pin in this configuration. 
+nINT can be made optionally available 
+via the LED1 or LED2 pin.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 36  2013-2015 Microchip Technology Inc.
+3.8 Miscellaneous Functions
+3.8.1 LEDS
+Two LED signals are provided as a convenient means to indicate the transceiver's mode of operation or be used as
+nINT or nPME signals. The LED1 and LED2 pin functions are configurable via the LED1 Function Select and LED2
+Function Select bits of the Wakeup Control and Status Register (WUCSR), respectively. When used as an LED indicator,
+the LED signals are either active high or active low as described in Section 3.8.1.5, "REGOFF and LED1 Polarity Selection" and Section 3.8.1.6, "nINTSEL and LED2 Polarity Selection". For additional information on nINT, refer to Section
+3.6, "Interrupt Management". For additional information on nPME, refer to Section 3.8.4, "Wake on LAN (WoL)". 
+When configured in the default Link/Activity mode, the LED1 output is driven active whenever the device detects a valid
+link, and blinks when CRS is active (high) indicating activity.
+When configured in the default Link Speed mode, the LED2 output is driven active when the operating speed is 100
+Mbps. This LED will go inactive when the operating speed is 10 Mbps or during line isolation.
+3.8.1.1 LED1/nINT/nPME Usage with Internal Regulator Disabled (REGOFF High)
+When the LED1/nINT/nPME/REGOFF pin is high during reset, the internal regulator is disabled. After the deassertion
+of reset, this pin will first function as LED1 (Link Activity). Upon configuration, it can function as nINT or nPME. Figure
+3-10 illustrates the steps required to program the LED1 pin as nINT or nPME with the internal regulator disabled.
+In this configuration, it is possible for an LED to be connected to this pin while it function as nINT or nPME during the
+WoL state. Since the polarity to turn on the LED is active low, the Link Activity LED will not be lit while waiting for a WoL
+event.
+Note: When pulling the LED1 and LED2 pins high, they must be tied to VDD2A, NOT VDDIO.
+Note: Refer to Section 3.7.3, "REGOFF: Internal +1.2 V Regulator Configuration" for additional information on
+the REGOFF configuration strap.
+FIGURE 3-10: LED1/nINT/nPME/REGOFF WITH INTERNAL REGULATOR DISABLED
+nRST
+LED1/nINT/
+WUCSR[14:13]
+Link Activity nINT/nPME
+00b 01b/10b 00b
+Link Activity
+nPME/REGOFF
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 37
+LAN8742A/LAN8742Ai
+3.8.1.2 LED1/nINT/nPME Usage with Internal Regulator Enabled (REGOFF Low)
+When the LED1/nINT/nPME/REGOFF pin is low during reset, the internal regulator is enabled. After the deassertion of
+reset, this pin will first function as LED1 (Link Activity). Upon configuration, it can function as nINT or nPME. Figure 3-
+11 illustrates the steps required to program the LED1 pin as nINT or nPME with the internal regulator enabled.
+In this configuration, it is recommended not to connect an LED to this pin. Because this pin is active high, the LED will
+be lit while waiting for a WoL event.
+3.8.1.3 LED2/nINT/nPME Usage with nINTSEL Enabled
+When the LED2/nINT/nPME/nINTSEL pin is high during reset, the nINT/REFCLKO pin is configured to function as nINT.
+After the deassertion of reset, this pin will first function as LED2 (Link Speed). Upon configuration, it can function as
+nPME. It is also possible to configure LED2 as nINT although this would duplicate the function of the nINT/REFCLKO
+pin. Figure 3-12 illustrates the steps required to program the LED2 pin as nINT or nPME with nINTSEL enabled.
+In this configuration, it is possible for an LED be connected to this pin while it functions as nINT or nPME during a WoL
+state. Since the polarity to light the LED is active low, the Link Speed LED will not be lit while waiting for a WoL event.
+To provide further flexibility, LED2 can be reconfigured as Link Activity by writing 11b to the LED2 Function Select field
+of the Wakeup Control and Status Register (WUCSR). This allows LED2 to function as Link Activity when LED1 cannot
+be configured as Link Activity. Link Speed can be easily implemented on the microcontroller using GPIO.
+Note: Refer to Section 3.7.3, "REGOFF: Internal +1.2 V Regulator Configuration" for additional information on
+the REGOFF configuration strap.
+FIGURE 3-11: LED1/nINT/nPME/REGOFF WITH INTERNAL REGULATOR ENABLED
+Note: Refer to Section 3.7.4, "nINTSEL: nINT/REFCLKO Configuration" for additional information on the nINTSEL configuration strap.
+FIGURE 3-12: LED2/nINT/nPME WITH nINTSEL ENABLED
+nRST
+LED1/nINT/
+WUCSR[14:13]
+Link Activity nINT/nPME
+00b 01b/10b
+nPME/REGOFF
+nRST
+LED2/nINT/
+WUCSR[12:11]
+Link Speed/ nINT/nPME
+00b/11b 01b/10b 00b/11b
+Link Speed/
+Link Activity
+00b
+Link Activity
+nPME/nINTSEL
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 38  2013-2015 Microchip Technology Inc.
+3.8.1.4 LED2/nINT/nPME Usage with nINTSEL Disabled
+When the LED2/nINT/nPME/nINTSEL pin is low during reset, the nINT/REFCLKO pin is configured to function as REFCLKO. After the deassertion of reset, this pin will first function as LED2. Upon configuration, it can function as nINT or
+nPME. Figure 3-13 illustrates the steps required to program the LED2 pin as nINT or nPME with nINTSEL disabled.
+In this configuration, it is not recommended to connect an LED to this pin. Because this pin is active high, the LED will
+be lit while waiting for a WoL event.
+3.8.1.5 REGOFF and LED1 Polarity Selection
+The REGOFF configuration strap is shared with the LED1 pin. The LED1 output will automatically change polarity based
+on the presence of an external pull-up resistor. If the LED1 pin is pulled high to VDD2A by an external pull-up resistor
+to select a logical high for REGOFF, then the LED1 output will be active low. If the LED1 pin is pulled low by the internal
+pull-down resistor to select a logical low for REGOFF, the LED1 output will then be an active high output. Figure 3-14
+details the LED1 polarity for each REGOFF configuration.
+FIGURE 3-13: LED2/nINT/nPME WITH nINTSEL DISABLED
+FIGURE 3-14: LED1/REGOFF POLARITY CONFIGURATION
+Note: Refer to Section 3.7.3, "REGOFF: Internal +1.2 V Regulator Configuration" for additional information on
+the REGOFF configuration strap.
+nRST
+LED2/nINT/
+WUCSR[12:11]
+Link Speed nINT/nPME
+00b 01b/10b
+nPME/nINTSEL
+LED1/REGOFF
+~270 
+REGOFF = 0 (Regulator ON)
+LED output = Active High
+~270 
+VDD2A
+REGOFF = 1 (Regulator OFF)
+LED output = Active Low
+LED1/REGOFF
+10K 
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 39
+LAN8742A/LAN8742Ai
+3.8.1.6 nINTSEL and LED2 Polarity Selection
+The nINTSEL configuration strap is shared with the LED2 pin. The LED2 output will automatically change polarity based
+on the presence of an external pull-down resistor. If the LED2 pin is pulled high to VDD2A to select a logical high for
+nINTSEL, then the LED2 output will be active low. If the LED2 pin is pulled low by an external pull-down resistor to select
+a logical low for nINTSEL, the LED2 output will then be an active high output. Figure 3-15 details the LED2 polarity for
+each nINTSEL configuration. 
+3.8.2 VARIABLE VOLTAGE I/O
+The device’s digital I/O pins are variable voltage, allowing them to take advantage of low power savings from shrinking
+technologies. These pins can operate from a low I/O voltage of +1.8 V up to +3.3 V. The applied I/O voltage must maintain its value with a tolerance of ±10%. Varying the voltage up or down after the transceiver has completed power-on
+reset can cause errors in the transceiver operation. Refer to Chapter 5, "Operational Characteristics" for additional information.
+3.8.3 POWER-DOWN MODES
+There are two device power-down modes: General Power-Down Mode and Energy Detect Power-Down Mode. These
+modes are described in the following subsections.
+3.8.3.1 General Power-Down
+This power-down mode is controlled via the Power Down bit of the Basic Control Register. In this mode, the entire transceiver (except the management interface) is powered-down and remains in this mode as long as the Power Down bit is
+“1”. When the Power Down bit is cleared, the transceiver powers up and is automatically reset.
+FIGURE 3-15: LED2/nINTSEL POLARITY CONFIGURATION
+Note: Refer to Section 3.7.4, "nINTSEL: nINT/REFCLKO Configuration" for additional information on the nINTSEL configuration strap.
+Note: Input signals must not be driven high before power is applied to the device.
+Note: In REF_CLK Out Mode, REFCLKO will not output when the device is in General Power-Down Mode.
+~270 
+nINTSEL = 0
+LED output = Active High
+10K 
+~270 
+VDD2A
+nINTSEL = 1
+LED output = Active Low
+LED2/nINTSEL
+LED2/nINTSEL
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 40  2013-2015 Microchip Technology Inc.
+3.8.3.2 Energy Detect Power-Down (EDPD)
+This power-down mode is activated by setting the EDPWRDOWN bit of the Mode Control/Status Register. In this mode,
+when no energy is present on the line the transceiver is powered down (except for the management interface, the
+SQUELCH circuit, and the ENERGYON logic). The ENERGYON logic is used to detect the presence of valid energy
+from 100BASE-TX, 10BASE-T, or Auto-negotiation signals.
+In this mode, when the ENERGYON bit of the Mode Control/Status Register is low, the transceiver is powered-down
+and nothing is transmitted. When energy is received via link pulses or packets, the ENERGYON bit goes high and the
+transceiver powers-up. The device automatically resets into the state prior to power-down and asserts the nINT interrupt
+if the ENERGYON interrupt is enabled in the Interrupt Mask Register. The first and possibly the second packet to activate ENERGYON may be lost.
+When the EDPWRDOWN bit of the Mode Control/Status Register is low, energy detect power-down is disabled.
+When in EDPD mode, the device’s NLP characteristics may be modified. The device can be configured to transmit NLPs
+in EDPD via the EDPD TX NLP Enable bit of the EDPD NLP/Crossover TimeRegister. When enabled, the TX NLP time
+interval is configurable via the EDPD TX NLP Interval Timer Select field of the EDPD NLP/Crossover TimeRegister.
+When in EDPD mode, the device can also be configured to wake on the reception of one or two NLPs. Setting the EDPD
+RX Single NLP Wake Enable bit of the EDPD NLP/Crossover TimeRegister will enable the device to wake on reception
+of a single NLP. If the EDPD RX Single NLP Wake Enable bit is cleared, the maximum interval for detecting reception
+of two NLPs to wake from EDPD is configurable via the EDPD RX NLP Max Interval Detect Select field of the EDPD
+NLP/Crossover TimeRegister.
+3.8.4 WAKE ON LAN (WOL)
+The device supports PHY layer WoL event detection of Perfect DA, Broadcast, Magic Packet, and Wakeup frames. The
+WoL detection can be configured to assert the nINT interrupt pin or nPME pin, providing a mechanism for a system in
+sleep mode to return to an operational state when a WoL event occurs. This feature is particularly useful in addressing
+unnecessary waking of the main SoC in designs where the Ethernet MAC is integrated into the SoC.
+Each type of supported wake event (Perfect DA, Broadcast, Magic Packet, or Wakeup frames) may be individually
+enabled via Perfect DA Wakeup Enable (PFDA_EN), Broadcast Wakeup Enable (BCST_EN), Magic Packet Enable
+(MPEN), and Wakeup Frame Enable (WUEN) bits of the Wakeup Control and Status Register (WUCSR), respectively.
+Two methods are provided for indicating a WoL event to an external device: nINT and nPME. 
+The nINT pin may be used to indicate WoL interrupt events by setting bit 8 (WoL) of the Interrupt Mask Register. Once
+enabled, any received packet that matches the condition(s) configured in the Wakeup Control and Status Register
+(WUCSR) will assert nINT until the interrupt is cleared. When using nINT to indicate a WoL interrupt, the pin may be
+shared with other non-WoL interrupt events, as configured via the Interrupt Mask Register. While waiting for a WoL
+event to occur, it is possible that other interrupts may be triggered. To prevent such conditions, all other interrupts shall
+be masked by system software, or the alternative nPME pin may be used. Refer to Section 3.6, "Interrupt Management"
+for additional nINT information.
+Alternatively, the nPME pin may be used to independently indicate WoL interrupt events. The nPME signal can be configured to output on any of the following pins:
+• LED1/nINT/nPME/nREGOFF
+• LED2/nINT/nPME/nINTSEL
+The LED1/nINT/nPME/nREGOFF or LED2/nINT/nPME/nINTSEL pin can be configured to function as nPME by configuring the LED1 Function Select or LED2 Function Select bits of the Wakeup Control and Status Register (WUCSR) to
+10b, respectively.Once the nPME pin is enabled, any received packet that matches the condition(s) configured in the
+Wakeup Control and Status Register (WUCSR) will assert nPME until WUCSR bits 7:4 are cleared by the system software. However, in some applications it may be desirable for nPME to self clear. When the nPME Self Clear bit of the
+Wakeup Control and Status Register (WUCSR) is set, the nPME pin will clear after the time configured in the Miscellaneous Configuration Register (MCFGR).
+Upon a WoL event, further resolution on the source of the event can be obtained by examining the Perfect DA Frame
+Received (PFDA_FR), Broadcast Frame Received (BCAST_FR), Magic Packet Received (MPR), and Remote Wakeup
+Frame Received (WUFR) status bits in the Wakeup Control and Status Register (WUCSR).
+Note: In REF_CLK Out Mode, REFCLKO will not output when the device is in Energy Detect Power-Down Mode.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 41
+LAN8742A/LAN8742Ai
+The Wakeup Control and Status Register (WUCSR) also provides a WoL Configured bit, which may be set by software
+after all WoL registers are configured. Because all WoL related registers are not affected by software resets, software
+can poll the WoL Configured bit to ensure all WoL registers are fully configured. This allows the software to skip reprogramming of the WoL registers after reboot due to a WoL event.
+The following subsections detail each type of WoL event. For additional information on the main system interrupts, refer
+to Section 3.6, "Interrupt Management".
+3.8.4.1 Perfect DA (Destination Address) Detection
+When enabled, the Perfect DA detection mode allows the triggering of the nINT or nPME pin when a frame with the
+destination address matching the address stored in the MAC Receive Address A Register (RX_ADDRA), MAC Receive
+Address B Register (RX_ADDRB), and MAC Receive Address C Register (RX_ADDRC) is received. The frame must
+also pass the FCS and packet length check.
+As an example, the Host system must perform the following steps to enable the device to assert nINT on detection of a
+Perfect DA WoL event:
+1. Set the desired MAC address to cause the wake event in the MAC Receive Address A Register (RX_ADDRA),
+MAC Receive Address B Register (RX_ADDRB), and MAC Receive Address C Register (RX_ADDRC).
+2. Set the Perfect DA Wakeup Enable (PFDA_EN) bit of the Wakeup Control and Status Register (WUCSR) to
+enable Perfect DA detection.
+3. Set bit 8 (WoL event indicator) in the Interrupt Mask Register to enable WoL events to trigger assertion of the
+nINT interrupt pin.
+When a match is triggered, the nINT interrupt pin will be asserted, bit 8 of the Interrupt Source Flag Register will be set,
+and the Perfect DA Frame Received (PFDA_FR) bit of the Wakeup Control and Status Register (WUCSR) will be set.
+3.8.4.2 Broadcast Detection
+When enabled, the Broadcast detection mode allows the triggering of the nINT or nPME pin when a frame with the destination address value of FF FF FF FF FF FF is received. The frame must also pass the FCS and packet length check.
+As an example, the Host system must perform the following steps to enable the device to assert nINT on detection of a
+Broadcast WoL event:
+1. Set the Broadcast Wakeup Enable (BCST_EN) bit of the Wakeup Control and Status Register (WUCSR) to
+enable Broadcast detection.
+2. Set bit 8 (WoL event indicator) in the Interrupt Mask Register to enable WoL events to trigger assertion of the
+nINT interrupt pin.
+When a match is triggered, the nINT interrupt pin will be asserted, bit 8 of the Interrupt Source Flag Register will be set,
+and the Broadcast Frame Received (BCAST_FR) bit of the Wakeup Control and Status Register (WUCSR) will be set.
+Note: Alternatively, the LED1/nINT/nPME or LED2/nINT/nPME pin can be used to indicate a WoL event. Refer
+to Section 3.8.4, "Wake on LAN (WoL)" for additional information.
+Note: Alternatively, the LED1/nINT/nPME or LED2/nINT/nPME pin can be used to indicate a WoL event. Refer
+to Section 3.8.4, "Wake on LAN (WoL)" for additional information.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 42  2013-2015 Microchip Technology Inc.
+3.8.4.3 Magic Packet Detection
+When enabled, the Magic Packet detection mode allows the triggering of the nINT or nPME pin when a Magic Packet
+frame is received. A Magic Packet is a frame addressed to the device - either a unicast to the programmed address, or
+a broadcast - which contains the pattern 48’h FF_FF_FF_FF_FF_FF after the destination and source address field, followed by 16 repetitions of the desired MAC address (loaded into the MAC Receive Address A Register (RX_ADDRA),
+MAC Receive Address B Register (RX_ADDRB), and MAC Receive Address C Register (RX_ADDRC)) without any
+breaks or interruptions. In case of a break in the 16 address repetitions, the logic scans for the 48’h
+FF_FF_FF_FF_FF_FF pattern again in the incoming frame. The 16 repetitions may be anywhere in the frame but must
+be preceded by the synchronization stream. The frame must also pass the FCS check and packet length checking.
+As an example, if the desired address is 00h 11h 22h 33h 44h 55h, then the logic scans for the following data sequence
+in an Ethernet frame:
+Destination Address Source Address ……………FF FF FF FF FF FF
+00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55
+00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55
+00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55
+00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55 00 11 22 33 44 55
+…FCS
+As an example, the Host system must perform the following steps to enable the device to assert nINT on detection of a
+Magic Packet WoL event:
+1. Set the desired MAC address to cause the wake event in the MAC Receive Address A Register (RX_ADDRA),
+MAC Receive Address B Register (RX_ADDRB), and MAC Receive Address C Register (RX_ADDRC).
+2. Set the Magic Packet Enable (MPEN) bit of the Wakeup Control and Status Register (WUCSR) to enable Magic
+Packet detection.
+3. Set bit 8 (WoL event indicator) in the Interrupt Mask Register to enable WoL events to trigger assertion of the
+nINT interrupt pin.
+When a match is triggered, the nINT interrupt pin will be asserted, bit 8 of the Interrupt Source Flag Register will be set,
+and the Magic Packet Received (MPR) bit of the Wakeup Control and Status Register (WUCSR) will be set.
+3.8.4.4 Wakeup Frame Detection
+When enabled, the Wakeup Frame detection mode allows the triggering of the nINT or nPME pin when a pre-programmed Wakeup Frame is received. Wakeup Frame detection provides a way for system designers to detect a customized pattern within a packet via a programmable wake-up frame filter. The filter has a 128-bit byte mask that indicates
+which bytes of the frame should be compared by the detection logic. A CRC-16 is calculated over these bytes. The result
+is then compared with the filter’s respective CRC-16 to determine if a match exists. When a wake-up pattern is received,
+the Remote Wakeup Frame Received (WUFR) bit of the Wakeup Control and Status Register (WUCSR) is set.
+If enabled, the filter can also include a comparison between the frame’s destination address and the address specified
+in the MAC Receive Address A Register (RX_ADDRA), MAC Receive Address B Register (RX_ADDRB), and MAC
+Receive Address C Register (RX_ADDRC). The specified address can be a unicast or a multicast. If address matching
+is enabled, only the programmed unicast or multicast address will be considered a match. Non-specific multicast
+addresses and the broadcast address can be separately enabled. The address matching results are logically OR’d (i.e.,
+specific address match result OR any multicast result OR broadcast result).
+Whether or not the filter is enabled and whether the destination address is checked is determined by configuring the
+Wakeup Filter Configuration Register A (WUF_CFGA). Before enabling the filter, the application program must provide
+the detection logic with the sample frame and corresponding byte mask. This information is provided by writing the
+Wakeup Filter Configuration Register A (WUF_CFGA), Wakeup Filter Configuration Register B (WUF_CFGB), and
+Wakeup Filter Byte Mask Registers (WUF_MASK). The starting offset within the frame and the expected CRC-16 for
+the filter is determined by the Filter Pattern Offset and Filter CRC-16 fields, respectively.
+If remote wakeup mode is enabled, the remote wakeup function checks each frame against the filter and recognizes the
+frame as a remote wakeup frame if it passes the filter’s address filtering and CRC value match.
+Note: Alternatively, the LED1/nINT/nPME or LED2/nINT/nPME pin can be used to indicate a WoL event. Refer
+to Section 3.8.4, "Wake on LAN (WoL)" for additional information.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 43
+LAN8742A/LAN8742Ai
+The pattern offset defines the location of the first byte that should be checked in the frame. The byte mask is a 128-bit
+field that specifies whether or not each of the 128 contiguous bytes within the frame, beginning with the pattern offset,
+should be checked. If bit j in the byte mask is set, the detection logic checks the byte (pattern offset + j) in the frame,
+otherwise byte (pattern offset + j) is ignored.
+At the completion of the CRC-16 checking process, the CRC-16 calculated using the pattern offset and byte mask is
+compared to the expected CRC-16 value associated with the filter. If a match occurs, a remote wake-up event is signaled. The frame must also pass the FCS check and packet length checking.
+Table 3-7 indicates the cases that produce a wake-up event. All other cases do not generate a wake-up event.
+As an example, the Host system must perform the following steps to enable the device to assert nINT on detection of a
+Wakeup Frame WoL event:
+Declare Pattern:
+1. Update the Wakeup Filter Byte Mask Registers (WUF_MASK) to indicate the valid bytes to match.
+2. Calculate the CRC-16 value of valid bytes off-line and update the Wakeup Filter Configuration Register B
+(WUF_CFGB). CRC-16 is calculated as follows:
+At the start of a frame, CRC-16 is initialized with the value FFFFh. CRC-16 is updated when the pattern offset and mask
+indicate the received byte is part of the checksum calculation. The following algorithm is used to update the CRC-16 at
+that time:
+Let:
+ ^ denote the exclusive or operator.
+ Data [7:0] be the received data byte to be included in the checksum.
+ CRC[15:0] contain the calculated CRC-16 checksum.
+ F0 … F7 be intermediate results, calculated when a data byte is determined to be part of the CRC-16.
+Calculate:
+ F0 = CRC[15] ^ Data[0]
+ F1 = CRC[14] ^ F0 ^ Data[1]
+ F2 = CRC[13] ^ F1 ^ Data[2]
+ F3 = CRC[12] ^ F2 ^ Data[3]
+ F4 = CRC[11] ^ F3 ^ Data[4]
+ F5 = CRC[10] ^ F4 ^ Data[5]
+ F6 = CRC[09] ^ F5 ^ Data[6]
+ F7 = CRC[08] ^ F6 ^ Data[7]
+The CRC-32 is updated as follows:
+CRC[15] = CRC[7] ^ F7
+CRC[14] = CRC[6]
+CRC[13] = CRC[5]
+CRC[12] = CRC[4]
+CRC[11] = CRC[3]
+CRC[10] = CRC[2]
+CRC[9] = CRC[1] ^ F0
+CRC[8] = CRC[0] ^ F1
+CRC[7] = F0 ^ F2
+TABLE 3-7: WAKEUP GENERATION CASES
+Filter Enabled Frame Type CRC Matches
+ Address 
+Match 
+Enabled
+ Any MCAST 
+Enabled
+ BCAST 
+Enabled
+Frame 
+Address 
+Matches
+Yes Unicast Yes No X X X
+Yes Unicast Yes Yes X X Yes
+Yes Multicast Yes X Yes X X
+Yes Multicast Yes Yes No X Yes
+Yes Broadcast Yes X X Yes X
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 44  2013-2015 Microchip Technology Inc.
+CRC[6] = F1 ^ F3
+CRC[5] = F2 ^ F4
+CRC[4] = F3 ^ F5
+CRC[3] = F4 ^ F6
+CRC[2] = F5 ^ F7
+CRC[1] = F6
+CRC[0] = F7
+3. Determine the offset pattern with offset 0 being the first byte of the destination address. Update the offset in the
+Filter Pattern Offset field of the Wakeup Filter Configuration Register A (WUF_CFGA).
+Determine Address Matching Conditions:
+4. Determine the address matching scheme based on Table 3-7 and update the Filter Broadcast Enable, Filter Any
+Multicast Enable, and Address Match Enable bits of the Wakeup Filter Configuration Register A (WUF_CFGA)
+accordingly.
+5. If necessary (see step 4), set the desired MAC address to cause the wake event in the MAC Receive Address A
+Register (RX_ADDRA), MAC Receive Address B Register (RX_ADDRB), and MAC Receive Address C Register
+(RX_ADDRC).
+6. Set the Filter Enable bit of the Wakeup Filter Configuration Register A (WUF_CFGA) to enable the filter.
+Enable Wakeup Frame Detection:
+7. Set the Wakeup Frame Enable (WUEN) bit of the Wakeup Control and Status Register (WUCSR) to enable
+Wakeup Frame detection.
+8. Set bit 8 (WoL event indicator) in the Interrupt Mask Register to enable WoL events to trigger assertion of the
+nINT interrupt pin.
+When a match is triggered, the nINT interrupt pin will be asserted and the Remote Wakeup Frame Received (WUFR)
+bit of the Wakeup Control and Status Register (WUCSR) will be set. To provide additional visibility to software, the Filter
+Triggered bit of the Wakeup Filter Configuration Register A (WUF_CFGA) will be set.
+3.8.5 ISOLATE MODE
+The device data paths may be electrically isolated from the RMII interface by setting the Isolate bit of the Basic Control
+Register to “1”. In isolation mode, the transceiver does not respond to the TXD, TXEN and TXER inputs, but does
+respond to management transactions.
+Isolation provides a means for multiple transceivers to be connected to the same RMII interface without contention. By
+default, the transceiver is not isolated (on power-up (Isolate = 0).
+3.8.6 RESETS
+The device provides two forms of reset: hardware and software. The device registers are reset by both hardware and
+software resets. Select register bits, indicated as “NASR” in the register definitions, are not cleared by a software reset.
+The registers are not reset by the power-down modes described in Section 3.8.3.
+3.8.6.1 Hardware Reset
+A hardware reset is asserted by driving the nRST input pin low. When driven, nRST should be held low for the minimum
+time detailed in Section 5.6.3, "Power-On nRST & Configuration Strap Timing" to ensure a proper transceiver reset.
+During a hardware reset, an external clock must be supplied to the XTAL1/CLKIN signal.
+Note: Alternatively, the LED1/nINT/nPME or LED2/nINT/nPME pin can be used to indicate a WoL event. Refer
+to Section 3.8.4, "Wake on LAN (WoL)" for additional information.
+Note: For the first 16 µs after coming out of reset, the RMII interface will run at 2.5 MHz. After this time, it will
+switch to 25 MHz if auto-negotiation is enabled.
+Note: A hardware reset (nRST assertion) is required following power-up. Refer to Section 5.6.3, "Power-On
+nRST & Configuration Strap Timing" for additional information.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 45
+LAN8742A/LAN8742Ai
+3.8.6.2 Software Reset
+A Software reset is activated by setting the Soft Reset bit of the Basic Control Register to “1”. All registers bits, except
+those indicated as “NASR” in the register definitions, are cleared by a Software reset. The Soft Reset bit is self-clearing.
+Per the IEEE 802.3u standard, clause 22 (22.2.4.1.1) the reset process will be completed within 0.5 s from the setting
+of this bit.
+3.8.7 CARRIER SENSE 
+The carrier sense (CRS) is output on the CRS_DV pin. CRS is a signal defined by the MII specification in the IEEE
+802.3u standard. The device asserts CRS based only on receive activity whenever the transceiver is either in repeater
+mode or full-duplex mode. Otherwise the transceiver asserts CRS based on either transmit or receive activity.
+The carrier sense logic uses the encoded, unscrambled data to determine carrier activity status. It activates carrier
+sense with the detection of 2 non-contiguous zeros within any 10 bit span. Carrier sense terminates if a span of 10 consecutive ones is detected before a /J/K/ Start-of Stream Delimiter pair. If an SSD pair is detected, carrier sense is
+asserted until either /T/R/ End–of-Stream Delimiter pair or a pair of IDLE symbols is detected. Carrier is negated after
+the /T/ symbol or the first IDLE. If /T/ is not followed by /R/, then carrier is maintained. Carrier is treated similarly for IDLE
+followed by some non-IDLE symbol.
+3.8.8 LINK INTEGRITY TEST
+The device performs the link integrity test as outlined in the IEEE 802.3u (clause 24-15) Link Monitor state diagram. The
+link status is multiplexed with the 10 Mbps link status to form the Link Status bit in the Basic Status Register and to drive
+the LINK LED (LED1).
+The DSP indicates a valid MLT-3 waveform present on the RXP and RXN signals as defined by the ANSI X3.263 TPPMD standard, to the Link Monitor state-machine, using the internal DATA_VALID signal. When DATA_VALID is
+asserted, the control logic moves into a Link-Ready state and waits for an enable from the auto-negotiation block. When
+received, the Link-Up state is entered, and the Transmit and Receive logic blocks become active. Should auto-negotiation be disabled, the link integrity logic moves immediately to the Link-Up state when the DATA_VALID is asserted.
+To allow the line to stabilize, the link integrity logic will wait a minimum of 330 ms from the time DATA_VALID is asserted
+until the Link-Ready state is entered. Should the DATA_VALID input be negated at any time, this logic will immediately
+negate the Link signal and enter the Link-Down state.
+When the 10/100 digital block is in 10BASE-T mode, the link status is derived from the 10BASE-T receiver logic.
+3.8.9 CABLE DIAGNOSTICS
+The LAN8742A/LAN8742Ai provides cable diagnostics which allow for open/short and length detection of the Ethernet
+cable. The cable diagnostics consist of two primary modes of operation:
+• Time Domain Reflectometry (TDR) Cable Diagnostics
+TDR cable diagnostics enable the detection of open or shorted cabling on the TX or RX pair, as well as cable 
+length estimation to the open/short fault.
+• Matched Cable Diagnostics
+Matched cable diagnostics enable cable length estimation on 100 Mbps-linked cables.
+Refer to the following sub-sections for details on proper operation of each cable diagnostics mode.
+3.8.9.1 Time Domain Reflectometry (TDR) Cable Diagnostics
+The LAN8742A/LAN8742Ai provides TDR cable diagnostics which enable the detection of open or shorted cabling on
+the TX or RX pair, as well as cable length estimation to the open/short fault. To utilize the TDR cable diagnostics, AutoMDIX and Auto Negotiation must be disabled, and the LAN8742A/LAN8742Ai device must be forced to 100 Mb fullduplex mode. These actions must be performed before setting the TDR Enable bit in the TDR Control/Status Register.
+With Auto-MDIX disabled, the TDR will test the TX or RX pair selected by register bit 27.15 (AMDIXCTRL). Proper cable
+testing should include a test of each pair. When TDR testing is complete, prior register settings may be restored. Figure
+3-16 provides a flow diagram of proper TDR usage.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 46  2013-2015 Microchip Technology Inc.
+FIGURE 3-16: TDR USAGE FLOW DIAGRAM
+Disable AMDIX and Force MDI (or MDIX)
+Write PHY Reg 27: 0x8000 (MDI)
+- OR -
+Write PHY Reg 27: 0xA000 (MDIX)
+TDR Channel Status Complete?
+Disable ANEG and Force 100Mb FullDuplex
+Write PHY Reg 0: 0x2100
+Enable TDR
+Write PHY Reg 25: 0x8000
+NO
+Reg 25.8 == 0
+YES
+Reg 25.8 == 1
+Check TDR Control/Status Register
+Read PHY Reg 25: 0x8000
+Save:
+TDR Channel Type (Reg 25.10:9)
+TDR Channel Length (Reg 25.7:0)
+MDIX Case Tested?
+YES
+Repeat Testing 
+in MDIX Mode
+Done
+Start
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 47
+LAN8742A/LAN8742Ai
+The TDR operates by transmitting pulses on the selected twisted pair within the Ethernet cable (TX in MDI mode, RX
+in MDIX mode). If the pair being tested is open or shorted, the resulting impedance discontinuity results in a reflected
+signal that can be detected by the LAN8742A/LAN8742Ai. The LAN8742A/LAN8742Ai measures the time between the
+transmitted signal and received reflection and indicates the results in the TDR Channel Length field of the TDR Control/Status Register. The TDR Channel Length field indicates the “electrical” length of the cable, and can be multiplied
+by the appropriate propagation constant in Table 3-8 to determine the approximate physical distance to the fault.
+Since the TDR relies on the reflected signal of an improperly terminated cable, there are several factors that can affect
+the accuracy of the physical length estimate. These include:
+1. Cable Type (CAT 5, CAT5e, CAT6): The electrical length of each cable type is slightly different due to the twistsper-meter of the internal signal pairs and differences in signal propagation speeds. If the cable type is known, the
+length estimate can be calculated more accurately by using the propagation constant appropriate for the cable
+type (see Table 3-8). In many real-world applications the cable type is unknown, or may be a mix of different cable
+types and lengths. In this case, use the propagation constant for the “unknown” cable type.
+2. TX and RX Pair: For each cable type, the EIA standards specify different twist rates (twists-per-meter) for each
+signal pair within the Ethernet cable. This results in different measurements for the RX and TX pair.
+3. Actual Cable Length: The difference between the estimated cable length and actual cable length grows as the
+physical cable length increases, with the most accurate results at less than approximately 100 m.
+4. Open/Short Case: The Open and Shorted cases will return different TDR Channel Length values (electrical
+lengths) for the same physical distance to the fault. Compensation for this is achieved by using different propagation constants to calculate the physical length of the cable.
+For the Open case, the estimated distance to the fault can be calculated as follows:
+Distance to Open fault in meters TDR Channel Length * POPEN
+Where: POPEN is the propagation constant selected from Table 3-8.
+For the Shorted case, the estimated distance to the fault can be calculated as follows:
+Distance to Open fault in meters  TDR Channel Length * PSHORT
+Where: PSHORT is the propagation constant selected from Table 3-8.
+Note: The TDR function is typically used when the link is inoperable. However, an active link will drop when operating the TDR.
+TABLE 3-8: TDR PROPAGATION CONSTANTS
+TDR Propagation 
+Constant
+Cable Type
+Unknown CAT 6 CAT 5E CAT 5
+POPEN 0.769 0.745 0.76 0.85
+PSHORT 0.793 0.759 0.788 0.873
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 48  2013-2015 Microchip Technology Inc.
+The typical cable length measurement margin of error for Open and Shorted cases is dependent on the selected cable
+type and the distance of the open/short from the device. Table 3-9 and Table 3-10 detail the typical measurement error
+for Open and Shorted cases, respectively.
+TABLE 3-9: TYPICAL MEASUREMENT ERROR FOR OPEN CABLE (+/- METERS)
+Physical Distance to 
+Fault
+Selected Propagation Constant
+POPEN = Unknown POPEN = CAT 6 POPEN = CAT 5E POPEN = CAT 5
+CAT 6 Cable, 
+0-100 m
+96
+CAT 5E Cable, 
+0-100 m
+5 5
+CAT 5 Cable, 
+0-100 m
+13 3
+CAT 6 Cable, 
+101-160 m
+14 6
+CAT 5E Cable, 
+101-160 m
+8 6
+CAT 5 Cable, 
+101-160 m
+20 6
+TABLE 3-10: TYPICAL MEASUREMENT ERROR FOR SHORTED CABLE (+/- METERS)
+Physical Distance to 
+Fault
+Selected Propagation Constant
+PSHORT = Unknown PSHORT =
+CAT 6
+PSHORT =
+CAT 5E
+PSHORT =
+CAT 5
+CAT 6 Cable, 
+0-100 m
+85
+CAT 5E Cable, 
+0-100 m
+5 5
+CAT 5 Cable, 
+0-100 m
+11 2
+CAT 6 Cable, 
+101-160 m
+14 6
+CAT 5E Cable, 
+101-160 m
+7 6
+CAT 5 Cable, 
+101-160 m
+11 3
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 49
+LAN8742A/LAN8742Ai
+3.8.9.2 Matched Cable Diagnostics
+Matched cable diagnostics enable cable length estimation on 100 Mbps-linked cables of up to 120 meters. If there is an
+active 100 Mb link, the approximate distance to the link partner can be estimated using the Cable Length Register. If
+the cable is properly terminated, but there is no active 100 Mb link (the link partner is disabled, nonfunctional, the link is
+at 10 Mb, etc.), the cable length cannot be estimated and the Cable Length Register should be ignored. The estimated
+distance to the link partner can be determined via the Cable Length (CBLN) lookup table provided in Table 3-11. The
+typical cable length measurement margin of error for a matched cable case is +/- 20 m. The matched cable length margin of error is consistent for all cable types from 0 to 120 m.
+TABLE 3-11: MATCH CASE ESTIMATED CABLE LENGTH (CBLN) LOOKUP TABLE
+CBLN Field Value Estimated Cable Length
+0 - 3 0
+46
+5 17
+6 27
+7 38
+8 49
+9 59
+10 70
+11 81
+12 91
+13 102
+14 113
+15 123
+Note: For a properly terminated cable (Match case), there is no reflected signal. In this case, the TDR Channel
+Length field is invalid and should be ignored.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 50  2013-2015 Microchip Technology Inc.
+3.8.10 LOOPBACK OPERATION
+The device may be configured for near-end loopback and far loopback. These loopback modes are detailed in the following subsections.
+3.8.10.1 Near-end Loopback
+Near-end loopback mode sends the digital transmit data back out the receive data signals for testing purposes, as indicated by the blue arrows in Figure 3-17. The near-end loopback mode is enabled by setting the Loopback bit of the
+Basic Control Register to “1”. A large percentage of the digital circuitry is operational in near-end loopback mode
+because data is routed through the PCS and PMA layers into the PMD sublayer before it is looped back. The transmitters are powered down regardless of the state of TXEN. 
+3.8.10.2 Far Loopback
+Far loopback is a special test mode for MDI (analog) loopback as indicated by the blue arrows in Figure 3-18. The far
+loopback mode is enabled by setting the FARLOOPBACK bit of the Mode Control/Status Register to “1”. In this mode,
+data that is received from the link partner on the MDI is looped back out to the link partner. The digital interface signals
+on the local MAC interface are isolated.
+FIGURE 3-17: NEAR-END LOOPBACK BLOCK DIAGRAM
+FIGURE 3-18: FAR LOOPBACK BLOCK DIAGRAM
+Microchip
+Ethernet Transceiver
+10/100
+Ethernet
+MAC
+CAT-5 XFMR
+Digital
+RXD
+TXD
+Analog
+RX
+TX X
+X
+Far-end system
+Microchip
+Ethernet Transceiver
+10/100
+Ethernet
+MAC
+CAT-5 XFMR
+Digital
+RXD
+TXD
+Analog
+RX
+TX
+Link 
+Partner
+X
+X
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 51
+LAN8742A/LAN8742Ai
+3.8.10.3 Connector Loopback
+The device maintains reliable transmission over very short cables and can be tested in a connector loopback as shown
+in Figure 3-19. An RJ45 loopback cable can be used to route the transmit signals from the output of the transformer
+back to the receiver inputs. The loopback works at both 10 and 100 Mbps.
+FIGURE 3-19: CONNECTOR LOOPBACK BLOCK DIAGRAM
+Microchip
+Ethernet Transceiver
+10/100
+Ethernet
+MAC
+XFMR
+Digital
+RXD
+TXD
+Analog
+RX
+TX 1
+2
+3
+4
+5
+6
+7
+8
+RJ45 Loopback Cable.
+Created by connecting pin 1 to pin 3 
+and connecting pin 2 to pin 6.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 52  2013-2015 Microchip Technology Inc.
+3.9 Application Diagrams
+This section provides typical application diagrams for the following:
+• Simplified System Level Application Diagram
+• Power Supply Diagram (1.2 V Supplied by Internal Regulator)
+• Power Supply Diagram (1.2 V Supplied by External Source)
+• Twisted-Pair Interface Diagram (Single Power Supply)
+• Twisted-Pair Interface Diagram (Dual Power Supplies)
+3.9.1 SIMPLIFIED SYSTEM LEVEL APPLICATION DIAGRAM
+FIGURE 3-20: SIMPLIFIED SYSTEM LEVEL APPLICATION DIAGRAM
+LAN8742A/LAN8742Ai
+10/100 PHY
+24-VQFN
+RMII
+TXP
+TXN
+Mag RJ45
+RXP
+RXN
+25 MHz
+XTAL1/CLKIN
+XTAL2
+TXD[1:0]
+2
+RXD[1:0]
+RXER
+2
+RMII
+LED[2:1]
+2
+Interface
+MDIO
+MDC
+nINT
+nRST
+TXEN
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 53
+LAN8742A/LAN8742Ai
+3.9.2 POWER SUPPLY DIAGRAM (1.2 V SUPPLIED BY INTERNAL REGULATOR)
+FIGURE 3-21: POWER SUPPLY DIAGRAM (1.2 V SUPPLIED BY INTERNAL REGULATOR)
+LAN8742A/LAN8742Ai
+24-VQFN
+RBIAS
+VSS 12.1k
+VDD2A
+CBYPASS
+CBYPASS
+VDD1A VDDIO
+CF CBYPASS
+VDDDIO
+Supply
+1.8 - 3.3 V
+Power
+Supply
+3.3 V
+VDDCR
+LED1/
+REGOFF
+~270 Ohm
+Core Logic
+Internal 
+Regulator
+Ch.2 3.3 V 
+Circuitry
+OUT IN
+Ch.1 3.3 V 
+Circuitry
+1 uF 470 pF
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 54  2013-2015 Microchip Technology Inc.
+3.9.3 POWER SUPPLY DIAGRAM (1.2 V SUPPLIED BY EXTERNAL SOURCE)
+FIGURE 3-22: POWER SUPPLY DIAGRAM (1.2 V SUPPLIED BY EXTERNAL SOURCE)
+LAN8742A/LAN8742Ai
+24-VQFN
+RBIAS
+VSS 12.1k
+VDD2A
+CBYPASS
+CBYPASS
+VDD1A VDDIO
+CF CBYPASS
+VDDDIO
+Supply
+1.8 - 3.3 V
+Power
+Supply
+3.3 V
+VDDCR
+LED1/
+REGOFF
+Core Logic
+Internal 
+Regulator
+(Disabled)
+Ch.2 3.3 V 
+Circuitry
+OUT IN
+Ch.1 3.3 V 
+Circuitry
+VDDCR
+Supply
+1.2 V
+~270 Ohm
+10k
+1 uF 470 pF
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 55
+LAN8742A/LAN8742Ai
+3.9.4 TWISTED-PAIR INTERFACE DIAGRAM (SINGLE POWER SUPPLY)
+FIGURE 3-23: TWISTED-PAIR INTERFACE DIAGRAM (SINGLE POWER SUPPLY)
+Magnetics
+LAN8742A/LAN8742Ai
+24-VQFN
+VDD2A
+CBYPASS
+TXP
+TXN
+Power 
+Supply
+3.3 V
+1
+2
+3
+4
+5
+6
+7
+8
+1000 pF
+3 kV
+RJ45
+75
+75
+RXP
+RXN
+CBYPASS
+VDD1A
+CBYPASS
+49.9 Ohm Resistors
+Ferrite 
+bead
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 56  2013-2015 Microchip Technology Inc.
+3.9.5 TWISTED-PAIR INTERFACE DIAGRAM (DUAL POWER SUPPLIES)
+FIGURE 3-24: TWISTED-PAIR INTERFACE DIAGRAM (DUAL POWER SUPPLIES)
+Magnetics
+LAN8742A/LAN8742Ai
+24-VQFN
+VDD2A
+CBYPASS
+TXP
+TXN
+Power
+Supply
+3.3 V
+1
+2
+3
+4
+5
+6
+7
+8
+1000 pF
+3 kV
+RJ45
+75
+75
+RXP
+RXN
+CBYPASS
+VDD1A
+CBYPASS
+49.9 Ohm Resistors Power
+Supply
+2.5 V - 3.3 V
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 57
+LAN8742A/LAN8742Ai
+4.0 REGISTER DESCRIPTIONS
+This chapter describes the various Control and Status Registers (CSRs) and MDIO Manageable Device (MMD) Registers. The CSRs follow the IEEE 802.3 (clause 22.2.4) management register set. The MMD registers adhere to the IEEE
+802.3-2008 45.2 MDIO Interface Registers specification. All functionality and bit definitions comply with these standards. The IEEE 802.3 specified register index (in decimal) is included with each CSR definition, allowing for addressing
+of these registers via the Serial Management Interface (SMI) protocol. MMD registers are accessed indirectly via the
+MMD Access Control Register and MMD Access Address/Data Register CSRs.
+4.1 Register Nomenclature
+Table 4-1 describes the register bit attribute notation used throughout this document.
+Many of these register bit notations can be combined. Some examples of this are shown below:
+• R/W: Can be written. Will return current setting on a read.
+• R/WAC: Will return current setting on a read. Writing anything clears the bit.
+TABLE 4-1: REGISTER BIT TYPES
+Register Bit Type Notation Register Bit Description
+R Read: A register or bit with this attribute can be read.
+W Write: A register or bit with this attribute can be written.
+RO Read only: Writes have no effect.
+WO Write only: If a register or bit is write-only, reads will return unspecified data.
+WC Write One to Clear: Writing a one clears the value. Writing a zero has no effect
+WAC Write Anything to Clear: Writing anything clears the value.
+RC Read to Clear: Contents is cleared after the read. Writes have no effect.
+LL Latch Low: Clear on read of register.
+LH Latch High: Clear on read of register.
+SC Self-Clearing: Contents are self-cleared after the being set. Writes of zero have no 
+effect. Contents can be read.
+SS Self-Setting: Contents are self-setting after being cleared. Writes of one have no 
+effect. Contents can be read.
+RO/LH Read Only, Latch High: Bits with this attribute will stay high until the bit is read. After it 
+is read, the bit will either remain high if the high condition remains, or will go low if the 
+high condition has been removed. If the bit has not been read, the bit will remain high 
+regardless of a change to the high condition. This mode is used in some Ethernet PHY 
+registers.
+NASR Not Affected by Software Reset: The state of NASR bits do not change on assertion 
+of a software reset.
+RESERVED Reserved Field: Reserved fields must be written with zeros to ensure future compatibility. The value of reserved bits is not guaranteed on a read.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 58  2013-2015 Microchip Technology Inc.
+4.2 Control and Status Registers
+Table 4-2 provides a list of supported registers. Register details, including bit definitions, are provided in the proceeding
+subsections.
+TABLE 4-2: SMI REGISTER MAP
+Register Index
+(Decimal) Register Name Group
+0 Basic Control Register Basic
+1 Basic Status Register Basic
+2 PHY Identifier 1 Register Extended
+3 PHY Identifier 2 Register Extended
+4 Auto Negotiation Advertisement Register Extended
+5 Auto Negotiation Link Partner Ability Register Extended
+6 Auto Negotiation Expansion Register Extended
+7 Auto Negotiation Next Page TX Register Extended
+8 Auto Negotiation Next Page RX Register Extended
+13 MMD Access Control Register Extended
+14 MMD Access Address/Data Register Extended
+16 EDPD NLP/Crossover TimeRegister Vendor-specific
+17 Mode Control/Status Register Vendor-specific
+18 Special Modes Register Vendor-specific
+24 TDR Patterns/Delay Control Register Vendor-specific
+25 TDR Control/Status Register Vendor-specific
+26 Symbol Error Counter Register Vendor-specific
+27 Special Control/Status Indications Register Vendor-specific
+28 Cable Length Register Vendor-specific
+29 Interrupt Source Flag Register Vendor-specific
+30 Interrupt Mask Register Vendor-specific
+31 PHY Special Control/Status Register Vendor-specific
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 59
+LAN8742A/LAN8742Ai
+4.2.1 BASIC CONTROL REGISTER
+Note 1: The default value of this bit is determined by the MODE[2:0] configuration straps. Refer to Section 3.7.2,
+"MODE[2:0]: Mode Configuration" for additional information.
+Index (In Decimal): 0 Size: 16 bits
+Bits Description Type Default
+15 Soft Reset
+1 = Software reset. Bit is self-clearing. When setting this bit do not set other 
+bits in this register. 
+Note: The configuration (as described in Section 3.7.2, "MODE[2:0]:
+Mode Configuration") is set from the register bit values, and not
+from the mode pins.
+R/W
+SC
+0b
+14 Loopback
+0 = Normal operation
+1 = Loopback mode
+R/W 0b
+13 Speed Select
+0 = 10 Mbps
+1 = 100 Mbps
+Note: Ignored if auto-negotiation is enabled (0.12 = 1).
+R/W (see Note 1)
+12 Auto-Negotiation Enable
+0 = Disable auto-negotiate process
+1 = Enable auto-negotiate process (overrides 0.13 and 0.8)
+R/W (see Note 1)
+11 Power Down
+0 = Normal operation 
+1 = General power down mode
+R/W 0b
+10 Isolate
+0 = Normal operation
+1 = Electrical isolation of PHY from the RMII
+R/W 0b
+9 Restart Auto-Negotiate
+0 = Normal operation
+1 = Restart auto-negotiate process
+Note: Bit is self-clearing.
+R/W
+SC
+0b
+8 Duplex Mode
+0 = Half duplex
+1 = Full duplex
+Note: Ignored if Auto-Negotiation is enabled (0.12 = 1).
+R/W (see Note 1)
+7:0 RESERVED RO -
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 60  2013-2015 Microchip Technology Inc.
+4.2.2 BASIC STATUS REGISTER
+Index (In Decimal): 1 Size: 16 bits
+Bits Description Type Default
+15 100BASE-T4
+0 = No T4 ability
+1 = T4 able
+RO 0b
+14 100BASE-TX Full Duplex
+0 = No TX full duplex ability
+1 = TX with full duplex
+RO 1b
+13 100BASE-TX Half Duplex
+0 = No TX half duplex ability
+1 = TX with half duplex
+RO 1b
+12 10BASE-T Full Duplex
+0 = No 10 Mbps with full duplex ability
+1 = 10 Mbps with full duplex
+RO 1b
+11 10BASE-T Half Duplex
+0 = No 10 Mbps with half duplex ability
+1 = 10 Mbps with half duplex
+RO 1b
+10 100BASE-T2 Full Duplex
+0 = PHY is not able to perform full duplex 100BASE-T2
+1 = PHY is able to perform full duplex 100BASE-T2
+RO 0b
+9 100BASE-T2 Half Duplex
+0 = PHY is not able to perform half duplex 100BASE-T2
+1 = PHY is able to perform half duplex 100BASE-T2
+RO 0b
+8 Extended Status
+0 = No extended status information in register 15
+1 = Extended status information in register 15
+RO 0b
+7:6 RESERVED RO -
+5 Auto-Negotiate Complete
+0 = Auto-negotiate process not completed
+1 = Auto-negotiate process completed
+RO 0b
+4 Remote Fault
+1 = Remote fault condition detected
+0 = No remote fault
+RO/LH 0b
+3 Auto-Negotiate Ability
+0 = Unable to perform auto-negotiation function
+1 = Able to perform auto-negotiation function
+RO 1b
+2 Link Status
+0 = Link is down.
+1 = Link is up.
+RO/LL 0b
+1 Jabber Detect
+0 = No jabber condition detected.
+1 = Jabber condition detected.
+RO/LH 0b
+0 Extended Capabilities
+0 = Does not support extended capabilities registers
+1 = Supports extended capabilities registers
+RO 1b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 61
+LAN8742A/LAN8742Ai
+4.2.3 PHY IDENTIFIER 1 REGISTER
+Index (In Decimal): 2 Size: 16 bits
+Bits Description Type Default
+15:0 PHY ID Number
+Assigned to the 3rd through 18th bits of the Organizationally Unique Identifier 
+(OUI), respectively.
+R/W 0007h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 62  2013-2015 Microchip Technology Inc.
+4.2.4 PHY IDENTIFIER 2 REGISTER
+Index (In Decimal): 3 Size: 16 bits
+Bits Description Type Default
+15:10 PHY ID Number
+Assigned to the 19th through 24th bits of the OUI.
+R/W C130h
+9:4 Model Number
+Six-bit manufacturer’s model number
+R/W
+3:0 Revision Number
+Four-bit manufacturer’s revision number
+R/W
+Note: The default value of the Revision Number field may vary dependent on the silicon revision number.
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 63
+LAN8742A/LAN8742Ai
+4.2.5 AUTO NEGOTIATION ADVERTISEMENT REGISTER
+Note 1: The default value of this bit is determined by the MODE[2:0] configuration straps. Refer to Section 3.7.2,
+"MODE[2:0]: Mode Configuration" for additional information.
+Index (In Decimal): 4 Size: 16 bits
+Bits Description Type Default
+15 Next Page
+0 = No next page ability
+1 = Next page capable
+R/W 0b
+14 RESERVED RO -
+13 Remote Fault
+0 = No remote fault
+1 = Remote fault detected
+R/W 0b
+12 RESERVED RO -
+11:10 Pause Operation
+00 = No PAUSE 
+01 = Symmetric PAUSE
+10 = Asymmetric PAUSE toward link partner
+11 = Advertise support for both Symmetric PAUSE and Asymmetric PAUSE 
+toward local device
+Note: When both symmetric PAUSE and asymmetric PAUSE are set, the
+device will only be configured to, at most, one of the two settings
+upon auto-negotiation completion.
+R/W 00b
+9 RESERVED RO -
+8 100BASE-TX Full Duplex
+0 = No TX full duplex ability
+1 = TX with full duplex
+R/W (see Note 1)
+7 100BASE-TX
+0 = No TX ability
+1 = TX able
+R/W 1b
+6 10BASE-T Full Duplex
+0 = No 10 Mbps with full duplex ability
+1 = 10 Mbps with full duplex
+R/W (see Note 1)
+5 10BASE-T
+0 = No 10 Mbps ability
+1 = 10 Mbps able
+R/W (see Note 1)
+4:0 Selector Field
+00001 = IEEE 802.3 
+R/W 00001b
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 64  2013-2015 Microchip Technology Inc.
+4.2.6 AUTO NEGOTIATION LINK PARTNER ABILITY REGISTER
+Index (In Decimal): 5 Size: 16 bits
+Bits Description Type Default
+15 Next Page
+0 = No next page ability
+1 = Next page capable
+RO 0b
+14 Acknowledge
+0 = Link code word not yet received
+1 = Link code word received from partner
+RO 0b
+13 Remote Fault
+0 = No remote fault
+1 = Remote fault detected
+RO 0b
+12 RESERVED RO -
+11:10 Pause Operation
+00 = No PAUSE supported by partner station
+01 = Symmetric PAUSE supported by partner station
+10 = Asymmetric PAUSE supported by partner station
+11 = Both Symmetric PAUSE and Asymmetric PAUSE supported by partner 
+station
+RO 00b
+9 100BASE-T4
+0 = No T4 ability
+1 = T4 able
+Note: This device does not support T4 ability.
+RO 0b
+8 100BASE-TX Full Duplex
+0 = No TX full duplex ability
+1 = TX with full duplex
+RO 0b
+7 100BASE-TX
+0 = No TX ability
+1 = TX able
+RO 0b
+6 10BASE-T Full Duplex
+0 = No 10 Mbps with full duplex ability
+1 = 10 Mbps with full duplex
+RO 0b
+5 10BASE-T
+0 = No 10 Mbps ability
+1 = 10 Mbps able
+RO 0b
+4:0 Selector Field
+00001 = IEEE 802.3 
+RO 00001b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 65
+LAN8742A/LAN8742Ai
+4.2.7 AUTO NEGOTIATION EXPANSION REGISTER
+Index (In Decimal): 6 Size: 16 bits
+Bits Description Type Default
+15:7 RESERVED RO -
+6 Receive Next Page Location Able
+0 = Received next page storage location is not specified by bit 6.5
+1 = Received next page storage location is specified by bit 6.5
+RO 1b
+5 Received Next Page Storage Location
+0 = Link partner next pages are stored in the Auto Negotiation Link Partner 
+Ability Register (PHY register 5)
+1 = Link partner next pages are stored in the Auto Negotiation Next Page RX 
+Register (PHY register 8)
+RO 1b
+4 Parallel Detection Fault
+0 = No fault detected by parallel detection logic
+1 = Fault detected by parallel detection logic
+RO/LH 0b
+3 Link Partner Next Page Able
+0 = Link partner does not have next page ability.
+1 = Link partner has next page ability.
+RO 0b
+2 Next Page Able
+0 = Local device does not have next page ability.
+1 = Local device has next page ability.
+RO 1b
+1 Page Received
+0 = New page not yet received
+1 = New page received
+RO/LH 0b
+0 Link Partner Auto-Negotiation Able
+0 = Link partner does not have auto-negotiation ability.
+1 = Link partner has auto-negotiation ability.
+RO 0b
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 66  2013-2015 Microchip Technology Inc.
+4.2.8 AUTO NEGOTIATION NEXT PAGE TX REGISTER
+Index (In Decimal): 7 Size: 16 bits
+Bits Description Type Default
+15 Next Page
+0 = No next page ability
+1 = Next page capable
+R/W 0b
+14 RESERVED RO -
+13 Message Page
+0 = Unformatted page
+1 = Message page
+R/W 1b
+12 Acknowledge 2
+0 = Device cannot comply with message.
+1 = Device will comply with message.
+R/W 0b
+11 Toggle
+0 = Previous value was HIGH.
+1 = Previous value was LOW.
+RO 0b
+10:0 Message Code
+Message/Unformatted Code Field
+R/W 000
+0000
+0001b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 67
+LAN8742A/LAN8742Ai
+4.2.9 AUTO NEGOTIATION NEXT PAGE RX REGISTER
+Index (In Decimal): 8 Size: 16 bits
+Bits Description Type Default
+15 Next Page
+0 = No next page ability
+1 = Next page capable
+RO 0b
+14 Acknowledge
+0 = Link code word not yet received from partner
+1 = Link code word received from partner
+RO 0b
+13 Message Page
+0 = Unformatted page
+1 = Message page
+RO 0b
+12 Acknowledge 2
+0 = Device cannot comply with message.
+1 = Device will comply with message.
+RO 0b
+11 Toggle
+0 = Previous value was HIGH.
+1 = Previous value was LOW.
+RO 0b
+10:0 Message Code
+Message/Unformatted Code Field
+RO 000
+0000
+0000b
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 68  2013-2015 Microchip Technology Inc.
+4.2.10 MMD ACCESS CONTROL REGISTER
+This register in conjunction with the MMD Access Address/Data Register provides indirect access to the MDIO Manageable Device (MMD) registers. Refer to Section 4.3, "MDIO Manageable Device (MMD) Registers" for additional
+details.
+Index (In Decimal): 13 Size: 16 bits
+Bits Description Type Default
+15:14 MMD Function
+This field is used to select the desired MMD function:
+00 = Address
+01 = Data, no post increment
+10 = RESERVED 
+11 = RESERVED 
+R/W 00b
+13:5 RESERVED RO -
+4:0 MMD Device Address (DEVAD)
+This field is used to select the desired MMD device address.
+(3 = PCS)
+R/W 0h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 69
+LAN8742A/LAN8742Ai
+4.2.11 MMD ACCESS ADDRESS/DATA REGISTER
+This register in conjunction with the MMD Access Control Register provides indirect access to the MDIO Manageable
+Device (MMD) registers. Refer to Section 4.3, "MDIO Manageable Device (MMD) Registers" for additional details.
+Index (In Decimal): 14 Size: 16 bits
+Bits Description Type Default
+15:0 MMD Register Address/Data
+If the MMD Function field of the MMD Access Control Register is “00”, this 
+field is used to indicate the MMD register address to read/write of the device 
+specified in the MMD Device Address (DEVAD) field. Otherwise, this register 
+is used to read/write data from/to the previously specified MMD address.
+R/W 0000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 70  2013-2015 Microchip Technology Inc.
+4.2.12 EDPD NLP/CROSSOVER TIMEREGISTER
+Index (In Decimal): 16 Size: 16 bits
+Bits Description Type Default
+15 EDPD TX NLP Enable
+When in Energy Detect Power-Down (EDPD) mode (EDPWRDOWN = 1), this 
+bit enables the transmission of single TX NLPs at the interval defined by the 
+EDPD TX NLP Interval Timer Select field.
+0 = TX NLP disabled
+1 = TX NLP enabled when in EDPD mode
+R/W
+NASR
+0b
+14:13 EDPD TX NLP Interval Timer Select
+When in Energy Detect Power-Down (EDPD) mode (EDPWRDOWN = 1) and 
+EDPD TX NLP Enable is 1, this field defines the interval used to send single 
+TX NLPs.
+00 = 1 second (default)
+01 = 768 ms
+10 = 512 ms
+11 = 256 ms
+R/W
+NASR
+00b
+12 EDPD RX Single NLP Wake Enable
+When in Energy Detect Power-Down (EDPD) mode (EDPWRDOWN = 1), this 
+bit enables waking the PHY on reception of a single RX NLP.
+0 = RX NLP wake disabled
+1 = TX NLP wake enabled when in EDPD mode
+R/W
+NASR
+0b
+11:10 EDPD RX NLP Max Interval Detect Select
+When in Energy Detect Power-Down (EDPD) mode (EDPWRDOWN = 1) and 
+EDPD RX Single NLP Wake Enable is 0, this field defines the maximum interval for detecting two RX NLPs to wake from EDPD mode
+00 = 64 ms (default)
+01 = 256 ms
+10 = 512 ms
+11 = 1 second
+R/W
+NASR
+00b
+9:2 RESERVED RO -
+1 EDPD Extend Crossover
+When in Energy Detect Power-Down (EDPD) mode (EDPWRDOWN = 1), 
+setting this bit to 1 extends the crossover time by 2976 ms.
+0 = Crossover time extension disabled
+1 = Crossover time extension enabled (2976 ms)
+R/W
+NASR
+0b
+0 Extend Manual 10/100 Auto-MDIX Crossover Time
+When Auto-MIDX is enabled and the PHY is in manual 10BASE-T or 
+100BASE-TX mode, setting this bit to 1 extends the crossover time by 1984 
+ms to allow linking to an auto-negotiation link partner PHY.
+0 = Crossover time extension disabled
+1 = Crossover time extension enabled (1984 ms)
+R/W
+NASR
+1b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 71
+LAN8742A/LAN8742Ai
+4.2.13 MODE CONTROL/STATUS REGISTER
+Index (In Decimal): 17 Size: 16 bits
+Bits Description Type Default
+15:14 RESERVED RO -
+13 EDPWRDOWN
+Enable the Energy Detect Power-Down (EDPD) mode:
+0 = Energy Detect Power-Down is disabled.
+1 = Energy Detect Power-Down is enabled.
+Note: When in EDPD mode, the device’s NLP characteristics can be
+modified via the EDPD NLP/Crossover TimeRegister.
+R/W 0b
+12:10 RESERVED RO -
+9 FARLOOPBACK
+Enables far loopback mode (i.e., all the received packets are sent back simultaneously (in 100BASE-TX only)). This mode works even if the Isolate bit 
+(0.10) is set. 
+0 = Far loopback mode is disabled.
+1 = Far loopback mode is enabled.
+Refer to Section 3.8.10.2, "Far Loopback" for additional information. 
+R/W 0b
+8:7 RESERVED RO -
+6 ALTINT
+Alternate Interrupt Mode:
+0 = Primary interrupt system enabled (Default)
+1 = Alternate interrupt system enabled
+Refer to Section 3.6, "Interrupt Management" for additional information.
+R/W 0b
+5:2 RESERVED RO -
+1 ENERGYON
+Indicates whether energy is detected. This bit transitions to “0” if no valid 
+energy is detected within 256 ms. It is reset to “1” by a hardware reset and is 
+unaffected by a software reset. Refer to Section 3.8.3.2, "Energy Detect 
+Power-Down (EDPD)" for additional information.
+RO 1b
+0 RESERVED R/W 0b
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 72  2013-2015 Microchip Technology Inc.
+4.2.14 SPECIAL MODES REGISTER
+Note 1: The default value of this field is determined by the MODE[2:0] configuration straps. Refer to Section 3.7.2,
+"MODE[2:0]: Mode Configuration" for additional information.
+2: The default value of this field is determined by the PHYAD[0] configuration strap. Refer to Section 3.7.1,
+"PHYAD[0]: PHY Address Configuration" for additional information.
+Index (In Decimal): 18 Size: 16 bits
+Bits Description Type Default
+15:8 RESERVED RO -
+7:5 MODE
+Transceiver mode of operation. Refer to Section 3.7.2, "MODE[2:0]: Mode 
+Configuration" for additional details.
+R/W
+NASR
+(see Note 1)
+4:0 PHYAD
+PHY Address. The PHY Address is used for the SMI address and for initialization of the Cipher (Scrambler) key. Refer to Section 3.7.1, "PHYAD[0]: PHY 
+Address Configuration" for additional details.
+R/W
+NASR
+(see Note 2)
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 73
+LAN8742A/LAN8742Ai
+4.2.15 TDR PATTERNS/DELAY CONTROL REGISTER
+Index (In Decimal): 24 Size: 16 bits
+Bits Description Type Default
+15 TDR Delay In
+0 = Line break time is 2 ms.
+1 = The device uses TDR Line Break Counter to increase the line break time 
+before starting TDR.
+R/W
+NASR
+0b
+14:12 TDR Line Break Counter
+When TDR Delay In is 1, this field specifies the increase in line break time in 
+increments of 256 ms, up to 2 seconds.
+R/W
+NASR
+000b
+11:6 TDR Pattern High
+This field specifies the data pattern sent in TDR mode for the high cycle.
+R/W
+NASR
+101110b
+5:0 TDR Pattern Low
+This field specifies the data pattern sent in TDR mode for the low cycle.
+R/W
+NASR
+011101b
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 74  2013-2015 Microchip Technology Inc.
+4.2.16 TDR CONTROL/STATUS REGISTER
+Index (In Decimal): 25 Size: 16 bits
+Bits Description Type Default
+15 TDR Enable
+0 = TDR mode disabled
+1 = TDR mode enabled
+Note: This bit self clears when TDR completes 
+(TDR Channel Status goes high)
+R/W
+NASR
+SC
+0b
+14 TDR Analog to Digital Filter Enable
+0 = TDR analog to digital filter disabled
+1 = TDR analog to digital filter enabled (reduces noise spikes during TDR 
+pulses)
+R/W
+NASR
+0b
+13:11 RESERVED RO -
+10:9 TDR Channel Cable Type
+Indicates the cable type determined by the TDR test.
+00 = Default
+01 = Shorted cable condition
+10 = Open cable condition
+11 = Match cable condition
+R/W
+NASR
+00b
+8 TDR Channel Status
+When high, this bit indicates that the TDR operation has completed. This bit 
+will stay high until reset or the TDR operation is restarted (TDR Enable = 1)
+R/W
+NASR
+0b
+7:0 TDR Channel Length
+This eight bit value indicates the TDR channel length during a short or open 
+cable condition. Refer to Section 3.8.9.1, "Time Domain Reflectometry (TDR) 
+Cable Diagnostics" for additional information on the usage of this field.
+Note: This field is not valid during a match cable condition. The Cable
+Length Register must be used to determine cable length during a
+non-open/short (match) condition. Refer to Section 3.8.9, "Cable
+Diagnostics" for additional information.
+R/W
+NASR
+00h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 75
+LAN8742A/LAN8742Ai
+4.2.17 SYMBOL ERROR COUNTER REGISTER
+Index (In Decimal): 26 Size: 16 bits
+Bits Description Type Default
+15:0 Symbol Error Counter (SYM_ERR_CNT)
+This 100BASE-TX receiver-based error counter increments when an invalid 
+code symbol is received, including IDLE symbols. The counter is incremented 
+only once per packet, even when the received packet contains more than one 
+symbol error. This field counts up to 65,536 and rolls over to 0 if incremented 
+beyond it’s maximum value. 
+Note: This register is cleared on reset, but is not cleared by reading the
+register. It does not increment in 10BASE-T mode.
+RO 0000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 76  2013-2015 Microchip Technology Inc.
+4.2.18 SPECIAL CONTROL/STATUS INDICATIONS REGISTER
+Index (In Decimal): 27 Size: 16 bits
+Bits Description Type Default
+15 AMDIXCTRL
+HP Auto-MDIX control:
+0 = Enable Auto-MDIX
+1 = Disable Auto-MDIX (use 27.13 to control channel)
+R/W
+NASR
+0b
+14 RESERVED RO -
+13 CH_SELECT
+Manual channel select:
+0 = MDI (TX transmits, RX receives)
+1 = MDIX (TX receives, RX transmits)
+R/W
+NASR
+0b
+12 RESERVED RO -
+11 SQEOFF
+Disable the SQE test (Heartbeat):
+0 = SQE test is enabled
+1 = SQE test is disabled
+R/W
+NASR
+0b
+10:5 RESERVED RO -
+4 XPOL
+Polarity state of the 10BASE-T:
+0 = Normal polarity
+1 = Reversed polarity
+RO 0b
+3:0 RESERVED RO -
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 77
+LAN8742A/LAN8742Ai
+4.2.19 CABLE LENGTH REGISTER
+Index (In Decimal): 28 Size: 16 bits
+Bits Description Type Default
+15:12 Cable Length (CBLN)
+This four bit value indicates the cable length. Refer to Section 3.8.9.2, 
+"Matched Cable Diagnostics" for additional information on the usage of this 
+field.
+Note: This field indicates cable length for 100BASE-TX linked devices
+that do not have an open/short on the cable. To determine the
+open/short status of the cable, the TDR Patterns/Delay Control
+Register and TDR Control/Status Register must be used. Cable
+length is not supported for 10BASE-T links. Refer to Section 3.8.9,
+"Cable Diagnostics" for additional information.
+RO 0000b
+11:0 RESERVED RO -
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 78  2013-2015 Microchip Technology Inc.
+4.2.20 INTERRUPT SOURCE FLAG REGISTER
+Index (In Decimal): 29 Size: 16 bits
+Bits Description Type Default
+15:9 RESERVED RO -
+8 INT8
+0 = Not source of interrupt
+1 = Wake on LAN (WoL) event detected
+RO/LH 0b
+7 INT7
+0 = Not source of interrupt
+1 = ENERGYON generated
+RO/LH 0b
+6 INT6
+0 = Not source of interrupt
+1 = Auto-Negotiation complete
+RO/LH 0b
+5 INT5
+0 = Not source of interrupt
+1 = Remote Fault Detected
+RO/LH 0b
+4 INT4
+0 = Not source of interrupt
+1 = Link Down (link status negated)
+RO/LH 0b
+3 INT3
+0 = Not source of interrupt
+1 = Auto-Negotiation LP Acknowledge
+RO/LH 0b
+2 INT2
+0 = Not source of interrupt
+1 = Parallel Detection Fault
+RO/LH 0b
+1 INT1
+0 = Not source of interrupt
+1 = Auto-Negotiation Page Received
+RO/LH 0b
+0 RESERVED RO 0b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 79
+LAN8742A/LAN8742Ai
+4.2.21 INTERRUPT MASK REGISTER
+Index (In Decimal): 30 Size: 16 bits
+Bits Description Type Default
+15:9 RESERVED RO -
+8:1 Mask Bits
+These bits mask the corresponding interrupts in the Interrupt Source Flag 
+Register.
+0 = Interrupt source is masked.
+1 = Interrupt source is enabled.
+R/W 00000000b
+0 RESERVED RO -
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 80  2013-2015 Microchip Technology Inc.
+4.2.22 PHY SPECIAL CONTROL/STATUS REGISTER
+Index (In Decimal): 31 Size: 16 bits
+Bits Description Type Default
+15:13 RESERVED RO -
+12 Autodone
+Auto-negotiation done indication:
+0 = Auto-negotiation is not done or disabled (or not active).
+1 = Auto-negotiation is done.
+RO 0b
+11:5 RESERVED - Write as 0000010b, ignore on read. R/W 0000010b
+4:2 Speed Indication
+HCDSPEED value:
+001 = 10BASE-T half-duplex
+101 = 10BASE-T full-duplex
+010 = 100BASE-TX half-duplex
+110 = 100BASE-TX full-duplex
+RO XXXb
+1:0 RESERVED RO -
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 81
+LAN8742A/LAN8742Ai
+4.3 MDIO Manageable Device (MMD) Registers
+The device MMD registers adhere to the IEEE 802.3-2008 45.2 MDIO Interface Registers specification. The MMD registers are not memory mapped. These registers are accessed indirectly via the MMD Access Control Register and MMD
+Access Address/Data Register. The supported MMD device addresses are 3 (PCS) and 30 (Vendor Specific). Table 4-
+3, "MMD Registers" details the supported registers within each MMD device.
+To read or write an MMD register, the following procedure must be observed:
+1. Write the MMD Access Control Register with 00b (address) for the MMD Function field and the desired MMD
+device (3 for PCS) for the MMD Device Address (DEVAD) field.
+2. Write the MMD Access Address/Data Register with the 16-bit address of the desired MMD register to read/write
+within the previously selected MMD device (PCS or Auto-Negotiation).
+3. Write the MMD Access Control Register with 01b (data) for the MMD Function field and choose the previously
+selected MMD device (3 for PCS) for the MMD Device Address (DEVAD) field.
+4. If reading, read the MMD Access Address/Data Register, which contains the selected MMD register contents. If
+writing, write the MMD Access Address/Data Register with the register contents intended for the previously
+selected MMD register.
+TABLE 4-3: MMD REGISTERS
+MMD Device 
+Address
+(In Decimal)
+Index
+(In Decimal) Register Name
+3
+(PCS)
+5 PCS MMD Devices Present 1 Register
+6 PCS MMD Devices Present 2 Register
+32784 Wakeup Control and Status Register (WUCSR)
+32785 Wakeup Filter Configuration Register A (WUF_CFGA)
+32786 Wakeup Filter Configuration Register B (WUF_CFGB)
+32801 Wakeup Filter Byte Mask Registers (WUF_MASK)
+32802
+32803
+32804
+32805
+32806
+32807
+32808
+32865 MAC Receive Address A Register (RX_ADDRA)
+32866 MAC Receive Address B Register (RX_ADDRB)
+32867 MAC Receive Address C Register (RX_ADDRC)
+32868 Miscellaneous Configuration Register (MCFGR)
+30
+(Vendor Specific)
+2 Vendor Specific MMD 1 Device ID 1 Register
+3 Vendor Specific MMD 1 Device ID 2 Register
+5 Vendor Specific 1 MMD Devices Present 1 Register
+6 Vendor Specific 1 MMD Devices Present 2 Register
+8 Vendor Specific MMD 1 Status Register
+11 TDR Match Threshold Register
+12 TDR Short/Open Threshold Register
+14 Vendor Specific MMD 1 package ID 1 Register
+15 Vendor Specific MMD 1 package ID 2 Register
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 82  2013-2015 Microchip Technology Inc.
+4.3.1 PCS MMD DEVICES PRESENT 1 REGISTER
+Index (In Decimal): 3.5 Size: 16 bits
+Bits Description Type Default
+15:8 RESERVED RO -
+7 Auto-Negotiation Present
+0 = Auto-negotiation not present in package
+1 = Auto-negotiation present in package
+RO 1b
+6 TC Present
+0 = TC not present in package
+1 = TC present in package
+RO 0b
+5 DTE XS Present
+0 = DTE XS not present in package
+1 = DTE XS present in package
+RO 0b
+4 PHY XS Present
+0 = PHY XS not present in package
+1 = PHY XS present in package
+RO 0b
+3 PCS Present
+0 = PCS not present in package
+1 = PCS present in package
+RO 1b
+2 WIS Present
+0 = WIS not present in package
+1 = WIS present in package
+RO 0b
+1 PMD/PMA Present
+0 = PMD/PMA not present in package
+1 = PMD/PMA present in package
+RO 0b
+0 Clause 22 Registers Present
+0 = Clause 22 registers not present in package
+1 = Clause 22 registers present in package
+RO 0b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 83
+LAN8742A/LAN8742Ai
+4.3.2 PCS MMD DEVICES PRESENT 2 REGISTER
+Index (In Decimal): 3.6 Size: 16 bits
+Bits Description Type Default
+15 Vendor Specific Device 2 Present
+0 = Vendor specific device 2 not present in package
+1 = Vendor specific device 2 present in package
+RO 0b
+14 Vendor Specific Device 1 Present
+0 = Vendor specific device 1 not present in package
+1 = Vendor specific device 1 present in package
+RO 1b
+13 Clause 22 Extension Present
+0 = Clause 22 extension not present in package
+1 = Clause 22 extension present in package
+RO 0b
+12:0 RESERVED RO -
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 84  2013-2015 Microchip Technology Inc.
+4.3.3 WAKEUP CONTROL AND STATUS REGISTER (WUCSR)
+Index (In Decimal): 3.32784 Size: 16 bits
+Bits Description Type Default
+15 Interface Disable
+0 = RMII interface enabled
+1 = RMII interface disabled. Outputs driven to a low level and inputs ignored.
+R/W
+NASR
+0b
+14:13 LED1 Function Select
+00 = LED1 functions as Link/Activity.
+01 = LED1 functions as nINT.
+10 = LED1 functions as nPME.
+11 = LED1 functions as Link Speed.
+Note: Refer to Section 3.8.1, "LEDs" for additional information.
+R/W
+NASR
+0b
+12:11 LED2 Function Select
+00 = LED2 functions as Link Speed.
+01 = LED2 functions as nINT.
+10 = LED2 functions as nPME.
+11 = LED2 functions as Link/Activity.
+Note: Refer to Section 3.8.1, "LEDs" for additional information.
+R/W
+NASR
+0b
+10 RESERVED RO -
+9 nPME Self Clear
+0 = nPME pin is not self clearing.
+1 = nPME pin is self clearing.
+Note: When set, the de-assertion delay of the nPME signal is controlled
+by the nPME Assert Delay bit of the Miscellaneous Configuration
+Register (MCFGR). Refer to Section 3.8.4, "Wake on LAN (WoL)"
+for additional information.
+R/W
+NASR
+0b
+8 WoL Configured
+This bit may be set by software after the WoL registers are configured. This 
+sticky bit (and all other WoL related register bits) is reset only via a power 
+cycle or a pin reset, allowing software to skip programming of the WoL registers in response to a WoL event.
+Note: Refer to Section 3.8.4, "Wake on LAN (WoL)" for additional information.
+R/W/
+NASR
+0b
+7 Perfect DA Frame Received (PFDA_FR)
+The MAC sets this bit upon receiving a valid frame with a destination address 
+that matches the physical address.
+R/WC/
+NASR
+0b
+6 Remote Wakeup Frame Received (WUFR)
+The MAC sets this bit upon receiving a valid remote Wakeup Frame.
+R/WC/
+NASR
+0b
+5 Magic Packet Received (MPR)
+The MAC sets this bit upon receiving a valid Magic Packet.
+R/WC/
+NASR
+0b
+4 Broadcast Frame Received (BCAST_FR)
+The MAC Sets this bit upon receiving a valid broadcast frame.
+R/WC/
+NASR
+0b
+3 Perfect DA Wakeup Enable (PFDA_EN)
+When set, remote wakeup mode is enabled and the MAC is capable of waking 
+up on receipt of a frame with a destination address that matches the physical 
+address of the device. The physical address is stored in the MAC Receive 
+Address A Register (RX_ADDRA), MAC Receive Address B Register 
+(RX_ADDRB) and MAC Receive Address C Register (RX_ADDRC).
+R/W/
+NASR
+0b
+2 Wakeup Frame Enable (WUEN)
+When set, remote wakeup mode is enabled and the MAC is capable of detecting Wakeup Frames as programmed in the Wakeup Filter.
+R/W/
+NASR
+0b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 85
+LAN8742A/LAN8742Ai
+1 Magic Packet Enable (MPEN)
+When set, Magic Packet wakeup mode is enabled.
+R/W/
+NASR
+0b
+0 Broadcast Wakeup Enable (BCST_EN)
+When set, remote wakeup mode is enabled and the MAC is capable of waking 
+up from a broadcast frame.
+R/W/
+NASR
+0b
+Bits Description Type Default
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 86  2013-2015 Microchip Technology Inc.
+4.3.4 WAKEUP FILTER CONFIGURATION REGISTER A (WUF_CFGA)
+Index (In Decimal): 3.32785 Size: 16 bits
+Bits Description Type Default
+15 Filter Enable
+0 = Filter disabled
+1 = Filter enabled
+R/W/
+NASR
+0b
+14 Filter Triggered
+0 = Filter not triggered
+1 = Filter triggered
+R/WC/
+NASR
+0b
+13:11 RESERVED RO -
+10 Address Match Enable
+When set, the destination address must match the programmed address. 
+When cleared, any unicast packet is accepted. Refer to Section 3.8.4.4, 
+"Wakeup Frame Detection" for additional information.
+R/W/
+NASR
+0b
+9 Filter Any Multicast Enable
+When set, any multicast packet other than a broadcast will cause an address 
+match. Refer to Section 3.8.4.4, "Wakeup Frame Detection" for additional 
+information.
+Note: This bit has priority over bit 10 of this register.
+R/W/
+NASR
+0b
+8 Filter Broadcast Enable
+When set, any broadcast frame will cause an address match. Refer to Section 
+3.8.4.4, "Wakeup Frame Detection" for additional information.
+Note: This bit has priority over bit 10 of this register.
+R/W/
+NASR
+0b
+7:0 Filter Pattern Offset
+Specifies the offset of the first byte in the frame on which CRC checking 
+begins for Wakeup Frame recognition. Offset 0 is the first byte of the incoming 
+frame’s destination address.
+R/W/
+NASR
+00h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 87
+LAN8742A/LAN8742Ai
+4.3.5 WAKEUP FILTER CONFIGURATION REGISTER B (WUF_CFGB)
+Index (In Decimal): 3.32786 Size: 16 bits
+Bits Description Type Default
+15:0 Filter CRC-16
+This field specifies the expected 16-bit CRC value for the filter that should be 
+obtained by using the pattern offset and the byte mask programmed for the filter. This value is compared against the CRC calculated on the incoming 
+frame, and a match indicates the reception of a Wakeup Frame.
+R/W/
+NASR
+0000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 88  2013-2015 Microchip Technology Inc.
+4.3.6 WAKEUP FILTER BYTE MASK REGISTERS (WUF_MASK)
+Index (In Decimal): 3.32801 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [127:112] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32802 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [111:96] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32803 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [95:80] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32804 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [79:64] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32805 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [63:48] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32806 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [47:32] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32807 Size: 16 bits
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 89
+LAN8742A/LAN8742Ai
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [31:16] R/W/
+NASR
+0000h
+Index (In Decimal): 3.32808 Size: 16 bits
+Bits Description Type Default
+15:0 Wakeup Filter Byte Mask [15:0] R/W/
+NASR
+0000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 90  2013-2015 Microchip Technology Inc.
+4.3.7 MAC RECEIVE ADDRESS A REGISTER (RX_ADDRA)
+Index (In Decimal): 3.32865 Size: 16 bits
+Bits Description Type Default
+15:0 Physical Address [47:32] R/W/
+NASR
+FFFFh
+Note: The MAC address must be loaded into the RX_ADDRA, RX_ADDRB, and RX_ADDRC registers in the
+proper byte order. For example, a MAC address of 12:34:56:78:9A:BC should be loaded into these registers as follows:
+RX_ADDRA = BC9Ah
+RX_ADDRB = 7856h
+RX_ADDRC = 3412h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 91
+LAN8742A/LAN8742Ai
+4.3.8 MAC RECEIVE ADDRESS B REGISTER (RX_ADDRB)
+Index (In Decimal): 3.32866 Size: 16 bits
+Bits Description Type Default
+15:0 Physical Address [31:16] R/W/
+NASR
+FFFFh
+Note: The MAC address must be loaded into the RX_ADDRA, RX_ADDRB, and RX_ADDRC registers in the
+proper byte order. For example, a MAC address of 12:34:56:78:9A:BC should be loaded into these registers as follows:
+RX_ADDRA = BC9Ah
+RX_ADDRB = 7856h
+RX_ADDRC = 3412h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 92  2013-2015 Microchip Technology Inc.
+4.3.9 MAC RECEIVE ADDRESS C REGISTER (RX_ADDRC)
+Index (In Decimal): 3.32867 Size: 16 bits
+Bits Description Type Default
+15:0 Physical Address [15:0] R/W/
+NASR
+FFFFh
+Note: The MAC address must be loaded into the RX_ADDRA, RX_ADDRB, and RX_ADDRC registers in the
+proper byte order. For example, a MAC address of 12:34:56:78:9A:BC should be loaded into these registers as follows:
+RX_ADDRA = BC9Ah
+RX_ADDRB = 7856h
+RX_ADDRC = 3412h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 93
+LAN8742A/LAN8742Ai
+4.3.10 MISCELLANEOUS CONFIGURATION REGISTER (MCFGR)
+Index (In Decimal): 3.32868 Size: 16 bits
+Bits Description Type Default
+15:0 nPME Assert Delay
+This register controls the delay of nPME de-assertion time when the nPME 
+Self Clear bit of the Wakeup Control and Status Register (WUCSR) is set. 
+Each count is equivalent to a 20 µs delay. The delay max is 1.31 seconds. 
+Time = (register value + 1) x 20 µs.
+R/W/
+NASR
+1000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 94  2013-2015 Microchip Technology Inc.
+4.3.11 VENDOR SPECIFIC MMD 1 DEVICE ID 1 REGISTER
+Index (In Decimal): 30.2 Size: 16 bits
+Bits Description Type Default
+15:0 RESERVED RO 0000h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 95
+LAN8742A/LAN8742Ai
+4.3.12 VENDOR SPECIFIC MMD 1 DEVICE ID 2 REGISTER
+Index (In Decimal): 30.3 Size: 16 bits
+Bits Description Type Default
+15:0 RESERVED RO 0000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 96  2013-2015 Microchip Technology Inc.
+4.3.13 VENDOR SPECIFIC 1 MMD DEVICES PRESENT 1 REGISTER
+Index (In Decimal): 30.5 Size: 16 bits
+Bits Description Type Default
+15:8 RESERVED RO -
+7 Auto-Negotiation Present
+0 = Auto-negotiation not present in package
+1 = Auto-negotiation present in package
+RO 1b
+6 TC Present
+0 = TC not present in package
+1 = TC present in package
+RO 0b
+5 DTE XS Present
+0 = DTE XS not present in package
+1 = DTE XS present in package
+RO 0b
+4 PHY XS Present
+0 = PHY XS not present in package
+1 = PHY XS present in package
+RO 0b
+3 PCS Present
+0 = PCS not present in package
+1 = PCS present in package
+RO 1b
+2 WIS Present
+0 = WIS not present in package
+1 = WIS present in package
+RO 0b
+1 PMD/PMA Present
+0 = PMD/PMA not present in package
+1 = PMD/PMA present in package
+RO 0b
+0 Clause 22 Registers Present
+0 = Clause 22 registers not present in package
+1 = Clause 22 registers present in package
+RO 0b
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 97
+LAN8742A/LAN8742Ai
+4.3.14 VENDOR SPECIFIC 1 MMD DEVICES PRESENT 2 REGISTER
+Index (In Decimal): 30.6 Size: 16 bits
+Bits Description Type Default
+15 Vendor Specific Device 2 Present
+0 = Vendor specific device 2 not present in package
+1 = Vendor specific device 2 present in package
+RO 0b
+14 Vendor Specific Device 1 Present
+0 = Vendor specific device 1 not present in package
+1 = Vendor specific device 1 present in package
+RO 1b
+13 Clause 22 Extension Present
+0 = Clause 22 extension not present in package
+1 = Clause 22 extension present in package
+RO 0b
+12:0 RESERVED RO -
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 98  2013-2015 Microchip Technology Inc.
+4.3.15 VENDOR SPECIFIC MMD 1 STATUS REGISTER
+Index (In Decimal): 30.8 Size: 16 bits
+Bits Description Type Default
+15:14 Device Present
+00 = No device responding at this address
+01 = No device responding at this address
+10 = Device responding at this address
+11 = No device responding at this address
+10b
+13:0 RESERVED RO -
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 99
+LAN8742A/LAN8742Ai
+4.3.16 TDR MATCH THRESHOLD REGISTER
+Note 1: Software reset places the default values of this register into an indeterminate state. For proper operation of
+the TDR, the TDR Match High Threshold and TDR Match Low Threshold must be set to 5’h12 and 5’h09,
+respectively.
+Index (In Decimal): 30.11 Size: 16 bits
+Bits Description Type Default
+15:10 RESERVED RO -
+9:5 TDR Match High Threshold
+Sets the upper threshold to detect match cable.
+R/W 5’h12
+(see Note 1)
+4:0 TDR Match Low Threshold
+Sets the lower threshold to detect match cable.
+R/W 5’h09
+(see Note 1)
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 100  2013-2015 Microchip Technology Inc.
+4.3.17 TDR SHORT/OPEN THRESHOLD REGISTER
+Note 1: Software reset places the default values of this register into an indeterminate state. For proper operation of
+the TDR, the TDR Short Low Threshold and TDR Open High Threshold must be set to 5’h09 and 5’h12,
+respectively.
+Index (In Decimal): 30.12 Size: 16 bits
+Bits Description Type Default
+15:10 RESERVED RO -
+9:5 TDR Short Low Threshold
+Sets the lower threshold to detect short cable.
+R/W 5’h09
+(see Note 1)
+4:0 TDR Open High Threshold
+Sets the upper threshold to detect open cable.
+R/W 5’h12
+(see Note 1)
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 101
+LAN8742A/LAN8742Ai
+4.3.18 VENDOR SPECIFIC MMD 1 PACKAGE ID 1 REGISTER
+Index (In Decimal): 30.14 Size: 16 bits
+Bits Description Type Default
+15:0 RESERVED RO 0000h
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 102  2013-2015 Microchip Technology Inc.
+4.3.19 VENDOR SPECIFIC MMD 1 PACKAGE ID 2 REGISTER
+Index (In Decimal): 30.15 Size: 16 bits
+Bits Description Type Default
+15:0 RESERVED RO 0000h
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 103
+LAN8742A/LAN8742Ai
+5.0 OPERATIONAL CHARACTERISTICS
+5.1 Absolute Maximum Ratings*
+Supply Voltage (VDDIO, VDD1A, VDD2A) (see Note 1).......................................................................... -0.5 V to +3.6 V
+Digital Core Supply Voltage (VDDCR) (see Note 1) ................................................................................ -0.5 V to +1.5 V
+Ethernet Magnetics Supply Voltage ......................................................................................................... -0.5 V to +3.6 V
+Positive voltage on input signal pins, with respect to ground (see Note 2)............................................... VDDIO + 2.0 V
+Negative voltage on input signal pins, with respect to ground (see Note 3) ............................................................-0.5 V
+Positive voltage on XTAL1/CLKIN, with respect to ground .......................................................................................3.6 V
+Storage Temperature ..............................................................................................................................-55oC to +150oC
+Lead Temperature Range ........................................................................................... Refer to JEDEC Spec. J-STD-020
+HBM ESD Performance ........................................................................................................................ .JEDEC Class 3A
+Note 1: When powering this device from laboratory or system power supplies, it is important that the absolute maximum ratings not be exceeded or device failure can result. Some power supplies exhibit voltage spikes on
+their outputs when AC power is switched on or off. In addition, voltage transients on the AC power line may
+appear on the DC output. If this possibility exists, it is suggested that a clamp circuit be used.
+2: This rating does not apply to the following pins: XTAL1/CLKIN, XTAL2, RBIAS.
+3: This rating does not apply to the following pins: RBIAS.
+*Stresses exceeding those listed in this section could cause permanent damage to the device. This is a stress rating
+only. Exposure to absolute maximum rating conditions for extended periods may affect device reliability. Functional
+operation of the device at any condition exceeding those indicated in Section 5.2, "Operating Conditions**" or any other
+applicable section of this specification is not implied. Note, device signals are NOT 5.0 V tolerant unless specified otherwise.
+5.2 Operating Conditions**
+Supply Voltage (VDDIO) ....................................................................................................................... +1.62 V to +3.6 V
+Analog Port Supply Voltage (VDD1A, VDD2A)....................................................................................... +3.0 V to +3.6 V
+Digital Core Supply Voltage (VDDCR) ................................................................................................ +1.14 V to +1.26 V
+Ethernet Magnetics Supply Voltage ...................................................................................................... +2.25 V to +3.6 V
+Ambient Operating Temperature in Still Air (TA)........................................................................................... (see Note 1)
+Note 1: 0°C to +70°C for commercial version, -40°C to +85°C for industrial version.
+**Proper operation of the device is guaranteed only within the ranges specified in this section. After the device has completed power-up, VDDIO and the magnetics power supply must maintain their voltage level with ±10%. Varying the voltage greater than ±10% after the device has completed power-up can cause errors in device operation.
+5.3 Package Thermal Specifications
+Note: Do not drive input signals without power supplied to the device.
+TABLE 5-1: PACKAGE THERMAL PARAMETERS
+Parameter Symbol Value Unit Comment
+Thermal Resistance ΘJA 55.3 oC/W Measured in still air from the die to ambient air
+Junction-to-Top-of-Package ΨJT 0.9 oC/W Measured in still air
+Note: Thermal parameters are measured or estimated for devices in a multi-layer 2S2P PCB per JESD51.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 104  2013-2015 Microchip Technology Inc.
+5.4 Power Consumption
+This section details the device power measurements taken over various operating conditions. Unless otherwise noted,
+all measurements were taken with power supplies at nominal values (VDDIO, VDD1A, VDD2A = 3.3 V, VDDCR = 1.2 V).
+See Section 3.8.3, "Power-Down Modes" for a description of the power down modes. 
+5.4.1 REF_CLK IN MODE
+5.4.1.1 Regulator Disabled
+5.4.1.2 Regulator Enabled
+TABLE 5-2: CURRENT CONSUMPTION AND POWER DISSIPATION (REF_CLK IN, REG. 
+DISABLED)
+Power Pin Group 3.3 V Device 
+Current (mA)
+1.2 V Device 
+Current (mA)
+3.3 V Device 
+Current w/ 
+Magnetics 
+(mA)
+Total Device 
+Power (mW)
+nRESET Typical 9.8 11 9.8 50
+100BASE-TX /W TRAFFIC Typical 27 20 70 124
+10BASE-T /W TRAFFIC Typical 10 13 114 54
+ENERGY DETECT 
+POWER DOWN
+Typical 4.6 2.1 4.6 19
+GENERAL POWER DOWN Typical 0.8 1.9 0.7 5.3
+TABLE 5-3: CURRENT CONSUMPTION AND POWER DISSIPATION (REF_CLK IN, REG. 
+ENABLED)
+Power Pin Group Device Current (mA) Device Current w/ 
+Magnetics (mA)
+Total Device Power 
+(mW)
+nRESET Typical 21 21 71
+100BASE-TX /W TRAFFIC Typical 50 92 163
+10BASE-T /W TRAFFIC Typical 24 129 81
+ENERGY DETECT 
+POWER DOWN
+Typical 6.8 6.9 23
+GENERAL POWER DOWN Typical 3.5 3.5 12
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 105
+LAN8742A/LAN8742Ai
+5.4.2 REF_CLK OUT MODE
+5.4.2.1 Regulator Disabled
+5.4.2.2 Regulator Enabled
+TABLE 5-4: CURRENT CONSUMPTION AND POWER DISSIPATION (REF_CLK OUT, REG. 
+DISABLED)
+Power Pin Group 3.3 V Device 
+Current (mA)
+1.2 V Device 
+Current (mA)
+3.3 V Device 
+Current w/ 
+Magnetics 
+(mA)
+Total Device 
+Power (mW)
+nRESET Typical 20 11 20 86
+100BASE-TX /W TRAFFIC Typical 37 20 79 160
+10BASE-T /W TRAFFIC Typical 20 13 124 88
+ENERGY DETECT 
+POWER DOWN
+Typical 4.5 1.7 4.4 18
+GENERAL POWER DOWN Typical 1.0 1.3 0.9 6.4
+TABLE 5-5: CURRENT CONSUMPTION AND POWER DISSIPATION (REF_CLK OUT, REG. 
+ENABLED)
+Power Pin Group Device Current (mA) Device Current w/ 
+Magnetics (mA)
+Total Device Power 
+(mW)
+nRESET Typical 31 31 103
+100BASE-TX /W TRAFFIC Typical 59 102 195
+10BASE-T /W TRAFFIC Typical 34 139 112
+ENERGY DETECT 
+POWER DOWN
+Typical 6.5 6.4 21
+GENERAL POWER DOWN Typical 3.2 3.2 11
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 106  2013-2015 Microchip Technology Inc.
+5.5 DC Specifications
+Table 5-6 details the non-variable I/O buffer characteristics. These buffer types do not support variable voltage operation. Table 5-7 details the variable voltage I/O buffer characteristics. Typical values are provided for 1.8 V, 2.5 V, and 3.3
+V VDDIO cases. 
+Note 1: This specification applies to all inputs and tri-stated bi-directional pins. Internal pull-down and pull-up resistors add ±50 µA per-pin (typical).
+2: XTAL1/CLKIN can optionally be driven from a 25 MHz single-ended clock oscillator.
+TABLE 5-6: NON-VARIABLE I/O BUFFER CHARACTERISTICS
+Parameter Symbol Min. Typ. Max. Unit Note
+IS Type Input Buffer
+Low Input Level
+High Input Level
+Negative-Going Threshold
+Positive-Going Threshold
+Schmitt Trigger Hysteresis 
+(VIHT - VILT)
+Input Leakage
+(VIN = VSS or VDDIO)
+Input Capacitance
+VILI
+VIHI
+VILT
+VIHT
+VHYS
+IIH
+CIN
+-0.3
+1.01
+1.39
+336
+-10
+1.19
+1.59
+399
+3.6
+1.39
+1.79
+459
+10
+2
+V
+V
+V
+V
+mV
+µA
+pF
+Schmitt trigger
+Schmitt trigger
+(see Note 1)
+O12 Type Buffers
+Low Output Level
+High Output Level
+VOL
+VOH VDD2A - 0.4
+0.4 V
+V
+IOL = 12 mA
+IOH = -12 mA
+ICLK Type Buffer 
+(XTAL1 Input)
+Low Input Level
+High Input Level
+VILI
+VIHI
+-0.3
+VDDCR-0.35
+0.35
+3.6
+V
+V
+(see Note 2)
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 107
+LAN8742A/LAN8742Ai
+Note 1: This specification applies to all inputs and tri-stated bi-directional pins. Internal pull-down and pull-up resistors add ±50 µA per-pin (typical).
+Note 1: Measured at line side of transformer, line replaced by 100 Ω (±1%) resistor.
+2: Offset from 16 ns pulse width at 50% of pulse peak.
+3: Measured differentially.
+Note 1: Min/max voltages guaranteed as measured with 100 Ω resistive load.
+TABLE 5-7: VARIABLE I/O BUFFER CHARACTERISTICS
+Parameter Symbol Min. 1.8 V 
+Typ.
+2.5 V 
+Typ.
+3.3 V
+Typ. Max. Unit Note
+VIS Type Input Buffer
+Low Input Level
+High Input Level
+Neg-Going Threshold
+Pos-Going Threshold
+Schmitt Trigger Hysteresis (VIHT - VILT)
+Input Leakage
+(VIN = VSS or VDDIO)
+Input Capacitance
+VILI
+VIHI
+VILT
+VIHT
+VHYS
+IIH
+CIN
+-0.3
+0.64
+0.81
+102
+-10
+0.83
+0.99
+158
+1.15
+1.29
+136
+1.41
+1.65
+138
+3.6
+1.76
+1.90
+288
+10
+2
+V
+V
+V
+V
+mV
+µA
+pF
+Schmitt trigger
+Schmitt trigger
+(see Note 1)
+VO8 Type Buffers
+Low Output Level
+High Output Level
+VOL
+VOH VDDIO - 0.4
+0.4 V
+V
+IOL = 8 mA
+IOH = -8 mA
+VOD8 Type Buffer
+Low Output Level VOL 0.4 V IOL = 8 mA
+TABLE 5-8: 100BASE-TX TRANSCEIVER CHARACTERISTICS
+Parameter Symbol Min. Typ. Max. Unit Note
+Peak Differential Output Voltage High VPPH 950 - 1050 mVpk (see Note 1)
+Peak Differential Output Voltage Low VPPL -950 - -1050 mVpk (see Note 1)
+Signal Amplitude Symmetry VSS 98 - 102 % (see Note 1)
+Signal Rise and Fall Time TRF 3.0 - 5.0 ns (see Note 1)
+Rise and Fall Symmetry TRFS - - 0.5 ns (see Note 1)
+Duty Cycle Distortion DCD 35 50 65 % (see Note 2)
+Overshoot and Undershoot VOS - - 5%
+Jitter 1.4 ns (see Note 3)
+TABLE 5-9: 10BASE-T TRANSCEIVER CHARACTERISTICS
+Parameter Symbol Min. Typ. Max. Unit Note
+Transmitter Peak Differential Output Voltage VOUT 2.2 2.5 2.8 V (see Note 1)
+Receiver Differential Squelch Threshold VDS 300 420 585 mV
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 108  2013-2015 Microchip Technology Inc.
+5.6 AC Specifications
+This section details the various AC timing specifications of the device. 
+5.6.1 EQUIVALENT TEST LOAD
+Output timing specifications assume a 25 pF equivalent test load, unless otherwise noted, as illustrated in Figure 5-1
+below.
+5.6.2 POWER SEQUENCE TIMING
+This diagram illustrates the device power sequencing requirements. The VDDIO, VDD1A, VDD2A and magnetics power
+supplies can turn on in any order provided they all reach operational levels within the specified time period tpon. Device
+power supplies can turn off in any order provided they all reach 0 volts within the specified time period tpoff.
+It is acceptable for the VDD1A/VDD2A supply to remain powered up while the VDDCR and VDDIO supplies are at zero
+volts for a period not to exceed 750 ms. In this case, nRESET must be asserted while VDDCR and/or VDDIO is off, and
+must remain asserted for a minimum of 50 ms after the VDDCR and VDDIO supplies reach operational level. Additionally, VDDIO must come up with or after the VDDCR supply. Configuration straps must meet the requirements specified
+in Section 5.6.3, "Power-On nRST & Configuration Strap Timing".
+FIGURE 5-1: OUTPUT EQUIVALENT TEST LOAD
+FIGURE 5-2: POWER SEQUENCE TIMING
+TABLE 5-10: POWER SEQUENCE TIMING VALUES
+Symbol Description Min. Typ. Max. Unit
+tpon Power supply turn on time 50 ms
+tpoff Power supply turn off time 500 ms
+Note: When the internal regulator is disabled, a power-up sequencing relationship exists between VDDCR and
+the 3.3 V power supply. For additional information refer to Section 3.7.3, "REGOFF: Internal +1.2 V Regulator Configuration".
+25 pF
+OUTPUT
+VDDIO
+Magnetics 
+Power
+tpon tpoff
+VDD1A, 
+VDD2A
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 109
+LAN8742A/LAN8742Ai
+5.6.3 POWER-ON nRST & CONFIGURATION STRAP TIMING
+This diagram illustrates the nRST reset and configuration strap timing requirements in relation to power-on. A hardware
+reset (nRST assertion) is required following power-up. For proper operation, nRST must be asserted for no less than
+trstia. The nRST pin can be asserted at any time, but must not be deasserted before tpurstd after all external power supplies have reached operational levels. In order for valid configuration strap values to be read at power-up, the tcss and
+tcsh timing constraints must be followed. Refer to Section 3.8.6, "Resets" for additional information.
+Note 1: 20 clock cycles for 25 MHz, or 40 clock cycles for 50 MHz
+FIGURE 5-3: POWER-ON nRST & CONFIGURATION STRAP TIMING
+TABLE 5-11: POWER-ON nRST & CONFIGURATION STRAP TIMING VALUES
+Symbol Description Min. Typ. Max. Unit
+tpurstd External power supplies at operational level to nRST 
+deassertion
+25 ms
+tpurstv External power supplies at operational level to nRST 
+valid
+0 ns
+trstia nRST input assertion time 100 µs
+tcss Configuration strap pins setup to nRST deassertion 200 ns
+tcsh Configuration strap pins hold after nRST deassertion 1 ns
+totaa Output tri-state after nRST assertion 50 ns
+todad Output drive after nRST deassertion 2 800
+(see Note 1)
+ns
+Note: nRST deassertion must be monotonic.
+Note: Device configuration straps are latched as a result of nRST assertion. Refer to Section 3.7, "Configuration
+Straps" for details. Configuration straps must only be pulled high or low and must not be driven as inputs.
+tcss
+nRST
+Configuration Strap 
+Pins Input
+trstia
+tcsh
+Configuration Strap 
+Pins Output Drive
+todad
+All External 
+Power Supplies tpurstd
+Vopp
+tpurstv
+totaa
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 110  2013-2015 Microchip Technology Inc.
+5.6.4 RMII INTERFACE TIMING
+5.6.4.1 RMII Timing (REF_CLK Out Mode)
+The 50 MHz REF_CLK OUT timing applies to the case when nINTSEL is pulled-low. In this mode, a 25 MHz crystal or
+clock oscillator must be input on the XTAL1/CLKIN and XTAL2 pins. For more information on REF_CLK Out Mode, see
+Section 3.7.4.2, "REF_CLK Out Mode".
+Note 1: Timing was designed for system load between 10 pf and 25 pf.
+Note: The CRS_DV pin performs both carrier sense and data valid functions. CRS_DV is asserted asynchronously on detection of carrier due to the criteria relevant to the operating mode. If the PHY has additional
+bits to be presented on RXD[1:0] following the initial deassertion of CRS_DV, then the device will assert
+CRS_DV on cycles of REF_CLK which present the second di-bit of each nibble and deassert CRS_DV on
+cycles of REF_CLK which present the first di-bit of a nibble. For additional information, refer to the RMII
+specification.
+FIGURE 5-4: RMII TIMING (REF_CLK OUT MODE)
+TABLE 5-12: RMII TIMING VALUES (REF_CLK OUT MODE)
+Symbol Description Min. Max. Unit Note
+tclkp REFCLKO period 20 ns
+tclkh REFCLKO high time tclkp*0.4 tclkp*0.6 ns
+tclkl REFCLKO low time tclkp*0.4 tclkp*0.6 ns
+toval RXD[1:0], RXER, CRS_DV output valid from rising edge of REFCLKO
+7.0 ns (see Note 1)
+toinvld RXD[1:0], RXER, CRS_DV output invalid from 
+rising edge of REFCLKO
+3.0 ns (see Note 1)
+tsu TXD[1:0], TXEN setup time to rising edge of 
+REFCLKO
+7.5 ns (see Note 1)
+tihold TXD[1:0], TXEN input hold time after rising edge 
+of REFCLKO
+2.0 ns (see Note 1)
+tclkh tclkl
+tclkp
+toval toval toinvld
+toval toinvld
+tsu tihold tsu tihold tihold
+tihold tsu
+REFCLKO
+(OUTPUT)
+RXD[1:0], RXER
+(OUTPUTS)
+CRS_DV
+(OUTPUT)
+TXD[1:0]
+(INPUTS)
+TXEN
+(INPUT)
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 111
+LAN8742A/LAN8742Ai
+5.6.4.2 RMII Timing (REF_CLK In Mode)
+The 50 MHz REF_CLK IN timing applies to the case when nINTSEL is floated or pulled-high. In this mode, a 50 MHz
+clock must be input on the CLKIN pin. For more information on REF_CLK In Mode, see Section 3.7.4, "nINTSEL:
+nINT/REFCLKO Configuration".
+Note 1: Timing was designed for system load between 10 pF and 25 pF.
+Note: The CRS_DV pin performs both carrier sense and data valid functions. CRS_DV is asserted asynchronously on detection of carrier due to the criteria relevant to the operating mode. If the PHY has additional
+bits to be presented on RXD[1:0] following the initial deassertion of CRS_DV, then the device will assert
+CRS_DV on cycles of REF_CLK which present the second di-bit of each nibble and deassert CRS_DV on
+cycles of REF_CLK which present the first di-bit of a nibble. For additional information, refer to the RMII
+specification.
+FIGURE 5-5: RMII TIMING (REF_CLK IN MODE)
+TABLE 5-13: RMII TIMING VALUES (REF_CLK IN MODE)
+Symbol Description Min. Typ. Max. Unit Note
+tclkp CLKIN period 20 ns
+tclkh CLKIN high time tclkp * 0.35 tclkp * 0.65 ns
+tclkl CLKIN low time tclkp * 0.35 tclkp * 0.65 ns
+toval RXD[1:0], RXER, CRS_DV output 
+valid from rising edge of CLKIN
+15.0 ns (see Note 1)
+toinvld RXD[1:0], RXER, CRS_DV output 
+invalid from rising edge of CLKIN
+3.0 ns (see Note 1)
+tsu TXD[1:0], TXEN setup time to rising edge of CLKIN
+4.0 ns (see Note 1)
+tihold TXD[1:0], TXEN input hold time 
+after rising edge of CLKIN
+1.5 ns (see Note 1)
+tclkh tclkl
+tclkp
+toval toval toinvld
+toval toinvld
+tsu tihold tsu tihold tihold
+tihold tsu
+CLKIN 
+(REF_CLK)
+(INPUT)
+RXD[1:0], RXER
+(OUTPUTS)
+CRS_DV
+(OUTPUT)
+TXD[1:0]
+(INPUTS)
+TXEN
+(INPUT)
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 112  2013-2015 Microchip Technology Inc.
+5.6.4.3 RMII CLKIN Requirements
+5.6.5 SMI TIMING
+This section specifies the SMI timing of the device. Please refer to Section 3.5, "Serial Management Interface (SMI)" for
+additional details.
+TABLE 5-14: RMII CLKIN (REF_CLK) TIMING VALUES
+Parameter Min. Typ. Max. Unit Note
+CLKIN frequency 50 MHz
+CLKIN Frequency Drift ±50 ppm
+CLKIN Duty Cycle 40 60 %
+CLKIN Jitter 150 ps p-p – not RMS
+FIGURE 5-6: SMI TIMING
+TABLE 5-15: SMI TIMING VALUES
+Symbol Description Min. Max. Unit
+tclkp MDC period 400 ns
+tclkh MDC high time 160 (80%) ns
+tclkl MDC low time 160 (80%) ns
+tval MDIO (read from PHY) output valid from rising edge of MDC 300 ns
+toinvld MDIO (read from PHY) output invalid from rising edge of MDC 0 ns
+tsu MDIO (write to PHY) setup time to rising edge of MDC 10 ns
+tihold MDIO (write to PHY) input hold time after rising edge of MDC 10 ns
+MDC
+MDIO
+tclkh tclkl
+tclkp
+toinvld
+MDIO
+tsu tihold
+(Data-Out)
+(Data-In)
+toinvld
+tval (INPUT)
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 113
+LAN8742A/LAN8742Ai
+5.7 Clock Circuit
+The device can accept either a 25 MHz crystal or a 25 MHz single-ended clock oscillator (±50ppm) input. If the singleended clock oscillator method is implemented, XTAL2 should be left unconnected and XTAL1/CLKIN should be driven
+with a nominal 0-3.3 V clock signal. The input clock duty cycle is 40% minimum, 50% typical and 60% maximum.
+It is recommended that a crystal utilizing matching parallel load capacitors be used for the crystal input/output signals
+(XTAL1/XTAL2). Either a 300 µW or 100 µW 25 MHz crystal may be utilized. The 300 µW 25 MHz crystal specifications
+are detailed in Section 5.7.1, "300 µW 25 MHz Crystal Specifications". The 100 µW 25 MHz crystal specifications are
+detailed in Section 5.7.2, "100 µW 25 MHz Crystal Specifications".
+5.7.1 300 µW 25 MHZ CRYSTAL SPECIFICATIONS
+When utilizing a 300 µW 25 MHz crystal, the following circuit design (Figure 5-7) and specifications (Table 5-16) are
+required to ensure proper operation. 
+Note 1: The maximum allowable values for frequency tolerance and frequency stability are application dependent.
+Since any particular application must meet the IEEE ±50 ppm Total PPM Budget, the combination of these
+two values must be approximately ±45 ppm (allowing for aging).
+2: Frequency Deviation Over Time is also referred to as Aging.
+FIGURE 5-7: 300 µW 25 MHZ CRYSTAL CIRCUIT
+TABLE 5-16: 300 µW CRYSTAL SPECIFICATIONS
+Parameter Symbol Min. Nom. Max. Unit Note
+Crystal Cut AT, typ
+Crystal Oscillation Mode Fundamental Mode
+Crystal Calibration Mode Parallel Resonant Mode
+Frequency Ffund - 25.000 - MHz
+Frequency Tolerance at 25oCFtol - - ±50 ppm (see Note 1)
+Frequency Stability Over Temp Ftemp - - ±50 ppm (see Note 1)
+Frequency Deviation Over Time Fage - ±3 to 5 - ppm (see Note 2)
+Total Allowable PPM Budget - - ±50 ppm (see Note 3)
+Shunt Capacitance CO - 7 typ - pF
+Load Capacitance CL - 20 typ - pF
+Drive Level PW 300 - - µW
+Equivalent Series Resistance R1 - - 50 Ω
+Operating Temperature Range (see Note 4) - (see Note 5) oC
+XTAL1/CLKIN Pin Capacitance - 3 typ - pF (see Note 6)
+XTAL2 Pin Capacitance - 3 typ - pF (see Note 6)
+LAN8742
+XTAL2
+XTAL1
+Y1
+C1 C2
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 114  2013-2015 Microchip Technology Inc.
+3: The total deviation for the Transmitter Clock Frequency is specified by IEEE 802.3u as 
+±50 ppm.
+4: 0°C for commercial version, -40°C for industrial version
+5: +70°C for commercial version, +85°C for industrial version
+6: This number includes the pad, the bond wire and the lead frame. PCB capacitance is not included in this
+value. The XTAL1/CLKIN pin, XTAL2 pin and PCB capacitance values are required to accurately calculate
+the value of the two external load capacitors. These two external load capacitors determine the accuracy of
+the 25.000 MHz frequency.
+5.7.2 100 µW 25 MHZ CRYSTAL SPECIFICATIONS
+When utilizing a 100 µW 25 MHz crystal, the following circuit design (Figure 5-8) and specifications (Table 5-17) are
+required to ensure proper operation. 
+FIGURE 5-8: 100 µW 25 MHZ CRYSTAL CIRCUIT
+TABLE 5-17: 100 µW CRYSTAL SPECIFICATIONS
+Parameter Symbol Min. Nom. Max. Unit Note
+Crystal Cut AT, typ
+Crystal Oscillation Mode Fundamental Mode
+Crystal Calibration Mode Parallel Resonant Mode
+Frequency Ffund - 25.000 - MHz
+Frequency Tolerance at 25oCFtol - - ±50 ppm (see Note 1)
+Frequency Stability Over Temp Ftemp - - ±50 ppm (see Note 1)
+Frequency Deviation Over Time Fage - ±3 to 5 - ppm (see Note 2)
+Total Allowable PPM Budget - - ±50 ppm (see Note 3)
+Shunt Capacitance CO - - 5 pF
+Load Capacitance CL 8 - 12 pF
+Drive Level PW - 100 - µW (see Note 4)
+Equivalent Series Resistance R1 - - 80 Ω
+XTAL2 Series Resistor RS 495 500 505 Ohm
+Operating Temperature Range (see Note 5) - (see Note 6) oC
+XTAL1/CLKIN Pin Capacitance - 3 typ - pF (see Note 7)
+XTAL2 Pin Capacitance - 3 typ - pF (see Note 7)
+LAN8742
+XTAL2
+XTAL1
+RS Y1
+C1 C2
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 115
+LAN8742A/LAN8742Ai
+Note 1: The maximum allowable values for frequency tolerance and frequency stability are application dependent.
+Since any particular application must meet the IEEE ±50 ppm Total PPM Budget, the combination of these
+two values must be approximately ±45 ppm (allowing for aging).
+2: Frequency Deviation Over Time is also referred to as Aging.
+3: The total deviation for the Transmitter Clock Frequency is specified by IEEE 802.3u as 
+±50 ppm.
+4: The crystal must support 100 µW operation to utilize this circuit.
+5: 0°C for commercial version, -40°C for industrial version
+6: +70°C for commercial version, +85°C for industrial version
+7: This number includes the pad, the bond wire and the lead frame. PCB capacitance is not included in this
+value. The XTAL1/CLKIN pin, XTAL2 pin and PCB capacitance values are required to accurately calculate
+the value of the two external load capacitors (C1 and C2 in Figure 5-8). The external load capacitors, C1 and
+C2, determine the accuracy of the 25.000 MHz frequency.
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 116  2013-2015 Microchip Technology Inc.
+6.0 PACKAGE OUTLINE 
+ 
+B A
+0.10 C
+0.10 C
+0.10 C A B
+0.05 C
+(DATUM B)
+(DATUM A)
+C
+SEATING
+PLANE
+NOTE 1
+1
+2
+N
+2X
+TOP VIEW
+SIDE VIEW
+BOTTOM VIEW
+NOTE 1
+1
+2
+N
+0.10 C A B
+0.10 C A B
+0.10 C
+0.08 C
+2X
+24X
+For the most current package drawings, please see the Microchip Packaging Specification located at
+http://www.microchip.com/packaging
+Note:
+D
+E
+e
+2
+D2
+E2
+L 24X b
+e
+K
+A
+(A3)
+A1
+Microchip Technology Drawing C04-143B S4QFN Sheet 1 of 2
+24-Lead Very Thin Plastic Quad Flat, No Lead Package (MJ) – 4x4x0.9 mm Body [VQFN]
+SMSC Legacy S4QFN
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 117
+LAN8742A/LAN8742Ai
+Microchip Technology Drawing C04-143B S4QFN Sheet 2 of 2
+REF: Reference Dimension, usually without tolerance, for information purposes only.
+BSC: Basic Dimension. Theoretically exact value shown without tolerances.
+1.
+2.
+3.
+Notes:
+Pin 1 visual index feature may vary, but must be located within the hatched area.
+Package is saw singulated
+Dimensioning and tolerancing per ASME Y14.5M
+24-Lead Very Thin Plastic Quad Flat, No Lead Package (MJ) – 4x4x0.9 mm Body [VQFN]
+For the most current package drawings, please see the Microchip Packaging Specification located at
+http://www.microchip.com/packaging
+Note:
+Dimension Limits
+Units
+D
+Overall Width
+Overall Length
+Exposed Pad Length
+Exposed Pad Width
+Terminal Thickness
+D2
+E2
+E
+2.60
+MILLIMETERS
+0.20 REF
+MIN
+A3
+MAX
+4.00 BSC
+2.50
+Terminal Length
+Terminal Width
+L
+b
+0.45
+0.30
+Terminal-to-Exposed Pad 0.25 K
+NOM
+Standoff A1 0.02
+Overall Height A 0.90
+Pitch e 0.50 BSC
+Number of Terminals N 24
+0.35
+0.18
+2.40
+2.40
+0.00
+0.80
+0.25
+0.40
+-
+2.50
+4.00 BSC
+2.60
+0.05
+1.00
+-
+SMSC Legacy S4QFN
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 118  2013-2015 Microchip Technology Inc.
+RECOMMENDED LAND PATTERN
+Dimension Limits
+Units
+C2
+Optional Center Pad Width
+Contact Pad Spacing
+Optional Center Pad Length
+Contact Pitch
+Y2
+X2
+2.60
+2.60
+MILLIMETERS
+0.50 BSC
+MIN
+E
+MAX
+3.90
+Contact Pad Length (X24)
+Contact Pad Width (X24)
+Y1
+X1
+0.85
+0.30
+Microchip Technology Drawing C04-2143A S4QFN
+NOM
+24-Lead Very Thin Plastic Quad Flat, No Lead Package (MJ) – 4x4x0.9 mm Body [VQFN]
+SILK SCREEN
+1
+2
+24
+C1
+C2
+E
+X1
+Y1
+G1
+Y2
+X2
+Contact Pad Spacing 3.90 C1
+Contact Pad to Center Pad (X24) G1 0.23
+Thermal Via Diameter V
+Thermal Via Pitch EV
+0.30
+1.00
+ØV
+EV
+EV
+BSC: Basic Dimension. Theoretically exact value shown without tolerances.
+Notes:
+Dimensioning and tolerancing per ASME Y14.5M
+For best soldering results, thermal vias, if used, should be filled or tented to avoid solder loss during
+reflow process
+1.
+2.
+For the most current package drawings, please see the Microchip Packaging Specification located at
+http://www.microchip.com/packaging
+Note:
+SMSC Legacy S4QFN
+G2
+Contact Pad to Contact Pad (X20) G2 0.20
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 119
+LAN8742A/LAN8742Ai
+APPENDIX A: REVISION HISTORY
+REVISION LEVEL 
+& DATE SECTION/FIGURE/ENTRY CORRECTION
+Revision A
+(09-07-15)
+Replaces the previous SMSC version Rev. 1.1
+• Added Note and Trademark page
+• Added Worldwide Sales and Services page
+• Added Product Identification System
+• Changed ‘QFN’ to ‘VQFN’
+Chapter 2, "Pin Description and 
+Configuration"
+• Figure 2-1: rotated 90° cw
+• Table 2-3, “Serial Management Interface (SMI) 
+Pins”: Changed “VIS/VOD8 (PU)” to “VIS/VO8 
+(PU)”
+Section 4.1, "Register Nomenclature" Table 4-1, “Register Bit Types”, register bit 
+description for byte type notification ‘W’: Changed 
+“read” to ‘written”
+Section 5.6.4, "RMII Interface Timing" Updated RMII timing table: Updated REF_CLK In 
+mode toval max from “14.0 ns” to “15.0 ns”
+Section 5.7, "Clock Circuit" Added new 100 µW crystal specifications and circuit 
+diagram. The section is now split into two 
+subsections, one for 300 µW crystals and the other 
+for 100 µW crystals.
+Chapter 6, "Package Outline" Updated package outline drawing information
+Rev. 1.1
+(05-21-13)
+General • Changed part numbers from 
+“LAN8742/LAN8742i” to 
+“LAN8742A/LAN8742Ai”
+• Updated ordering information
+• Updated figures
+Chapter 2, "Pin Description and 
+Configuration", Table 2-3, “Serial 
+Management Interface (SMI) Pins”
+• Added pull-up to MDIO buffer type description
+• Changed “VIS/VOD8 (PU)” to “VIS/VO8 (PU)”
+Section 3.1.2.9, "100M Receive Data 
+Across the RMII Interface" 
+Updated description
+Section 3.3, "HP Auto-MDIX Support" Changed “100BASE-T” to “100BASE-TX”
+Section 3.4.1.1, "CRS_DV - Carrier 
+Sense/Receive Data Valid" 
+Changed “100BASE-X” to “100BASE-TX”
+Section 3.5, "Serial Management 
+Interface (SMI)" 
+Removed sentence stating “Non-supported registers 
+(such as 7 to 15) will be read as hexadecimal 
+“FFFF”.
+Section 3.7.4.2, "REF_CLK Out Mode" Added note: “In REF_CLK Out Mode, REFCLKO will 
+not output when the device is in Energy Detect 
+Power-Down Mode or General Power-Down Mode.”
+Section 3.8.3.1, "General Power-Down" Added note: “In REF_CLK Out Mode, REFCLKO will 
+not output when the device is in General PowerDown Mode.”
+Section 3.8.3.2, "Energy Detect PowerDown (EDPD)" Added note: “In REF_CLK Out Mode, REFCLKO will 
+not output when the device is in Energy Detect 
+Power-Down Mode.”
+Section 3.8.9, "Cable Diagnostics" Updated section with additional operation details
+Chapter 4, "Register Descriptions" Removed
+- TDR Channel Threshold Maximum Register
+- TDR Wait Counter Threshold Register
+- TDR TX Pattern Generator Divider Register
+Section 4.2.2, "Basic Status Register" Updated definitions of bits 10:8
+Section 4.2.18, "Special Control/Status 
+Indications Register" 
+Updated bit 11 definition
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 120  2013-2015 Microchip Technology Inc.
+Rev. 1.1
+(05-21-13)
+Section 4.3, "MDIO Manageable Device 
+(MMD) Registers" 
+Added additional vendor specific MMD register 
+descriptions
+Section 4.3.7, "MAC Receive Address 
+A Register (RX_ADDRA)"
+Added note
+Section 4.3.8, "MAC Receive Address 
+B Register (RX_ADDRB)"
+Added note
+Section 4.3.9, "MAC Receive Address 
+C Register (RX_ADDRC)"
+Added note
+Section 5.1, "Absolute Maximum 
+Ratings*" 
+Changed: Positive voltage on XTAL1/CLKIN, with 
+respect to ground from “VDDCR” to “+3.6V”
+Section 5.3, Table 5-1, “Package 
+Thermal Parameters”
+Updated package thermal specification values
+Section 5.4, "Power Consumption" Updated power numbers
+Section 5.5, "DC Specifications" Changed VIHI max of ICLK Type Buffer from 
+“VDDCR” to “3.6”
+Section 5.6, "AC Specifications" Removed two RMII notes at beginning of section
+Section 5.6.2, "Power Sequence 
+Timing" 
+Updated power sequencing requirements
+Section 5.6.4, "RMII Interface Timing" • Added note detailing CRS_DV behavior as both 
+carrier sense and data valid
+• Split REF_CLK In and REF_CLK Out modes 
+into two subsections and updated RMII timing 
+tables
+• Updated MII timing table
+Rev. 1.0
+(05-07-12)
+Initial Release
+REVISION LEVEL 
+& DATE SECTION/FIGURE/ENTRY CORRECTION
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 121
+LAN8742A/LAN8742Ai
+THE MICROCHIP WEB SITE
+Microchip provides online support via our WWW site at www.microchip.com. This web site is used as a means to make
+files and information easily available to customers. Accessible by using your favorite Internet browser, the web site contains the following information:
+• Product Support – Data sheets and errata, application notes and sample programs, design resources, user’s 
+guides and hardware support documents, latest software releases and archived software
+• General Technical Support – Frequently Asked Questions (FAQ), technical support requests, online discussion 
+groups, Microchip consultant program member listing
+• Business of Microchip – Product selector and ordering guides, latest Microchip press releases, listing of seminars and events, listings of Microchip sales offices, distributors and factory representatives
+CUSTOMER CHANGE NOTIFICATION SERVICE
+Microchip’s customer notification service helps keep customers current on Microchip products. Subscribers will receive
+e-mail notification whenever there are changes, updates, revisions or errata related to a specified product family or
+development tool of interest.
+To register, access the Microchip web site at www.microchip.com. Under “Support”, click on “Customer Change Notification” and follow the registration instructions.
+CUSTOMER SUPPORT
+Users of Microchip products can receive assistance through several channels:
+• Distributor or Representative
+• Local Sales Office
+• Field Application Engineer (FAE)
+• Technical Support
+Customers should contact their distributor, representative or field application engineer (FAE) for support. Local sales
+offices are also available to help customers. A listing of sales offices and locations is included in the back of this document.
+Technical support is available through the web site at: http://microchip.com/support
+
+LAN8742A/LAN8742Ai
+DS00001989A-page 122  2013-2015 Microchip Technology Inc.
+PRODUCT IDENTIFICATION SYSTEM
+To order or obtain information, e.g., on pricing or delivery, refer to the factory or the listed sales office. 
+ 
+Device: LAN8742A
+Temperature 
+Range:
+Blank = 0°C to +70°C
+i = -40°C to +85°C
+Package: CZ = VQFN (24-pin)
+Tape and Reel 
+Option:
+Blank = Standard packaging (tray)
+TR = Tape and Reel(1) 
+Examples:
+a) LAN8742A-CZ
+0°C to +70°C,
+(24-pin),
+Tray
+b) LAN8742Ai-CZ
+-40°C to +85°C,
+(24-pin),
+Tray
+c) LAN8742A-CZ-TR
+0°C to +70°C,
+(24-pin),
+Tape and Reel
+Note 1: Tape and Reel identifier only appears in the 
+catalog part number description. This 
+identifier is used for ordering purposes and is 
+not printed on the device package. Check 
+with your Microchip Sales Office for package 
+availability with the Tape and Reel option.
+Reel size is 5,000.
+PART NO.
+Device
+[X]
+Temperature 
+Range
+XX
+Package
+[XX](1) 
+Tape and 
+Reel Option
+
+ 2013-2015 Microchip Technology Inc. DS00001989A-page 123
+Information contained in this publication regarding device applications and the like is provided only for your convenience and may be
+superseded by updates. It is your responsibility to ensure that your application meets with your specifications. MICROCHIP MAKES NO
+REPRESENTATIONS OR WARRANTIES OF ANY KIND WHETHER EXPRESS OR IMPLIED, WRITTEN OR ORAL, STATUTORY OR
+OTHERWISE, RELATED TO THE INFORMATION, INCLUDING BUT NOT LIMITED TO ITS CONDITION, QUALITY, PERFORMANCE,
+MERCHANTABILITY OR FITNESS FOR PURPOSE. Microchip disclaims all liability arising from this information and its use. Use of Microchip devices in life support and/or safety applications is entirely at the buyer’s risk, and the buyer agrees to defend, indemnify and hold
+harmless Microchip from any and all damages, claims, suits, or expenses resulting from such use. No licenses are conveyed, implicitly or
+otherwise, under any Microchip intellectual property rights unless otherwise stated.
+Trademarks
+The Microchip name and logo, the Microchip logo, dsPIC, FlashFlex, flexPWR, JukeBlox, KEELOQ, KEELOQ logo, Kleer, LANCheck, 
+MediaLB, MOST, MOST logo, MPLAB, OptoLyzer, PIC, PICSTART, PIC32 logo, RightTouch, SpyNIC, SST, SST Logo, SuperFlash and 
+UNI/O are registered trademarks of Microchip Technology Incorporated in the U.S.A. and other countries.
+The Embedded Control Solutions Company and mTouch are registered trademarks of Microchip Technology Incorporated in the U.S.A.
+Analog-for-the-Digital Age, BodyCom, chipKIT, chipKIT logo, CodeGuard, dsPICDEM, dsPICDEM.net, ECAN, In-Circuit Serial 
+Programming, ICSP, Inter-Chip Connectivity, KleerNet, KleerNet logo, MiWi, motorBench, MPASM, MPF, MPLAB Certified logo, 
+MPLIB, MPLINK, MultiTRAK, NetDetach, Omniscient Code Generation, PICDEM, PICDEM.net, PICkit, PICtail, RightTouch logo, REAL 
+ICE, SQI, Serial Quad I/O, Total Endurance, TSHARC, USBCheck, VariSense, ViewSpan, WiperLock, Wireless DNA, and ZENA are 
+trademarks of Microchip Technology Incorporated in the U.S.A. and other countries.
+SQTP is a service mark of Microchip Technology Incorporated in the U.S.A.
+Silicon Storage Technology is a registered trademark of Microchip Technology Inc. in other countries.
+GestIC is a registered trademark of Microchip Technology Germany II GmbH & Co. KG, a subsidiary of Microchip Technology Inc., in 
+other countries. 
+All other trademarks mentioned herein are property of their respective companies.
+© 2013-2015, Microchip Technology Incorporated, Printed in the U.S.A., All Rights Reserved. 
+ISBN: 978-1-63277-638-9
+Note the following details of the code protection feature on Microchip devices:
+• Microchip products meet the specification contained in their particular Microchip Data Sheet.
+• Microchip believes that its family of products is one of the most secure families of its kind on the market today, when used in the 
+intended manner and under normal conditions.
+• There are dishonest and possibly illegal methods used to breach the code protection feature. All of these methods, to our 
+knowledge, require using the Microchip products in a manner outside the operating specifications contained in Microchip’s Data 
+Sheets. Most likely, the person doing so is engaged in theft of intellectual property.
+• Microchip is willing to work with the customer who is concerned about the integrity of their code.
+• Neither Microchip nor any other semiconductor manufacturer can guarantee the security of their code. Code protection does not 
+mean that we are guaranteeing the product as “unbreakable.”
+Code protection is constantly evolving. We at Microchip are committed to continuously improving the code protection features of our
+products. Attempts to break Microchip’s code protection feature may be a violation of the Digital Millennium Copyright Act. If such acts
+allow unauthorized access to your software or other copyrighted work, you may have a right to sue for relief under that Act.
+Microchip received ISO/TS-16949:2009 certification for its worldwide 
+headquarters, design and wafer fabrication facilities in Chandler and 
+Tempe, Arizona; Gresham, Oregon and design centers in California 
+and India. The Company’s quality system processes and procedures 
+are for its PIC® MCUs and dsPIC® DSCs, KEELOQ® code hopping 
+devices, Serial EEPROMs, microperipherals, nonvolatile memory and 
+analog products. In addition, Microchip’s quality system for the design 
+and manufacture of development systems is ISO 9001:2000 certified.
+QUALITY MANAGEMENT SYSTEM 
+CERTIFIED BY DNV 
+== ISO/TS 16949 ==
+
+DS00001989A-page 124  2013-2015 Microchip Technology Inc.
+AMERICAS
+Corporate Office
+2355 West Chandler Blvd.
+Chandler, AZ 85224-6199
+Tel: 480-792-7200 
+Fax: 480-792-7277
+Technical Support: 
+http://www.microchip.com/
+support
+Web Address: 
+www.microchip.com
+Atlanta
+Duluth, GA 
+Tel: 678-957-9614 
+Fax: 678-957-1455
+Austin, TX
+Tel: 512-257-3370 
+Boston
+Westborough, MA 
+Tel: 774-760-0087 
+Fax: 774-760-0088
+Chicago
+Itasca, IL 
+Tel: 630-285-0071 
+Fax: 630-285-0075
+Cleveland
+Independence, OH 
+Tel: 216-447-0464 
+Fax: 216-447-0643
+Dallas
+Addison, TX 
+Tel: 972-818-7423 
+Fax: 972-818-2924
+Detroit
+Novi, MI 
+Tel: 248-848-4000
+Houston, TX 
+Tel: 281-894-5983
+Indianapolis
+Noblesville, IN 
+Tel: 317-773-8323
+Fax: 317-773-5453
+Los Angeles
+Mission Viejo, CA 
+Tel: 949-462-9523 
+Fax: 949-462-9608
+New York, NY 
+Tel: 631-435-6000
+San Jose, CA 
+Tel: 408-735-9110
+Canada - Toronto
+Tel: 905-673-0699 
+Fax: 905-673-6509
+ASIA/PACIFIC
+Asia Pacific Office
+Suites 3707-14, 37th Floor
+Tower 6, The Gateway
+Harbour City, Kowloon
+Hong Kong
+Tel: 852-2943-5100
+Fax: 852-2401-3431
+Australia - Sydney
+Tel: 61-2-9868-6733
+Fax: 61-2-9868-6755
+China - Beijing
+Tel: 86-10-8569-7000 
+Fax: 86-10-8528-2104
+China - Chengdu
+Tel: 86-28-8665-5511
+Fax: 86-28-8665-7889
+China - Chongqing
+Tel: 86-23-8980-9588
+Fax: 86-23-8980-9500
+China - Dongguan
+Tel: 86-769-8702-9880 
+China - Hangzhou
+Tel: 86-571-8792-8115 
+Fax: 86-571-8792-8116
+China - Hong Kong SAR
+Tel: 852-2943-5100 
+Fax: 852-2401-3431
+China - Nanjing
+Tel: 86-25-8473-2460
+Fax: 86-25-8473-2470
+China - Qingdao
+Tel: 86-532-8502-7355
+Fax: 86-532-8502-7205
+China - Shanghai
+Tel: 86-21-5407-5533 
+Fax: 86-21-5407-5066
+China - Shenyang
+Tel: 86-24-2334-2829
+Fax: 86-24-2334-2393
+China - Shenzhen
+Tel: 86-755-8864-2200 
+Fax: 86-755-8203-1760
+China - Wuhan
+Tel: 86-27-5980-5300
+Fax: 86-27-5980-5118
+China - Xian
+Tel: 86-29-8833-7252
+Fax: 86-29-8833-7256
+ASIA/PACIFIC
+China - Xiamen
+Tel: 86-592-2388138 
+Fax: 86-592-2388130
+China - Zhuhai
+Tel: 86-756-3210040 
+Fax: 86-756-3210049
+India - Bangalore
+Tel: 91-80-3090-4444 
+Fax: 91-80-3090-4123
+India - New Delhi
+Tel: 91-11-4160-8631
+Fax: 91-11-4160-8632
+India - Pune
+Tel: 91-20-3019-1500
+Japan - Osaka
+Tel: 81-6-6152-7160 
+Fax: 81-6-6152-9310
+Japan - Tokyo
+Tel: 81-3-6880- 3770 
+Fax: 81-3-6880-3771
+Korea - Daegu
+Tel: 82-53-744-4301
+Fax: 82-53-744-4302
+Korea - Seoul
+Tel: 82-2-554-7200
+Fax: 82-2-558-5932 or 
+82-2-558-5934
+Malaysia - Kuala Lumpur
+Tel: 60-3-6201-9857
+Fax: 60-3-6201-9859
+Malaysia - Penang
+Tel: 60-4-227-8870
+Fax: 60-4-227-4068
+Philippines - Manila
+Tel: 63-2-634-9065
+Fax: 63-2-634-9069
+Singapore
+Tel: 65-6334-8870
+Fax: 65-6334-8850
+Taiwan - Hsin Chu
+Tel: 886-3-5778-366
+Fax: 886-3-5770-955
+Taiwan - Kaohsiung
+Tel: 886-7-213-7828
+Taiwan - Taipei
+Tel: 886-2-2508-8600 
+Fax: 886-2-2508-0102
+Thailand - Bangkok
+Tel: 66-2-694-1351
+Fax: 66-2-694-1350
+EUROPE
+Austria - Wels
+Tel: 43-7242-2244-39
+Fax: 43-7242-2244-393
+Denmark - Copenhagen
+Tel: 45-4450-2828 
+Fax: 45-4485-2829
+France - Paris
+Tel: 33-1-69-53-63-20 
+Fax: 33-1-69-30-90-79
+Germany - Dusseldorf
+Tel: 49-2129-3766400
+Germany - Karlsruhe
+Tel: 49-721-625370
+Germany - Munich
+Tel: 49-89-627-144-0 
+Fax: 49-89-627-144-44
+Italy - Milan 
+Tel: 39-0331-742611 
+Fax: 39-0331-466781
+Italy - Venice
+Tel: 39-049-7625286 
+Netherlands - Drunen
+Tel: 31-416-690399 
+Fax: 31-416-690340
+Poland - Warsaw
+Tel: 48-22-3325737 
+Spain - Madrid
+Tel: 34-91-708-08-90
+Fax: 34-91-708-08-91
+Sweden - Stockholm
+Tel: 46-8-5090-4654
+UK - Wokingham
+Tel: 44-118-921-5800
+Fax: 44-118-921-5820
+Worldwide Sales and Service
+07/14/15

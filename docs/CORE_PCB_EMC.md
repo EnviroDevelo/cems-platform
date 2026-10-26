@@ -85,5 +85,5 @@ part in that is the 24 V input protection and the Ethernet isolation.
 1. Pre-compliance on the first prototype: ESD (including the display front), EFT and surge
    on the 24 V input, radiated emissions scan.
 2. Fix at rev B whatever fails, then formal tests at an accredited lab.
-3. The CHECK items in `CORE_PCB.md` that affect EMC: L3's current rating and pad mapping, the
-   buck compensation, and the display-front ESD.
+3. The CHECK items in `CORE_PCB.md` that affect EMC: the display-front ESD. L3's rating and
+   pads and the buck compensation were cleared against the datasheets on 26 Oct.

@@ -4,8 +4,8 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,C2,2u2 100V,C_1210_3225Metric,,yes
 1,C3,100n 100V,C_0603_1608Metric,,yes
 27,C4 C13 C14 C20 C21 C22 C23 C24 C25 C28 C35 C41 C42 C43 C49 C51 C52 C53 C54 C55 C56 C57 C64 C70 C71 C73 C75,100n,C_0603_1608Metric,,yes
-1,C5,4n7,C_0603_1608Metric,,yes
-1,C6,47p,C_0603_1608Metric,,yes
+1,C5,33n,C_0603_1608Metric,,yes
+1,C6,100p,C_0603_1608Metric,,yes
 2,C7 C8,22u 10V,C_1210_3225Metric,,yes
 1,C9,10u 10V,C_0805_2012Metric,,yes
 1,C10,22p,C_0603_1608Metric,,yes
@@ -18,7 +18,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 2,C31 C32,12p,C_0603_1608Metric,,yes
 2,C33 C34,6p8,C_0603_1608Metric,,yes
 1,C45,470p,C_0603_1608Metric,,yes
-2,C46 C47,15p,C_0603_1608Metric,,yes
+2,C46 C47,33p,C_0603_1608Metric,,yes
 1,C48,22n,C_0603_1608Metric,,yes
 3,C50 C72 C74,10u,C_0805_2012Metric,,yes
 2,C58 C63,10n,C_0603_1608Metric,,yes
@@ -38,13 +38,13 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,J5,SWD,PinHeader_2x05_P1.27mm_Vertical_SMD,,yes
 1,J6,SERVICE UART,PinHeader_1x06_P2.54mm_Vertical,,yes
 1,JP1,BOOT0,PinHeader_1x02_P2.54mm_Vertical,,yes
-1,L1,15uH 2.5A,L_Bourns_SRN6045TA,Bourns SRN6045TA-150M,yes
+1,L1,22uH,L_Bourns_SRN6045TA,Bourns SRN6045TA-220M,yes
 1,L2,2u2 3A,L_Wuerth_MAPI-4030,"Wurth 74438357022 (MAPI 4030, 2.2 uH)",yes
 1,L3,WE-SL2 744227,L_CommonMode_Wuerth_WE-SL2,Wurth 744227,yes
 1,R3,162k 1%,R_0603_1608Metric,,yes
 1,R4,52k3 1%,R_0603_1608Metric,,yes
 1,R5,10k 1%,R_0603_1608Metric,,yes
-1,R6,16k9,R_0603_1608Metric,,yes
+1,R6,4k99 1%,R_0603_1608Metric,,yes
 2,R7 R9,100k 1%,R_0603_1608Metric,,yes
 1,R8,22k1 1%,R_0603_1608Metric,,yes
 1,R10,8k2 1%,R_0603_1608Metric,,yes
@@ -58,9 +58,11 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 4,R39 R40 R60 R61,330R,R_0603_1608Metric,,yes
 1,R50,12k4 1%,R_0603_1608Metric,,yes
 5,R51 R52 R73 R76 R77,33R,R_0603_1608Metric,,yes
+1,R62,1M,R_0603_1608Metric,,yes
+1,R63,0R,R_0603_1608Metric,,yes
 2,R74 R75,2k2,R_0603_1608Metric,,yes
 1,SW1,RESET,SW_SPST_B3U-1000P,,yes
-1,U1,TPS54360DDA,TI_SO-PowerPAD-8_ThermalVias,TPS54360DDAR,yes
+1,U1,TPS54360B,TI_SO-PowerPAD-8_ThermalVias,TPS54360BDDAR,yes
 1,U2,TLV62569DBV,SOT-23-5,TLV62569DBVR,yes
 1,U3,STM32H573VIT6,LQFP-100_14x14mm_P0.5mm,STM32H573VIT6,yes
 1,U4,LAN8742A-CZ,VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias,LAN8742A-CZ-TR (-40 to 85 C),yes
