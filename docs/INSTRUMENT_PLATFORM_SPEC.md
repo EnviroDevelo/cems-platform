@@ -337,8 +337,8 @@ The agreed state/action matrix is in section 7.
 |---|---|---|---|---|
 | CIP-24.1 | Grounding and shielding basis | M | Partial | Chassis/logic ground scheme, shielded RJ45s (`CORE_PCB.md` 2, 7) |
 | CIP-24.2 | ESD and surge protection | M | Partial | TVS on supply, ESD arrays on Ethernet. **Gap:** the target levels |
-| CIP-24.3 | EMC design basis | M | Missing | **Gap:** name the standard and levels (proposal: IEC 61326-1 industrial, with IEC 61000-4-2/-4/-5/-6 levels) |
-| CIP-24.4 | Temperature and humidity | M | Partial | Parts -40 to 85 °C; the display limits the instrument to -20 to 70 °C. **Gap:** humidity and condensation rating |
+| CIP-24.3 | EMC design basis | M | Done (design, PR #5) | `docs/CORE_PCB_EMC.md`: IEC 61326-1 industrial immunity levels (61000-4-2/-3/-4/-5/-6/-8), CISPR 11 Class A; input gained a common-mode choke, Y-caps and a 3 kW TVS. Not yet tested |
+| CIP-24.4 | Temperature and humidity | M | Done (design, PR #5) | -20 to +55 °C, 5-95 % RH with conformal coating (`docs/CORE_PCB_EMC.md`) |
 | CIP-24.5 | Enclosure protection | O | Partial | Core board: IP20 DIN housing in a panel. The instrument enclosure IP rating is per product |
 
 ### 4.25 Version control and traceability
