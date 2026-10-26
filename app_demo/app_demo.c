@@ -89,10 +89,12 @@ static const ui_app_t demo_ui = { .screens = demo_screens, .n_screens = 1, .reco
 /* Alarms (IDs 100+). The logic reports conditions; the platform does the rest. */
 static const alarm_def_t app_demo_alarms[] = {
     { .id = DEMO_ALARM_FAULT, .severity = AL_SEV_FAULT, .flags = AL_LATCH | AL_NOTIFY, .name = "DEMO_FAULT",
-      .text = "Demo fault (latched until acknowledged)" },
+      .text = "Demo fault (latched until acknowledged)",
+      .help = "Raised by the demo's fault input (parameter 1007). Clear the input, then acknowledge." },
     { .id = DEMO_ALARM_LEVEL, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "DEMO_LEVEL_RANGE",
       .text = "Demo level outside 10..90 %", .on_delay_ms = 2000, .off_delay_ms = 2000,
-      .enable_param = DEMO_PARAM_LEVEL_AL_EN, .text_param = DEMO_PARAM_LEVEL_TEXT },
+      .enable_param = DEMO_PARAM_LEVEL_AL_EN, .text_param = DEMO_PARAM_LEVEL_TEXT,
+      .help = "The demo level left 10..90 % for 2 s. Check the level input." },
 };
 const size_t app_demo_n_params = sizeof app_demo_params / sizeof app_demo_params[0];
 
@@ -205,6 +207,10 @@ static bool fw_safe(char *why, size_t cap) {
     return false;
 }
 
+/* the product's own start-up check (CIP-11.1): 1 pass, 0 fail, -1 skipped */
+static int demo_selftest(void) { return PowerUps > 0 ? 1 : 0; }
+static const plat_selftest_def_t app_demo_selftests[] = { { "demo_counter", demo_selftest } };
+
 const plat_app_t *app_select(void);
 
 /* everything the platform needs, for plat_start() */
@@ -223,6 +229,7 @@ const plat_app_t app_demo_plat = {
     .ui = &demo_ui,
     .meas = app_demo_meas, .n_meas = sizeof app_demo_meas / sizeof app_demo_meas[0],
     .cal = app_demo_cal, .n_cal = sizeof app_demo_cal / sizeof app_demo_cal[0],
+    .selftests = app_demo_selftests, .n_selftests = sizeof app_demo_selftests / sizeof app_demo_selftests[0],
 };
 
 const plat_app_t *app_select(void) { return &app_demo_plat; }

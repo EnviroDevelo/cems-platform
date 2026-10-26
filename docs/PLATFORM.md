@@ -209,8 +209,14 @@ the end and the block version goes up.
 **Web interface.** One page (4.6 KB gzip) loads once, then polls JSON: values every
 0.5 s, status every 2 s. Viewing needs no login. Changes need a login (operator, admin
 or factory); a session allows changes for 10 minutes after the login or the last change.
-Five wrong passwords lock login for 30 s. Passwords are stored as salted SHA-256 in FRAM,
-outside the readable table. Every POST must carry an `X-CEMS: 1` header and the cookie
+Five wrong passwords lock login for 30 s. Passwords are stored as PBKDF2-HMAC-SHA256 (4096
+rounds, per-unit salt; CIP-20.3) in FRAM, outside the readable table; one set by older firmware
+still works and is re-stored that way at its next good login. Every password (operator, admin,
+factory) needs 4 characters or more. **Lost passwords
+(CIP-19.3):** a one-time token from the developer, signed with the developer key over the chip ID
+and the unit's reset count (`tools/reset_token.py`; `GET /api/auth/reset` shows what to sign,
+`POST /api/auth/reset sig=..` needs no login), puts all three back to the defaults and ends every
+session; a wrong token counts as a failed login, and both are logged. Every POST must carry an `X-CEMS: 1` header and the cookie
 is `HttpOnly; SameSite=Strict`, so another web page cannot submit changes. If the
 instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner appears
 and the values grey out until polling recovers. Admin users can download a parameter
@@ -297,6 +303,11 @@ Changes made by the unit itself are not audit events.
 (decision D12): the old program stopped at 256 rows (L1) and erased the log when the
 column set changed (L3). Here a configuration change writes a schema record (channel
 names, units, decimals, interval) and the CSV gets a new header line at that point.
+
+**Gaps (CIP-16.6).** When two consecutive data rows with the clock set are more than two
+intervals apart (the unit was off, or the clock was stepped forward), the CSV has one row
+at the first missing interval with every value empty and every quality `GAP`, so a
+spreadsheet shows the hole instead of drawing across it. The power-up event says why.
 
 **Power cuts.** Records are 64-byte slots (a data record with up to 32 channels is 4
 slots; the schema up to 17), each with its own CRC-32, written only into erased flash and
@@ -961,6 +972,37 @@ factory, due time, overdue), the history (newest first) and which channel is cal
 The first three are in the FRAM factory region (dual copy; survive firmware updates and restore
 defaults) and belong to the unit: a backup carries them for reference, but restoring it into
 another unit never copies them (`RF_UNIT`, like the serial number).
+
+## 5o. Start-up self-test (CIP-11.1)
+
+After every start the unit works through a fixed list of checks (`plat_selftest.h`), each
+with one result: pass, fail or skipped.
+
+| Check | Pass when | Skipped when |
+|---|---|---|
+| `image` | the running firmware hashes to the SHA-256 in the header the update left in its flash bank (16 KB per store-task pass, about 0.6 s for 500 KB) | no header for this version (programmed with the debugger) |
+| `ram` | a March C- test of a 1 KB block passes (before the tasks start; the H573's SRAM also has ECC) | - |
+| `rtc` | the clock's seconds move on within 3 s | the clock has never been set |
+| `settings` | the FRAM answers and holds (not the RAM fallback; no write or table error) | - |
+| `calibration` | a valid factory image was loaded | - |
+| `log_flash` | the log flash answers and is large enough | the RAM stand-in (no flash fitted: the DK) |
+| `net_phy` | the LAN8742A answered when the Ethernet driver started | nothing reported it (PC simulation) |
+| `io_port` | the I/O-port W5500 answered when the I/O bus first used it | not used in the first 10 s (none fitted, no board enabled) |
+| `display` | the touchscreen answers | no display on this hardware |
+| product checks | up to 8 of the product's own (`plat_app_t.selftests`), run once at 10 s | the check says so |
+
+The first six are known within about a second; the rest 10 s after start. Then parameter 333
+holds the failed bits (bit *i* = check *i* above, bit 16 + *j* = product check *j*), the event
+log gets one `selftest` event ("passed", or the failed names), `/api/info` `selftest` lists
+every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a check failed that
+has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
+CAL_INVALID and DISPLAY_FAULT).
+
+**Fault and alarm code list (CIP-11.3).** `docs/FAULT_CODES.md` lists the platform's alarms
+(with what to check), self-test checks, fault record codes, reset causes, event codes and
+firmware update refusals. `make fault-codes` writes it from the firmware's own tables
+(`tools/fault_codes.c`), and `make test` fails if it is out of date or if a platform alarm has
+no help text. A product's own list: `make fault-codes APP=<dir>`.
 
 ## 6. Integration rules for the application (VM/MUX) code
 

@@ -402,6 +402,14 @@ def main():
     st, info = web.json("/api/info")
     check(len(info["config_crc"]) == 8 and info["config_crc"] == sv["config_crc"] and info["board_rev"] == 0
           and info["build"], "config checksum, board revision, build on /api/info")
+    for _ in range(120):                                # the start-up self-test closes 10 s after start
+        st, info = web.json("/api/info")
+        if info["selftest"]["done"]: break
+        time.sleep(0.1)
+    stt = {t["name"]: t["result"] for t in info["selftest"]["tests"]}
+    check(info["selftest"]["done"] and list(stt)[:3] == ["image", "ram", "rtc"] and stt["ram"] == "pass"
+          and stt["image"] == "skipped" and stt["settings"] == "pass" and stt["log_flash"] == "pass",
+          f"start-up self-test list on /api/info ({info['selftest']})")
     fac.req("/api/logout", {})
     st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "admin password changed")

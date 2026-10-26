@@ -211,6 +211,10 @@ void plat_start(const plat_app_t *app) {
     }
     param_store_boot();
     log_start(app, fram);
+    if (plat_selftest_init(app->selftests, app->n_selftests, bsp_ms()) != 0) {   /* more than PLAT_STEST_APP_MAX */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "selftest table", (uint32_t)app->n_selftests, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
     fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
     fw_safe_check = app->fw_safe;

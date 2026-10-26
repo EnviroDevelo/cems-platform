@@ -218,6 +218,10 @@ static void t_data(void) {
     s = csv_of(LOG_RING_DATA, 0, 0);
     CHECK_EQ(count(s, "time,SO2"), 2);
     CHECK(strstr(s, "2026-10-19 13:00:05,2.0,BAD") != NULL);
+    /* the hour with no data (power off, or here the clock step) is one GAP row (CIP-16.6) */
+    CHECK_EQ(count(s, ",GAP"), 3);
+    CHECK(strstr(s, "2026-10-19 12:00:44,,GAP,,GAP,,GAP\r\n2026-10-19 13:00:05,") != NULL);   /* last row 12:00:39 + 5 s */
+    CHECK(strstr(s, "12:00:35,1.0,OK,,N/A,,N/A\r\n2026-10-19 12:00:39") != NULL);           /* none for a normal step */
     plat_log_interval_s = 60;
 }
 

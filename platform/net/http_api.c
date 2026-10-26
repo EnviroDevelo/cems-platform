@@ -23,6 +23,7 @@
 #include "plat_state.h"
 #include "plat_cal.h"
 #include "plat_service.h"
+#include "plat_selftest.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -217,6 +218,15 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     { char cb[12]; snprintf(cb, sizeof cb, "%08lx", (unsigned long)plat_config_crc());
       out_str(o, ",\"config_crc\":"); json_str(o, cb); }
     out_str(o, ",\"run_hours\":"); json_float(o, (float)plat_service_hours_x10() / 10.0f);
+    out_str(o, ",\"selftest\":{\"done\":"); json_bool(o, plat_selftest_done());   /* CIP-11.1 */
+    out_str(o, ",\"failed\":"); json_uint(o, plat_selftest_failed());
+    out_str(o, ",\"tests\":[");
+    { const char *nm; uint8_t res;
+      for (unsigned i = 0; plat_selftest_get(i, &nm, &res); ++i) {
+          out_str(o, i ? ",{\"name\":" : "{\"name\":"); json_str(o, nm);
+          out_str(o, ",\"result\":"); json_str(o, plat_selftest_result_name(res)); out_str(o, "}");
+      } }
+    out_str(o, "]}");
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
     out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
@@ -1230,6 +1240,33 @@ static void post_serial(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true,\"serial\":"); json_uint(o, want); out_str(o, "}");
 }
 
+/* ---------------- credential recovery (web_auth.h, CIP-19.3) ---------------- */
+static void get_auth_reset(http_out_t *o) {
+    char msg[AUTH_RESET_MSG_MAX], uid[25];
+    plat_serial_uid_hex(uid);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"uid\":"); json_str(o, uid);
+    out_str(o, ",\"key\":"); json_bool(o, plat_serial_key_present());
+    out_str(o, ",\"message\":"); json_str(o, auth_reset_message(msg, sizeof msg) ? msg : "");
+    out_str(o, "}");
+}
+
+/* sig=<128 hex digits: r||s>; no login (whoever asks is locked out), counts as a failed login when wrong */
+static void post_auth_reset(const http_req_t *r, http_out_t *o, uint32_t now) {
+    char sh[160] = "";
+    uint8_t sig[64];
+    if (!form_get((const char *)r->body, r->body_len, "sig", sh, sizeof sh) || strlen(sh) != 128 || hex_decode(sh, sig, sizeof sig) != 64) {
+        json_error(o, 400, "token", -1); return;
+    }
+    auth_rc_t rc = auth_reset_with_token(sig, now);
+    plat_log_event(LOG_EV_PASSWORD, PLAT_SRC_WEB, 0, 0, NAN, NAN, rc == AUTH_OK ? "reset by token" : "reset token refused");
+    if (rc == AUTH_LOCKED) { json_error(o, 429, "locked", -1); return; }
+    if (rc == AUTH_NO_KEY) { json_error(o, 409, "no developer key in this firmware", -1); return; }
+    if (rc != AUTH_OK) { json_error(o, 403, "token not valid for this unit", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 /* ---------------- alarm email ---------------- */
 static void hex32(http_out_t *o, const uint8_t *b) {
     char h[96];
@@ -1677,6 +1714,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
     else if (get && !strcmp(r->path, "/api/cal")) get_cal(o);
     else if (get && !strcmp(r->path, "/api/service")) get_service(o);
+    else if (get && !strcmp(r->path, "/api/auth/reset")) get_auth_reset(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
     else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
@@ -1694,6 +1732,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
             if (lvl) plat_log_event(LOG_EV_LOGOUT, PLAT_SRC_WEB, lvl, 0, NAN, NAN, NULL);
             auth_logout(r->sid); head(o, 200, "application/json",
                      "Set-Cookie: sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict\r\n"); out_str(o, "{\"ok\":true}"); }
+        else if (!strcmp(r->path, "/api/auth/reset")) post_auth_reset(r, o, now);   /* no login: the passwords are lost */
         else if (lvl == 0) json_error(o, 401, "login", -1);
         else if (!strcmp(r->path, "/api/write")) post_write(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/password")) post_password(r, o, lvl, now);

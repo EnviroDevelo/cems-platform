@@ -29,6 +29,7 @@
 #include "ui_app.h"
 #include "plat_state.h"
 #include "plat_cal.h"
+#include "plat_selftest.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -54,6 +55,8 @@ typedef struct plat_app_s {
     size_t              n_meas;
     const plat_cal_channel_t *cal;       /* its calibrated channels (plat_cal.h; may be NULL) */
     size_t              n_cal;
+    const plat_selftest_def_t *selftests; /* its own start-up checks (plat_selftest.h; may be NULL) */
+    size_t              n_selftests;
 } plat_app_t;
 
 typedef enum {
@@ -102,6 +105,7 @@ void plat_http_task_body(void);
 void plat_ui_task_body(void);
 void plat_net_task_body(void);           /* network bring-up and upkeep (port) */
 void plat_iobus_task_body(void);         /* RS-485 I/O boards (iobus.h) */
+bool plat_ui_fitted(void);               /* this hardware has a display (plat_ui_task.c; weak default false) */
 bool plat_ui_healthy(void);              /* display working or not fitted (plat_ui_task.c; weak default true) */
 
 #endif

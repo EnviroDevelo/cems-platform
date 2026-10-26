@@ -294,7 +294,7 @@ static void *store_thread(void *a) {
     (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
     uint32_t fw_t = bsp_ms(), fw_scans = 0;
     while (running) {
-        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms());
+        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); plat_selftest_poll(bsp_ms());
         uint32_t now = bsp_ms();
         if (now - fw_t >= 1000u) { uint32_t sc = scan_stats(&plat_scan).scans; fw_service(now, sc - fw_scans >= 50u); fw_scans = sc; fw_t = now; }
     }
@@ -423,6 +423,7 @@ int main(int argc, char **argv) {
         fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* may "reset" (exit 3) to roll back */
         fw_safe_check = app->fw_safe;
     }
+    if (plat_selftest_init(app->selftests, app->n_selftests, bsp_ms()) != 0) { fprintf(stderr, "more than %u product self-tests\n", PLAT_STEST_APP_MAX); return 1; }
     { int ae = alarm_init(app->alarms, app->n_alarms, (uint8_t)plat_diag.last_reset_cause);
       if (ae) { fprintf(stderr, "alarm table error at id %d\n", ae); return 1; } }
     { int me = plat_state_init(app->meas, app->n_meas);

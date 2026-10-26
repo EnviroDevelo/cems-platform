@@ -89,6 +89,7 @@ typedef struct {
     uint16_t    enable_param;  /* bool parameter: false suppresses the alarm (0 = always enabled) */
     uint16_t    delay_param;   /* integer parameter, s: replaces on_delay_ms (0 = none) */
     uint8_t     route;         /* default actions: AR_EMAIL | AR_MODBUS | AR_RELAY(k) (0 = none) */
+    const char *help;          /* what to check, for the service manual and docs/FAULT_CODES.md (may be NULL) */
 } alarm_def_t;
 
 /* ---------------- platform alarms ---------------- */
@@ -114,6 +115,7 @@ enum {
     ALARM_ID_SUPPLY            = 20,  /* the 24 V supply outside 19-30 V (plat_power.h) */
     ALARM_ID_CAL_DUE           = 21,  /* a channel's calibration is overdue (plat_cal.h, CIP-18) */
     ALARM_ID_HW_REV            = 22,  /* the board's revision straps disagree with the factory hw_rev (CIP-01.3) */
+    ALARM_ID_SELFTEST          = 23,  /* a start-up self-test failed (plat_selftest.h, CIP-11.1) */
 };
 
 /* A copy of one alarm, for lists. */

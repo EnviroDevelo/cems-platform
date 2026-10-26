@@ -136,6 +136,9 @@ def main():
     time.sleep(5.5)
     st, j = w.req("/api/fw")
     check(j["state"] == "idle", f"confirmed after a healthy trial ({j})")
+    st, info = w.req("/api/info")
+    img = {t["name"]: t["result"] for t in info["selftest"]["tests"]}.get("image")
+    check(img == "pass", f"start-up self-test: the running image matches its header ({img})")
     hs = j.get("history", [])
     today = time.strftime("%Y-%m-%d")
     check(len(hs) == 1 and hs[0]["result"] == "updated" and hs[0]["from"] == "0.3.0" and hs[0]["to"] == "0.4.0"
