@@ -93,9 +93,10 @@ rtos: $(BUILD)/rtos_sim
 	./$(BUILD)/rtos_sim stuck; test $$? -eq 42 && echo "stuck-task reset: OK"
 
 # PC simulation with real sockets and threads (Modbus TCP on 1502, web on 8080)
+BUILD_ID  := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo dev)
 NETSIM_SRC = $(filter-out platform/bsp/bsp_host.c,$(CORE)) $(APP_SRC) platform/net/http_server.c host/netsim/netsim_main.c $(MBED_LIB)
 $(NETSIM_BIN): $(NETSIM_SRC) $(HDRS) $(APP_HDRS) | $(BUILD)
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
-	  -DPLAT_HOST -DPLAT_HOST_THREADS -Iplatform/include -Iplatform/bsp $(APP_INC) $(MBED_FLAGS) $(filter-out %.h,$^) -o $@ -lm -lpthread
+	  -DPLAT_HOST -DPLAT_HOST_THREADS -DPLAT_BUILD_ID='"$(BUILD_ID)"' -Iplatform/include -Iplatform/bsp $(APP_INC) $(MBED_FLAGS) $(filter-out %.h,$^) -o $@ -lm -lpthread
 netsim: $(NETSIM_BIN)
 	./$(NETSIM_BIN)

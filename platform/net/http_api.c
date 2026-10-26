@@ -211,6 +211,8 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"state_since\":"); json_uint(o, plat_state_since());
     out_str(o, ",\"serial\":"); json_uint(o, param_read(PARAM_ID_SERIAL, &v) ? v.u : 0);
     out_str(o, ",\"hw_rev\":"); json_uint(o, param_read(PARAM_ID_HW_REV, &v) ? v.u : 0);
+    out_str(o, ",\"board_rev\":"); if (fw_board_rev() >= 0) json_uint(o, (unsigned long)fw_board_rev()); else out_str(o, "null");
+    out_str(o, ",\"build\":"); json_str(o, fw_build_id());
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
     out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
@@ -759,6 +761,11 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"state\":"); json_str(o, fw_state_name(st.state));
     out_str(o, ",\"trial_left_s\":"); json_uint(o, (st.trial_left_ms + 999u) / 1000u);
     out_str(o, ",\"staged\":"); if (st.staged) json_str(o, st.staged_version); else out_str(o, "null");
+    out_str(o, ",\"build\":"); json_str(o, fw_build_id());
+    if (st.staged) {
+        out_str(o, ",\"staged_build\":"); json_str(o, st.staged_build);
+        out_str(o, ",\"staged_hw\":["); json_uint(o, st.staged_hw_min); out_str(o, ","); json_uint(o, st.staged_hw_max); out_str(o, "]");
+    }
     out_str(o, ",\"uploading\":"); json_bool(o, st.uploading);
     out_str(o, ",\"received\":"); json_uint(o, st.upload_bytes);
     out_str(o, ",\"total\":"); json_uint(o, st.upload_total);

@@ -13,7 +13,7 @@ include $(APP)/app_vars.mk
 endif
 ARMCC  ?= $(EXT)/xpack-arm-none-eabi-gcc-13.3.1-1.1/bin/arm-none-eabi-gcc
 FR      = $(EXT)/FreeRTOS-Kernel
-DEV     = -DSTM32H573xx -DUSE_HAL_DRIVER
+DEV     = -DSTM32H573xx -DUSE_HAL_DRIVER -DPLAT_BUILD_ID='"$(shell git rev-parse --short=10 HEAD 2>/dev/null || echo dev)"'
 CFLAGS  = -mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard -std=c11 -O2 \
           -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Werror -ffunction-sections -fdata-sections
 LW      = $(EXT)/lwip

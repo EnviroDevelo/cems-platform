@@ -316,6 +316,15 @@ RAM stand-in keeps the event log until power-off and the page says so.
 
 ## 5b. Firmware update
 
+**Image header version 2 (CIP-01.3, 03.2, 25.1).** `tools/mkfwimage.py` now writes header
+version 2, which adds the range of board revisions the image runs on (`--hw 0-1`; the board's
+straps, `CUBEMX_SETUP.md` 3j), the settings layout version it was built with (`--layout`) and the
+build ID (git short hash, `--build-id`, default the working tree's). Version 2 signs these fields
+too (the signature covers header bytes 0..83 and 148..251). An image for other board revisions is
+refused at upload and again at activation ("built for another board revision"); a version 1 image,
+or a board without straps, is not range-checked. `/api/fw` shows `build` (running) and, for a
+staged image, `staged_build` and `staged_hw`; `/api/info` shows `build` and `board_rev`.
+
 **Update record (Gary, 20 Oct).** Every firmware change is stored in the instrument: the
 date and time of the restart onto the new firmware, the date and time it was kept (or
 rolled back), the versions from and to, and who asked (login level, web or touchscreen).

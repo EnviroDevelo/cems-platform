@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "cems_core")(type "KiCad")(uri "${KIPRJMOD}/cems_core.kicad_sym")(options "")(descr "CEMS core board parts"))
+)

@@ -221,6 +221,24 @@ potentiometer (0-2.4 V reads as 0-31.7 V) to try the alarm and the hold. Check t
 against a meter on the first core board (the VREFINT calibration value is taken at 3.3 V; the
 reading is about 0.4 V below the terminal voltage because of the diode).
 
+## 3j. Board revision straps: PE7 and PE8 (CIP-01.3, CORE_PCB.md 12)
+
+| CubeMX | Setting |
+|---|---|
+| PE7 | GPIO_Input, **no pull-up or pull-down** (the board has the resistors), label **HW_REV0** |
+| PE8 | GPIO_Input, no pull, label **HW_REV1** |
+
+The firmware reads them once at start (`bsp_hw_straps` in `supply_stm32h5.c`): revision =
+PE8 x 2 + PE7, shown as parameter 319 `board_rev` and `/api/info` `board_rev`. A firmware image
+whose header names other board revisions is refused (`FW_E_HARDWARE`), and alarm 22 HW_REV
+(warning) says when the straps disagree with the factory `hw_rev`. Without the labels the board
+has no straps: nothing is checked. **On the DK** leave them off (PE7/PE8 float there).
+
+**Build ID.** Add `PLAT_BUILD_ID="<git short hash>"` to the compiler's defines (Project >
+Properties > C/C++ Build > Settings > MCU GCC Compiler > Preprocessor), for example from a
+pre-build step; it shows as `/api/info` `build` and goes in the image header with
+`tools/mkfwimage.py --build-id`. Without it the build says "dev".
+
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 
 The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the
