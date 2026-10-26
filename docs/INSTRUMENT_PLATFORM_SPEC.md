@@ -49,7 +49,7 @@ These hold across every item below and override any item where they conflict.
 | # | Core item | Class | CORE status | Main gap | Owner |
 |---|---|---|---|---|---|
 | 1 | Instrument identity | M | Partial | No standard identity block on Modbus; hardware revision straps not read | Firmware, PCB |
-| 2 | Clock and timekeeping | M | Partial | RTC holds local standard time, not UTC (decision D22 conflicts with the baseline) | Firmware |
+| 2 | Clock and timekeeping | M | Done | Local standard time kept by decision (D22, an exception to the baseline); clock quality not exposed (optional) | Firmware |
 | 3 | Firmware updates | M | Done | Compatibility check covers the product only, not the hardware revision | Firmware |
 | 4 | Bootloader and recovery | M (interface S) | Partial | No immutable first-stage bootloader; debug lock state undecided | Firmware, PCB |
 | 5 | Configuration management | M | Done | No visible configuration revision or checksum | Firmware |
@@ -75,7 +75,7 @@ These hold across every item below and override any item where they conflict.
 | 25 | Version control and traceability | M | Partial | No release notes, build ID or supported-combinations matrix | Firmware |
 | 26 | Verification and documentation | M | Partial | Nothing run on hardware; no operator, service or comms manuals | All |
 
-Score: 7 Done, 18 Partial, 1 Missing.
+Score: 8 Done, 17 Partial, 1 Missing.
 
 ## 4. Requirements
 
@@ -101,7 +101,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-02.1 | RTC with 32.768 kHz crystal and battery backup | M | Done | H1; CR2032 on VBAT in `CORE_PCB.md` |
 | CIP-02.2 | Time synchronisation | M | Done | SNTP, PLC (parameter 85), web, touchscreen (D22) |
 | CIP-02.3 | Detection of an invalid clock | M | Done | "clock not set"; the scan keeps the previous snapshot and counts it |
-| CIP-02.4 | Timestamps stored in UTC; local time applied for display | M | Partial | **Conflict with D22.** The RTC holds local standard time (no daylight saving) plus a UTC offset setting. Records are unambiguous because there is no daylight saving, but changing the offset reinterprets old records. **Decision for Gary** (section 6, item 1) |
+| CIP-02.4 | Timestamps stored in UTC; local time applied for display | M | Done (exception) | **Exception by decision (Gary, 26 Oct): keep D22.** The RTC and records hold local standard time (no daylight saving) plus a UTC offset setting. Records never jump, because there is no daylight saving. A change of the offset is logged, and records are read with the offset in force when they were written |
 | CIP-02.5 | Every clock change logged with source and old/new time | M | Done | Event log, D22 |
 | CIP-02.6 | Clock quality exposed (synchronised, last sync time, source) | O | Missing | Not exposed on Modbus or the web API |
 
@@ -390,7 +390,7 @@ only a developer-signed token could clear the logs (for refurbishing a unit).
 
 | # | Question | Recommendation |
 |---|---|---|
-| 1 | The baseline says store timestamps in UTC. D22 stores local standard time. | Store UTC in the RTC and the logs, show local standard time (UTC + offset, still no daylight saving) everywhere it is displayed or exported. The CSV gets both columns. Old records are converted once at the update by the stored offset. This makes changing the offset harmless and matches the baseline |
+| 1 | The baseline says store timestamps in UTC. D22 stores local standard time. | **Decided (Gary, 26 Oct): keep D22 local standard time.** CIP-02.4 is a documented exception |
 | 2 | Adopt the state model in section 7 as the platform's? | Yes, with the application allowed to stay in READY/MEASURING and to request MAINTENANCE and CALIBRATION |
 | 3 | Quality codes: 8 platform values (valid, stale, unavailable, out-of-range, warming-up, maintenance, calibration, fault) | Yes; the data log keeps OK/FLAG/BAD/N/A as a summary so existing CSV readers still work |
 | 4 | Credential recovery by developer-signed token | Yes; it reuses the serial number mechanism |
@@ -420,7 +420,7 @@ Gary's review.
 2. Supply sense and power-fail shutdown (CIP-07.3, 07.5).
 3. Reboot-loop detection and safe mode (CIP-08.5).
 4. Calibration record with factory/field split and history (CIP-18), and its events (CIP-17.6).
-5. Clock in UTC if decision 1 is accepted (CIP-02.4); clock quality (CIP-02.6).
+5. Clock quality: synchronised, last sync, source (CIP-02.6).
 6. Modbus identity block, heartbeat and last-good-communication registers, map version (CIP-01.6, 15.1, 15.2, 14.4).
 7. Hardware revision straps, build ID, image header with hardware range (CIP-01.3, 25.1, 03.2).
 8. Operating hours, service log, test result record, configuration checksum (CIP-22.2, 22.4, 23.4, 05.4).
