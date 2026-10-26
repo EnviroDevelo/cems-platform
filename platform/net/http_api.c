@@ -24,6 +24,7 @@
 #include "plat_cal.h"
 #include "plat_service.h"
 #include "plat_selftest.h"
+#include "plat_version.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -208,6 +209,7 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"product\":"); json_str(o, cfg.product);
     out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    out_str(o, ",\"core\":"); json_str(o, PLAT_CORE_VERSION);    /* the platform it is built on (R4) */
     out_str(o, ",\"api\":"); json_uint(o, HTTP_API_VERSION);
     out_str(o, ",\"state\":"); json_str(o, plat_state_key(plat_state()));
     out_str(o, ",\"state_since\":"); json_uint(o, plat_state_since());
