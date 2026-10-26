@@ -166,6 +166,18 @@ enum {
     PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */
     PARAM_ID_MEAS_Q           = 303, /* RO: one PLAT_Q_* per declared measurement (a Modbus status block) */
     PARAM_ID_SUPPLY_MV        = 305, /* RO: the 24 V supply, mV (0 = not measured; plat_power.h) */
+    PARAM_ID_HEARTBEAT        = 306, /* RO: +1 every 100 ms (the platform's Modbus block, modbus.h) */
+    PARAM_ID_LINK_AGE_S       = 307, /* RO: s since the last Modbus or web request (65535 = none or longer) */
+    PARAM_ID_MB_BLOCK_VERSION = 308, /* RO: layout version of the platform's Modbus block */
+    PARAM_ID_MB_MAP_VERSION   = 309, /* RO: the application's register map version */
+    PARAM_ID_FW_VERSION_NUM   = 310, /* RO: firmware version, major<<16 | minor<<8 | patch */
+    PARAM_ID_API_VERSION      = 311, /* RO: web API version (/api/info "api") */
+    PARAM_ID_UPTIME_S         = 312, /* RO: s since start */
+    PARAM_ID_PRODUCT          = 313, /* RO text: product (Modbus identity) */
+    PARAM_ID_VENDOR           = 314, /* RO text: vendor */
+    PARAM_ID_FW_TEXT          = 315, /* RO text: firmware version as text */
+    PARAM_ID_CAL_CMD          = 320, /* calibration command (plat_cal.h): command << 8 | channel; momentary */
+    PARAM_ID_CAL_LEVEL        = 321, /* factory: login level that may calibrate (CIP-19.3; default admin) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
@@ -318,6 +330,7 @@ void    param_scan_service(uint32_t now_ms);   /* scan task, every scan */
 extern void (*param_on_restore_defaults)(void);
 /* Called by param_apply when PARAM_ID_ALARM_ACK is written (set by alarm_init). */
 extern void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+extern param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);   /* plat_cal.c */
 /* Called in the scan task after an external write changed a value (the event log
  * sets it). Scalars: old and new value. Blocks and the restore command: values 0. */
 extern void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);

@@ -67,11 +67,30 @@ typedef struct {
 typedef struct {
     const char *vendor, *product, *revision;   /* 43/14 device identification */
     uint8_t     write_level;                   /* plat_level_t Modbus writes act with (default operator) */
+    uint16_t    map_version;                   /* the application's register map: bump when an address moves
+                                                  or a value goes (CIP-14.4); shown at input register 9001 */
 } mb_ident_t;
 
-/* Build the map index. Checks that every ID exists, the format suits the entry,
- * and no two entries in a table overlap. Returns 0, or the index of the first
- * bad entry + 1 (call after param_init). */
+/* The platform's own block, the same in every product (CIP-01.6, 14.4, 15.1, 15.2): input
+ * registers 9000-9199 (PLAT_MB_BLOCK_ADDR), added to every map. 0-based addresses:
+ *   9000 block layout version (1)       9001 the application's map version (mb_ident_t)
+ *   9002 heartbeat: +1 every 100 ms      9003 instrument state (PLAT_ST_*)
+ *   9004 s since the last Modbus or web request (65535 = none, or longer)
+ *   9005 alarms active                   9006 common alarm bits (ACOM_*)
+ *   9007-9008 hardware revision (U32)    9009-9010 serial number (U32)
+ *   9011-9012 firmware version (U32, major<<16 | minor<<8 | patch)   9013 web API version
+ *   9014-9015 uptime, s (U32)            9016-9017 supply, mV (U32; 0 = not measured)
+ *   9018-9019 state entered (U32, local s since 1970)
+ *   9020-9051 quality of measurement 0..31 (PLAT_Q_*)
+ *   9052-9067 product (32 bytes text)    9068-9075 vendor (16)    9076-9083 firmware version (16)
+ * 32-bit values high word first; text two bytes per register, first byte high, NUL padded. */
+#define MB_BLOCK_REGS 84u
+void mb_block_scan(uint32_t now_ms);     /* scan task: heartbeat, link age, uptime */
+
+/* Build the map index: the platform's block plus the application's map. Checks that every ID
+ * exists, the format suits the entry, and no two entries in a table overlap (an application
+ * entry in 9000-9199 of the input registers overlaps the block). Returns 0, or the index of the
+ * first bad application entry + 1 (call after param_init). */
 int  mb_init(const mb_map_t *map, size_t n, const mb_ident_t *ident);
 uint16_t mb_entry_span(const mb_map_t *e);    /* addresses (bits or registers) an entry covers; 0 if invalid */
 

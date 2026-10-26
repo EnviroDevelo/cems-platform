@@ -42,6 +42,7 @@ runs on top of it.
 | I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
 | 24 V supply monitoring, SUPPLY alarm and power-fail write hold (CIP-07) | `plat_power.h`, `platform/core/plat_power.c`, `port/stm32h5/supply_stm32h5.c` | Done, host-tested; ADC read compiled and linked |
 | Instrument state and quality of live values (Common Instrument Platform Specification CIP-09, CIP-10): one state (STARTING ... SAFE_MODE), forced FAULT, maintenance from the touchscreen or web, per-measurement quality with automatic stale detection, on Modbus, `/api/*` and for the touchscreen; the supervisory link age (CIP-15.2) | `plat_state.h`, `platform/core/plat_state.c` | Done, host-tested (5l) |
+| Calibration records (CIP-18, CIP-17.6, CIP-19.3): per channel a factory record and the record in force, a history of the last 12 (any outcome), begin/accept/abort/revert with a permission level, a product check hook, due dates and alarm 21, `/api/cal` | `plat_cal.h`, `platform/core/plat_cal.c` | Done, host-tested and end-to-end (5m) |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -188,6 +189,20 @@ mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes
 (a PLC that rebooted without closing would otherwise hold a slot). Optional single
 allowed client IP. TCP keepalive notices a vanished client in about 50 s.
 
+**The platform's block (CIP-01.6, 14.4, 15.1, 15.2).** Whatever the application maps, the
+platform adds its own read-only block at input registers 9000-9083 (9000-9199 reserved), the
+same in every product, so a PLC or DAHS can identify and supervise any CEMS instrument the same
+way: block layout version (9000), the application's map version (9001, `mb_ident_t.map_version`),
+a heartbeat that counts every 100 ms (9002), the instrument state (9003), seconds since the last
+Modbus or web request (9004), alarms active and the common alarm word (9005-9006), hardware
+revision, serial number and firmware version (9007-9012), web API version (9013), uptime
+(9014-9015), the supply voltage (9016-9017), when the state was entered (9018-9019), the quality
+of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083). The full
+layout is in `modbus.h`. An application map entry in that range of the input registers stops the
+start-up ("modbus map"). Function 43/14 (device identification) gives vendor, product and firmware
+as before. Compatibility (CIP-14.5): addresses in the block never move; a new value is added at
+the end and the block version goes up.
+
 **Web interface.** One page (4.6 KB gzip) loads once, then polls JSON: values every
 0.5 s, status every 2 s. Viewing needs no login. Changes need a login (operator, admin
 or factory); a session allows changes for 10 minutes after the login or the last change.
@@ -198,6 +213,30 @@ instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner
 and the values grey out until polling recovers. Admin users can download a parameter
 backup and restore it. Screenshots: `docs/web_ui.png`, `docs/web_ui_connection_lost.png`.
 
+**Trends.** The Trends section charts up to 4 values (any scalar bool, int, uint or float
+in the table) against time, over the last 1, 5, 15 or 60 minutes. Each value has its own
+scale (click its name to show that scale on the axis); a gap shows where the link was
+down; Hold freezes the view while recording carries on; hovering reads every value at
+that moment; Save CSV downloads what is recorded. It is recorded in the browser from the
+same 0.5 s value polls, so it costs the instrument no requests, no RAM and no API (about
+0.5 KB of page). It holds what was seen while the page was open; the instrument's own
+record is the data logger (5a). The chosen values are remembered by the browser.
+Screenshot: `docs/web_trend.png`.
+
+**State, quality and service (CIP-09, 10, 21, 22.1).** The header shows the instrument
+state (`/api/info` "state") and the supervisory link (LINK OK / LINK LOST / NO LINK), and
+any value whose quality is not valid (`/api/values` "q", keyed "id" or "id.index") is
+greyed with its word, in the words and colours of `docs/UI_CONVENTIONS.md`; trend lines
+break where a sample was not valid, and the trend CSV gains a quality column. The page
+reads these fields when the instrument sends them. **Diagnostic package** (Event log
+section, no login): one JSON file put together in the browser from `/api/info`, time,
+alarms and their actions, firmware (with its update history), log status, I/O boards,
+every setting with its value and quality (secret entries left out) and the event log CSV.
+
+**Phones and tablets.** The page fits a phone's width (390 px) without sideways
+scrolling: the parameter and alarm lists stack into cards, and wider tables (alarm
+actions) scroll inside their own section. `web_ui_test.py` checks this.
+
 **Keep-alive.** The server handles one HTTPS connection at a time. After a GET the
 connection stays open (HTTP/1.1 keep-alive; bodies without a known length are sent
 chunked), so the page's polls reuse it instead of opening a TLS connection each time.
@@ -206,6 +245,28 @@ server; it also closes after 5 s idle, after 200 requests, after any POST (brows
 not retry a POST on a connection the server closed) and before an alarm email borrows
 the TLS context. Measured with Chromium and the page open: about 0.7 new TLS
 connections a second (all resumed by ticket) instead of one per request (3-4 a second).
+
+**Several viewers.** Browsers open spare connections that may never send a request.
+Accepted connections wait in a table of 3 (with the kept connection, the 4 HTTP sockets
+in lwIP's budget) with no TLS yet; the handshake starts only when a connection's first
+bytes arrive, and one that stays silent for 2 s is closed. Before this, each spare
+connection held the server for its 2 s read timeout, and 4 browsers got one value poll
+every 5-8 s with nothing on the page to say so. The port-80 redirect is polled without a
+wait, so it no longer adds 50 ms to every HTTPS request. Measured on netsim with 4
+browsers (`tests/integration/multi_viewer_test.py`): each gets its 2 value polls a second,
+95 % within 52 ms; the cost is about 18 TLS connections a second, all resumed by ticket
+(no public-key work), which still needs measuring on the H5. The page also gives up on a
+request after 5 s, so a stalled server shows "Connection lost" rather than stale values
+marked live.
+
+**Slow links (remote access through a VPN router, D17).** Measured with Chromium's network
+emulation against netsim (round trip / bandwidth: page live after, value polls a second,
+95 % within): 100 ms / 2 Mbit/s: 0.6 s, 1.7, 71 ms; 300 ms / 1 Mbit/s: 1.3 s, 1.5,
+180 ms; 600 ms / 256 kbit/s: 2.8 s, 1.1, 412 ms; 1.2 s / 128 kbit/s (poor cellular):
+5.5 s, 0.8, 868 ms. The page never showed "Connection lost" on any of them: each poll
+waits for the previous answer, so a slow link slows the updates instead of piling up
+requests. The emulation adds the delay per request, not to the TCP and TLS handshakes,
+so first loads on a real link are somewhat slower.
 
 **Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
 ported to native FreeRTOS. The address comes from the parameter table (static
@@ -355,6 +416,11 @@ which the unit has no address. Status: parameter 14 `net_status` (`NETST_*`).
   certificate downloadable (`/api/tls/cert`) to trust it on the site's laptops; port 80
   only redirects; logins with lockout, tech-level firmware updates with signed images
   (D14), every change in the event log;
+- every web reply carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+  and `X-Frame-Options: DENY`; the page also carries a Content-Security-Policy (scripts,
+  styles, requests and frames only from the unit itself; no plug-ins, no framing) and
+  `Referrer-Policy: no-referrer`. HSTS is not sent: browsers ignore it for an IP address
+  and for a certificate they were told to accept;
 - Modbus TCP has no security of its own (nor do the PLCs that use it): it stays on the
   control network, with the existing allowed-client IP and the "Modbus read-only"
   switch, and is never routed to the internet;
@@ -833,12 +899,36 @@ remotely, and platform alarm 19 SAFE_MODE is raised (email, Modbus). A power cyc
 **Supply and power-fail shutdown (CIP-07.3, CIP-07.5).** The ctrl task reads the 24 V supply
 every ms (`bsp_supply_mv`, `CUBEMX_SETUP.md` 3i) into a 16-reading average, shown as parameter
 305 (`supply_mv`, mV; 0 = not measured on this board). Outside 19-30 V for 2 s: alarm 20 SUPPLY
-(warning, email, Modbus). Below 16 V the supply is failing: the store task starts no new FRAM
+(warning, email, Modbus). Two readings in a row below 16 V (2 ms; not the average, since the board holds up for only about 20 ms from 16 V at full load, `CORE_PCB.md` 5a) and the supply is failing: the store task starts no new FRAM
 image write or log-flash write (it lets the event log run for 60 ms more so the `power_fail`
 event, with the voltage, is written first). FRAM images are dual-copy with CRC anyway, so the
 hold is to keep both copies and the log's current page intact, not to save the last settings.
 Back above 18 V for a full second (a dip, not a loss): `power_restored`, and writing resumes,
 with nothing lost (changes made during the hold are saved then).
+
+## 5m. Calibration records (CIP-18)
+
+The product declares its calibrated channels (`plat_cal_channel_t`: a name, the PF_FACTORY float
+parameters holding the coefficients, an interval in days, an optional check hook). The procedure
+itself (gases, waits, the maths) stays in the product; the platform owns the record, the
+permission, the state and the history (`plat_cal.h` has the whole sequence):
+
+| Step | Who | What the platform does |
+|---|---|---|
+| Begin | touchscreen, web (`POST /api/cal cmd=begin&ch=N`) or the product | Refused below setting 321 `cal_level` (factory setting, default admin), in WARMING UP, FAULT, SAFE MODE or start-up (factory login may calibrate in FAULT, so a unit that lost its calibration data can be recalibrated). Otherwise CALIBRATION until the end; event `cal` "start"; a history slot written ABORTED, so a power cut part way leaves an honest record |
+| Procedure | the product's logic, while `plat_cal_active()` | Collects up to 4 points (`plat_cal_point`: reference, reading as found, reading as left) and the proposed coefficients (`plat_cal_propose`) |
+| Accept | anyone with the level (`cmd=accept`) | The check hook may reject the whole calibration; every coefficient is range-checked; all written or none. PASS (now in force) or FAIL (nothing changes); event `cal` with the reason |
+| Abort | `cmd=abort`, or 2 h with no end | ABORTED |
+| Revert | factory login (`cmd=revert&ch=N`) | The factory record's coefficients back in force, recorded REVERTED |
+
+A calibration at factory login is a factory calibration: it replaces the channel's factory
+record, which field calibrations never touch (CIP-18.3). Records are in the FACTORY region of
+FRAM (dual copy; survive firmware updates and restore defaults, CIP-18.5): 2.4 KB for 8 channels
+and 12 history records on the 128 KB part, 2 and 3 on the 32 KB part. A channel's due date is the
+record in force plus its interval; alarm 21 CAL_DUE (warning, email, Modbus) while any channel is
+overdue. Commands go through parameter 320 like every other write, so the local/remote mode rules
+apply (web and Modbus only in REMOTE; Modbus never). `GET /api/cal` gives the channels (in force,
+factory, due time), the history (newest first) and which channel is calibrating.
 
 ## 6. Integration rules for the application (VM/MUX) code
 

@@ -26,6 +26,8 @@ extern uint32_t param_store_status_word;    /* storage of PARAM_ID_STORE_STATUS 
 /* Platform-owned retained blocks (e.g. password hashes): kept in FRAM, never
  * visible through the parameter table. Provided by web_auth.c; none otherwise. */
 __attribute__((weak)) const retain_def_t *plat_store_blocks(size_t *n) { *n = 0; return NULL; }
+/* The calibration records (plat_cal.c), in the factory region. */
+__attribute__((weak)) const retain_def_t *plat_cal_blocks(size_t *n) { *n = 0; return NULL; }
 
 /* one persisted item: a PF_PERSIST parameter or a retained block */
 typedef struct {
@@ -135,11 +137,12 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
                                          .size = PARAM_IS_BLOB(d) ? d->size : (uint16_t)param_ctype_size(d->ctype),
                                          .region = (uint8_t)((d->flags & PF_FACTORY) ? 0u : 1u), .pdef = d };
     }
-    size_t n_plat = 0;
-    const retain_def_t *plat = plat_store_blocks(&n_plat);
+    size_t n_auth = 0, n_cal = 0;
+    const retain_def_t *auth = plat_store_blocks(&n_auth), *cal = plat_cal_blocks(&n_cal);
+    size_t n_plat = n_auth + n_cal;
     for (size_t k = 0; k < n_plat + n_blocks; ++k) {
         bool is_plat = k < n_plat;
-        const retain_def_t *b = is_plat ? &plat[k] : &blocks[k - n_plat];
+        const retain_def_t *b = k < n_auth ? &auth[k] : is_plat ? &cal[k - n_auth] : &blocks[k - n_plat];
         bool id_ok = is_plat ? (b->id >= PARAM_ID_PLAT_BLOCK_FIRST && b->id < PARAM_ID_APP_FIRST) : b->id >= PARAM_ID_APP_FIRST;
         if (S.n_items >= MAX_ITEMS || !id_ok || b->size == 0 || !b->ptr ||
             find_item(b->id) || param_find(b->id)) { ok = false; continue; }

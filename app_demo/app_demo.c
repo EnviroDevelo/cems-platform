@@ -2,6 +2,7 @@
 #include "app_demo.h"
 #include "plat_tasks.h"
 #include <stdio.h>
+#include <math.h>
 #include <stddef.h>
 
 /* ---- application tags ---- */
@@ -17,6 +18,7 @@ static const char valve_name_default[11] = "Valve 1";
 static bool       DemoFault;        /* stands in for a fault input: raises a latching alarm */
 static float      DemoLevel = 50.0f;/* stands in for a measured value with a range alarm */
 static bool       DemoLevelAlarmEn = true;
+static float      DemoLevelZero, DemoLevelSpan = 1.0f;   /* its calibration coefficients (factory class) */
 static uint16_t   DemoLevelText[24];
 static bool       DemoRunning;      /* stands in for "a calibration or sequence is running": no firmware restart then *//* editable alarm description (UTF-16, as the old panel's) */
 
@@ -57,6 +59,8 @@ const param_def_t app_demo_params[] = {
     PARAM_BIT (DEMO_PARAM_RUNNING, "demo_running", DemoRunning, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_TEXT16(DEMO_PARAM_LEVEL_TEXT, "demo_level_text", DemoLevelText, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_ANY_MODE),
     PARAM_RECORD(DEMO_PARAM_STEPS, "demo_steps", DemoSteps, check_steps, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
+    PARAM_REAL(DEMO_PARAM_LEVEL_ZERO, "demo_level_zero", DemoLevelZero, -50.0f, 50.0f, 0.0f, "%", PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY),
+    PARAM_REAL(DEMO_PARAM_LEVEL_SPAN, "demo_level_span", DemoLevelSpan, 0.5f, 2.0f, 1.0f, NULL, PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY),
 };
 
 /* The application's own screen (ui_app.h): what is on it, by parameter ID. */
@@ -102,7 +106,8 @@ const size_t app_demo_n_retain = sizeof app_demo_retain / sizeof app_demo_retain
  * 20 alarm acknowledge; coils 0-3 acknowledge bits; discrete inputs 0 start input,
  * 1 valve output; input registers 0 alarms active, 1 alarms unacknowledged, 2 common alarm,
  * 10-25 active bits, 30-45 unacknowledged bits (K12: the master sees both), 50 instrument state,
- * 52-83 measurement quality, 100 the level x 10. */
+ * 52-83 measurement quality, 100 the level x 10. The platform adds its own block at input registers
+ * 9000-9083 (identity, heartbeat, state, link age, versions: modbus.h) in every product. */
 const mb_map_t app_demo_modbus[] = {
     MB_ENTRY(MB_HOLDING,  0, DEMO_PARAM_START_DELAY, MBF_U32),
     MB_ENTRY(MB_HOLDING,  2, DEMO_PARAM_RUN_HOURS,   MBF_U32),
@@ -124,6 +129,17 @@ const mb_map_t app_demo_modbus[] = {
 /* Measured values (plat_state.h): each carries a quality on Modbus, the web page and the touchscreen. */
 static const plat_meas_def_t app_demo_meas[] = {
     { .id = DEMO_PARAM_LEVEL, .index = PLAT_MEAS_NO_INDEX, .max_age_ms = 1000, .lo = 10.0f, .hi = 90.0f },
+};
+
+/* Calibrated channels (plat_cal.h): the platform keeps the records, the application runs the
+ * procedure. The demo's "procedure": the level should read 50 % on its reference, so the zero
+ * becomes the difference. The check hook refuses a correction of more than 20 %. */
+static const char *check_level_cal(unsigned ch, const plat_cal_record_t *p) {
+    (void)ch;
+    return fabsf(p->coef[0]) > 20.0f ? "zero shift > 20 %" : NULL;
+}
+static const plat_cal_channel_t app_demo_cal[] = {
+    { .name = "Level", .coef_id = { DEMO_PARAM_LEVEL_ZERO, DEMO_PARAM_LEVEL_SPAN }, .interval_days = 90, .check = check_level_cal },
 };
 
 /* Data-log channels: the logic hands one sample per scan to each (plat_log_put). */
@@ -159,6 +175,11 @@ static void logic(void) {            /* "Function1" */
     alarm_set_range(DEMO_ALARM_LEVEL, DemoLevel, 10.0f, 90.0f, 2.0f);
     plat_app_state(PLAT_ST_MEASURING);           /* a real instrument warms up first */
     plat_meas_update(0, PLAT_Q_VALID);           /* the level is "measured" every scan */
+    if (plat_cal_active(NULL)) {                 /* calibrating: one reference point, 50 % */
+        const float coef[2] = { 50.0f - DemoLevel, DemoLevelSpan };
+        (void)plat_cal_point(0, 50.0f, DemoLevel + DemoLevelZero, 50.0f);
+        (void)plat_cal_propose(coef, 2);
+    }
     plat_log_put(0, StartIn ? 1.0f : 0.0f, LQ_OK);
     plat_log_put(1, ValveOut ? 1.0f : 0.0f, LQ_OK);
     plat_log_put(2, StartIn ? (float)StartDelay.Current / 1000.0f : 0.0f, StartIn ? LQ_OK : LQ_NA);
@@ -194,13 +215,14 @@ const plat_app_t app_demo_plat = {
     .layout_version = 1, .migrate = NULL,
     .modbus_map = app_demo_modbus, .n_modbus_map = sizeof app_demo_modbus / sizeof app_demo_modbus[0],
     .ident = { .vendor = "CEMS", .product = "CEMS Supervisor (demo app)", .revision = "0.3.0-dev",
-               .write_level = PLAT_LVL_OPERATOR },
+               .write_level = PLAT_LVL_OPERATOR, .map_version = 1 },
     .log_chans = app_demo_log, .n_log_chans = sizeof app_demo_log / sizeof app_demo_log[0],
     .ui_home_ids = app_demo_home, .n_ui_home = sizeof app_demo_home / sizeof app_demo_home[0],
     .fw_safe = fw_safe,
     .alarms = app_demo_alarms, .n_alarms = sizeof app_demo_alarms / sizeof app_demo_alarms[0],
     .ui = &demo_ui,
     .meas = app_demo_meas, .n_meas = sizeof app_demo_meas / sizeof app_demo_meas[0],
+    .cal = app_demo_cal, .n_cal = sizeof app_demo_cal / sizeof app_demo_cal[0],
 };
 
 const plat_app_t *app_select(void) { return &app_demo_plat; }

@@ -92,6 +92,7 @@ typedef enum {
     LOG_EV_STATE,            /* instrument state (plat_state.h): old -> new, text = the new state */
     LOG_EV_POWER_FAIL,       /* the 24 V supply is failing (plat_power.h): arg = mV; writes stop */
     LOG_EV_POWER_RESTORED,   /* it came back without a reset: arg = mV; writes resume */
+    LOG_EV_CAL,              /* calibration (plat_cal.h): arg = channel, old = kind (1 factory, 2 field), new = outcome (0 started), text = channel and what */
     LOG_EV_APP = 100
 } log_event_code_t;
 

@@ -2,6 +2,7 @@
 #include "plat_alarm.h"
 #include "plat_state.h"
 #include "plat_power.h"
+#include "plat_cal.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -48,6 +49,8 @@ static const alarm_def_t core_defs[] = {
       .text = "Restarted repeatedly: safe mode, application stopped" },
     { .id = ALARM_ID_SUPPLY, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SUPPLY",
       .text = "Supply voltage outside 19-30 V", .on_delay_ms = 2000, .off_delay_ms = 2000 },
+    { .id = ALARM_ID_CAL_DUE, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_DUE",
+      .text = "Calibration due" },
     { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "FW_ROLLED_BACK",
       .text = "Firmware update failed its trial and was undone" },
     { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
@@ -213,6 +216,7 @@ static void poll_platform(void) {
     uint32_t ps = param_store_status(), ls = plat_log_status();
     alarm_set(ALARM_ID_CAL_INVALID, !param_store_calibration_valid());
     alarm_set(ALARM_ID_SAFE_MODE, plat_state() == PLAT_ST_SAFE_MODE);
+    alarm_set(ALARM_ID_CAL_DUE, plat_cal_any_due());
     { uint32_t mv = plat_supply_mv();
       alarm_set(ALARM_ID_SUPPLY, mv != 0 && (mv < PLAT_SUPPLY_LOW_MV || mv > PLAT_SUPPLY_HIGH_MV)); }
     alarm_set(ALARM_ID_PARAM_WRITE_FAIL, (ps & (PSTAT_WRITE_ERROR | PSTAT_NVM_VOLATILE)) != 0);

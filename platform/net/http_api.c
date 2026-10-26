@@ -21,6 +21,7 @@
 #include "plat_serial.h"
 #include "ui_app.h"
 #include "plat_state.h"
+#include "plat_cal.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -119,6 +120,10 @@ static void head(http_out_t *o, int st, const char *ctype, const char *extra) {
     out_str(o, o->keep ? (len ? "Connection: keep-alive\r\n" : "Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n")
                        : "Connection: close\r\n");
     out_str(o, "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\n");
+    if (!strncmp(ctype, "text/html", 9))                /* the page: nothing loaded or sent anywhere but this unit */
+        out_str(o, "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                   "img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\n"
+                   "Referrer-Policy: no-referrer\r\n");
     if (extra) out_str(o, extra);
     out_str(o, "\r\n");
     out_head_done(o, len);
@@ -867,6 +872,70 @@ static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- calibration records (plat_cal.h) ---------------- */
+static void cal_record(http_out_t *o, const plat_cal_record_t *c) {
+    static const char *const kind[] = { "", "factory", "field" };
+    out_str(o, "{\"ch\":"); json_uint(o, c->channel);
+    out_str(o, ",\"time\":"); json_uint(o, c->time);
+    out_str(o, ",\"kind\":"); json_str(o, kind[c->kind <= PLAT_CAL_FIELD ? c->kind : 0]);
+    out_str(o, ",\"outcome\":"); json_str(o, plat_cal_outcome_name(c->outcome));
+    static const char *const lvl[] = { "view", "operator", "admin", "factory" };
+    static const char *const src[] = { "touchscreen", "web", "modbus", "internal" };
+    out_str(o, ",\"level\":"); json_str(o, lvl[c->level & 3u]);
+    out_str(o, ",\"src\":"); json_str(o, src[c->src & 3u]);
+    out_str(o, ",\"coef\":[");
+    for (unsigned k = 0; k < c->n_coef && k < PLAT_CAL_COEF_MAX; ++k) { if (k) out_str(o, ","); json_float(o, c->coef[k]); }
+    out_str(o, "],\"points\":[");
+    for (unsigned k = 0; k < c->n_pts && k < PLAT_CAL_PTS_MAX; ++k) {
+        out_str(o, k ? ",[" : "["); json_float(o, c->ref[k]); out_str(o, ","); json_float(o, c->found[k]);
+        out_str(o, ","); json_float(o, c->left[k]); out_str(o, "]");
+    }
+    out_str(o, "]}");
+}
+
+static void get_cal(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    unsigned run = 0;
+    bool active = plat_cal_active(&run);
+    out_str(o, "{\"active\":"); if (active) json_uint(o, run); else out_str(o, "null");
+    out_str(o, ",\"due\":"); json_bool(o, plat_cal_any_due());
+    out_str(o, ",\"channels\":[");
+    for (unsigned ch = 0; ch < plat_cal_count(); ++ch) {
+        plat_cal_record_t c;
+        if (ch) out_str(o, ",");
+        out_str(o, "{\"name\":"); json_str(o, plat_cal_name(ch));
+        out_str(o, ",\"due_time\":"); json_uint(o, plat_cal_due(ch));
+        out_str(o, ",\"in_force\":"); if (plat_cal_in_force(ch, &c)) cal_record(o, &c); else out_str(o, "null");
+        out_str(o, ",\"factory\":"); if (plat_cal_factory(ch, &c)) cal_record(o, &c); else out_str(o, "null");
+        out_str(o, "}");
+    }
+    out_str(o, "],\"history\":[");
+    plat_cal_record_t c;
+    for (unsigned i = 0; plat_cal_history(i, &c); ++i) { if (i) out_str(o, ","); cal_record(o, &c); }
+    out_str(o, "]}");
+}
+
+/* cmd=begin|accept|abort|revert, ch=<n> (begin, revert) */
+static void post_cal(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char cmd[8], v[4] = "0";
+    if (!form_get((const char *)r->body, r->body_len, "cmd", cmd, sizeof cmd)) { json_error(o, 400, "cmd", -1); return; }
+    (void)form_get((const char *)r->body, r->body_len, "ch", v, sizeof v);
+    unsigned ch = (unsigned)strtoul(v, NULL, 10);
+    int e;
+    if (!strcmp(cmd, "begin"))       e = plat_cal_begin(ch, PLAT_SRC_WEB, lvl);
+    else if (!strcmp(cmd, "accept")) e = plat_cal_end(true, PLAT_SRC_WEB, lvl);
+    else if (!strcmp(cmd, "abort"))  e = plat_cal_end(false, PLAT_SRC_WEB, lvl);
+    else if (!strcmp(cmd, "revert")) e = plat_cal_revert(ch, PLAT_SRC_WEB, lvl);
+    else { json_error(o, 400, "cmd", -1); return; }
+    if (e != PERR_OK) {
+        const char *why = plat_cal_refusal();
+        json_error(o, perr_status((param_err_t)e), why[0] ? why : perr_name((param_err_t)e), -1);
+        return;
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 /* ---------------- clock ---------------- */
 static void get_time(http_out_t *o) {
     uint32_t t;
@@ -1529,6 +1598,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/alarms/config")) get_alarm_config(o);
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
+    else if (get && !strcmp(r->path, "/api/cal")) get_cal(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
     else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
@@ -1554,6 +1624,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
         else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
+        else if (!strcmp(r->path, "/api/cal")) post_cal(r, o, lvl);
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);

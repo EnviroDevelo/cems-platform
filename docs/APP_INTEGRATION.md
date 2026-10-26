@@ -59,12 +59,13 @@ const plat_app_t app = {
     .retain     = retain,  .n_retain = N,      /* RETAIN() blocks: retained tags not in the table */
     .layout_version = 1, .migrate = NULL,      /* bump the version when a stored record changes meaning */
     .modbus_map = map,     .n_modbus_map = N,  /* mb_map_t */
-    .ident      = { .vendor, .product, .revision = "x.y.z", .write_level },
+    .ident      = { .vendor, .product, .revision = "x.y.z", .write_level, .map_version },   /* bump map_version when an address moves */
     .log_chans  = chans,   .n_log_chans = N,   /* data-log columns */
     .ui_home_ids = ids,    .n_ui_home = N,     /* up to 6 tiles on the home screen */
     .alarms     = alarms,  .n_alarms = N,      /* alarm_def_t, IDs 100..255 */
     .fw_safe    = fw_safe,                     /* false + reason while a sequence/calibration runs */
     .meas       = meas,    .n_meas = N,        /* plat_meas_def_t: measured values that carry a quality (up to 32) */
+    .cal        = cal,     .n_cal = N,         /* plat_cal_channel_t: calibrated channels (up to 8) */
 };
 ```
 
@@ -78,6 +79,24 @@ Mandatory for every instrument. In `logic()`:
   quality (`PLAT_Q_FAULT` for a broken sensor, `PLAT_Q_UNAVAILABLE` for one not fitted). A value
   that stops being updated goes stale on its own after its `max_age_ms`.
 - Mark an alarm `AL_STOPS` if measurement cannot go on while it is active (the instrument goes to FAULT).
+
+### Calibration (CIP-18; PLATFORM.md 5m)
+
+Declare each calibrated channel with its coefficient parameters (PF_PERSIST | PF_FACTORY floats,
+level PLAT_LVL_FACTORY so they are not hand-edited in the field) and an interval. Do not keep your
+own calibration records or dates. While `plat_cal_active(&ch)` is true, run the procedure in
+`logic()`: `plat_cal_point(i, ref, as_found, as_left)` per reference point and
+`plat_cal_propose(coef, n)` with the result. The operator (or your logic, with `plat_cal_end`)
+accepts or aborts; your channel's `check` hook may refuse a result that is out of line. Starting,
+ending and the CALIBRATION state are the platform's: do not call `plat_app_state(PLAT_ST_CALIBRATION)`
+for a calibration declared this way.
+
+### Reserved numbers (spec R5)
+
+Parameters 1-999, alarms 1-99 and Modbus **input registers 9000-9199** belong to the platform and
+mean the same in every product (the platform's block: identity, heartbeat, state, link age,
+versions; PLATFORM.md 5). Products use parameters from 1000, alarms from 100, and any Modbus
+address outside that input-register range.
 
 ### The scan (`scan_app_t`), one call per 10 ms
 

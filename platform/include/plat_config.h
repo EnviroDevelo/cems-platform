@@ -129,6 +129,12 @@
 #define PLAT_SUPPLY_RESTORE_MV    18000u /* back above this for 1 s: writes resume */
 #endif
 
+/* interface versions (CIP-14.4): bump on any change a client could break on */
+#define PLAT_API_VERSION          2u     /* the web API (1 = before 26 Oct 2026) */
+#define PLAT_MB_BLOCK_VERSION     1u     /* the layout of the platform's Modbus block */
+#define PLAT_MB_BLOCK_ADDR        9000u  /* input registers 9000-9199 belong to the platform in every product */
+#define PLAT_MB_BLOCK_END         9199u
+
 #ifndef PLAT_MEAS_MAX
 #define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
 #endif
