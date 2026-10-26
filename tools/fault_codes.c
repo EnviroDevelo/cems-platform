@@ -6,7 +6,8 @@
  *                                  self-test checks, fault record, reset causes, events,
  *                                  firmware update refusals), the same in every product
  *   build/fault_codes              a product's list: its alarms (100+) and its own self-test
- *                                  checks, from whichever application is linked (APP=)
+ *                                  checks, from whichever application is linked (APP=);
+ *                                  exit status 1 if one of its alarms has no .help
  *
  * make fault-codes writes them; make test fails if docs/FAULT_CODES.md is out of date, or if a
  * platform alarm has no help text or an event code no label (exit status 1). */
@@ -54,7 +55,7 @@ static void alarms(bool platform) {
         printf("| %u | `%s` | %s | ", d->id, d->name, alarm_sev_name(d->severity));
         behaviour(d);
         fputs(" | ", stdout); cell(d->text);
-        if (platform && !d->help) { fprintf(stderr, "platform alarm %u has no .help\n", d->id); missing++; }
+        if (!d->help) { fprintf(stderr, "alarm %u (%s) has no .help\n", d->id, d->name); missing++; }
         fputs(" | ", stdout); cell(d->help ? d->help : "-");
         puts(" |");
     }
@@ -149,7 +150,7 @@ static int product_list(const plat_app_t *app) {
         const char *nm; plat_selftest_get(i, &nm, NULL);
         printf("| %u | `%s` |\n", 16u + i - PLAT_STEST_N, nm);
     }
-    return 0;
+    return missing ? 1 : 0;
 }
 
 int main(int argc, char **argv) {

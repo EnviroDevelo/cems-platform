@@ -1,5 +1,6 @@
 /* test_http.c - web side: SHA-256, formatting, text, request parsing, auth and
- * sessions, and the API handlers end to end through a capture buffer. */
+ * sessions, and the API handlers end to end through a capture buffer.
+ * Requirements proved here: CIP-01.2, 01.4, 19.1, 19.4, 19.5, 20.1, 20.3, 20.5, 13.3. */
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>

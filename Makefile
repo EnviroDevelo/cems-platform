@@ -12,7 +12,7 @@ CPPFLAGS = -DPLAT_HOST -Iplatform/include -Iplatform/bsp -Iapp_demo $(MBED_FLAGS
 
 CORE = platform/core/scan_engine.c platform/core/plat_cmdq.c \
        platform/core/task_monitor.c platform/core/plat_diag.c platform/core/param.c \
-       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_state.c platform/core/plat_power.c platform/core/plat_cal.c platform/core/plat_service.c platform/core/plat_selftest.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/core/w5500.c platform/core/iob_w5500.c \
+       platform/core/param_store.c platform/core/plat_crc32.c platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_state.c platform/core/plat_power.c platform/core/plat_cal.c platform/core/plat_service.c platform/core/plat_selftest.c platform/core/plat_contract.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/core/w5500.c platform/core/iob_w5500.c \
        platform/net/mbtcp.c platform/net/iob_tcp.c platform/net/http_util.c platform/net/http_api.c platform/net/web_auth.c platform/net/web_page.c platform/net/log_csv.c platform/net/tls.c platform/net/mail.c platform/net/sntp.c platform/net/fw_sig.c platform/ui/eve.c platform/ui/eve_fonts.c platform/ui/ui.c platform/ui/ui_app.c \
        platform/bsp/nvm_ram.c platform/bsp/nor_sim.c platform/bsp/fw_flash_sim.c platform/bsp/iob_node_sim.c platform/bsp/w5500_sim.c platform/bsp/bsp_host.c
 
@@ -51,15 +51,16 @@ all: test sim
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c tests/test_w5500.c tests/test_state.c tests/test_power.c tests/test_cal.c tests/test_service.c tests/test_selftest.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
+$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c tests/test_w5500.c tests/test_state.c tests/test_power.c tests/test_cal.c tests/test_service.c tests/test_selftest.c tests/test_contract.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests -Ihost/eve_sim $(filter-out %.h,$^) -o $@ -lm
 
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c $(MBED_LIB) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: $(BUILD)/tests $(BUILD)/tests32 fault-codes-check
+test: $(BUILD)/tests $(BUILD)/tests32 fault-codes-check snapshots-check
 	./$(BUILD)/tests
 	./$(BUILD)/tests32 | tail -1
+	python3 tools/cip_coverage.py
 
 # The published fault and alarm code list (CIP-11.3), written from the firmware's tables.
 # make fault-codes: docs/FAULT_CODES.md (the platform's), and with APP=<dir> the product's own
@@ -71,8 +72,40 @@ $(FAULT_BIN): $(CORE) $(APP_SRC) tools/fault_codes.c $(MBED_LIB) $(HDRS) $(APP_H
 fault-codes: $(FAULT_BIN)
 	./$(FAULT_BIN) --platform > docs/FAULT_CODES.md
 ifneq ($(APP),app_demo)
-	./$(FAULT_BIN) > $(APP)/FAULT_CODES.md
+	./$(FAULT_BIN) > $(APP)/FAULT_CODES.md || true
 endif
+# Interface snapshots (spec 9.3, CIP-14.4/14.5): the Modbus register map and the web API of a
+# build, generated and kept in git; make test fails if the Modbus map no longer matches, and
+# make conformance checks the API (needs netsim). A difference that is meant needs a new map
+# version or core version; then run make snapshots to accept it.
+IFACE_DIR = $(if $(filter app_demo,$(APP)),docs/interface/app_demo,$(APP)/interface)
+MBMAP_BIN = $(BUILD)/modbus_map-$(APP)
+$(MBMAP_BIN): $(CORE) $(APP_SRC) tools/modbus_map.c $(MBED_LIB) $(HDRS) $(APP_HDRS) | $(BUILD)
+	$(CC) $(CFLAGS) -DPLAT_HOST -Iplatform/include -Iplatform/bsp $(APP_INC) $(MBED_FLAGS) $(filter-out %.h,$^) -o $@ -lm
+.PHONY: modbus-map snapshots snapshots-check
+modbus-map: $(MBMAP_BIN)
+	@mkdir -p $(IFACE_DIR)
+	./$(MBMAP_BIN) > $(IFACE_DIR)/MODBUS_MAP.md
+snapshots: modbus-map $(NETSIM_BIN)
+	python3 tools/api_snapshot.py $(NETSIM_BIN) $(IFACE_DIR)/API.txt
+snapshots-check: $(MBMAP_BIN)
+	@./$(MBMAP_BIN) > $(BUILD)/MODBUS_MAP-$(APP).md
+	@diff -u $(IFACE_DIR)/MODBUS_MAP.md $(BUILD)/MODBUS_MAP-$(APP).md || \
+	  { echo "the Modbus map changed (above): if meant, bump the map version (or the core version for the platform block) and run make snapshots"; exit 1; }
+	@echo "$(IFACE_DIR)/MODBUS_MAP.md matches the firmware"
+
+# make conformance APP=<dir>: is this product still on the common platform (spec 9.3)? Its start-up
+# contract (netsim refuses to start otherwise), its profile filled in, every alarm with a help
+# text, its interface snapshots current, and the shared CIP-26 tests run against its build.
+.PHONY: conformance
+conformance: $(NETSIM_BIN) $(FAULT_BIN) snapshots-check
+	@test -f $(APP)/PROFILE.md || { echo "$(APP)/PROFILE.md is missing: start from docs/PROFILE_TEMPLATE.md"; exit 1; }
+	@! grep -n '<[a-zA-Z][^>]*>' $(APP)/PROFILE.md || { echo "$(APP)/PROFILE.md still has placeholders (above)"; exit 1; }
+	@./$(FAULT_BIN) > $(BUILD)/FAULT_CODES-$(APP).md || { echo "every product alarm needs a .help (above)"; exit 1; }
+	python3 tools/api_snapshot.py $(NETSIM_BIN) $(IFACE_DIR)/API.txt --check
+	python3 tests/integration/conformance_test.py $(NETSIM_BIN)
+	@echo "CONFORMANCE $(APP): PASS"
+
 fault-codes-check: $(FAULT_BIN)
 	@./$(FAULT_BIN) --platform > $(BUILD)/FAULT_CODES.md
 	@diff -u docs/FAULT_CODES.md $(BUILD)/FAULT_CODES.md > /dev/null || \
@@ -80,7 +113,7 @@ fault-codes-check: $(FAULT_BIN)
 	@echo "docs/FAULT_CODES.md is current"
 
 # the same tests with the 32 KB FRAM memory map (the development breakout)
-$(BUILD)/tests32: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c tests/test_w5500.c tests/test_state.c tests/test_power.c tests/test_cal.c tests/test_service.c tests/test_selftest.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
+$(BUILD)/tests32: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c tests/test_w5500.c tests/test_state.c tests/test_power.c tests/test_cal.c tests/test_service.c tests/test_selftest.c tests/test_contract.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=32768u -Itests -Ihost/eve_sim $(filter-out %.h,$^) -o $@ -lm
 
 sim: $(BUILD)/sim
@@ -97,7 +130,7 @@ EXT ?= $(abspath ../ext)
 FR   = $(EXT)/FreeRTOS-Kernel
 RTOS_SRC = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
            platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-           platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_state.c platform/core/plat_power.c platform/core/plat_cal.c platform/core/plat_service.c platform/core/plat_selftest.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/core/w5500.c platform/core/iob_w5500.c platform/net/iob_tcp.c platform/net/web_auth.c platform/net/tls.c platform/net/mail.c platform/net/sntp.c platform/net/fw_sig.c platform/ui/ui_app.c \
+           platform/core/plat_sys.c platform/core/modbus.c platform/core/plat_sha256.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_state.c platform/core/plat_power.c platform/core/plat_cal.c platform/core/plat_service.c platform/core/plat_selftest.c platform/core/plat_contract.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/core/w5500.c platform/core/iob_w5500.c platform/net/iob_tcp.c platform/net/web_auth.c platform/net/tls.c platform/net/mail.c platform/net/sntp.c platform/net/fw_sig.c platform/ui/ui_app.c \
            platform/bsp/nvm_ram.c platform/bsp/nor_sim.c platform/bsp/fw_flash_sim.c platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c platform/os/plat_iobus_task.c app_demo/app_demo.c \
            host/rtos_sim/bsp_posix.c host/rtos_sim/rtos_main.c \
            $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c $(FR)/portable/MemMang/heap_3.c \

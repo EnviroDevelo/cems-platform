@@ -103,6 +103,10 @@ uint16_t mb_pdu(const uint8_t *req, uint16_t len, uint8_t *resp, uint16_t cap);
 
 /* Statistics */
 typedef struct { uint32_t requests, exceptions, writes_queued; } mb_stats_t;
+/* The map in force (the platform's block and the application's), sorted by table and address:
+ * for the register map document and the interface snapshot (tools/modbus_map.c). */
+size_t mb_entry_count(void);
+const mb_map_t *mb_entry_at(size_t i, uint16_t *span);   /* NULL past the end */
 mb_stats_t mb_stats(void);
 
 #endif

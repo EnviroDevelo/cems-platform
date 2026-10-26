@@ -9,6 +9,7 @@ backup/restore, concurrent clients, and that everything survives a restart.
 
     PYTHONPATH=<pymodbus source> python3 tests/integration/net_test.py
 """
+# Requirements proved here: CIP-07.6, 26.1, 26.4, 05.5, 12.3, 12.4, 15.4, 17.2, 17.5, 20.1, 13.1.
 import http.cookiejar, ssl, json, os, signal, struct, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 
 from pymodbus.client import ModbusTcpClient
@@ -316,6 +317,7 @@ def main():
     j, a = alarms()
     check(1 in a and a[1]["severity"] == "fault" and a[1]["active"] and a[1]["name"] == "CAL_INVALID",
           "platform alarm: calibration invalid")
+    check(a[1]["help"].startswith("Neither copy of the factory data"), "alarm list carries what to check (help)")
     web.json("/api/write", {"id": 1007, "v": 1}); time.sleep(0.3)
     j, a = alarms()
     check(100 in a and a[100]["active"] and a[100]["unacked"] and a[100]["latch"], "application alarm raised (latching)")

@@ -2,7 +2,8 @@
  * driven by simulated touches: navigation, login, editing every kind of entry,
  * mode changes with confirmation, events, firmware activation, idle behaviour.
  * With UI_DUMP=<dir> set, each screen's command list is written there for
- * tools/eve_preview.py. */
+ * tools/eve_preview.py.
+ * Requirements proved here: CIP-01.5, 21.1, 21.3, 21.6. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

@@ -24,6 +24,7 @@
 #include "plat_cal.h"
 #include "plat_service.h"
 #include "plat_selftest.h"
+#include "plat_version.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -208,6 +209,7 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"product\":"); json_str(o, cfg.product);
     out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    out_str(o, ",\"core\":"); json_str(o, PLAT_CORE_VERSION);    /* the platform it is built on (R4) */
     out_str(o, ",\"api\":"); json_uint(o, HTTP_API_VERSION);
     out_str(o, ",\"state\":"); json_str(o, plat_state_key(plat_state()));
     out_str(o, ",\"state_since\":"); json_uint(o, plat_state_since());
@@ -827,6 +829,7 @@ static void get_alarms(http_out_t *o) {
         out_str(o, "{\"id\":"); json_uint(o, v.id);
         out_str(o, ",\"name\":"); json_str(o, v.name);
         out_str(o, ",\"text\":"); json_str(o, v.text);
+        out_str(o, ",\"help\":"); json_str(o, v.help ? v.help : "");    /* what to check (docs/FAULT_CODES.md) */
         out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
         out_str(o, ",\"active\":"); json_bool(o, v.active);
         out_str(o, ",\"unacked\":"); json_bool(o, v.unacked);

@@ -402,7 +402,7 @@ static void view(size_t i, alarm_view_t *v) {
     PLAT_CRIT_ENTER();
     al_state_t s = st[i];
     PLAT_CRIT_EXIT();
-    v->id = d->id; v->severity = d->severity; v->flags = d->flags; v->name = d->name;
+    v->id = d->id; v->severity = d->severity; v->flags = d->flags; v->name = d->name; v->help = d->help;
     v->active = s.active; v->unacked = s.unacked; v->enabled = s.enabled; v->cond = cond[i] != 0;
     v->t_raise = s.t_raise; v->up_raise = s.up_raise;
     text_of(d, v->text, sizeof v->text);

@@ -78,6 +78,16 @@ void plat_start(const plat_app_t *app);   /* never returns */
  * app_vmmux ...), so main(), the networked simulation and the target check take
  * whichever application is linked in (request R1). */
 const plat_app_t *app_select(void);
+
+/* The start-up contract check (spec section 9.3): the rules an application's description must
+ * keep that its tables' own checks (param_init, alarm_init, mb_init, plat_state_init,
+ * plat_cal_init, ui_app_check) do not cover, or cover without saying why: a scan program,
+ * vendor/product/revision (MAJOR.MINOR.PATCH), layout_version >= 1, each list and its count
+ * agreeing, parameter and alarm IDs outside the core's ranges (R5), log channel names, at most
+ * 6 home tiles and 8 self-tests. 0 = keeps the contract; otherwise a code and the reason in why.
+ * plat_start refuses to start (outputs safe) on a failure; the host tests and make conformance
+ * run it too. */
+int plat_app_check(const plat_app_t *app, char *why, size_t cap);
 const plat_app_t *plat_app(void);          /* the application passed to plat_start */
 
 /* Shared platform objects, for the service modules. */

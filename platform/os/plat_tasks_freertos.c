@@ -191,6 +191,11 @@ void plat_start(const plat_app_t *app) {
 
     /* A table error is a programming error: stop here with outputs safe, the
      * watchdog fed, and the offending ID in the fault record (debugger or next boot). */
+    { char why[64]; int ce = plat_app_check(app, why, sizeof why);   /* the contract (spec 9.3) */
+      if (ce != 0) {
+          plat_diag_fault(PLAT_FAULT_ASSERT, -1, "app contract", (uint32_t)ce, bsp_ms());
+          for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+      } }
     if (param_init(app->params, app->n_params) != PERR_OK) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "param table", param_table_error(), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
