@@ -211,8 +211,8 @@ the end and the block version goes up.
 or factory); a session allows changes for 10 minutes after the login or the last change.
 Five wrong passwords lock login for 30 s. Passwords are stored as PBKDF2-HMAC-SHA256 (4096
 rounds, per-unit salt; CIP-20.3) in FRAM, outside the readable table; one set by older firmware
-still works and is re-stored that way at its next good login. New admin and factory passwords need
-8 characters or more (the operator PIN for the touchscreen stays at 4). **Lost passwords
+still works and is re-stored that way at its next good login. Every password (operator, admin,
+factory) needs 4 characters or more. **Lost passwords
 (CIP-19.3):** a one-time token from the developer, signed with the developer key over the chip ID
 and the unit's reset count (`tools/reset_token.py`; `GET /api/auth/reset` shows what to sign,
 `POST /api/auth/reset sig=..` needs no login), puts all three back to the defaults and ends every

@@ -117,7 +117,7 @@ bool auth_check(uint8_t level, const char *pw) {
 auth_rc_t auth_set_password(uint8_t level, const char *pw) {
     if (!valid_level(level) || !pw) return AUTH_INVALID;
     size_t n = strlen(pw);
-    if (n < (level >= PLAT_LVL_ADMIN ? AUTH_PW_MIN_HIGH : AUTH_PW_MIN) || n > AUTH_PW_MAX) return AUTH_INVALID;
+    if (n < AUTH_PW_MIN || n > AUTH_PW_MAX) return AUTH_INVALID;
     for (size_t k = 0; k < n; ++k) if (pw[k] < 0x21 || pw[k] > 0x7E) return AUTH_INVALID;   /* printable, no spaces */
     uint8_t h[32];
     hash_pw(level, pw, 1, h);
