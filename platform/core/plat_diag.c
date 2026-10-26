@@ -95,3 +95,15 @@ void plat_diag_cpu_fault(uint32_t pc, uint32_t lr, uint32_t cfsr, uint32_t hfsr,
     plat_diag.fault_addr = (cfsr & CFSR_BFARVALID) ? bfar : (cfsr & CFSR_MMARVALID) ? mmfar : 0u;
     plat_diag.check = diag_sum(&plat_diag);
 }
+
+const char *plat_fault_text(uint32_t f) {
+    static const char *const t[] = {
+        [PLAT_FAULT_NONE] = "none",
+        [PLAT_FAULT_TASK_SILENT] = "a task stopped checking in (name = the task); the watchdog restarted the unit",
+        [PLAT_FAULT_STACK_OVERFLOW] = "a task overran its stack (name = the task)",
+        [PLAT_FAULT_MALLOC_FAILED] = "the FreeRTOS heap ran out",
+        [PLAT_FAULT_ASSERT] = "a software check failed (name = file or table, arg = line or bad ID)",
+        [PLAT_FAULT_HARDFAULT] = "CPU fault (name = mem/bus/usage/stack, arg = PC, lr = caller)",
+    };
+    return f < sizeof t / sizeof t[0] ? t[f] : "unknown";
+}

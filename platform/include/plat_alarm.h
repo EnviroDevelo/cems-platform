@@ -89,6 +89,7 @@ typedef struct {
     uint16_t    enable_param;  /* bool parameter: false suppresses the alarm (0 = always enabled) */
     uint16_t    delay_param;   /* integer parameter, s: replaces on_delay_ms (0 = none) */
     uint8_t     route;         /* default actions: AR_EMAIL | AR_MODBUS | AR_RELAY(k) (0 = none) */
+    const char *help;          /* what to check, for the service manual and docs/FAULT_CODES.md (may be NULL) */
 } alarm_def_t;
 
 /* ---------------- platform alarms ---------------- */

@@ -57,9 +57,27 @@ $(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c te
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c $(MBED_LIB) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: $(BUILD)/tests $(BUILD)/tests32
+test: $(BUILD)/tests $(BUILD)/tests32 fault-codes-check
 	./$(BUILD)/tests
 	./$(BUILD)/tests32 | tail -1
+
+# The published fault and alarm code list (CIP-11.3), written from the firmware's tables.
+# make fault-codes: docs/FAULT_CODES.md (the platform's), and with APP=<dir> the product's own
+# list in <dir>/FAULT_CODES.md. make test fails if docs/FAULT_CODES.md is out of date.
+FAULT_BIN = $(BUILD)/fault_codes-$(APP)
+$(FAULT_BIN): $(CORE) $(APP_SRC) tools/fault_codes.c $(MBED_LIB) $(HDRS) $(APP_HDRS) | $(BUILD)
+	$(CC) $(CFLAGS) -DPLAT_HOST -Iplatform/include -Iplatform/bsp $(APP_INC) $(MBED_FLAGS) $(filter-out %.h,$^) -o $@ -lm
+.PHONY: fault-codes fault-codes-check
+fault-codes: $(FAULT_BIN)
+	./$(FAULT_BIN) --platform > docs/FAULT_CODES.md
+ifneq ($(APP),app_demo)
+	./$(FAULT_BIN) > $(APP)/FAULT_CODES.md
+endif
+fault-codes-check: $(FAULT_BIN)
+	@./$(FAULT_BIN) --platform > $(BUILD)/FAULT_CODES.md
+	@diff -u docs/FAULT_CODES.md $(BUILD)/FAULT_CODES.md > /dev/null || \
+	  { echo "docs/FAULT_CODES.md is out of date: run make fault-codes"; exit 1; }
+	@echo "docs/FAULT_CODES.md is current"
 
 # the same tests with the 32 KB FRAM memory map (the development breakout)
 $(BUILD)/tests32: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c tests/test_w5500.c tests/test_state.c tests/test_power.c tests/test_cal.c tests/test_service.c tests/test_selftest.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)

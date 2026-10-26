@@ -169,6 +169,7 @@ Channel numbering follows `10_IO_Map.md`. The analog and RTD front end is not ch
 
 - One `alarm_def_t` per distinct `new_id` in `70_alarm_map.csv`, IDs 100..255. The table holds 96 alarms in total; the platform uses about 10.
 - The logic only reports conditions: `alarm_set(id, cond)` or `alarm_set_range(id, value, lo, hi, deadband)`. The platform owns delays, latch, acknowledge and state.
+- Give each alarm a `.help` (what to check). `make fault-codes APP=<dir>` writes the product's code list, `<dir>/FAULT_CODES.md`, from the table (CIP-11.3); the platform's codes are in `docs/FAULT_CODES.md`.
 - **Agreed with Gary (D19):**
   - Acknowledging needs no login on the touchscreen.
   - Alarm states are re-evaluated at power-up (not restored).

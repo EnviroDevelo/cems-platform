@@ -998,6 +998,12 @@ every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a ch
 has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
 CAL_INVALID and DISPLAY_FAULT).
 
+**Fault and alarm code list (CIP-11.3).** `docs/FAULT_CODES.md` lists the platform's alarms
+(with what to check), self-test checks, fault record codes, reset causes, event codes and
+firmware update refusals. `make fault-codes` writes it from the firmware's own tables
+(`tools/fault_codes.c`), and `make test` fails if it is out of date or if a platform alarm has
+no help text. A product's own list: `make fault-codes APP=<dir>`.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2

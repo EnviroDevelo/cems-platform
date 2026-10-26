@@ -42,6 +42,8 @@ typedef struct {
 
 extern plat_diag_t plat_diag;
 
+const char *plat_fault_text(uint32_t fault);    /* plat_fault_t in words (docs/FAULT_CODES.md, the System screen) */
+
 void plat_diag_boot(bsp_reset_cause_t cause);   /* once, early in plat_start() */
 
 /* Reboot loop (CIP-08.5). A crash is a watchdog reset, or a software reset after a recorded

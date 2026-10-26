@@ -99,7 +99,8 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         [LOG_EV_LOG_FAULT] = "Log fault", [LOG_EV_STORE_FAULT] = "Storage fault", [LOG_EV_LOST] = "Events lost",
         [LOG_EV_IP_CONFLICT] = "Address conflict", [LOG_EV_TLS_KEY] = "New HTTPS key",
         [LOG_EV_MAIL] = "Alarm email", [LOG_EV_SERIAL] = "Serial number", [LOG_EV_IOB] = "I/O board",
-        [LOG_EV_SELFTEST] = "Self-test" };
+        [LOG_EV_STATE] = "State", [LOG_EV_POWER_FAIL] = "Power failing", [LOG_EV_POWER_RESTORED] = "Power restored",
+        [LOG_EV_SERVICE] = "Service", [LOG_EV_CAL] = "Calibration", [LOG_EV_SELFTEST] = "Self-test" };
     static const char *const reset[] = { "", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out" };
     const char *w = e->code < sizeof nm / sizeof nm[0] && nm[e->code] ? nm[e->code] : (e->code >= LOG_EV_APP ? "Application" : "Event");
     snprintf(what, wcap, "%s", w);
