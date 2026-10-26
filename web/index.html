@@ -287,6 +287,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note">The instrument keeps the site's local standard time (no daylight saving), so records never jump.
       Every change of the clock is in the event log.</p>
     <p id="clocknow" style="font-size:16px">-</p>
+    <p id="clockq" style="display:none"></p>
     <div class="row">
       <button id="clockpc">Set to this computer's time</button>
       <input id="clockin" type="datetime-local" step="1">
@@ -1179,6 +1180,15 @@ async function refreshClock() {
     const t = await api("/api/time");
     $("clocknow").textContent = t.set ? `Instrument clock: ${t.text} (UTC${t.utc_offset_min >= 0 ? "+" : "-"}${pad(Math.floor(Math.abs(t.utc_offset_min) / 60))}:${pad(Math.abs(t.utc_offset_min) % 60)})`
                                       : "Instrument clock: NOT SET (records use time since start-up)";
+    const q = $("clockq");                                /* clock quality (CIP-02.6): set or confirmed from outside in the last 24 h */
+    if (typeof t.synced === "boolean") {
+      const src = { sntp: "the time server", web: "the web page", touchscreen: "the touchscreen", modbus: "the PLC (Modbus)" }[t.source] || "";
+      q.style.display = ""; q.innerHTML = '<span class="badge"></span> <span class="note"></span>';
+      q.children[0].textContent = t.synced ? "SYNCHRONISED" : "NOT SYNCHRONISED";
+      q.children[0].className = "badge " + (t.synced ? "b-ok" : "b-warn");
+      q.children[1].textContent = t.sync_time ? `Last set or confirmed ${calT(t.sync_time)}${src ? " from " + src : ""}.` +
+        (t.synced ? "" : " More than 24 h ago: records may drift.") : "Not set or confirmed since start-up: the clock runs on its battery.";
+    }
     const s = t.sntp;
     $("sntpstat").textContent = !s.on ? "No time server: the clock is set by hand, from the PLC (parameter 85) or from this page."
       : s.error ? `Time server: ${s.error} (tries ${s.tries}).`
