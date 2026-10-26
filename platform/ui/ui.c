@@ -22,6 +22,7 @@
 #include "ui_app.h"
 #include "iobus.h"
 #include "plat_state.h"
+#include "plat_power.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -947,7 +948,10 @@ static void draw_system(uint32_t now) {
     snprintf(b, sizeof b, "%lu h %lu min", (unsigned long)(now / 3600000u), (unsigned long)((now / 60000u) % 60u)); kv(544, BODY_Y + 96, "Up", b);
     snprintf(b, sizeof b, "%lu%s%.15s", (unsigned long)plat_diag.boots, plat_diag.fault ? ", last fault: " : "", plat_diag.fault ? plat_diag.fault_name : "");
     kv(544, BODY_Y + 122, "Restarts", b);
-    color(C_INK); text(544, BODY_Y + 156, F_TEXT, 0, "Network");
+    uint32_t mv = plat_supply_mv();                  /* CIP-07.3: 0 = not measured on this board */
+    if (mv) snprintf(b, sizeof b, "%lu.%lu V", (unsigned long)(mv / 1000u), (unsigned long)((mv % 1000u) / 100u));
+    kv(544, BODY_Y + 148, "Supply", mv ? b : "not measured");
+    color(C_INK); text(544, BODY_Y + 172, F_TEXT, 0, "Network");
     uint32_t ip = 0; bool link = false; uint8_t mac[6] = { 0 };
     bool have = ui_net_status(&ip, &link, mac);
     if (!have && param_read(PARAM_ID_NET_IP, &v)) ip = v.u;
@@ -955,8 +959,8 @@ static void draw_system(uint32_t now) {
     if (plat_net_status_word & NETST_CONFLICT) snprintf(b, sizeof b, "%s IN USE by another device", c);
     else if (plat_net_status_word & NETST_PROBING) snprintf(b, sizeof b, "%s (checking...)", c);
     else snprintf(b, sizeof b, "%s%s", c, have ? (link ? "  (link up)" : "  (no link)") : "");
-    kv(544, BODY_Y + 190, "Address", b);
-    if (have) { snprintf(b, sizeof b, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); kv(544, BODY_Y + 216, "MAC", b); }
+    kv(544, BODY_Y + 202, "Address", b);
+    if (have) { snprintf(b, sizeof b, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]); kv(544, BODY_Y + 226, "MAC", b); }
     color(C_INK); text(544, BODY_Y + 252, F_TEXT, 0, "Storage");
     kv(544, BODY_Y + 286, "Calibration", param_store_calibration_valid() ? "valid" : "INVALID");
     uint32_t ls = plat_log_status();

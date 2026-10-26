@@ -25,6 +25,7 @@
 #include "iobus.h"
 #include "iob_node_sim.h"
 #include "plat_state.h"
+#include "plat_power.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -327,7 +328,14 @@ static void t_ui(void) {
     stage_firmware();
     CHECK(tap("System"));
     CHECK(shows("Running")); CHECK(shows("0.5.0")); CHECK(shows("Restart on 0.6.0")); CHECK(shows("192.168.1.50") || shows("10.0.0.5"));
+    CHECK(shows("not measured"));                     /* supply: no reading on this board */
+    plat_power_reset_for_test();
+    bsp_host.supply_mv = 24130;
+    for (int k = 0; k < 32; ++k) plat_power_sample();
+    frame();
+    CHECK(shows("24.1 V"));
     dump("system");
+    bsp_host.supply_mv = 0; plat_power_reset_for_test();
     uint32_t swaps = fs.swaps;
     /* a restart asked from the web, held for the touchscreen (parameter 87): the question pops up, "No" refuses it */
     { plat_cmd_t c = { .id = PARAM_ID_FW_LOCAL_CONFIRM, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_BOOL, .v.b = true };
