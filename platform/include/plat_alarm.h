@@ -126,6 +126,7 @@ typedef struct {
     uint32_t t_raise;          /* s since 1970 when raised (0 if the clock was not set) */
     uint32_t up_raise;         /* uptime s when raised */
     const char *name;
+    const char *help;          /* what to check (the definition's; may be NULL) */
     char     text[64];         /* the description (UTF-8) */
 } alarm_view_t;
 

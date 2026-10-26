@@ -403,6 +403,8 @@ int main(int argc, char **argv) {
     /* the same start-up order as plat_start() */
     const plat_app_t *app = app_select();     /* whichever application is linked in (make netsim APP=...) */
     plat_diag_boot(bsp_reset_cause());
+    { char why[64]; int ce = plat_app_check(app, why, sizeof why);
+      if (ce) { fprintf(stderr, "application contract error %d: %s\n", ce, why); return 1; } }
     plat_cmdq_init(&plat_cmdq);
     scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, 10);
     if (param_init(app->params, app->n_params) != PERR_OK) { fprintf(stderr, "param table error at id %u\n", param_table_error()); return 1; }
