@@ -147,7 +147,7 @@ trip on the ADC's analog watchdog on a single sample below 16 V rather than wait
 cold.
 
 Everything before 16 V is extra: from 24 V down to 16 V the same capacitors give another
-13 ms at full load (`½ × C × (23.6² − 16²)`), which the firmware doesn't count on.
+28 ms at full load (`½ × C × (23.6² − 16²)` = 0.15 J), which the firmware doesn't count on.
 
 ## 6. Connectors
 
