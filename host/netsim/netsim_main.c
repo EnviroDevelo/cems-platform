@@ -341,7 +341,7 @@ static void *sntp_thread(void *a) {
     return NULL;
 }
 static void release_web(void) { http_drop_kept(&hs); }
-static void *http_thread(void *a)   { (void)a; while (running) { http_poll(&hs, 50); http_poll(&hr, 50); mail_service(bsp_ms(), NULL, release_web); } return NULL; }
+static void *http_thread(void *a)   { (void)a; while (running) { http_poll(&hs, 50); http_poll(&hr, 0); mail_service(bsp_ms(), NULL, release_web); } return NULL; }
 /* stand-in for the touchscreen: "remote", "local", "set <id> <value>" on stdin */
 static void *console_thread(void *a) {
     (void)a;

@@ -119,6 +119,10 @@ static void head(http_out_t *o, int st, const char *ctype, const char *extra) {
     out_str(o, o->keep ? (len ? "Connection: keep-alive\r\n" : "Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n")
                        : "Connection: close\r\n");
     out_str(o, "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\n");
+    if (!strncmp(ctype, "text/html", 9))                /* the page: nothing loaded or sent anywhere but this unit */
+        out_str(o, "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                   "img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\n"
+                   "Referrer-Policy: no-referrer\r\n");
     if (extra) out_str(o, extra);
     out_str(o, "\r\n");
     out_head_done(o, len);

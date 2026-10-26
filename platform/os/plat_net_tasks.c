@@ -57,7 +57,7 @@ void plat_http_task_body(void) {
         if (want80 && r.lfd < 0 && http_open(&r, PLAT_HTTP_PORT, rbuf, sizeof rbuf) == 0) { r.alive = http_alive; r.redirect_only = true; }
         if (!want80 && r.lfd >= 0) http_close(&r);
         http_poll(&s, 50);
-        if (r.lfd >= 0) http_poll(&r, 50);
+        if (r.lfd >= 0) http_poll(&r, 0);                 /* no wait: the HTTPS poll above does the waiting */
         mail_service(bsp_ms(), http_alive, release_web);   /* alarm email, between web requests (shares the TLS context) */
         plat_checkin(PLAT_TASK_HTTP);
     }

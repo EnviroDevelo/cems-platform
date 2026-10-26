@@ -1,5 +1,6 @@
 /* test_http.c - web side: SHA-256, formatting, text, request parsing, auth and
  * sessions, and the API handlers end to end through a capture buffer. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -17,6 +18,9 @@
 #include "bsp_host.h"
 #include "iobus.h"
 #include "iob_node_sim.h"
+#include "http_server.h"
+#include "plat_net.h"
+#include <time.h>
 
 
 /* ---------------- primitives ---------------- */
@@ -206,6 +210,9 @@ static void t_api(void) {
     param_publish();
 
     CHECK_EQ(call("GET", "/", NULL, false), 200); CHECK(has("Content-Encoding: gzip"));
+    CHECK(has("Content-Security-Policy: default-src 'self'") && has("frame-ancestors 'none'") && has("Referrer-Policy: no-referrer"));
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+    CHECK(has("Cache-Control: no-store") && has("X-Content-Type-Options: nosniff") && !has("Content-Security-Policy"));
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"product\":\"CEMS Supervisor\"")); CHECK(has("\"mode\":\"local\"")); CHECK(has("\"default_passwords\":true"));
     CHECK(has("\"cal_valid\":false")); CHECK(has("\"level\":\"view\""));
@@ -408,6 +415,58 @@ static void t_api(void) {
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=1", true), 401);
 }
 
+/* ---------------- the socket loop: waiting connections (http_server.c) ---------------- */
+static int cli(uint16_t port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(port) };
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    return connect(fd, (struct sockaddr *)&a, sizeof a) == 0 ? fd : -1;
+}
+static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (double)t.tv_sec + (double)t.tv_nsec * 1e-9; }
+/* poll until fd has an answer (at most ~1 s of polling); true if it starts like an HTTP response */
+static bool answered(http_server_t *s, int fd) {
+    for (int i = 0; i < 50; i++) {
+        http_poll(s, 20);
+        char b[16] = { 0 };
+        if (recv(fd, b, sizeof b - 1, MSG_DONTWAIT) > 0) return !strncmp(b, "HTTP/1.", 7);
+    }
+    return false;
+}
+static void t_server(void) {
+    static uint8_t buf[4096];
+    static http_server_t s;
+    const char *req = "GET /nothing HTTP/1.1\r\nHost: x\r\n\r\n";
+    uint16_t port = (uint16_t)(20000 + (unsigned)getpid() % 20000u);
+    CHECK(http_open(&s, port, buf, sizeof buf) == 0);
+    /* three spare sockets that never speak, and a fourth beyond the table (in the backlog) */
+    int a = cli(port), b = cli(port), c = cli(port), d = cli(port);
+    CHECK(a >= 0 && b >= 0 && c >= 0 && d >= 0);
+    for (int i = 0; i < 5; i++) http_poll(&s, 10);
+    double t0 = now_s();
+    CHECK(send(c, req, strlen(req), 0) > 0);
+    CHECK(answered(&s, c));                             /* not held by the silent ones */
+    CHECK(now_s() - t0 < 1.0);
+    CHECK(send(d, req, strlen(req), 0) > 0);            /* a slot is free again: d is accepted and served */
+    CHECK(answered(&s, d));
+    CHECK(s.served == 2 && s.silent == 0 && s.timeouts == 0);
+    /* a socket closed without a request goes quietly */
+    int e = cli(port);
+    for (int i = 0; i < 3; i++) http_poll(&s, 10);
+    closesocket(e);
+    for (int i = 0; i < 5; i++) http_poll(&s, 10);
+    CHECK(s.silent == 1 && s.served == 2);
+    /* the silent ones are closed after HTTP_PENDING_MS */
+    bsp_host_advance_ms(HTTP_PENDING_MS + 100u);
+    http_poll(&s, 0);
+    char x;
+    CHECK(recv(a, &x, 1, 0) == 0 && recv(b, &x, 1, 0) == 0);
+    CHECK(s.silent == 3);
+    closesocket(a); closesocket(b); closesocket(c); closesocket(d);
+    http_close(&s);
+}
+
 void test_http_all(void) {
     RUN(t_sha256);
     RUN(t_fmt_float);
@@ -415,4 +474,5 @@ void test_http_all(void) {
     RUN(t_parse_head);
     RUN(t_auth);
     RUN(t_api);
+    RUN(t_server);
 }
