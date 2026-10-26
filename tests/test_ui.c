@@ -25,6 +25,11 @@
 #include "plat_clock.h"
 #include "iobus.h"
 #include "iob_node_sim.h"
+#include "plat_state.h"
+#include "plat_power.h"
+#include "plat_cal.h"
+#include "plat_service.h"
+#include "plat_version.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -34,7 +39,7 @@ static plat_seqlock_t lk;
 /* an application table like the demo's */
 static uint32_t a_delay = 2000, a_run = 5;
 static bool a_valve, a_in;
-static float a_gain = 1.5f, a_temp = 182.5f;
+static float a_gain = 1.5f, a_temp = 182.5f, a_zero = 0.0f;
 static char a_name[11] = "Valve 1";
 static const char name_def[11] = "Valve 1";       /* defaults are the full size of the block */
 static bool a_ack[4];
@@ -47,6 +52,7 @@ static const param_def_t defs[] = {
     PARAM_ARRAY_BOOL(1006, "ack", a_ack, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_REAL(1007, "gain", a_gain, 0.0f, 10.0f, 1.5f, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_CONFIRM),
     PARAM_REAL(1008, "stack_temp", a_temp, -50.0f, 500.0f, 182.5f, "\xC2\xB0" "C", PLAT_LVL_VIEW, PF_RO),
+    PARAM_REAL(1009, "zero_offset", a_zero, -100.0f, 100.0f, 0.0f, NULL, PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY),
 };
 static const uint16_t home_ids[] = { 1001, 1002, 1003, 1005 };
 static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = "0.5.0", .home_ids = home_ids, .n_home = 4 };
@@ -221,7 +227,7 @@ static void t_ui(void) {
     CHECK_EQ(ui_screen(), UI_HOME);
     CHECK(shows("CEMS Supervisor")); CHECK(shows("LOCAL")); CHECK(shows("1 ALARM  1 NEW")); CHECK(shows("09:41:07"));
     CHECK(shows("start_delay")); CHECK(shows("2000 ms")); CHECK(shows("Valve 1"));
-    CHECK(shows("Control: LOCAL (this touchscreen)"));
+    CHECK(shows("Control: LOCAL"));
     dump("home");
 
     /* settings: everything readable; changes need a login */
@@ -327,7 +333,20 @@ static void t_ui(void) {
     stage_firmware();
     CHECK(tap("System"));
     CHECK(shows("Running")); CHECK(shows("0.5.0")); CHECK(shows("Restart on 0.6.0")); CHECK(shows("192.168.1.50") || shows("10.0.0.5"));
+    CHECK(shows("not measured"));                     /* supply: no reading on this board */
+    plat_power_reset_for_test();
+    bsp_host.supply_mv = 24130;
+    for (int k = 0; k < 32; ++k) plat_power_sample();
+    frame();
+    CHECK(shows("24.1 V"));
+    { char crc[12]; snprintf(crc, sizeof crc, "%08lX", (unsigned long)plat_config_crc());
+      CHECK(shows(crc)); CHECK(shows("since service")); CHECK(shows("build ")); }
+    CHECK(shows("core " PLAT_CORE_VERSION));
+    CHECK(shows("Self-test"));
+    CHECK(shows("running") || shows("passed (") || shows("failed: "));   /* CIP-11.1 */   /* CIP-05.4, operating hours, build ID */
+    CHECK(shows("Clock, not synced"));             /* clock quality (CIP-02.6): never set from outside in this test */
     dump("system");
+    bsp_host.supply_mv = 0; plat_power_reset_for_test();
     uint32_t swaps = fs.swaps;
     /* a restart asked from the web, held for the touchscreen (parameter 87): the question pops up, "No" refuses it */
     { plat_cmd_t c = { .id = PARAM_ID_FW_LOCAL_CONFIRM, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_BOOL, .v.b = true };
@@ -404,6 +423,13 @@ static void t_ui(void) {
     CHECK(shows("IP address in use by another device: network off"));
     CHECK(shows("Ack all"));
     dump("alarms");
+    /* tap an alarm: a panel shows "what to check" (alarm_def_t.help); tap again to go back */
+    CHECK(!shows("What to check"));
+    CHECK(tap("No valid calibration data: measurement blocked"));
+    CHECK(shows("What to check"));
+    dump("alarm_help");
+    CHECK(tap("No valid calibration data: measurement blocked"));
+    CHECK(!shows("What to check"));
     CHECK(tap("Acknowledge"));
     CHECK(!strcmp(ui_toast(), "Acknowledged"));
     CHECK(shows("2 ALARMS  1 NEW"));
@@ -442,6 +468,119 @@ static void t_ui(void) {
     fw_reset_for_test();
 }
 
+/* CIP-21.2, 21.4, 21.5: the state and link pills in the header; a value's quality on the home
+ * tile and the settings row (UI_CONVENTIONS 3, 4) */
+static const plat_meas_def_t ui_meas[] = {
+    { .id = 1002, .index = PLAT_MEAS_NO_INDEX, .max_age_ms = 1000, .lo = 0.0f, .hi = 1000.0f },
+};
+static void st_scan(void) { plat_state_scan(bsp_ms()); param_publish(); frame(); }   /* measurements are stamped by bsp_ms() */
+static void t_state_quality(void) {
+    setup();
+    plat_state_reset_for_test();
+    CHECK_EQ(plat_state_init(ui_meas, 1), 0);
+    a_run = 12;
+    st_scan();
+    CHECK(shows("READY"));                            /* not measuring: readings unavailable */
+    CHECK(shows("NO LINK"));
+    CHECK(shows("----")); CHECK(shows("unavailable")); CHECK(!shows("12 s"));
+    plat_app_state(PLAT_ST_MEASURING);
+    st_scan();
+    CHECK(shows("MEASURING"));
+    CHECK(shows("unavailable"));                      /* measuring, but never updated */
+    plat_meas_update(0, PLAT_Q_VALID);
+    st_scan();
+    CHECK(shows("12 s")); CHECK(!shows("unavailable")); CHECK(!shows("stale"));
+    dump("home_measuring");
+    bsp_host_advance_ms(1500);                        /* not updated within max_age_ms */
+    st_scan();
+    CHECK(shows("12 s")); CHECK(shows("stale"));
+    a_run = 5000; plat_meas_update(0, PLAT_Q_VALID);
+    st_scan();
+    CHECK(shows("out of range"));
+    CHECK(tap("Settings"));
+    CHECK(row("run_seconds"));                        /* the settings row carries it too */
+    CHECK(tap("Home"));
+    CHECK(shows("out of range"));
+    /* the supervisory link: a web or Modbus request, then quiet for longer than comms_timeout (10 s) */
+    param_comms_activity(PLAT_SRC_WEB, now);
+    st_scan();
+    CHECK(shows("LINK OK"));
+    now += 10500;
+    st_scan();
+    CHECK(shows("LINK LOST"));
+    dump("home_quality");
+    /* MAINTENANCE from the home screen: operator, confirmed, readings marked */
+    CHECK(tap("Maintenance"));
+    CHECK(shows("Log in as operator to enter maintenance"));
+    CHECK(tap("Log in")); CHECK(tap("Operator")); type("1111"); CHECK(tap("Enter"));
+    CHECK(ui_level() >= PLAT_LVL_OPERATOR);
+    CHECK(tap("Home"));
+    CHECK(tap("Maintenance"));
+    CHECK(shows("Start maintenance?"));
+    CHECK(tap("Yes"));
+    scan(); st_scan();
+    CHECK(shows("Maintenance started"));
+    CHECK(shows("End maintenance"));
+    CHECK(plat_state() == PLAT_ST_MAINTENANCE || plat_state() == PLAT_ST_FAULT);
+    CHECK(tap("End maintenance"));
+    CHECK(tap("Yes"));
+    scan(); st_scan();
+    CHECK(shows("Maintenance ended"));
+    CHECK(shows("Maintenance"));
+    plat_state_reset_for_test();
+}
+
+/* CIP-18: System -> Calibrate: a refusal in words, start, the procedure's points, accept, the
+ * record in force and the history, revert to factory */
+static const plat_cal_channel_t ui_cal[] = { { .name = "Zero gas", .coef_id = { 1009 }, .interval_days = 90 } };
+static void cal_scan(void) {
+    for (int k = 0; k < 3; ++k) { scan(); bsp_host_advance_ms(10); plat_cal_scan(bsp_ms()); plat_state_scan(bsp_ms()); }
+    param_publish(); frame();
+}
+static void t_cal_screen(void) {
+    setup();
+    plat_state_reset_for_test(); plat_cal_reset_for_test();
+    CHECK_EQ(plat_cal_init(ui_cal, 1), 0);
+    static nvm_dev_t d; static nvm_ram_t r;
+    memset(fram, 0, sizeof fram);
+    nvm_ram_init(&d, &r, fram, sizeof fram, true);
+    CHECK(param_store_init(&d, NULL, NULL, 0, 1, NULL));
+    param_store_boot();
+    cal_scan();
+    CHECK(tap("System"));
+    CHECK(tap("Calibrate"));
+    CHECK_EQ(ui_screen(), UI_CAL);
+    CHECK(shows("Zero gas")); CHECK(shows("never calibrated")); CHECK(shows("No calibrations yet"));
+    CHECK(tap("Start calibration"));                  /* not logged in: refused, and why */
+    CHECK(strlen(ui_toast()) > 0); CHECK_EQ(ui_screen(), UI_CAL);
+    CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));
+    CHECK(tap("System")); CHECK(tap("Calibrate"));
+    CHECK(tap("Start calibration"));
+    CHECK(shows("Start calibrating Zero gas?"));
+    CHECK(tap("Yes"));
+    cal_scan();
+    unsigned ch = 9;
+    CHECK(plat_cal_active(&ch)); CHECK_EQ(ch, 0u);
+    CHECK(shows("calibrating now")); CHECK(shows("Accept"));
+    CHECK(shows("CALIBRATION") || shows("FAULT"));    /* blank FRAM: CAL_INVALID's FAULT outranks CALIBRATION */
+    /* the application's procedure: one point, then the new coefficient */
+    CHECK(plat_cal_point(0, 0.0f, 1.2f, 0.1f));
+    float coef[1] = { -1.1f };
+    CHECK(plat_cal_propose(coef, 1));
+    CHECK(tap("Accept")); CHECK(tap("Yes"));
+    cal_scan();
+    CHECK(!plat_cal_active(&ch));
+    CHECK(fabsf(a_zero + 1.1f) < 1e-6f);
+    CHECK(shows("In force: factory")); CHECK(shows("pass")); CHECK(shows("As found")); CHECK(shows("1.2"));
+    dump("calibration");
+    /* revert to factory: confirmed, then a REVERTED record */
+    CHECK(tap("Revert to factory")); CHECK(shows("Put the factory calibration"));
+    CHECK(tap("Yes"));
+    cal_scan();
+    CHECK(shows("reverted"));
+    plat_cal_reset_for_test(); plat_state_reset_for_test();
+}
+
 /* System -> I/O boards: board states, lit outputs and inputs, faults in words */
 static void iob_run(uint32_t ms) {
     for (uint32_t t = 0; t < ms; t += 20) {
@@ -471,10 +610,38 @@ static void t_iob_screen(void) {
     iob_run(100);
     frame();
     CHECK(shows("online"));
-    CHECK(shows("Address 1, out 1-18, in 1-8"));
+    CHECK(shows("RS-485, address 1"));
+    CHECK(shows("Outputs 1-18")); CHECK(shows("Inputs 1-8"));
     CHECK(shows("Out 3: open circuit"));
     CHECK(shows("Firmware 1.0, hardware 1"));
+    CHECK(!shows("T1 "));                             /* no temperature channel configured */
+    /* map 2: configured temperature channels (calibrated) and the pump */
+    iob_tags[0].temp_type[0] = IOB_TT_TC_K;
+    nd.temp[0] = 2345; nd.temp_st[0] = IOB_TS_OK;
+    nd.temp[1] = IOB_TEMP_INVALID; nd.temp_st[1] = IOB_TS_OPEN;
+    iob_tags[0].temp_type[2] = IOB_TT_PT100_3W;
+    nd.temp[4] = -125; nd.temp_st[4] = IOB_TS_OK;
+    iob_tags[0].temp_offset[0] = 150;
+    nd.tach_rpm = 1200;                               /* pump AO not assigned: duty 0 */
+    iob_run(PLAT_IOB_TEMP_MS + 100);
+    frame();
+    CHECK(shows("T1 236.0 "));
+    CHECK(shows("T2 fault")); CHECK(shows("Temp 2: open circuit"));
+    CHECK(!shows("T3 ")); CHECK(!shows("T4 "));       /* connector 2 not configured */
+    CHECK(shows("T5 -12.5 ")); CHECK(!shows("T6 "));  /* an RTD has no B channel */
+    CHECK(shows("Pump 0.0 %, 1200 rpm"));
+    /* on Ethernet: the board's IP and Modbus address */
+    iob_link = IOB_LINK_ETH;
+    iob_tags[0].ip = 0xC0A8013Du;
+    frame();
+    CHECK(shows("192.168.1.61, address 1"));
     dump("iob");
+    iob_tags[0].ip = 0;
+    frame();
+    CHECK(shows("No IP set (iob1_ip)"));
+    iob_tags[0].ip = 0xC0A8013Du;
+    iob_link = IOB_LINK_RS485;
+    iob_tags[0].temp_type[0] = iob_tags[0].temp_type[2] = IOB_TT_NONE;
     nd.powered = false;
     iob_run(1100);
     frame();
@@ -496,4 +663,6 @@ void test_ui_all(void) {
     RUN(t_fonts);
     RUN(t_ui);
     RUN(t_iob_screen);
+    RUN(t_state_quality);
+    RUN(t_cal_screen);
 }

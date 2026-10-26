@@ -22,6 +22,7 @@
 #include "ul_system.h"
 #include "plat_alarm.h"
 #include "plat_clock.h"
+#include "plat_state.h"
 
 /* ---- an application shaped like the Valve Manager's ---- */
 #define ROWS_N 4
@@ -318,6 +319,20 @@ static void t_screens(void) {
     CHECK_EQ(InletTouch, 2);
     InletTouch = 0;
     CHECK(eve_sim_tag_of(&sim, "Cal gas") <= 0);             /* disabled: not touchable */
+    /* an item whose state element is a measurement shows its quality (UI_CONVENTIONS 4) */
+    static const plat_meas_def_t gm[] = { { .id = 1010, .index = 1, .max_age_ms = 0, .lo = 0.0f, .hi = 0.0f } };
+    plat_state_reset_for_test();
+    CHECK_EQ(plat_state_init(gm, 1), 0);
+    plat_app_state(PLAT_ST_MEASURING);
+    plat_state_scan(bsp_ms()); param_publish(); frame();
+    CHECK(shows("Duct")); CHECK(shows("unavailable"));      /* measuring, never updated */
+    dump("app_grid_quality");
+    tap("Duct"); CHECK_EQ(InletTouch, 2);                   /* still touchable */
+    InletTouch = 0;
+    plat_meas_update(0, PLAT_Q_VALID);
+    plat_state_scan(bsp_ms()); param_publish(); frame();
+    CHECK(!shows("unavailable"));
+    plat_state_reset_for_test(); param_publish(); frame();
     /* a button with state and enable */
     tap("Start"); CHECK_EQ(CmdStart, 1); CHECK(!strcmp(ui_toast(), "Start"));
     CmdStart = 0; StartEnable = false; param_publish(); frame();
