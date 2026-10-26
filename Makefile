@@ -57,7 +57,7 @@ $(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c te
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c $(MBED_LIB) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ -lm
 
-test: $(BUILD)/tests $(BUILD)/tests32 fault-codes-check
+test: $(BUILD)/tests $(BUILD)/tests32 fault-codes-check snapshots-check
 	./$(BUILD)/tests
 	./$(BUILD)/tests32 | tail -1
 	python3 tools/cip_coverage.py
@@ -72,8 +72,40 @@ $(FAULT_BIN): $(CORE) $(APP_SRC) tools/fault_codes.c $(MBED_LIB) $(HDRS) $(APP_H
 fault-codes: $(FAULT_BIN)
 	./$(FAULT_BIN) --platform > docs/FAULT_CODES.md
 ifneq ($(APP),app_demo)
-	./$(FAULT_BIN) > $(APP)/FAULT_CODES.md
+	./$(FAULT_BIN) > $(APP)/FAULT_CODES.md || true
 endif
+# Interface snapshots (spec 9.3, CIP-14.4/14.5): the Modbus register map and the web API of a
+# build, generated and kept in git; make test fails if the Modbus map no longer matches, and
+# make conformance checks the API (needs netsim). A difference that is meant needs a new map
+# version or core version; then run make snapshots to accept it.
+IFACE_DIR = $(if $(filter app_demo,$(APP)),docs/interface/app_demo,$(APP)/interface)
+MBMAP_BIN = $(BUILD)/modbus_map-$(APP)
+$(MBMAP_BIN): $(CORE) $(APP_SRC) tools/modbus_map.c $(MBED_LIB) $(HDRS) $(APP_HDRS) | $(BUILD)
+	$(CC) $(CFLAGS) -DPLAT_HOST -Iplatform/include -Iplatform/bsp $(APP_INC) $(MBED_FLAGS) $(filter-out %.h,$^) -o $@ -lm
+.PHONY: modbus-map snapshots snapshots-check
+modbus-map: $(MBMAP_BIN)
+	@mkdir -p $(IFACE_DIR)
+	./$(MBMAP_BIN) > $(IFACE_DIR)/MODBUS_MAP.md
+snapshots: modbus-map $(NETSIM_BIN)
+	python3 tools/api_snapshot.py $(NETSIM_BIN) $(IFACE_DIR)/API.txt
+snapshots-check: $(MBMAP_BIN)
+	@./$(MBMAP_BIN) > $(BUILD)/MODBUS_MAP-$(APP).md
+	@diff -u $(IFACE_DIR)/MODBUS_MAP.md $(BUILD)/MODBUS_MAP-$(APP).md || \
+	  { echo "the Modbus map changed (above): if meant, bump the map version (or the core version for the platform block) and run make snapshots"; exit 1; }
+	@echo "$(IFACE_DIR)/MODBUS_MAP.md matches the firmware"
+
+# make conformance APP=<dir>: is this product still on the common platform (spec 9.3)? Its start-up
+# contract (netsim refuses to start otherwise), its profile filled in, every alarm with a help
+# text, its interface snapshots current, and the shared CIP-26 tests run against its build.
+.PHONY: conformance
+conformance: $(NETSIM_BIN) $(FAULT_BIN) snapshots-check
+	@test -f $(APP)/PROFILE.md || { echo "$(APP)/PROFILE.md is missing: start from docs/PROFILE_TEMPLATE.md"; exit 1; }
+	@! grep -n '<[a-zA-Z][^>]*>' $(APP)/PROFILE.md || { echo "$(APP)/PROFILE.md still has placeholders (above)"; exit 1; }
+	@./$(FAULT_BIN) > $(BUILD)/FAULT_CODES-$(APP).md || { echo "every product alarm needs a .help (above)"; exit 1; }
+	python3 tools/api_snapshot.py $(NETSIM_BIN) $(IFACE_DIR)/API.txt --check
+	python3 tests/integration/conformance_test.py $(NETSIM_BIN)
+	@echo "CONFORMANCE $(APP): PASS"
+
 fault-codes-check: $(FAULT_BIN)
 	@./$(FAULT_BIN) --platform > $(BUILD)/FAULT_CODES.md
 	@diff -u docs/FAULT_CODES.md $(BUILD)/FAULT_CODES.md > /dev/null || \
