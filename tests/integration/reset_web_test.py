@@ -59,7 +59,7 @@ async def login(pg, lvl, pw):
 
 
 async def err_after(pg, before=""):
-    await pg.wait_for_function(f"document.getElementById('rsterr').textContent !== {before!r}", timeout=8000)
+    await pg.wait_for_function(f"(t => t !== '' && t !== {before!r})(document.getElementById('rsterr').textContent)", timeout=8000)
     return await pg.inner_text("#rsterr")
 
 
