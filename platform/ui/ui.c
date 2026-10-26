@@ -743,14 +743,15 @@ static void draw_edit(void) {
     const param_def_t *d = U.ed;
     if (!d) return;
     char b[96], r[64];
-    box(16, BODY_Y, 992, 88, C_CARD, 8);
+    int16_t cw = U.kb == KB_TEXT ? 760 : 992;            /* the text keyboard's OK/Cancel stand beside it */
+    box(16, BODY_Y, cw, 88, C_CARD, 8);
     color(C_INK);
     snprintf(b, sizeof b, "%s  (%u)", d->name, d->id);
     text(32, BODY_Y + 10, F_BIG, 0, b);
     fmt_value(d, r, sizeof r);
     snprintf(b, sizeof b, "Now: %s", r);
     color(C_MUTE);
-    text(992, BODY_Y + 16, F_TEXT, OPT_RIGHTX, b);
+    text((int16_t)(cw), BODY_Y + 16, F_TEXT, OPT_RIGHTX, b);
     if (d->ptype == PT_INT) snprintf(r, sizeof r, "Range %ld .. %ld", (long)d->vmin.i, (long)d->vmax.i);
     else if (d->ptype == PT_UINT && !is_ip(d)) snprintf(r, sizeof r, "Range %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u);
     else if (d->ptype == PT_FLOAT) { char a[24], z[24]; fmt_float(a, sizeof a, (double)d->vmin.f); fmt_float(z, sizeof z, (double)d->vmax.f); snprintf(r, sizeof r, "Range %s .. %s", a, z); }
@@ -771,7 +772,9 @@ static void draw_edit(void) {
     text(28, (int16_t)(y + 24), F_BIG, OPT_CENTERY, b);
     draw_keyboard((int16_t)(y + 54), U.kb == KB_TEXT);
     int16_t bx = U.kb == KB_TEXT ? 784 : 664;
-    if (U.kb == KB_TEXT) { button(T_OK, bx, y, 108, 48, "OK", C_OK, true); button(T_CANCEL, bx + 116, y, 108, 48, "Cancel", 0x5B6577u, true); }
+    if (U.kb == KB_TEXT) {                               /* beside the narrowed card and the entry: 144 px tall */
+        button(T_OK, bx, BODY_Y, 108, 144, "OK", C_OK, true); button(T_CANCEL, (int16_t)(bx + 116), BODY_Y, 108, 144, "Cancel", 0x5B6577u, true);
+    }
     else { button(T_OK, bx, (int16_t)(y + 54), 344, 119, "OK", C_OK, true); button(T_CANCEL, bx, (int16_t)(y + 176), 344, 119, "Cancel", 0x5B6577u, true); }
 }
 
@@ -1506,7 +1509,7 @@ static bool cell_submit(bool on, uint32_t now) {
 static void draw_cell_edit(void) {
     const ui_field_t *f = U.cell_f;
     char b[96], r[64];
-    box(16, BODY_Y, 992, 88, C_CARD, 8);
+    box(16, BODY_Y, U.kb == KB_TEXT ? 760 : 992, 88, C_CARD, 8);
     color(C_INK);
     if (U.rec->rows) snprintf(b, sizeof b, "%s: %s, row %u", U.rec->title, f->label, U.cell_row + 1u);
     else if (f->count > 1) snprintf(b, sizeof b, "%s: %s %u", U.rec->title, f->label, U.cell_elem + 1u);
@@ -1524,7 +1527,9 @@ static void draw_cell_edit(void) {
     text(28, (int16_t)(y + 24), F_BIG, OPT_CENTERY, b);
     draw_keyboard((int16_t)(y + 54), U.kb == KB_TEXT);
     int16_t bx = U.kb == KB_TEXT ? 784 : 664;
-    if (U.kb == KB_TEXT) { button(T_OK, bx, y, 108, 48, "OK", C_OK, true); button(T_CANCEL, bx + 116, y, 108, 48, "Cancel", 0x5B6577u, true); }
+    if (U.kb == KB_TEXT) {                               /* beside the narrowed card and the entry: 144 px tall */
+        button(T_OK, bx, BODY_Y, 108, 144, "OK", C_OK, true); button(T_CANCEL, (int16_t)(bx + 116), BODY_Y, 108, 144, "Cancel", 0x5B6577u, true);
+    }
     else { button(T_OK, bx, (int16_t)(y + 54), 344, 119, "OK", C_OK, true); button(T_CANCEL, bx, (int16_t)(y + 176), 344, 119, "Cancel", 0x5B6577u, true); }
 }
 
@@ -1534,17 +1539,17 @@ static void draw_rec(void) {
     if (!r) return;
     const char *why = rec_why_not();
     unsigned used = ui_record_rows_used(r, U.rec_buf);
-    box(16, BODY_Y, 992, 56, C_CARD, 8);
-    color(C_INK); text(32, BODY_Y + 28, F_BIG, OPT_CENTERY, r->title);
+    box(16, BODY_Y, 992, 64, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 32, F_BIG, OPT_CENTERY, r->title);
     if (r->rows && r->rows_off != UI_ROWS_ALL) {
         char b[32]; snprintf(b, sizeof b, "In use: %u", used);
-        color(C_MUTE); text(330, BODY_Y + 28, F_TEXT, OPT_CENTERY, b);
-        button(T_OFF, 470, BODY_Y + 4, 64, 48, "-", C_ACCENT, !why && used > 0);
-        button(T_ON, 540, BODY_Y + 4, 64, 48, "+", C_ACCENT, !why && used < r->rows);
+        color(C_MUTE); text(330, BODY_Y + 32, F_TEXT, OPT_CENTERY, b);
+        button(T_OFF, 462, BODY_Y + 4, 72, 56, "-", C_ACCENT, !why && used > 0);
+        button(T_ON, 540, BODY_Y + 4, 72, 56, "+", C_ACCENT, !why && used < r->rows);
     }
-    button(T_OK, 700, BODY_Y + 4, 150, 48, U.rec_wait ? "Saving..." : "Save", U.rec_changed ? C_OK : C_ACCENT, !why && !U.rec_wait);
-    button(T_CANCEL, 858, BODY_Y + 4, 150, 48, U.rec_changed ? "Cancel" : "Close", 0x5B6577u, true);
-    int16_t y = BODY_Y + 64;
+    button(T_OK, 700, BODY_Y + 4, 150, 56, U.rec_wait ? "Saving..." : "Save", U.rec_changed ? C_OK : C_ACCENT, !why && !U.rec_wait);
+    button(T_CANCEL, 858, BODY_Y + 4, 150, 56, U.rec_changed ? "Cancel" : "Close", 0x5B6577u, true);
+    int16_t y = BODY_Y + 72;
     unsigned tag = T_W0;
     if (r->rows) {                                       /* table: 5 rows a page */
         int16_t cx[12], cw[12];
@@ -1578,8 +1583,8 @@ static void draw_rec(void) {
             }
         }
         U.rec_next = (uint16_t)row;
-        button(T_PGUP, 908, (int16_t)(BODY_Y + 64), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
-        button(T_PGDN, 908, (int16_t)(BODY_Y + 232), 100, 160, "Down", C_ACCENT, row < r->rows);
+        button(T_PGUP, 908, (int16_t)(BODY_Y + 72), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
+        button(T_PGDN, 908, (int16_t)(BODY_Y + 240), 100, 160, "Down", C_ACCENT, row < r->rows);
     } else {                                             /* form: one line per field (arrays wrap at 16) */
         unsigned i = U.rec_first;
         for (; i < r->n_fields; ++i) {
@@ -1615,8 +1620,8 @@ static void draw_rec(void) {
         }
         U.rec_next = (uint16_t)i;
         if (U.rec_first || i < r->n_fields) {
-            button(T_PGUP, 908, (int16_t)(BODY_Y + 64), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
-            button(T_PGDN, 908, (int16_t)(BODY_Y + 232), 100, 160, "Down", C_ACCENT, i < r->n_fields);
+            button(T_PGUP, 908, (int16_t)(BODY_Y + 72), 100, 160, "Up", C_ACCENT, U.rec_first > 0);
+            button(T_PGDN, 908, (int16_t)(BODY_Y + 240), 100, 160, "Down", C_ACCENT, i < r->n_fields);
         }
     }
     if (why) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, why); }   /* a message covers it */

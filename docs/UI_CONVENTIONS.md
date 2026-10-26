@@ -98,8 +98,7 @@ the instrument, it adds its red "Connection lost" banner and greys every value.
 
 - Touch targets are at least 56 px in both directions (8.4 mm on the RVT70, 6.64 px/mm),
   with 6 px between neighbours. An action happens on release over the same widget, so sliding
-  off cancels it. Known exceptions, still to be enlarged: the 48 px Save/Cancel and +/- buttons
-  on the record editor, and OK/Cancel above the text keyboard.
+  off cancels it.
 - These ask "Are you sure?" first: a mode change, a network change, restore defaults, a
   firmware restart, entering or leaving MAINTENANCE, and any entry flagged `PF_CONFIRM`.
 - A disabled control stays visible in C_GREY, and the row says why.
