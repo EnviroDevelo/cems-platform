@@ -26,6 +26,7 @@
 #include "plat_cal.h"
 #include "plat_service.h"
 #include "plat_selftest.h"
+#include "plat_version.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -954,7 +955,7 @@ static void draw_system(uint32_t now) {
     /* firmware */
     fw_status_t st; fw_status(&st);
     color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Firmware");
-    snprintf(b, sizeof b, "%.15s, build %.11s", st.running_version, fw_build_id());
+    snprintf(b, sizeof b, "%.15s, core %s, build %.11s", st.running_version, PLAT_CORE_VERSION, fw_build_id());   /* R4: core version beside it */
     kv(32, BODY_Y + 44, "Running", b);
     if (st.state == FW_ST_TRIAL) { snprintf(b, sizeof b, "on trial, keeps itself in %u s", (unsigned)((st.trial_left_ms + 999u) / 1000u)); kv(32, BODY_Y + 72, "State", b); }
     else {
@@ -1026,7 +1027,7 @@ static void draw_system(uint32_t now) {
                  (unsigned long)(sv / 10u), (unsigned long)(sv % 10u));
         kv(544, BODY_Y + 70, "Hours", b); }
     snprintf(b, sizeof b, "%lu h %lu min", (unsigned long)(now / 3600000u), (unsigned long)((now / 60000u) % 60u)); kv(544, BODY_Y + 96, "Up", b);
-    snprintf(b, sizeof b, "%lu%s%.15s", (unsigned long)plat_diag.boots, plat_diag.fault ? ", last fault: " : "", plat_diag.fault ? plat_diag.fault_name : "");
+    snprintf(b, sizeof b, "%lu%s%.24s", (unsigned long)plat_diag.boots, plat_diag.fault ? ", last: " : "", plat_diag.fault ? plat_fault_text(plat_diag.fault) : "");
     kv(544, BODY_Y + 122, "Restarts", b);
     uint32_t mv = plat_supply_mv();                  /* CIP-07.3: 0 = not measured on this board */
     if (mv) snprintf(b, sizeof b, "%lu.%lu V", (unsigned long)(mv / 1000u), (unsigned long)((mv % 1000u) / 100u));

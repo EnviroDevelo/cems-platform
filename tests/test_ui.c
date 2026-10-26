@@ -29,6 +29,7 @@
 #include "plat_power.h"
 #include "plat_cal.h"
 #include "plat_service.h"
+#include "plat_version.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -340,6 +341,7 @@ static void t_ui(void) {
     CHECK(shows("24.1 V"));
     { char crc[12]; snprintf(crc, sizeof crc, "%08lX", (unsigned long)plat_config_crc());
       CHECK(shows(crc)); CHECK(shows("since service")); CHECK(shows("build ")); }
+    CHECK(shows("core " PLAT_CORE_VERSION));
     CHECK(shows("Self-test"));
     CHECK(shows("running") || shows("passed (") || shows("failed: "));   /* CIP-11.1 */   /* CIP-05.4, operating hours, build ID */
     CHECK(shows("Clock, not synced"));             /* clock quality (CIP-02.6): never set from outside in this test */
