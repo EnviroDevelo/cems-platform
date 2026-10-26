@@ -19,6 +19,7 @@
 #include "iobus.h"
 #include "iob_tcp.h"
 #include "iob_w5500.h"
+#include "plat_power.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -54,6 +55,7 @@ static void ctrl_task(void *arg) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_CTRL_PERIOD_MS));
+        plat_power_sample();                     /* the 24 V supply, for the power-fail shutdown */
         plat_ctrl_tick();
         plat_checkin(PLAT_TASK_CTRL);
     }

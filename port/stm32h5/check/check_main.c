@@ -7,6 +7,7 @@ SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
 SPI_HandleTypeDef hspi3;
 SPI_HandleTypeDef hspi4;
+ADC_HandleTypeDef hadc1;
 I2C_HandleTypeDef hi2c1;
 RNG_HandleTypeDef hrng;
 UART_HandleTypeDef huart2;

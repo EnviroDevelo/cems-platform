@@ -192,6 +192,35 @@ breakout, 3.3 V) to a free SPI with the three GPIO labels above, or set `iob_lin
 boards on the DK's own Ethernet port through lwIP (the same protocol; the boards then share the
 client network).
 
+## 3i. Supply sense: the 24 V supply on PC0 (CIP-07, CORE_PCB.md 12)
+
+The core board divides the 24 V supply (after the reverse diode) by 13.20 onto PC0. The firmware
+reads it every ms, averages 16 readings, raises alarm 20 SUPPLY outside 19-30 V and, below
+16 V, stops starting FRAM and log-flash writes so the brown-out finds nothing half-written
+(`PLATFORM.md` 5l).
+
+| CubeMX | Setting |
+|---|---|
+| ADC1 | 12-bit, right aligned, **scan conversion mode enabled**, 2 regular conversions, software trigger, continuous **off**, DMA **off**, overrun: data overwritten |
+| Rank 1 | Channel of **PC0** (ADC1_INP10), sampling time 47.5 cycles or more |
+| Rank 2 | **Vrefint** channel, sampling time 47.5 cycles or more (it needs the long sample) |
+| PC0 | label **SUPPLY_SENSE** (CubeMX sets it analog) |
+| ADC clock | any, up to the datasheet maximum; one reading is two conversions, a few µs |
+
+In `main.h` (USER CODE section), only if they differ:
+
+```c
+#define SUPPLY_ADC_HANDLE   hadc2   /* if not hadc1 */
+#define SUPPLY_DIVIDER_X100 1320    /* the divider ratio x 100 */
+```
+
+Add `port/stm32h5/supply_stm32h5.c` and `platform/core/plat_power.c`. Without the `SUPPLY_SENSE`
+label the board does not measure it: no SUPPLY alarm, no power-fail hold, parameter 305 reads 0.
+**On the DK**, PC0 is not wired to a supply divider: leave the label off, or feed PC0 from a
+potentiometer (0-2.4 V reads as 0-31.7 V) to try the alarm and the hold. Check the reading
+against a meter on the first core board (the VREFINT calibration value is taken at 3.3 V; the
+reading is about 0.4 V below the terminal voltage because of the diode).
+
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 
 The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the
@@ -276,7 +305,7 @@ configuration → SWAP_BANK).
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, `port/stm32h5/fault_stm32h5.c`, and for a first test `app_demo/`, into the project.
+1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, `port/stm32h5/fault_stm32h5.c`, `port/stm32h5/supply_stm32h5.c`, and for a first test `app_demo/`, into the project.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.

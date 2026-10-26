@@ -169,7 +169,7 @@ const char *plat_log_event_name(uint16_t c) {
         [LOG_EV_FW_UPDATE] = "fw_update", [LOG_EV_FW_ROLLBACK] = "fw_rollback",
         [LOG_EV_LOG_FAULT] = "log_fault", [LOG_EV_STORE_FAULT] = "store_fault", [LOG_EV_LOST] = "events_lost",
         [LOG_EV_IP_CONFLICT] = "ip_conflict", [LOG_EV_TLS_KEY] = "tls_new_key",
-        [LOG_EV_MAIL] = "mail", [LOG_EV_SERIAL] = "serial", [LOG_EV_IOB] = "iob", [LOG_EV_STATE] = "state",
+        [LOG_EV_MAIL] = "mail", [LOG_EV_SERIAL] = "serial", [LOG_EV_IOB] = "iob", [LOG_EV_STATE] = "state", [LOG_EV_POWER_FAIL] = "power_fail", [LOG_EV_POWER_RESTORED] = "power_restored",
     };
     if (c < sizeof n / sizeof n[0] && n[c]) return n[c];
     return c >= LOG_EV_APP ? "app" : "unknown";

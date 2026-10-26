@@ -40,6 +40,7 @@ runs on top of it.
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
 | I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
 | I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
+| 24 V supply monitoring, SUPPLY alarm and power-fail write hold (CIP-07) | `plat_power.h`, `platform/core/plat_power.c`, `port/stm32h5/supply_stm32h5.c` | Done, host-tested; ADC read compiled and linked |
 | Instrument state and quality of live values (Common Instrument Platform Specification CIP-09, CIP-10): one state (STARTING ... SAFE_MODE), forced FAULT, maintenance from the touchscreen or web, per-measurement quality with automatic stale detection, on Modbus, `/api/*` and for the touchscreen; the supervisory link age (CIP-15.2) | `plat_state.h`, `platform/core/plat_state.c` | Done, host-tested (5l) |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
@@ -772,7 +773,7 @@ interrupts and receives to line idle; the task sleeps meanwhile.
 as the node firmware must; it is the master's test partner, and netsim runs two of them
 (console: `node 1 open 4`, `node 2 power 0`, `node 1 wdg` ...).
 
-## 5l. Instrument state and quality (CIP-09, CIP-10)
+## 5l. Instrument state, quality, safe mode and supply (CIP-07 to CIP-10)
 
 Agreed with Gary 26 Oct (`INSTRUMENT_PLATFORM_SPEC.md` sections 6 and 7). The aim is principle P1: a
 plausible number from a stalled or faulted instrument never looks valid.
@@ -828,6 +829,16 @@ application's code runs, not even its `init`, and every output stays off. The ne
 page, Modbus, the touchscreen and firmware update all run, so the unit can be looked at and fixed
 remotely, and platform alarm 19 SAFE_MODE is raised (email, Modbus). A power cycle, a clean restart
 (a firmware update) or a boot that runs for the whole window starts normally again.
+
+**Supply and power-fail shutdown (CIP-07.3, CIP-07.5).** The ctrl task reads the 24 V supply
+every ms (`bsp_supply_mv`, `CUBEMX_SETUP.md` 3i) into a 16-reading average, shown as parameter
+305 (`supply_mv`, mV; 0 = not measured on this board). Outside 19-30 V for 2 s: alarm 20 SUPPLY
+(warning, email, Modbus). Below 16 V the supply is failing: the store task starts no new FRAM
+image write or log-flash write (it lets the event log run for 60 ms more so the `power_fail`
+event, with the voltage, is written first). FRAM images are dual-copy with CRC anyway, so the
+hold is to keep both copies and the log's current page intact, not to save the last settings.
+Back above 18 V for a full second (a dip, not a loss): `power_restored`, and writing resumes,
+with nothing lost (changes made during the hold are saved then).
 
 ## 6. Integration rules for the application (VM/MUX) code
 

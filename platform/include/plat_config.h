@@ -115,6 +115,20 @@
 #define PLAT_LOOP_WINDOW_MS       600000u /* ... within this much running time: start in SAFE_MODE */
 #endif
 
+/* the 24 V supply (plat_power.h; CORE_PCB.md 12 suggests these) */
+#ifndef PLAT_SUPPLY_LOW_MV
+#define PLAT_SUPPLY_LOW_MV        19000u /* alarm SUPPLY below this ... */
+#endif
+#ifndef PLAT_SUPPLY_HIGH_MV
+#define PLAT_SUPPLY_HIGH_MV       30000u /* ... or above this */
+#endif
+#ifndef PLAT_SUPPLY_FAIL_MV
+#define PLAT_SUPPLY_FAIL_MV       16000u /* failing: no new FRAM or log-flash writes */
+#endif
+#ifndef PLAT_SUPPLY_RESTORE_MV
+#define PLAT_SUPPLY_RESTORE_MV    18000u /* back above this for 1 s: writes resume */
+#endif
+
 #ifndef PLAT_MEAS_MAX
 #define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
 #endif
