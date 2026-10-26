@@ -1,6 +1,13 @@
 /* http_server.h - the web server's socket loop. One connection at a time, each
  * request handled to completion, every read with a 2 s timeout.
  *
+ * Waiting connections: up to HTTP_PENDING accepted sockets wait in a table, with no
+ * TLS yet, until their first bytes arrive; only then does the handshake start. A
+ * browser opens spare sockets that may never speak, and served at once each would
+ * hold the server for the 2 s read timeout (several browsers then saw one value poll
+ * every 5-8 s). A socket silent for HTTP_PENDING_MS is closed. With the kept
+ * connection that is 4 sockets, the HTTP share of lwIP's MEMP_NUM_TCP_PCB.
+ *
  * Keep-alive (HTTPS only): after a GET the connection stays open, so the page's
  * polls reuse it instead of making a TLS connection each time. It is closed as soon
  * as another connection is waiting (the server is never held by one browser), after
@@ -10,6 +17,9 @@
 #define HTTP_SERVER_H
 #include <stdint.h>
 #include <stdbool.h>
+
+#define HTTP_PENDING    3u      /* accepted, waiting for their first bytes */
+#define HTTP_PENDING_MS 2000u   /* closed if silent this long */
 
 typedef struct {
     int      lfd;
@@ -24,6 +34,9 @@ typedef struct {
     uint32_t kept_ms;       /* its last activity */
     uint32_t kept_n;        /* requests on it */
     uint32_t reused;        /* requests served on a kept connection (no new TLS connection) */
+    int      pfd[HTTP_PENDING];  /* waiting connections, -1 = free */
+    uint32_t pms[HTTP_PENDING];  /* when each was accepted */
+    uint32_t silent;        /* waiting connections closed without a request */
 } http_server_t;
 
 int  http_open(http_server_t *s, uint16_t port, uint8_t *buf, uint32_t cap);

@@ -51,7 +51,7 @@ all: test sim
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
+$(BUILD)/tests: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -Itests -Ihost/eve_sim $(filter-out %.h,$^) -o $@ -lm
 
 $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c $(MBED_LIB) | $(BUILD)
@@ -62,7 +62,7 @@ test: $(BUILD)/tests $(BUILD)/tests32
 	./$(BUILD)/tests32 | tail -1
 
 # the same tests with the 32 KB FRAM memory map (the development breakout)
-$(BUILD)/tests32: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
+$(BUILD)/tests32: $(CORE) tests/test_main.c tests/test_scan.c tests/test_misc.c tests/test_param.c tests/test_store.c tests/test_blob.c tests/test_modbus.c tests/test_http.c platform/net/http_server.c tests/test_log.c tests/test_fw.c tests/test_ui.c tests/test_tls.c tests/test_alarm.c tests/test_clock.c tests/test_serial.c tests/test_ui_app.c tests/test_iobus.c tests/test_iobtcp.c host/eve_sim/eve_sim.c host/eve_sim/zinflate.c $(MBED_LIB) $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -DPLAT_SEQ_TEST -DPLAT_FRAM_SIZE=32768u -Itests -Ihost/eve_sim $(filter-out %.h,$^) -o $@ -lm
 
 sim: $(BUILD)/sim

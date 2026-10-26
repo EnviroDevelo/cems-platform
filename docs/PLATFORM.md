@@ -194,6 +194,30 @@ instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner
 and the values grey out until polling recovers. Admin users can download a parameter
 backup and restore it. Screenshots: `docs/web_ui.png`, `docs/web_ui_connection_lost.png`.
 
+**Trends.** The Trends section charts up to 4 values (any scalar bool, int, uint or float
+in the table) against time, over the last 1, 5, 15 or 60 minutes. Each value has its own
+scale (click its name to show that scale on the axis); a gap shows where the link was
+down; Hold freezes the view while recording carries on; hovering reads every value at
+that moment; Save CSV downloads what is recorded. It is recorded in the browser from the
+same 0.5 s value polls, so it costs the instrument no requests, no RAM and no API (about
+0.5 KB of page). It holds what was seen while the page was open; the instrument's own
+record is the data logger (5a). The chosen values are remembered by the browser.
+Screenshot: `docs/web_trend.png`.
+
+**State, quality and service (CIP-09, 10, 21, 22.1).** The header shows the instrument
+state (`/api/info` "state") and the supervisory link (LINK OK / LINK LOST / NO LINK), and
+any value whose quality is not valid (`/api/values` "q", keyed "id" or "id.index") is
+greyed with its word, in the words and colours of `docs/UI_CONVENTIONS.md`; trend lines
+break where a sample was not valid, and the trend CSV gains a quality column. The page
+reads these fields when the instrument sends them. **Diagnostic package** (Event log
+section, no login): one JSON file put together in the browser from `/api/info`, time,
+alarms and their actions, firmware (with its update history), log status, I/O boards,
+every setting with its value and quality (secret entries left out) and the event log CSV.
+
+**Phones and tablets.** The page fits a phone's width (390 px) without sideways
+scrolling: the parameter and alarm lists stack into cards, and wider tables (alarm
+actions) scroll inside their own section. `web_ui_test.py` checks this.
+
 **Keep-alive.** The server handles one HTTPS connection at a time. After a GET the
 connection stays open (HTTP/1.1 keep-alive; bodies without a known length are sent
 chunked), so the page's polls reuse it instead of opening a TLS connection each time.
@@ -202,6 +226,28 @@ server; it also closes after 5 s idle, after 200 requests, after any POST (brows
 not retry a POST on a connection the server closed) and before an alarm email borrows
 the TLS context. Measured with Chromium and the page open: about 0.7 new TLS
 connections a second (all resumed by ticket) instead of one per request (3-4 a second).
+
+**Several viewers.** Browsers open spare connections that may never send a request.
+Accepted connections wait in a table of 3 (with the kept connection, the 4 HTTP sockets
+in lwIP's budget) with no TLS yet; the handshake starts only when a connection's first
+bytes arrive, and one that stays silent for 2 s is closed. Before this, each spare
+connection held the server for its 2 s read timeout, and 4 browsers got one value poll
+every 5-8 s with nothing on the page to say so. The port-80 redirect is polled without a
+wait, so it no longer adds 50 ms to every HTTPS request. Measured on netsim with 4
+browsers (`tests/integration/multi_viewer_test.py`): each gets its 2 value polls a second,
+95 % within 52 ms; the cost is about 18 TLS connections a second, all resumed by ticket
+(no public-key work), which still needs measuring on the H5. The page also gives up on a
+request after 5 s, so a stalled server shows "Connection lost" rather than stale values
+marked live.
+
+**Slow links (remote access through a VPN router, D17).** Measured with Chromium's network
+emulation against netsim (round trip / bandwidth: page live after, value polls a second,
+95 % within): 100 ms / 2 Mbit/s: 0.6 s, 1.7, 71 ms; 300 ms / 1 Mbit/s: 1.3 s, 1.5,
+180 ms; 600 ms / 256 kbit/s: 2.8 s, 1.1, 412 ms; 1.2 s / 128 kbit/s (poor cellular):
+5.5 s, 0.8, 868 ms. The page never showed "Connection lost" on any of them: each poll
+waits for the previous answer, so a slow link slows the updates instead of piling up
+requests. The emulation adds the delay per request, not to the TCP and TLS handshakes,
+so first loads on a real link are somewhat slower.
 
 **Network on the H5.** lwIP 2.2.1 on FreeRTOS with BSD sockets; ST's H5 Ethernet driver,
 ported to native FreeRTOS. The address comes from the parameter table (static
@@ -351,6 +397,11 @@ which the unit has no address. Status: parameter 14 `net_status` (`NETST_*`).
   certificate downloadable (`/api/tls/cert`) to trust it on the site's laptops; port 80
   only redirects; logins with lockout, tech-level firmware updates with signed images
   (D14), every change in the event log;
+- every web reply carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+  and `X-Frame-Options: DENY`; the page also carries a Content-Security-Policy (scripts,
+  styles, requests and frames only from the unit itself; no plug-ins, no framing) and
+  `Referrer-Policy: no-referrer`. HSTS is not sent: browsers ignore it for an IP address
+  and for a certificate they were told to accept;
 - Modbus TCP has no security of its own (nor do the PLCs that use it): it stays on the
   control network, with the existing allowed-client IP and the "Modbus read-only"
   switch, and is never routed to the internet;
