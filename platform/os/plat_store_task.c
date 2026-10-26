@@ -9,6 +9,7 @@
 #include "fw_update.h"
 #include "bsp.h"
 #include "plat_power.h"
+#include "plat_selftest.h"
 
 __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
 
@@ -33,6 +34,7 @@ void plat_store_task_body(void) {
         was_failing = failing;
         if (!failing) param_store_poll(now);
         if (!failing || now - fail_t < 60u) plat_log_poll(now);   /* long enough to write the power_fail event */
+        plat_selftest_poll(now);                          /* CIP-11.1: the start-up checks, once */
         if (now - fw_t >= 1000u) {          /* activation, and confirming a trial image */
             uint32_t sc = plat_scan.stats.scans;
             fw_service(now, sc - fw_scans >= 50u && plat_ui_healthy());   /* healthy: scan running, display working */

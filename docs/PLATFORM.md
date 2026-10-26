@@ -307,6 +307,11 @@ Changes made by the unit itself are not audit events.
 column set changed (L3). Here a configuration change writes a schema record (channel
 names, units, decimals, interval) and the CSV gets a new header line at that point.
 
+**Gaps (CIP-16.6).** When two consecutive data rows with the clock set are more than two
+intervals apart (the unit was off, or the clock was stepped forward), the CSV has one row
+at the first missing interval with every value empty and every quality `GAP`, so a
+spreadsheet shows the hole instead of drawing across it. The power-up event says why.
+
 **Power cuts.** Records are 64-byte slots (a data record with up to 32 channels is 4
 slots; the schema up to 17), each with its own CRC-32, written only into erased flash and
 read back to verify. A cut loses at most the record being written. The write position
@@ -986,6 +991,37 @@ to 11 characters, results as `1,1,2,...` where 1 = pass, 2 = fail, 0 = not run; 
 is refused before it is sent). Below factory login the forms are hidden and a 403 says so. The
 section hides itself on firmware without `/api/service`. Checked by
 `tests/integration/cal_web_test.py`; screenshot `docs/web_service.png`.
+
+## 5o. Start-up self-test (CIP-11.1)
+
+After every start the unit works through a fixed list of checks (`plat_selftest.h`), each
+with one result: pass, fail or skipped.
+
+| Check | Pass when | Skipped when |
+|---|---|---|
+| `image` | the running firmware hashes to the SHA-256 in the header the update left in its flash bank (16 KB per store-task pass, about 0.6 s for 500 KB) | no header for this version (programmed with the debugger) |
+| `ram` | a March C- test of a 1 KB block passes (before the tasks start; the H573's SRAM also has ECC) | - |
+| `rtc` | the clock's seconds move on within 3 s | the clock has never been set |
+| `settings` | the FRAM answers and holds (not the RAM fallback; no write or table error) | - |
+| `calibration` | a valid factory image was loaded | - |
+| `log_flash` | the log flash answers and is large enough | the RAM stand-in (no flash fitted: the DK) |
+| `net_phy` | the LAN8742A answered when the Ethernet driver started | nothing reported it (PC simulation) |
+| `io_port` | the I/O-port W5500 answered when the I/O bus first used it | not used in the first 10 s (none fitted, no board enabled) |
+| `display` | the touchscreen answers | no display on this hardware |
+| product checks | up to 8 of the product's own (`plat_app_t.selftests`), run once at 10 s | the check says so |
+
+The first six are known within about a second; the rest 10 s after start. Then parameter 333
+holds the failed bits (bit *i* = check *i* above, bit 16 + *j* = product check *j*), the event
+log gets one `selftest` event ("passed", or the failed names), `/api/info` `selftest` lists
+every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a check failed that
+has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
+CAL_INVALID and DISPLAY_FAULT).
+
+**Fault and alarm code list (CIP-11.3).** `docs/FAULT_CODES.md` lists the platform's alarms
+(with what to check), self-test checks, fault record codes, reset causes, event codes and
+firmware update refusals. `make fault-codes` writes it from the firmware's own tables
+(`tools/fault_codes.c`), and `make test` fails if it is out of date or if a platform alarm has
+no help text. A product's own list: `make fault-codes APP=<dir>`.
 
 ## 6. Integration rules for the application (VM/MUX) code
 

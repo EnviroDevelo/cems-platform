@@ -5,6 +5,10 @@
  *             line is written whenever the channel set or interval changed
  *             (old faults L3/L4: the log is never cleared to change columns).
  *             Quality: OK / FLAG / BAD / N/A. A value with no valid sample is empty.
+ *             A power-off gap (CIP-16.6): when two consecutive rows with the clock set
+ *             are more than 2 intervals apart, one row is written at the first missing
+ *             interval with every value empty and every quality GAP; the data resume
+ *             at the next real row. (A forward clock step shows the same way.)
  * Event CSV:  seq,time,event,source,level,id,detail,old,new
  *
  * Times are "YYYY-MM-DD hh:mm:ss" (the RTC's time zone), or "uptime <n>s" for
@@ -36,6 +40,8 @@ typedef struct {
     unsigned n_live;
     uint16_t live_iv;
     uint32_t rows, skipped;
+    uint32_t last_t;                   /* time of the last row written, for gap rows */
+    bool     have_last;                /* last_t is valid: same header, clock set */
 } log_csv_t;
 
 void log_csv_begin(log_csv_t *c, uint8_t ring, const plat_log_chan_t *live, unsigned n_live,

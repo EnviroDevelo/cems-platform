@@ -1,6 +1,7 @@
 /* iob_w5500.c - see iob_w5500.h */
 #include <string.h>
 #include "iob_w5500.h"
+#include "plat_selftest.h"
 #include "iob_net.h"
 #include "plat_config.h"
 #include "plat_port.h"
@@ -36,7 +37,9 @@ static bool ready(iob_w5500_t *t) {
         t->tried = true;
         t->init_at = now;
         forget_all(t);
-        if (!w5500_init(&t->chip, t->bus, t->mac, ip, mask, 0)) { iob_port_status = 0; return false; }
+        bool up = w5500_init(&t->chip, t->bus, t->mac, ip, mask, 0);
+        plat_selftest_report(PLAT_STEST_IO_PORT, up);      /* CIP-11.1 (the last try before the list closes counts) */
+        if (!up) { iob_port_status = 0; return false; }
     } else if (ip != t->chip.ip || mask != t->chip.mask) {   /* a new address: every connection again */
         for (uint8_t s = 0; s < W5500_SOCKETS; ++s) w5500_close(&t->chip, s);
         forget_all(t);
