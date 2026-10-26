@@ -170,6 +170,9 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <input id="svcwork" maxlength="39" placeholder="Work done" style="flex:1;min-width:200px">
       <button id="svcadd">Add to service log</button>
     </div>
+    <h2 style="margin-top:12px">Start-up self-test</h2>
+    <p class="note" id="stsum">-</p>
+    <div class="row" id="stlist"></div>
     <h2 style="margin-top:12px">Manufacturing test</h2>
     <p id="svctest" class="note">-</p>
     <div class="row" id="svctestform" style="display:none">
@@ -820,6 +823,28 @@ function showState(st) {
                 ({ WARMING_UP: 1, MAINTENANCE: 1, CALIBRATION: 1 }[st] ? "b-warn" : ""));
 }
 
+/* start-up self-test (CIP-11.1): one badge per check, from /api/info */
+const ST_NAMES = { image: "Firmware image", ram: "RAM", rtc: "Clock", settings: "Settings memory", calibration: "Calibration",
+                   log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display" };
+let stKey = "";
+function showSelftest(st) {
+  if (!st || !Array.isArray(st.tests)) { $("stsum").textContent = "Not reported by this firmware."; $("stlist").replaceChildren(); return; }
+  const key = JSON.stringify(st);
+  if (key === stKey) return;
+  stKey = key;
+  const fails = st.tests.filter(t => t.result === "fail");
+  $("stsum").textContent = !st.done ? "Running..." : fails.length
+    ? `FAILED: ${fails.map(t => ST_NAMES[t.name] || t.name).join(", ")}. See the event log and the alarm list.` : "All checks passed.";
+  $("stsum").style.color = st.done && fails.length ? "var(--bad)" : "";
+  $("stlist").replaceChildren(...st.tests.map(t => {
+    const b = document.createElement("span");
+    b.className = "badge " + ({ pass: "b-ok", fail: "b-bad", pending: "b-warn" }[t.result] || "");
+    b.textContent = `${ST_NAMES[t.name] || t.name}: ${t.result === "skipped" ? "not checked" : t.result}`;
+    b.title = t.name;
+    return b;
+  }));
+}
+
 /* ---- diagnostic package (CIP-22.1): one file from the existing endpoints, put together here ---- */
 async function diagPackage() {
   const btn = $("diagbtn"); btn.disabled = true; btn.textContent = "Collecting...";
@@ -873,6 +898,7 @@ async function refreshInfo() {
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
     showAlarmBadge(i.alarms);
     showState(i.state);
+    showSelftest(i.selftest);
     const lk = $("link");                                 /* supervisory link (CIP-21.5): LINK OK / LINK LOST */
     const ct = defs.find(d => d.name === "comms_timeout"), off = ct && lastValues[ct.id] === 0;   /* no watchdog: NO LINK */
     if (typeof i.link_lost === "boolean") {

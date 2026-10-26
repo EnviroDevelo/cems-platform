@@ -1017,6 +1017,10 @@ every result, and alarm 23 SELFTEST (warning, email and Modbus) is on while a ch
 has no alarm of its own (settings, calibration and display already raise PARAM_WRITE_FAIL,
 CAL_INVALID and DISPLAY_FAULT).
 
+On the web page, the Service section shows the self-test as one badge per check (pass, fail,
+"not checked" for skipped, or pending), with a summary line naming any that failed. It is visible
+without a login (`tests/integration/cal_web_test.py`, `docs/web_service.png`).
+
 **Fault and alarm code list (CIP-11.3).** `docs/FAULT_CODES.md` lists the platform's alarms
 (with what to check), self-test checks, fault record codes, reset causes, event codes and
 firmware update refusals. `make fault-codes` writes it from the firmware's own tables

@@ -3,7 +3,7 @@
 application's "Level" channel: the section appears, Begin is refused in LOCAL mode with
 the instrument's reason, a factory calibration runs (CALIBRATION in the header, Accept
 puts it in force), the history records it, and a second one aborted is recorded too.
-Then the Service section (/api/service): hours and settings checksum shown, a service log
+Then the start-up self-test (/api/info) and the Service section (/api/service): hours and settings checksum shown, a service log
 entry and a manufacturing test record added at factory login.
 Needs Python Playwright and a Chromium."""
 import asyncio, glob, os, subprocess, sys, tempfile, time
@@ -61,6 +61,11 @@ async def run(say):
         hist = await pg.inner_text("#calhist")
         check(hist.splitlines()[0].count("aborted") == 1 if hist else False, "an aborted calibration is recorded, newest first")
         await pg.locator("#calsec").screenshot(path=os.path.join(ROOT, "build", "web_cal.png"))
+        # start-up self-test (CIP-11.1): a blank unit has no factory calibration image at start
+        await pg.wait_for_function("!['-', 'Running...'].includes(document.getElementById('stsum').textContent)", timeout=15000)
+        stsum, stl = await pg.inner_text("#stsum"), await pg.inner_text("#stlist")
+        check(stsum.startswith("FAILED: Calibration") and "RAM: pass" in stl and "Ethernet: not checked" in stl and "demo_counter: pass" in stl,
+              f"self-test shown ({stsum!r})")
         # service history (CIP-22, 23.4)
         crc = await pg.inner_text("#svccrc")
         check(len(crc) == 8 and (await pg.inner_text("#svchours")).endswith(" h"), f"service: hours and settings checksum shown ({crc})")
