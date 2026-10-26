@@ -96,6 +96,12 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <span class="note">Viewing needs no login. Changes need one.</span>
       <span class="err" id="loginerr"></span>
     </div>
+    <details id="rstbox"><summary class="note">Lost passwords?</summary>
+      <p class="note" id="rstnote">If every password is lost, the developer can send a one-time token that puts all of them back to the factory defaults. Send the developer the line below.</p>
+      <div class="row" id="rstmsgrow"><input id="rstmsg" readonly size="48" aria-label="Message for the developer"><button class="ghost" type="button" id="rstcopy">Copy</button></div>
+      <div class="row" id="rstform"><input id="rsttok" maxlength="128" size="48" placeholder="Token from the developer (128 hex digits)" autocomplete="off" spellcheck="false"><button type="button" id="rstbtn">Reset passwords</button></div>
+      <span class="err" id="rsterr"></span>
+    </details>
     <div class="row" id="userrow" style="display:none">
       <span>Logged in as <b id="who"></b>. Changes allowed for <span id="left"></span> more without activity.</span>
       <button class="ghost" id="logoutbtn">Log out</button>
@@ -879,6 +885,7 @@ async function refreshInfo() {
     const changed = newLevel !== level || i.mode !== mode;
     level = newLevel; mode = i.mode;
     $("loginrow").style.display = level ? "none" : "flex";
+    $("rstbox").style.display = level ? "none" : "block";
     $("userrow").style.display = level ? "flex" : "none";
     $("who").textContent = i.session.level;
     $("left").textContent = Math.ceil(i.session.write_s_left / 60) + " min";
@@ -1490,6 +1497,36 @@ $("loginbtn").onclick = async () => {
   $("loginerr").textContent = "";
   try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
   catch (e) { $("loginerr").textContent = e.message === "locked" ? "Too many attempts, wait 30 s" : "Wrong password"; }
+};
+/* credential recovery (CIP-19.3): a developer token signed over this chip's ID and its reset count */
+async function loadReset() {
+  try {
+    const j = await api("/api/auth/reset");
+    $("rstmsg").value = j.message || "";
+    const ok = j.key && j.message;
+    $("rstmsgrow").style.display = $("rstform").style.display = ok ? "flex" : "none";
+    if (!ok) $("rstnote").textContent = "This firmware has no developer key, so passwords cannot be recovered from the web page. Contact the developer.";
+  } catch (e) {
+    $("rstmsgrow").style.display = $("rstform").style.display = "none";
+    $("rstnote").textContent = e.status === 404 ? "This firmware cannot recover passwords from the web page. Contact the developer." : explain(e);
+  }
+}
+$("rstbox").ontoggle = () => { if ($("rstbox").open) { $("rsterr").textContent = ""; loadReset(); } };
+$("rstcopy").onclick = () => { $("rstmsg").select(); navigator.clipboard?.writeText($("rstmsg").value).catch(() => {}); };
+$("rstbtn").onclick = async () => {
+  const t = $("rsttok").value.trim().toLowerCase();
+  if (!/^[0-9a-f]{128}$/.test(t)) { $("rsterr").textContent = "The token is 128 hex digits (0-9, a-f)"; return; }
+  $("rsterr").textContent = ""; $("rsterr").style.color = "";
+  try {
+    await api("/api/auth/reset", form({ sig: t }));
+    $("rsttok").value = "";
+    $("rsterr").style.color = "var(--ok)";
+    $("rsterr").textContent = "Done: all passwords are back to the factory defaults. Log in and change them.";
+    await refreshInfo(); loadReset();
+  } catch (e) {
+    $("rsterr").textContent = e.status === 429 ? "Too many attempts, wait 30 s" : e.status === 403 ? "That token is not valid for this unit (or was already used)"
+      : e.status === 409 ? "This firmware has no developer key" : explain(e);
+  }
 };
 $("pw").onkeydown = e => { if (e.key === "Enter") $("loginbtn").click(); };
 $("logoutbtn").onclick = async () => { await api("/api/logout", "").catch(() => {}); await refreshInfo(); };

@@ -216,7 +216,10 @@ factory) needs 4 characters or more. **Lost passwords
 (CIP-19.3):** a one-time token from the developer, signed with the developer key over the chip ID
 and the unit's reset count (`tools/reset_token.py`; `GET /api/auth/reset` shows what to sign,
 `POST /api/auth/reset sig=..` needs no login), puts all three back to the defaults and ends every
-session; a wrong token counts as a failed login, and both are logged. Every POST must carry an `X-CEMS: 1` header and the cookie
+session; a wrong token counts as a failed login, and both are logged. On the web page, the login row has a
+"Lost passwords?" panel that shows the line to send the developer (with a Copy button) and a box
+for the token, which is checked as 128 hex digits before it is sent; firmware without a developer
+key says recovery is not possible (`tests/integration/reset_web_test.py`, `docs/web_reset.png`). Every POST must carry an `X-CEMS: 1` header and the cookie
 is `HttpOnly; SameSite=Strict`, so another web page cannot submit changes. If the
 instrument stops answering, a red "Connection lost, last update hh:mm:ss" banner appears
 and the values grey out until polling recovers. Admin users can download a parameter
