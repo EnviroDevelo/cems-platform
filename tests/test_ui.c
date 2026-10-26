@@ -338,7 +338,9 @@ static void t_ui(void) {
     frame();
     CHECK(shows("24.1 V"));
     { char crc[12]; snprintf(crc, sizeof crc, "%08lX", (unsigned long)plat_config_crc());
-      CHECK(shows(crc)); CHECK(shows("since service")); CHECK(shows("build ")); }   /* CIP-05.4, operating hours, build ID */
+      CHECK(shows(crc)); CHECK(shows("since service")); CHECK(shows("build ")); }
+    CHECK(shows("Self-test"));
+    CHECK(shows("running") || shows("passed (") || shows("failed: "));   /* CIP-11.1 */   /* CIP-05.4, operating hours, build ID */
     CHECK(shows("Clock, not synced"));             /* clock quality (CIP-02.6): never set from outside in this test */
     dump("system");
     bsp_host.supply_mv = 0; plat_power_reset_for_test();
@@ -418,6 +420,13 @@ static void t_ui(void) {
     CHECK(shows("IP address in use by another device: network off"));
     CHECK(shows("Ack all"));
     dump("alarms");
+    /* tap an alarm: a panel shows "what to check" (alarm_def_t.help); tap again to go back */
+    CHECK(!shows("What to check"));
+    CHECK(tap("No valid calibration data: measurement blocked"));
+    CHECK(shows("What to check"));
+    dump("alarm_help");
+    CHECK(tap("No valid calibration data: measurement blocked"));
+    CHECK(!shows("What to check"));
     CHECK(tap("Acknowledge"));
     CHECK(!strcmp(ui_toast(), "Acknowledged"));
     CHECK(shows("2 ALARMS  1 NEW"));

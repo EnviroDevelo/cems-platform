@@ -25,6 +25,7 @@
 #include "plat_power.h"
 #include "plat_cal.h"
 #include "plat_service.h"
+#include "plat_selftest.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -65,7 +66,8 @@ enum {
      * 1..8 tabs, T_W0.. widgets and cells (looked up in U.tmap), T_DLG_* the dialog */
     T_TAB0 = 1, T_W0 = 10, T_WMAX = 118, T_DLG_YES = 120, T_DLG_NO = 121,
     T_ROW0 = 200,           /* .. T_ROW0 + ROWS - 1 */
-    T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT
+    T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
+    T_AL_ROW0 = 220         /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
@@ -111,6 +113,7 @@ static struct {
     /* alarms */
     size_t   al_first;
     uint16_t al_ids[ROWS];
+    uint16_t al_rows[ROWS], al_sel;   /* ids on the alarm rows; the one showing its help (0 = none) */
     size_t   cfg_first;
     /* application screens */
     int      app_scr;
@@ -491,7 +494,7 @@ static void tap(uint8_t t, uint32_t now) {
         return;
     case T_MODE: mode_tap(now); return;
     case T_MAINT: maint_tap(now); return;
-    case T_ALARMS: U.al_first = 0; goto_scr(UI_ALARMS); return;
+    case T_ALARMS: U.al_first = 0; U.al_sel = 0; goto_scr(UI_ALARMS); return;
     case T_ACTIONS: U.cfg_first = 0; goto_scr(UI_ALARM_CFG); return;
     default: break;
     }
@@ -536,6 +539,10 @@ static void tap(uint8_t t, uint32_t now) {
     case UI_ALARMS:
         if (t == T_PGUP) { U.al_first = U.al_first >= ROWS ? U.al_first - ROWS : 0; U.dirty = true; }
         else if (t == T_PGDN) { U.al_first += ROWS; U.dirty = true; }
+        else if (t >= T_AL_ROW0 && t < T_AL_ROW0 + ROWS && U.al_rows[t - T_AL_ROW0]) {
+            uint16_t id = U.al_rows[t - T_AL_ROW0];
+            U.al_sel = U.al_sel == id ? 0 : id; U.dirty = true;
+        }
         else if (t == T_ACK_ALL || (t >= T_ROW0 && t < T_ROW0 + ROWS && U.al_ids[t - T_ROW0])) {
             uint16_t id = t == T_ACK_ALL ? ALARM_ACK_ALL : U.al_ids[t - T_ROW0];
             param_err_t e = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = id }, PLAT_SRC_LOCAL, U.level);
@@ -961,6 +968,21 @@ static void draw_system(uint32_t now) {
         } else kv(32, BODY_Y + 72, "State", st.rolled_back || (fw_history(&h, 1) && h.kind == FWH_ROLLED_BACK) ? "last update rolled back" : "normal");
     }
     kv(32, BODY_Y + 100, "Spare bank", st.staged ? st.staged_version : "empty");
+    {   /* CIP-11.1: the start-up self-test; failed checks by name */
+        unsigned nst = plat_selftest_count(), skip = 0;
+        size_t o = 0; b[0] = 0;
+        for (unsigned i = 0; i < nst; ++i) {
+            const char *nm; uint8_t r;
+            if (!plat_selftest_get(i, &nm, &r)) continue;
+            if (r == PLAT_STR_SKIP) ++skip;
+            else if (r == PLAT_STR_FAIL && o < sizeof b - 2u)
+                o += (size_t)snprintf(b + o, sizeof b - o, "%s%s", o ? ", " : "failed: ", nm);
+        }
+        if (!plat_selftest_done()) { snprintf(b, sizeof b, "running"); o = 0; }
+        else if (!o) snprintf(b, sizeof b, "passed (%u checks, %u skipped)", nst - skip, skip);
+        color(C_MUTE); text(32, BODY_Y + 128, F_SMALL, 0, "Self-test");
+        color(o ? C_BAD : C_INK); text(202, BODY_Y + 128, F_SMALL, 0, b);
+    }
     if (st.uploading) {
         snprintf(b, sizeof b, "receiving %lu of %lu bytes", (unsigned long)st.upload_bytes, (unsigned long)st.upload_total);
         kv(32, BODY_Y + 128, "Update", b);
@@ -1256,6 +1278,14 @@ static uint32_t sev_colour(uint8_t s) {
     return s >= AL_SEV_ALARM ? C_BAD : s == AL_SEV_WARNING ? C_WARN : C_GREY;
 }
 
+/* "what to check" for an alarm (alarm_def_t.help), or NULL */
+static const char *alarm_help(uint16_t id) {
+    const alarm_def_t *d;
+    for (size_t i = 0; (d = alarm_def_at(i)) != NULL; ++i)
+        if (d->id == id) return d->help;
+    return NULL;
+}
+
 static void draw_alarms(void) {
     alarm_view_t v[ROWS];
     alarm_summary_t as;
@@ -1264,9 +1294,17 @@ static void draw_alarms(void) {
     size_t n = alarm_list(v, U.al_first, ROWS);
     box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
     memset(U.al_ids, 0, sizeof U.al_ids);
+    memset(U.al_rows, 0, sizeof U.al_rows);
     for (size_t r = 0; r < n; ++r) {
         const alarm_view_t *a = &v[r];
         int16_t y = (int16_t)(BODY_Y + 4 + (int)r * ROW_H);
+        const char *help = alarm_help(a->id);
+        bool sel = help && U.al_sel == a->id;
+        if (help) {                                   /* the row is tappable: it swaps the status line for the help */
+            U.al_rows[r] = a->id;
+            eve_tag(E, (uint8_t)(T_AL_ROW0 + r));
+            box(20, (int16_t)(y + 2), 696, ROW_H - 4, sel ? 0xEEF3FAu : C_CARD, 4);
+        }
         if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
         box(24, (int16_t)(y + 8), 8, ROW_H - 16, sev_colour(a->severity), 2);
         char t[48], line[112];
@@ -1281,13 +1319,33 @@ static void draw_alarms(void) {
                  a->active ? (a->unacked ? "active, not acknowledged" : "active") : "cleared, not acknowledged",
                  a->active && a->unacked && (a->flags & AL_LATCH) ? " (latched)" : "");
         color(C_INK); text(44, (int16_t)(y + 18), F_TEXT, OPT_CENTERY, a->text);
-        color(a->unacked ? sev_colour(a->severity) : C_MUTE); text(44, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, line);
+        color(a->unacked ? sev_colour(a->severity) : C_MUTE);
+        text(44, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, line);
+        eve_tag(E, 0);
         if (a->unacked) {
             U.al_ids[r] = a->id;
             button((uint8_t)(T_ROW0 + r), 724, (int16_t)(y + 4), 164, ROW_H - 8, "Acknowledge", C_ACCENT, true);
         }
     }
     if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No alarms"); }
+    /* the tapped alarm's "what to check", in a panel over two rows away from it, wrapped */
+    for (size_t r = 0; r < n; ++r) {
+        const char *help = U.al_rows[r] && U.al_rows[r] == U.al_sel ? alarm_help(U.al_sel) : NULL;
+        if (!help) continue;
+        int16_t py = (int16_t)(BODY_Y + 4 + (r < ROWS - 2 ? (ROWS - 2) * ROW_H : 0));
+        box(20, py, 872, 2 * ROW_H, 0xEEF3FAu, 6);
+        box(20, py, 6, 2 * ROW_H, sev_colour(v[r].severity), 2);
+        color(C_INK); text(40, (int16_t)(py + 8), F_SMALL, 0, "What to check");
+        const char *h = help;
+        for (int16_t y = (int16_t)(py + 34); *h && y < py + 2 * ROW_H - 16; y = (int16_t)(y + 22)) {
+            char ln[96]; size_t k = strlen(h);
+            if (k > 88) { k = 88; while (k > 40 && h[k] != ' ') k--; }
+            memcpy(ln, h, k); ln[k] = 0;
+            color(C_INK); text(40, y, F_SMALL, 0, ln);
+            h += k; while (*h == ' ') h++;
+        }
+        break;
+    }
     button(T_PGUP, 908, BODY_Y, 100, 96, "Up", C_ACCENT, U.al_first > 0);
     button(T_ACK_ALL, 908, BODY_Y + 104, 100, 96, "Ack all", C_WARN, as.unacked > 0);
     button(T_PGDN, 908, BODY_Y + 208, 100, 96, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
