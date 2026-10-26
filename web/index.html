@@ -151,6 +151,30 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note">Calibrating needs REMOTE mode and the calibration login level. A calibration at factory login replaces the factory record; field calibrations never change it. Revert puts the factory record back in force (factory login).</p>
   </section>
 
+  <section id="svcsec" style="display:none">
+    <h2>Service</h2>
+    <div class="wrow">
+      <div class="tile"><div class="k">Operating hours</div><div class="v" id="svchours">-</div></div>
+      <div class="tile"><div class="k">Since last service</div><div class="v" id="svcsince">-</div></div>
+      <div class="tile" title="Two units with the same checksum have the same settings"><div class="k">Settings checksum</div><div class="v" id="svccrc">-</div></div>
+    </div>
+    <table><thead><tr><th>Date</th><th>Technician</th><th>Work done</th><th>Login</th></tr></thead><tbody id="svclog"></tbody></table>
+    <div class="row" id="svcform" style="display:none;margin-top:8px">
+      <input id="svctech" maxlength="15" placeholder="Technician" style="width:140px">
+      <input id="svcwork" maxlength="39" placeholder="Work done" style="flex:1;min-width:200px">
+      <button id="svcadd">Add to service log</button>
+    </div>
+    <h2 style="margin-top:12px">Manufacturing test</h2>
+    <p id="svctest" class="note">-</p>
+    <div class="row" id="svctestform" style="display:none">
+      <input id="svcstation" maxlength="11" placeholder="Station" style="width:120px">
+      <input id="svcres" placeholder="Results in test order: 1 pass, 2 fail, 0 not run (e.g. 1,1,2)" style="flex:1;min-width:260px">
+      <button class="ghost" id="svcrec">Record test</button>
+    </div>
+    <span class="err" id="svcerr"></span>
+    <p class="note">Entries are kept in the instrument's factory memory: they survive firmware updates and restore defaults, and a backup restored into another unit never copies them. Adding to the log or recording a test needs the factory login.</p>
+  </section>
+
   <section id="iobsec" style="display:none">
     <h2>I/O boards</h2>
     <div class="iobgrid" id="iobcards"></div>
@@ -1351,6 +1375,51 @@ async function pollCal(once) {
   } catch (e) { /* the value poll shows the connection state */ }
   if (!once) setTimeout(pollCal, calLast && calLast.active !== null && calLast.active !== undefined ? 1000 : 3000);
 }
+/* ---- service history (CIP-22.2, 22.4, 23.4, 05.4, /api/service) ---- */
+async function pollSvc(once) {
+  try {
+    const j = await api("/api/service");
+    $("svcsec").style.display = "block";
+    $("svchours").textContent = j.run_hours.toFixed(1) + " h";
+    $("svcsince").textContent = j.since_service_hours.toFixed(1) + " h";
+    $("svccrc").textContent = j.config_crc.toUpperCase();
+    const tb = $("svclog"); tb.textContent = "";
+    for (const e of j.log) {
+      const tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td><td></td><td></td>";
+      [calT(e.time), e.tech, e.work, e.level].forEach((x, k) => tr.children[k].textContent = x);
+      tb.appendChild(tr);
+    }
+    if (!j.log.length) tb.innerHTML = '<tr><td colspan="4" class="note">No service entries yet</td></tr>';
+    const t = j.test, words = ["not run", "pass", "fail"];
+    $("svctest").innerHTML = "";
+    if (!t) $("svctest").textContent = "No manufacturing test recorded.";
+    else {
+      const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : "b-bad"); b.textContent = t.passed ? "PASSED" : "FAILED";
+      const n = document.createElement("span");
+      n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${k + 1} ${words[r] || r}`).join(", ");
+      $("svctest").append(b, n);
+    }
+    $("svcform").style.display = $("svctestform").style.display = level >= 3 ? "flex" : "none";
+  } catch (e) { if (e.status === 404) { $("svcsec").style.display = "none"; return; } }
+  if (!once) setTimeout(pollSvc, 10000);
+}
+async function svcPost(path, body) {
+  $("svcerr").textContent = "";
+  try { await api(path, form(body)); return true; }
+  catch (e) { $("svcerr").textContent = e.status === 403 ? "Needs the factory login" : e.status === 400 ? "Check the entry: " + e.message : explain(e); return false; }
+}
+$("svcadd").onclick = async () => {
+  const tech = $("svctech").value.trim(), work = $("svcwork").value.trim();
+  if (!tech || !work) { $("svcerr").textContent = "Enter the technician and the work done"; return; }
+  if (await svcPost("/api/service/log", { tech, work })) { $("svcwork").value = ""; pollSvc(true); }
+};
+$("svcrec").onclick = async () => {
+  const r = $("svcres").value.replace(/\s/g, "");
+  if (!/^[012](,[012])*$/.test(r)) { $("svcerr").textContent = "Results: digits 0, 1 or 2 separated by commas"; return; }
+  if (await svcPost("/api/service/test", { station: $("svcstation").value.trim(), r })) pollSvc(true);
+};
+pollSvc();
+
 $("calaccept").onclick = () => calCmd({ cmd: "accept" }, "Accept this calibration and put it in force?");
 $("calabort").onclick = () => calCmd({ cmd: "abort" }, "Abort this calibration? The coefficients in force stay.");
 pollCal();

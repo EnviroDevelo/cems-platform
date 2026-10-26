@@ -969,6 +969,15 @@ The first three are in the FRAM factory region (dual copy; survive firmware upda
 defaults) and belong to the unit: a backup carries them for reference, but restoring it into
 another unit never copies them (`RF_UNIT`, like the serial number).
 
+On the web page, the Service section shows operating hours, hours since service, the
+configuration checksum, the service log and the last manufacturing test (PASSED/FAILED badge
+plus a pass/fail/not-run count per station). At factory login it also shows two forms: add a
+log entry (technician up to 15 characters, work up to 39) and record a test result (station up
+to 11 characters, results as `1,1,2,...` where 1 = pass, 2 = fail, 0 = not run; anything else
+is refused before it is sent). Below factory login the forms are hidden and a 403 says so. The
+section hides itself on firmware without `/api/service`. Checked by
+`tests/integration/cal_web_test.py`; screenshot `docs/web_service.png`.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2

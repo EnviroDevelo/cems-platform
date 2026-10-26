@@ -3,6 +3,8 @@
 application's "Level" channel: the section appears, Begin is refused in LOCAL mode with
 the instrument's reason, a factory calibration runs (CALIBRATION in the header, Accept
 puts it in force), the history records it, and a second one aborted is recorded too.
+Then the Service section (/api/service): hours and settings checksum shown, a service log
+entry and a manufacturing test record added at factory login.
 Needs Python Playwright and a Chromium."""
 import asyncio, glob, os, subprocess, sys, tempfile, time
 from playwright.async_api import async_playwright
@@ -59,6 +61,23 @@ async def run(say):
         hist = await pg.inner_text("#calhist")
         check(hist.splitlines()[0].count("aborted") == 1 if hist else False, "an aborted calibration is recorded, newest first")
         await pg.locator("#calsec").screenshot(path=os.path.join(ROOT, "build", "web_cal.png"))
+        # service history (CIP-22, 23.4)
+        crc = await pg.inner_text("#svccrc")
+        check(len(crc) == 8 and (await pg.inner_text("#svchours")).endswith(" h"), f"service: hours and settings checksum shown ({crc})")
+        await pg.fill("#svctech", "G. Brown"); await pg.fill("#svcwork", "Replaced sample pump")
+        await pg.click("#svcadd")
+        await pg.wait_for_function("document.getElementById('svclog').textContent.includes('Replaced sample pump')", timeout=8000)
+        log = await pg.inner_text("#svclog")
+        check("G. Brown" in log and "factory" in log, f"service log entry recorded ({log.splitlines()[0]!r})")
+        await pg.fill("#svcres", "1,1,9")
+        await pg.click("#svcrec")
+        check("digits" in await pg.inner_text("#svcerr"), "a malformed test result is refused on the page")
+        await pg.fill("#svcstation", "EOL-1"); await pg.fill("#svcres", "1,1,2,0")
+        await pg.click("#svcrec")
+        await pg.wait_for_function("document.getElementById('svctest').textContent.includes('EOL-1')", timeout=8000)
+        tst = await pg.inner_text("#svctest")
+        check(tst.startswith("FAILED") and "3 fail" in tst and "4 not run" in tst, f"test record shown ({tst!r})")
+        await pg.locator("#svcsec").screenshot(path=os.path.join(ROOT, "build", "web_service.png"))
         check(not errs, "no script errors " + "; ".join(errs))
         await b.close()
 
@@ -74,7 +93,7 @@ def main():
         asyncio.run(run(say))
     finally:
         unit.terminate()
-    print(f"CAL WEB: {passed} passed, {failed} failed")
+    print(f"CAL/SERVICE WEB: {passed} passed, {failed} failed")
     return 1 if failed else 0
 
 if __name__ == "__main__":
