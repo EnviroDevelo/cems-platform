@@ -26,6 +26,8 @@
  *   POST /api/alarms/ack   id=<alarm ID>|all  (any login; logged with the login and source)
  *   GET  /api/time         the clock (local standard time), UTC offset, SNTP status
  *   POST /api/time         t=<local seconds since 1970> sets it; sync=1 asks the time server now (admin)
+ *   GET  /api/cal          calibration records (plat_cal.h): channels (in force, factory, due), history
+ *   POST /api/cal          cmd=begin&ch=N | accept | abort | revert&ch=N (level from setting 321; revert factory)
  *   GET  /api/mail         alarm email status: queue, last result, the server's certificate fingerprint, the pin
  *   POST /api/mail/test    send a test email (admin)
  *   POST /api/mail/trust   trust=1 pins the certificate the mail server last presented, trust=0 unpins (admin)

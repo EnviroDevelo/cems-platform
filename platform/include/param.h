@@ -176,6 +176,8 @@ enum {
     PARAM_ID_PRODUCT          = 313, /* RO text: product (Modbus identity) */
     PARAM_ID_VENDOR           = 314, /* RO text: vendor */
     PARAM_ID_FW_TEXT          = 315, /* RO text: firmware version as text */
+    PARAM_ID_CAL_CMD          = 320, /* calibration command (plat_cal.h): command << 8 | channel; momentary */
+    PARAM_ID_CAL_LEVEL        = 321, /* factory: login level that may calibrate (CIP-19.3; default admin) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
@@ -328,6 +330,7 @@ void    param_scan_service(uint32_t now_ms);   /* scan task, every scan */
 extern void (*param_on_restore_defaults)(void);
 /* Called by param_apply when PARAM_ID_ALARM_ACK is written (set by alarm_init). */
 extern void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+extern param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);   /* plat_cal.c */
 /* Called in the scan task after an external write changed a value (the event log
  * sets it). Scalars: old and new value. Blocks and the restore command: values 0. */
 extern void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);

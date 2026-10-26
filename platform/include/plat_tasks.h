@@ -28,6 +28,7 @@
 #include "plat_alarm.h"
 #include "ui_app.h"
 #include "plat_state.h"
+#include "plat_cal.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -51,6 +52,8 @@ typedef struct plat_app_s {
     const ui_app_t     *ui;              /* its own screens and record editors (ui_app.h; may be NULL) */
     const plat_meas_def_t *meas;         /* its measured values: each carries a quality (plat_state.h; may be NULL) */
     size_t              n_meas;
+    const plat_cal_channel_t *cal;       /* its calibrated channels (plat_cal.h; may be NULL) */
+    size_t              n_cal;
 } plat_app_t;
 
 typedef enum {

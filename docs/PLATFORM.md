@@ -42,6 +42,7 @@ runs on top of it.
 | I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
 | 24 V supply monitoring, SUPPLY alarm and power-fail write hold (CIP-07) | `plat_power.h`, `platform/core/plat_power.c`, `port/stm32h5/supply_stm32h5.c` | Done, host-tested; ADC read compiled and linked |
 | Instrument state and quality of live values (Common Instrument Platform Specification CIP-09, CIP-10): one state (STARTING ... SAFE_MODE), forced FAULT, maintenance from the touchscreen or web, per-measurement quality with automatic stale detection, on Modbus, `/api/*` and for the touchscreen; the supervisory link age (CIP-15.2) | `plat_state.h`, `platform/core/plat_state.c` | Done, host-tested (5l) |
+| Calibration records (CIP-18, CIP-17.6, CIP-19.3): per channel a factory record and the record in force, a history of the last 12 (any outcome), begin/accept/abort/revert with a permission level, a product check hook, due dates and alarm 21, `/api/cal` | `plat_cal.h`, `platform/core/plat_cal.c` | Done, host-tested and end-to-end (5m) |
 | Demo application (shows the contract) | `app_demo/` | Done; includes two alarms (a latching fault and a range alarm with an enable and an editable description) |
 
 Not in this revision: everything in the spec for the core platform is now built and
@@ -904,6 +905,30 @@ event, with the voltage, is written first). FRAM images are dual-copy with CRC a
 hold is to keep both copies and the log's current page intact, not to save the last settings.
 Back above 18 V for a full second (a dip, not a loss): `power_restored`, and writing resumes,
 with nothing lost (changes made during the hold are saved then).
+
+## 5m. Calibration records (CIP-18)
+
+The product declares its calibrated channels (`plat_cal_channel_t`: a name, the PF_FACTORY float
+parameters holding the coefficients, an interval in days, an optional check hook). The procedure
+itself (gases, waits, the maths) stays in the product; the platform owns the record, the
+permission, the state and the history (`plat_cal.h` has the whole sequence):
+
+| Step | Who | What the platform does |
+|---|---|---|
+| Begin | touchscreen, web (`POST /api/cal cmd=begin&ch=N`) or the product | Refused below setting 321 `cal_level` (factory setting, default admin), in WARMING UP, FAULT, SAFE MODE or start-up (factory login may calibrate in FAULT, so a unit that lost its calibration data can be recalibrated). Otherwise CALIBRATION until the end; event `cal` "start"; a history slot written ABORTED, so a power cut part way leaves an honest record |
+| Procedure | the product's logic, while `plat_cal_active()` | Collects up to 4 points (`plat_cal_point`: reference, reading as found, reading as left) and the proposed coefficients (`plat_cal_propose`) |
+| Accept | anyone with the level (`cmd=accept`) | The check hook may reject the whole calibration; every coefficient is range-checked; all written or none. PASS (now in force) or FAIL (nothing changes); event `cal` with the reason |
+| Abort | `cmd=abort`, or 2 h with no end | ABORTED |
+| Revert | factory login (`cmd=revert&ch=N`) | The factory record's coefficients back in force, recorded REVERTED |
+
+A calibration at factory login is a factory calibration: it replaces the channel's factory
+record, which field calibrations never touch (CIP-18.3). Records are in the FACTORY region of
+FRAM (dual copy; survive firmware updates and restore defaults, CIP-18.5): 2.4 KB for 8 channels
+and 12 history records on the 128 KB part, 2 and 3 on the 32 KB part. A channel's due date is the
+record in force plus its interval; alarm 21 CAL_DUE (warning, email, Modbus) while any channel is
+overdue. Commands go through parameter 320 like every other write, so the local/remote mode rules
+apply (web and Modbus only in REMOTE; Modbus never). `GET /api/cal` gives the channels (in force,
+factory, due time), the history (newest first) and which channel is calibrating.
 
 ## 6. Integration rules for the application (VM/MUX) code
 

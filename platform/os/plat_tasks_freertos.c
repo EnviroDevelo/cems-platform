@@ -200,6 +200,10 @@ void plat_start(const plat_app_t *app) {
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
     ui_app_set(app->ui);
+    if (plat_cal_init(app->cal, app->n_cal) != 0) {             /* a calibrated channel names a missing or wrong coefficient */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "cal table", (uint32_t)plat_cal_init(app->cal, app->n_cal), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     nvm_dev_t *fram = bsp_param_nvm();
     if (!param_store_init(fram, NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "store table", param_store_status(), bsp_ms());

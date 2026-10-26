@@ -273,6 +273,8 @@ static void t_api(void) {
         CHECK(has("\"api\":2,\"state\":\"INITIALISING\",\"state_since\":0"));
         plat_state_reset_for_test();
     }
+    CHECK_EQ(call("GET", "/api/cal", NULL, false), 200);          /* calibration records (CIP-18): none declared */
+    CHECK(has("{\"active\":null,\"due\":false,\"channels\":[],\"history\":[]}"));
     CHECK_EQ(call("GET", "/api/nothing", NULL, false), 404);
     CHECK_EQ(call("PUT", "/api/values", NULL, false), 405);
 
@@ -285,6 +287,8 @@ static void t_api(void) {
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=50", true), 409); CHECK(has("\"error\":\"mode\""));
     mode(PARAM_MODE_REMOTE);
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=500", true), 400); CHECK(has("\"error\":\"range\""));
+    CHECK_EQ(call("POST", "/api/cal", "cmd=begin&ch=0", true), 400); CHECK(has("\"error\":\"no such channel\""));
+    CHECK_EQ(call("POST", "/api/cal", "cmd=fly", true), 400);
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=abc", true), 400); CHECK(has("\"error\":\"value\""));
     CHECK_EQ(call("POST", "/api/write", "id=1003&v=2", true), 403);   /* admin entry */
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=50&id=1002&v=Stack%20A&id=1004&o=1&v=-5,5", true), 200);

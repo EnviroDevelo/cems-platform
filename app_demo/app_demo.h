@@ -25,6 +25,8 @@
 #define DEMO_PARAM_LEVEL_TEXT  1010u
 #define DEMO_PARAM_RUNNING     1011u
 #define DEMO_PARAM_STEPS       1012u   /* a record: the demo's step list (PARAM_RECORD) */
+#define DEMO_PARAM_LEVEL_ZERO  1013u   /* factory: the level's calibration (plat_cal.h) */
+#define DEMO_PARAM_LEVEL_SPAN  1014u
 #define DEMO_BLOCK_CYCLES      1100u
 #define DEMO_ALARM_FAULT       100u
 #define DEMO_ALARM_LEVEL       101u

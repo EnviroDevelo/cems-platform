@@ -83,6 +83,7 @@ void plat_meas_update(unsigned i, uint8_t own_q); /* measurement i was just writ
 
 /* ---- the platform ---- */
 void plat_state_safe_mode(bool on);               /* the reboot-loop check (CIP-08.5) */
+void plat_state_cal(bool on);                     /* a platform calibration is running (plat_cal.h) */
 bool plat_state_allows(uint8_t act);              /* PLAT_ACT_*: false = refused in the current state */
 const char *plat_state_refusal(void);             /* "not allowed during CALIBRATION" for the last refusal */
 

@@ -21,7 +21,7 @@ static size_t   n_meas;
 static uint32_t stamp[PLAT_MEAS_MAX];        /* bsp ms of the last update (0 = never) */
 static uint8_t  own[PLAT_MEAS_MAX];
 static uint8_t  app_st = PLAT_ST_READY;      /* what the application last set */
-static bool     app_cal, safe_mode;
+static bool     app_cal, plat_cal_on, safe_mode;
 static uint16_t stops[16];                   /* alarms marked AL_STOPS */
 static size_t   n_stops;
 static const char *refusal = "";
@@ -91,6 +91,7 @@ void plat_meas_update(unsigned i, uint8_t own_q) {
 }
 
 void plat_state_safe_mode(bool on) { safe_mode = on; }
+void plat_state_cal(bool on)       { plat_cal_on = on; }
 
 /* the value of measurement i as a float (the scan task owns the tags) */
 static float value_of(size_t i) {
@@ -116,7 +117,7 @@ static uint8_t effective(void) {
     bool fault = alarm_active(ALARM_ID_CAL_INVALID);
     for (size_t k = 0; k < n_stops && !fault; ++k) fault = alarm_active(stops[k]);
     if (fault) return PLAT_ST_FAULT;
-    if (app_cal) return PLAT_ST_CALIBRATION;
+    if (app_cal || plat_cal_on) return PLAT_ST_CALIBRATION;
     if (plat_maint_tag) return PLAT_ST_MAINTENANCE;
     return app_st;
 }
@@ -191,7 +192,7 @@ int plat_state_request(uint8_t st, uint8_t src, uint8_t level) {
 
 void plat_state_reset_for_test(void) {
     M = NULL; n_meas = 0; n_stops = 0;
-    app_st = PLAT_ST_READY; app_cal = false; safe_mode = false;
+    app_st = PLAT_ST_READY; app_cal = false; plat_cal_on = false; safe_mode = false;
     plat_state_tag = PLAT_ST_STARTING; plat_maint_tag = false; plat_state_since_tag = 0;
     memset(stamp, 0, sizeof stamp); memset(own, 0, sizeof own);
     memset(plat_meas_q, PLAT_Q_UNAVAILABLE, sizeof plat_meas_q);

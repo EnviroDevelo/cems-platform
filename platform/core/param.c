@@ -7,6 +7,7 @@
 #include "plat_seqlock.h"
 #include "iobus.h"
 #include "plat_state.h"
+#include "plat_cal.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -53,9 +54,12 @@ extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alar
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
 extern bool     plat_alarm_relay_inv[4];
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);
 extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
 extern bool     plat_maint_tag;
 extern uint32_t plat_state_since_tag, plat_supply_mv_tag;                   /* plat_state.c, plat_power.c */
+extern uint32_t plat_cal_cmd_tag;                                          /* plat_cal.c */
+extern uint8_t  plat_cal_level_tag;
 extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
 extern uint32_t plat_mb_fw_version, plat_mb_uptime_s;
 extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
@@ -168,6 +172,9 @@ static const param_def_t plat_defs[] = {
     PARAM_TEXT(PARAM_ID_PRODUCT, "product", plat_mb_product, NULL, PLAT_LVL_VIEW, PF_RO),
     PARAM_TEXT(PARAM_ID_VENDOR, "vendor", plat_mb_vendor, NULL, PLAT_LVL_VIEW, PF_RO),
     PARAM_TEXT(PARAM_ID_FW_TEXT, "fw_text", plat_mb_fw_text, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
+               PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
@@ -451,6 +458,11 @@ param_err_t param_apply(const plat_cmd_t *c) {
         if (n.u && plat_clock_request(n.u, c->src, c->level, how[c->src & 3u]) != 0) { p_clock_set = 0; return PERR_RANGE; }
         p_clock_set = 0;
         return PERR_OK;
+    }
+    if (d->id == PARAM_ID_CAL_CMD) {                   /* momentary: hand it to the calibration records (logged there) */
+        plat_cal_cmd_tag = 0;
+        if (!n.u) return PERR_OK;
+        return param_on_cal_cmd ? param_on_cal_cmd(n.u, c->src, c->level) : PERR_INTERLOCK;
     }
     if (d->id == PARAM_ID_ALARM_ACK) {                 /* momentary command, logged by the alarm manager */
         if (param_on_alarm_ack && n.u) param_on_alarm_ack((uint16_t)n.u, c->src, c->level);

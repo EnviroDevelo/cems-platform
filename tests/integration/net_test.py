@@ -171,8 +171,6 @@ def main():
     check(u32(mb.read_holding_registers(0, 2, slave=1).registers) == 2500, "...and nothing applied")
     st, j = web.json("/api/write", {"id": 1, "v": 0})
     check(st == 409 and j["error"] == "mode", "only the touchscreen changes the mode")
-    st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
-    check(st == 200, "admin password changed")
 
     # ---------------- client limit and IP filter ----------------
     extra = [ModbusTcpClient("127.0.0.1", port=MB) for _ in range(4)]
@@ -365,6 +363,34 @@ def main():
     check(info["alarms"]["active"] == j["active"], "alarm counts in /api/info")
     mbc.close()
 
+    # ---------------- calibration records (CIP-18) ----------------
+    st, cal = web.json("/api/cal")
+    check(st == 200 and cal["channels"][0]["name"] == "Level" and cal["channels"][0]["in_force"] is None
+          and cal["active"] is None, "calibrated channels listed, nothing in force")
+    st, j = web.json("/api/cal", {"cmd": "begin", "ch": 0})
+    check(st == 409 and "FAULT" in j["error"], f"admin may not calibrate a unit with no calibration data ({j})")
+    fac = Web()
+    st, j = fac.json("/api/login", {"level": "factory", "password": "9999"})
+    check(st == 200, "factory login")
+    st, j = fac.json("/api/cal", {"cmd": "begin", "ch": 0})
+    check(st == 200, f"factory calibration started ({j})")
+    time.sleep(0.1)
+    st, cal = web.json("/api/cal")
+    check(cal["active"] == 0, "calibration running on channel 0")
+    st, j = fac.json("/api/cal", {"cmd": "accept"})
+    check(st == 200, "accepted")
+    time.sleep(0.1)
+    st, cal = web.json("/api/cal")
+    rec = cal["channels"][0]["in_force"] or {}
+    check(rec.get("kind") == "factory" and rec.get("outcome") == "pass" and rec.get("level") == "factory"
+          and rec.get("src") == "web" and rec.get("points") == [[50, 50, 50]] and rec.get("coef") == [0, 1],
+          f"factory record in force ({rec})")
+    check(cal["channels"][0]["factory"] == rec and len(cal["history"]) == 1, "factory record and history")
+    check(cal["channels"][0]["due_time"] == rec.get("time", -1) + 90 * 86400, "due in 90 days")
+    fac.req("/api/logout", {})
+    st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
+    check(st == 200, "admin password changed")
+
     # ---------------- event log ----------------
     st, j = web.json("/api/log/events?n=200")
     ev = j["events"] if st == 200 else []
@@ -407,6 +433,8 @@ def main():
     check(st == 401, "old admin password no longer works")
     st, j = web.json("/api/login", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "changed admin password survived the restart")
+    st, cal = web.json("/api/cal")
+    check((cal["channels"][0]["factory"] or {}).get("outcome") == "pass", "calibration record survived the restart")
     st, j = web.json("/api/log/events?n=200")
     allev = j["events"] if st == 200 else []
     ev = [e for e in allev if not e["event"].startswith(("alarm", "state"))]

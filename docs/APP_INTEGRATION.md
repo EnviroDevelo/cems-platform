@@ -65,6 +65,7 @@ const plat_app_t app = {
     .alarms     = alarms,  .n_alarms = N,      /* alarm_def_t, IDs 100..255 */
     .fw_safe    = fw_safe,                     /* false + reason while a sequence/calibration runs */
     .meas       = meas,    .n_meas = N,        /* plat_meas_def_t: measured values that carry a quality (up to 32) */
+    .cal        = cal,     .n_cal = N,         /* plat_cal_channel_t: calibrated channels (up to 8) */
 };
 ```
 
@@ -78,6 +79,17 @@ Mandatory for every instrument. In `logic()`:
   quality (`PLAT_Q_FAULT` for a broken sensor, `PLAT_Q_UNAVAILABLE` for one not fitted). A value
   that stops being updated goes stale on its own after its `max_age_ms`.
 - Mark an alarm `AL_STOPS` if measurement cannot go on while it is active (the instrument goes to FAULT).
+
+### Calibration (CIP-18; PLATFORM.md 5m)
+
+Declare each calibrated channel with its coefficient parameters (PF_PERSIST | PF_FACTORY floats,
+level PLAT_LVL_FACTORY so they are not hand-edited in the field) and an interval. Do not keep your
+own calibration records or dates. While `plat_cal_active(&ch)` is true, run the procedure in
+`logic()`: `plat_cal_point(i, ref, as_found, as_left)` per reference point and
+`plat_cal_propose(coef, n)` with the result. The operator (or your logic, with `plat_cal_end`)
+accepts or aborts; your channel's `check` hook may refuse a result that is out of line. Starting,
+ending and the CALIBRATION state are the platform's: do not call `plat_app_state(PLAT_ST_CALIBRATION)`
+for a calibration declared this way.
 
 ### Reserved numbers (spec R5)
 
