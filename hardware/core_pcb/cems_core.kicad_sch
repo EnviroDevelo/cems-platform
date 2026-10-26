@@ -1,0 +1,111 @@
+(kicad_sch (version 20230121) (generator eeschema)
+
+  (uuid 4503b035-ec93-58ad-a08a-2d339f99cb7b)
+
+  (paper "A4")
+
+  (title_block
+    (title "CEMS core board")
+    (date "2026-10-25")
+    (rev "0.1")
+    (company "EnviroDevelo")
+    (comment 1 "Generated from hardware/core_pcb/tools/design.py; do not edit by hand")
+    (comment 2 "Design spec: docs/CORE_PCB.md")
+  )
+  (lib_symbols)
+
+  (text "CEMS core board, rev 0.1 schematic (draft for review)\nTwo separate Ethernet networks: client port = STM32H573 MAC + LAN8742A (J2); I/O port = W5500 (J3), I/O boards only.\n24 VDC in; DIN-rail enclosure behind the RVT70 display (FFC J4).\nPin map and design notes: docs/CORE_PCB.md. Parts marked CHECK in the sheet notes need datasheet confirmation before layout."
+    (at 20 90 0)
+    (effects (font (size 1.27 1.27)) (justify left top))
+    (uuid 82761445-100d-5935-be69-2507556755f9)
+  )
+
+  (sheet (at 20 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 9c33654a-6496-50bf-bae4-bdc051059bc2)
+    (property "Sheetname" "Power" (id 0) (at 20 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "power.kicad_sch" (id 1) (at 20 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "2"))
+      )
+    )
+  )
+
+  (sheet (at 72 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 34ed8fc8-7b69-5293-999c-c0e7bee743bd)
+    (property "Sheetname" "MCU" (id 0) (at 72 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "mcu.kicad_sch" (id 1) (at 72 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "3"))
+      )
+    )
+  )
+
+  (sheet (at 124 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 9746aec8-16e4-5e30-9109-c58c29e81655)
+    (property "Sheetname" "Ethernet client port" (id 0) (at 124 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "eth_client.kicad_sch" (id 1) (at 124 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "4"))
+      )
+    )
+  )
+
+  (sheet (at 176 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 974e8153-0fe4-5f3c-abdf-2ae8863c8370)
+    (property "Sheetname" "Ethernet I/O port" (id 0) (at 176 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "eth_io.kicad_sch" (id 1) (at 176 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "5"))
+      )
+    )
+  )
+
+  (sheet (at 228 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 6a1aa505-23aa-56f2-b843-164d6a07dcb7)
+    (property "Sheetname" "Memories and display" (id 0) (at 228 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "periph.kicad_sch" (id 1) (at 228 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "6"))
+      )
+    )
+  )
+
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)
