@@ -1,4 +1,10 @@
-/* supply_stm32h5.c - the 24 V supply reading (bsp_supply_mv, plat_power.h; CORE_PCB.md 12).
+/* supply_stm32h5.c - what the firmware reads from the board (CORE_PCB.md 12): the 24 V supply
+ * (bsp_supply_mv, plat_power.h) and the revision straps (bsp_hw_straps, fw_update.h).
+ *
+ * Straps: CubeMX PE7 and PE8 as GPIO inputs, no pull (the board has the resistors), labelled
+ * HW_REV0 (PE7) and HW_REV1 (PE8). Without the labels the board has no straps.
+ *
+ * Supply:
  *
  * CubeMX (docs/CUBEMX_SETUP.md 3i): ADC1, 12-bit, scan mode with two regular ranks, software
  * trigger, single conversion, no DMA: rank 1 = PC0 (the supply-sense divider), rank 2 = VREFINT
@@ -19,6 +25,16 @@
 #endif
 #ifndef SUPPLY_DIVIDER_X100
 #define SUPPLY_DIVIDER_X100 1320u
+#endif
+
+#if defined(HW_REV0_Pin) && defined(HW_REV1_Pin)
+bool bsp_hw_straps(uint8_t *rev) {
+    *rev = (uint8_t)((HAL_GPIO_ReadPin(HW_REV1_GPIO_Port, HW_REV1_Pin) == GPIO_PIN_SET ? 2u : 0u) |
+                     (HAL_GPIO_ReadPin(HW_REV0_GPIO_Port, HW_REV0_Pin) == GPIO_PIN_SET ? 1u : 0u));
+    return true;
+}
+#else
+bool bsp_hw_straps(uint8_t *rev) { (void)rev; return false; }
 #endif
 
 #if defined(HAL_ADC_MODULE_ENABLED) && defined(SUPPLY_SENSE_Pin)

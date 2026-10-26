@@ -71,6 +71,8 @@ struct w5500_bus *bsp_w5500(void);
 /* One reading of the 24 V supply in mV (supply-sense divider on PC0, CORE_PCB.md 12); false if
  * this board does not measure it. Called every ms by the ctrl task: keep it to one conversion. */
 bool bsp_supply_mv(uint32_t *mv);
+/* The board revision straps (CORE_PCB.md 12: rev = PE8 << 1 | PE7), read once at boot. false = this board has none. */
+bool bsp_hw_straps(uint8_t *rev);
 
 void bsp_random(void *buf, uint32_t len);
 void bsp_chip_uid(uint8_t uid[12]);       /* the MCU's 96-bit unique ID (serial-number tokens, D25) */

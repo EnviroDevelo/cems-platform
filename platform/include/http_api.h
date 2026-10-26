@@ -28,6 +28,9 @@
  *   POST /api/time         t=<local seconds since 1970> sets it; sync=1 asks the time server now (admin)
  *   GET  /api/cal          calibration records (plat_cal.h): channels (in force, factory, due), history
  *   POST /api/cal          cmd=begin&ch=N | accept | abort | revert&ch=N (level from setting 321; revert factory)
+ *   GET  /api/service      operating hours, configuration checksum, service log, manufacturing test record
+ *   POST /api/service/log  tech=..&work=.. (factory): a service log entry; restarts "since service"
+ *   POST /api/service/test station=..&r=1,1,2,.. (factory): the manufacturing test record
  *   GET  /api/mail         alarm email status: queue, last result, the server's certificate fingerprint, the pin
  *   POST /api/mail/test    send a test email (admin)
  *   POST /api/mail/trust   trust=1 pins the certificate the mail server last presented, trust=0 unpins (admin)

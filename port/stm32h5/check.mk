@@ -13,7 +13,7 @@ include $(APP)/app_vars.mk
 endif
 ARMCC  ?= $(EXT)/xpack-arm-none-eabi-gcc-13.3.1-1.1/bin/arm-none-eabi-gcc
 FR      = $(EXT)/FreeRTOS-Kernel
-DEV     = -DSTM32H573xx -DUSE_HAL_DRIVER
+DEV     = -DSTM32H573xx -DUSE_HAL_DRIVER -DPLAT_BUILD_ID='"$(shell git rev-parse --short=10 HEAD 2>/dev/null || echo dev)"'
 CFLAGS  = -mcpu=cortex-m33 -mthumb -mfpu=fpv5-sp-d16 -mfloat-abi=hard -std=c11 -O2 \
           -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Werror -ffunction-sections -fdata-sections
 LW      = $(EXT)/lwip
@@ -27,7 +27,7 @@ INC     = -DMBEDTLS_CONFIG_FILE='"tls_config.h"' -Iplatform/net -I$(MBED)/includ
           -I$(EXT)/stm32h5xx-hal-driver/Inc -I$(EXT)/cmsis-device-h5/Include -I$(EXT)/cmsis_core/CMSIS/Core/Include
 SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/task_monitor.c \
           platform/core/plat_diag.c platform/core/param.c platform/core/param_store.c platform/core/plat_crc32.c \
-          platform/core/plat_sys.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_state.c platform/core/plat_power.c platform/core/plat_cal.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/core/w5500.c platform/core/iob_w5500.c platform/os/plat_iobus_task.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
+          platform/core/plat_sys.c platform/core/plat_log.c platform/core/plat_alarm.c platform/core/plat_state.c platform/core/plat_power.c platform/core/plat_cal.c platform/core/plat_service.c platform/core/plat_clock.c platform/core/fw_update.c platform/core/fw_pubkey.c platform/core/dev_pubkey.c platform/core/plat_serial.c platform/core/mb_rtu.c platform/core/iob_net.c platform/core/iobus.c platform/core/w5500.c platform/core/iob_w5500.c platform/os/plat_iobus_task.c platform/bsp/nvm_ram.c platform/bsp/nor_sim.c \
           platform/os/plat_tasks_freertos.c platform/os/plat_store_task.c \
           port/stm32h5/bsp_stm32h5.c port/stm32h5/nvm_fram_spi.c port/stm32h5/nvm_fram_i2c.c port/stm32h5/nor_spi.c port/stm32h5/fw_flash_stm32h5.c port/stm32h5/rs485_stm32h5.c port/stm32h5/fault_stm32h5.c port/stm32h5/w5500_stm32h5.c port/stm32h5/supply_stm32h5.c \
           platform/core/modbus.c platform/core/plat_sha256.c platform/net/mbtcp.c platform/net/iob_tcp.c platform/net/http_util.c \

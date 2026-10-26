@@ -79,6 +79,21 @@ static void setup(void) {
     CHECK_EQ(plat_state_init(meas, 2), 0);
 }
 
+extern uint16_t plat_board_rev_tag;      /* fw_update.c: what the straps read */
+static void t_hw_rev(void) {              /* CIP-01.3: alarm 22 when the straps disagree with the factory hw_rev */
+    setup();                              /* the factory record says hw_rev 1 */
+    plat_board_rev_tag = 1;
+    param_publish();                      /* the alarm poll reads hw_rev as published */
+    scan(21);
+    CHECK(!alarm_active(ALARM_ID_HW_REV));
+    plat_board_rev_tag = 2;
+    scan(42);
+    CHECK(alarm_active(ALARM_ID_HW_REV));
+    plat_board_rev_tag = 0xFFFFu;         /* no straps: nothing to compare */
+    scan(42);
+    CHECK(!alarm_active(ALARM_ID_HW_REV));
+}
+
 static void t_table(void) {
     setup();
     plat_meas_def_t bad[2] = { meas[0], meas[0] };
@@ -289,6 +304,6 @@ static void t_safe_mode_alarm(void) {
 }
 
 void test_state_all(void) {
-    RUN(t_table); RUN(t_states); RUN(t_cal_invalid); RUN(t_quality); RUN(t_request_and_link); RUN(t_reboot_loop); RUN(t_safe_mode_alarm);
+    RUN(t_table); RUN(t_states); RUN(t_cal_invalid); RUN(t_quality); RUN(t_request_and_link); RUN(t_reboot_loop); RUN(t_safe_mode_alarm); RUN(t_hw_rev);
     plat_state_reset_for_test();
 }
