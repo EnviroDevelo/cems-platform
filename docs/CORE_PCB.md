@@ -282,7 +282,7 @@ third strap (PE15 is free and next to them).
   under the pin's 5 mA. Readings in the 100 µs after such an event are not trusted (the
   average covers it).
 
-## 13. Debug lock and recovery (proposed with the firmware thread; CIP-04.4, CIP-20.4)
+## 13. Debug lock and recovery (agreed with the firmware thread, 26 Oct; CIP-04.4, CIP-20.4)
 
 Based on ST's STM32H5 product-state model (RM0481 "product life cycle" and debug
 authentication). **(check: confirm the state names and what each regression erases in
@@ -300,9 +300,14 @@ RM0481 before the first production unit is closed.)**
 - **Recovery route:** a technician with the company's debug-authentication credential
   (certificate on the H573; a password on the H563) opens the housing, connects J5, and runs
   a regression with ST's tools. That erases the user flash and returns the chip to Open; the
-  factory image is then programmed and the unit closed again. FRAM (settings, calibration)
-  and the NOR log are separate chips and are kept. The serial-number record (D25) must be
-  stored where a regression cannot erase it, or re-applied with a developer token afterwards.
+  factory image is then programmed and the unit closed again. FRAM and the NOR log are
+  separate chips and are kept. The serial number (D25), hw_rev, calibration, every setting
+  and the HTTPS key all live in FRAM (firmware thread, 26 Oct), so the unit keeps its
+  identity and certificate fingerprint and needs no developer token afterwards.
+- **Confirmed by the firmware thread (26 Oct)**, with one bench check: the network update
+  flips SWAP_BANK from the application, which the H5 allows when Closed. The first Closed DK
+  must show an update and a rollback working. Secure boot will keep this route, with no
+  Locked state.
 - **Hardware for this:** J5 (SWD with NRST) fitted on every unit, inside the housing, not
   reachable without opening it; JP1 BOOT0 footprint fitted, no jumper in production (the
   bootloader is not a route on a closed unit); BOOT0 pulled down by R20.
