@@ -1,7 +1,8 @@
 /* test_cal.c - calibration records (CIP-18, CIP-17.6, CIP-19.3): the channel table check, a field
  * calibration from start to PASS, FAIL from the check hook / no result / a coefficient out of
  * range, abort and timeout, factory records and revert, the permission level, the state
- * refusals, survival across a restart and restore defaults, and due dates with alarm 21. */
+ * refusals, survival across a restart and restore defaults, and due dates with alarm 21.
+ * Requirements proved here: CIP-18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 17.6, 19.3. */
 #include <math.h>
 #include <string.h>
 #include "tst.h"

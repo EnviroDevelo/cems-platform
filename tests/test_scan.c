@@ -1,4 +1,5 @@
-/* test_scan.c - scan engine contract (scan_engine.h steps 1-8). */
+/* test_scan.c - scan engine contract (scan_engine.h steps 1-8).
+ * Requirements proved here: CIP-02.3, 07.4, 13.1. */
 #include <string.h>
 #include "tst.h"
 #include "scan_engine.h"

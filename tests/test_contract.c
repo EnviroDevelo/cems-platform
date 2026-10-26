@@ -1,5 +1,6 @@
 /* test_contract.c - the start-up contract check, plat_app_check (spec section 9.3, R5): a
- * well-formed application passes, and each broken rule is refused with its reason. */
+ * well-formed application passes, and each broken rule is refused with its reason.
+ * Requirements proved here: CIP-14.6. */
 #include <string.h>
 #include "tst.h"
 #include "plat_tasks.h"

@@ -249,6 +249,20 @@ Full list: PLATFORM.md section 8.
   - `tools/check_target.sh` links it and adds its totals to `docs/MEMORY.md` automatically.
 - The FRAM map is 128 KB by default (D6). Build with `PLAT_FRAM_SIZE=32768u` for the 32 KB breakout.
 
+## 10b. Staying on the common platform (spec section 9)
+
+- Write `app_vmmux/PROFILE.md` from `docs/PROFILE_TEMPLATE.md`: the optional items fitted, the
+  measurement channels, the states, and any exception to a mandatory requirement (with Gary's
+  sign-off).
+- `make snapshots APP=app_vmmux` writes `app_vmmux/interface/MODBUS_MAP.md` (the register map
+  document for the integrator) and `API.txt`; commit them. After that, a moved Modbus address or a
+  removed field fails the build until the map version is bumped and the snapshots written again.
+- `make conformance APP=app_vmmux` must pass before every merge: the start-up contract
+  (`plat_app_check`), the profile filled in, every alarm with a `.help`, the snapshots current, and
+  the shared CIP-26 tests (start-up, power cut, corrupted settings, comms loss, update failure)
+  against the product's own build.
+- `/api/info` shows `core` (the platform version, `plat_version.h`) beside `fw` (yours).
+
 ## 11. Suggested order of work
 
 1. Fix rules 4.1-4.3 so the Stage 4 chunks compile together against `ul_system.h`.

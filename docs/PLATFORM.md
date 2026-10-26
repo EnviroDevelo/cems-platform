@@ -1021,6 +1021,16 @@ On the web page, the Service section shows the self-test as one badge per check 
 "not checked" for skipped, or pending), with a summary line naming any that failed. It is visible
 without a login (`tests/integration/cal_web_test.py`, `docs/web_service.png`).
 
+**Keeping the core common (spec section 9).** The core has its own version (`plat_version.h`,
+`/api/info` `core`). `plat_app_check()` refuses an application description that breaks the
+contract before anything starts. `make test` also checks that every mandatory requirement is
+named by a test or listed in `tools/cip_untested.txt` with its reason (`tools/cip_coverage.py`),
+that `docs/FAULT_CODES.md` is current, and that the Modbus map still matches its snapshot
+(`docs/interface/<app>/MODBUS_MAP.md`). `make conformance APP=<dir>` runs, for a product build,
+the contract, its `PROFILE.md` (template `docs/PROFILE_TEMPLATE.md`), help on every alarm, the
+web API snapshot (`tools/api_snapshot.py`) and the shared CIP-26 tests
+(`tests/integration/conformance_test.py`).
+
 **Fault and alarm code list (CIP-11.3).** `docs/FAULT_CODES.md` lists the platform's alarms
 (with what to check), self-test checks, fault record codes, reset causes, event codes and
 firmware update refusals. `make fault-codes` writes it from the firmware's own tables

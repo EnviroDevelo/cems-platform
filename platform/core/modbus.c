@@ -139,6 +139,13 @@ int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
 
 mb_stats_t mb_stats(void) { return st; }
 
+size_t mb_entry_count(void) { return n_idx; }
+const mb_map_t *mb_entry_at(size_t i, uint16_t *span) {
+    if (i >= n_idx) return NULL;
+    if (span) *span = idx[i].span;
+    return idx[i].m;
+}
+
 static const ent_t *find(uint8_t table, uint16_t a) {
     size_t lo = 0, hi = n_idx;                     /* last entry with (table, addr) <= (table, a) */
     while (lo < hi) {
