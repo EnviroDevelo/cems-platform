@@ -930,6 +930,13 @@ overdue. Commands go through parameter 320 like every other write, so the local/
 apply (web and Modbus only in REMOTE; Modbus never). `GET /api/cal` gives the channels (in force,
 factory, due time), the history (newest first) and which channel is calibrating.
 
+**On the web page** (Calibration section, shown when the product declares channels): each
+channel's record in force, its factory record and its due date (marked overdue); Begin and,
+at factory login, Revert to factory; while a channel is calibrating, a box with Accept and
+Abort; the history with outcome, who, the points (reference, as found, as left) and the
+coefficients. Refusals show the instrument's reason. `tests/integration/cal_web_test.py`
+runs a calibration and an abort through the page. Screenshot: `docs/web_cal.png`.
+
 ## 6. Integration rules for the application (VM/MUX) code
 
 These come from reading the Stage 4 sources against this platform. **Items 1 and 2
