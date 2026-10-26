@@ -36,7 +36,8 @@ typedef struct {
 enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG, UI_CLOCK,
        UI_APP,      /* the application's screens (ui_app.h), as tabs */
        UI_REC,      /* a record editor (sequence, schedule) */
-       UI_IOB };    /* I/O boards on RS-485: state, channels, faults (iobus.h) */
+       UI_IOB,      /* I/O boards on RS-485: state, channels, faults (iobus.h) */
+       UI_CAL };    /* calibration: channels, record in force, history, start/accept/abort/revert (plat_cal.h) */
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

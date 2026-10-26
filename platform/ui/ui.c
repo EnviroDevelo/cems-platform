@@ -23,6 +23,7 @@
 #include "iobus.h"
 #include "plat_state.h"
 #include "plat_power.h"
+#include "plat_cal.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
 #define W 1024
@@ -57,16 +58,17 @@ enum {
     T_NAV_HOME = 128, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM, T_NAV_LOGIN,
     T_MODE, T_PGUP, T_PGDN, T_OK, T_CANCEL, T_BKSP, T_CLEAR, T_SHIFT, T_ON, T_OFF,
     T_LVL1, T_LVL2, T_LVL3, T_YES, T_NO, T_FW_ACT, T_BRIGHT_DN, T_BRIGHT_UP, T_SPACE,
-    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB, T_MAINT,
+    T_ALARMS, T_ACK_ALL, T_ACTIONS, T_BACK, T_CLOCK, T_IOB, T_MAINT, T_CAL,
     T_CFG0 = 160,           /* .. T_CFG0 + ROWS * 6 - 1: alarm action toggles */
     /* application screens and record editors (no keyboard there, so 1..126 are free):
      * 1..8 tabs, T_W0.. widgets and cells (looked up in U.tmap), T_DLG_* the dialog */
     T_TAB0 = 1, T_W0 = 10, T_WMAX = 118, T_DLG_YES = 120, T_DLG_NO = 121,
-    T_ROW0 = 200            /* .. T_ROW0 + ROWS - 1 */
+    T_ROW0 = 200,           /* .. T_ROW0 + ROWS - 1 */
+    T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
-typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL } act_t;
+typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL } act_t;
 
 static struct {
     const ui_cfg_t *cfg;
@@ -115,6 +117,7 @@ static struct {
     uint8_t  tmap_w[128];          /* tag -> widget (or field) index + 1 */
     uint16_t tmap_i[128];          /* tag -> grid item / cell (row << 6 | element) */
     char     ok_msg[48];
+    uint8_t  cal_ch, cal_cmd;      /* calibration screen: the channel selected; the command being confirmed */
     /* record editor */
     const ui_record_t *rec;
     uint8_t  rec_buf[PARAM_RECORD_MAX];
@@ -287,6 +290,15 @@ static void do_action(uint32_t now) {
         else toast(false, now, "Restarting on the new firmware...");
         U.act = ACT_NONE;
         return;
+    } else if (U.act == ACT_CAL) {
+        int r = U.cal_cmd == PLAT_CAL_CMD_BEGIN ? plat_cal_begin(U.cal_ch, PLAT_SRC_LOCAL, U.level)
+              : U.cal_cmd == PLAT_CAL_CMD_REVERT ? plat_cal_revert(U.cal_ch, PLAT_SRC_LOCAL, U.level)
+              : plat_cal_end(U.cal_cmd == PLAT_CAL_CMD_ACCEPT, PLAT_SRC_LOCAL, U.level);
+        static const char *const done[] = { "", "Calibration started", "Accepted", "Calibration aborted", "Factory calibration restored" };
+        if (r != PERR_OK) toast(true, now, "%s", perr_text((param_err_t)r));
+        else toast(false, now, "%s", done[U.cal_cmd <= PLAT_CAL_CMD_REVERT ? U.cal_cmd : 0]);
+        U.act = ACT_NONE;
+        return;
     } else if (U.act == ACT_FW_LOCAL) {
         fw_local_answer(true, U.level);
         fw_status_t st; fw_status(&st);
@@ -435,6 +447,20 @@ static void maint_tap(uint32_t now) {
                      : "Start maintenance? Every reading is marked \"maintenance\" until you leave it.");
 }
 
+/* Calibration (CIP-18): every command is checked first so a refusal says why in words, then
+ * confirmed; plat_cal applies it in the scan with the same checks */
+static void cal_tap(uint8_t cmd, uint32_t now) {
+    if (plat_cal_check(cmd, U.cal_ch, U.level) != PERR_OK) { toast(true, now, "%s", plat_cal_refusal()); return; }
+    char m[112];
+    const char *n = plat_cal_name(U.cal_ch);
+    if (cmd == PLAT_CAL_CMD_BEGIN) snprintf(m, sizeof m, "Start calibrating %s? Readings are marked \"calibration\" until it ends.", n);
+    else if (cmd == PLAT_CAL_CMD_ACCEPT) snprintf(m, sizeof m, "Accept the new %s calibration and put it in force?", n);
+    else if (cmd == PLAT_CAL_CMD_ABORT) snprintf(m, sizeof m, "Abort the %s calibration? The calibration in force stays.", n);
+    else snprintf(m, sizeof m, "Put the factory calibration of %s back in force?", n);
+    U.cal_cmd = cmd;
+    ask(ACT_CAL, m);
+}
+
 /* ---------------- input ---------------- */
 static size_t n_params(void) { return param_count(); }
 
@@ -569,8 +595,16 @@ static void tap(uint8_t t, uint32_t now) {
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
             ask(ACT_FW, m);
         } else if (t == T_IOB) goto_scr(UI_IOB);
+        else if (t == T_CAL) { unsigned a; if (plat_cal_active(&a)) U.cal_ch = (uint8_t)a; goto_scr(UI_CAL); }
         else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
+        break;
+    case UI_CAL:
+        if (t >= T_ROW0 && t < T_ROW0 + 4 && (size_t)(t - T_ROW0) < plat_cal_count()) { U.cal_ch = (uint8_t)(t - T_ROW0); U.dirty = true; }
+        else if (t == T_CAL_START) cal_tap(PLAT_CAL_CMD_BEGIN, now);
+        else if (t == T_CAL_ACCEPT) cal_tap(PLAT_CAL_CMD_ACCEPT, now);
+        else if (t == T_CAL_ABORT) cal_tap(PLAT_CAL_CMD_ABORT, now);
+        else if (t == T_CAL_REVERT) cal_tap(PLAT_CAL_CMD_REVERT, now);
         break;
     default:
         break;
@@ -707,7 +741,7 @@ static void nav(void) {
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
     for (int k = 0; k < 4; ++k) {
         bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
-                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK));
+                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL));
         button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
     char b[32];
@@ -998,9 +1032,118 @@ static void draw_system(uint32_t now) {
     kv(544, BODY_Y + 364, "Clock", b);
     button(T_CLOCK, 884, BODY_Y + 318, 116, 64, "Set clock", C_ACCENT, true);
     button(T_IOB, 884, BODY_Y + 244, 116, 64, "I/O boards", C_ACCENT, true);
+    if (plat_cal_count()) button(T_CAL, 884, BODY_Y + 40, 116, 64, plat_cal_any_due() ? "Cal DUE" : "Calibrate", plat_cal_any_due() ? C_WARN : C_ACCENT, true);
 }
 
 /* I/O boards (iobus.h): one card per board, outputs and inputs as lit squares, faults in words */
+/* dd/mm/yyyy, or "clock not set" (UI_CONVENTIONS 5) */
+static void fmt_day(char *b, size_t cap, uint32_t t) {
+    if (!t) { snprintf(b, cap, "clock not set"); return; }
+    unsigned y, mo, d, h, mi, s;
+    plat_civil_from_unix(t, &y, &mo, &d, &h, &mi, &s);
+    snprintf(b, cap, "%02u/%02u/%04u", d % 100u, mo % 100u, y % 10000u);
+}
+static const char *cal_kind(uint8_t k) { return k == PLAT_CAL_FACTORY ? "factory" : k == PLAT_CAL_FIELD ? "field" : "-"; }
+static uint32_t cal_outcome_color(uint8_t o) { return o == PLAT_CAL_PASS || o == PLAT_CAL_REVERTED ? C_OK : o == PLAT_CAL_FAIL ? C_BAD : C_WARN; }
+static void fmt_f(char *b, size_t cap, float v) {
+    if (v != v) { snprintf(b, cap, "-"); return; }                  /* NaN: not taken */
+    fmt_float(b, cap, (double)v);
+}
+
+/* Calibration (CIP-18): channels with the record in force and due date; the selected channel's
+ * points (reference, as found, as left); the history; start, accept, abort, revert */
+static void draw_cal(uint32_t now) {
+    char b[96], c[24];
+    size_t n = plat_cal_count();
+    if (U.cal_ch >= n) U.cal_ch = 0;
+    unsigned act_ch = 0;
+    bool active = plat_cal_active(&act_ch);
+    uint32_t today = 0; bool clk = plat_clock_now(&today);
+    /* channels */
+    box(16, BODY_Y, 480, 248, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Channels");
+    for (size_t k = 0; k < n && k < 4; ++k) {
+        int16_t y = (int16_t)(BODY_Y + 44 + k * 50);
+        uint8_t tg = (uint8_t)(T_ROW0 + k);
+        eve_tag(E, tg);
+        box(24, y, 464, 46, k == U.cal_ch ? 0xDCE6F5u : C_CARD, 6);
+        color(C_INK); text(36, (int16_t)(y + 23), F_TEXT, OPT_CENTERY, plat_cal_name((unsigned)k));
+        plat_cal_record_t r;
+        uint32_t due = plat_cal_due((unsigned)k);
+        if (active && act_ch == k) { color(C_WARN); snprintf(b, sizeof b, "calibrating now"); }
+        else if (!plat_cal_in_force((unsigned)k, &r)) { color(C_BAD); snprintf(b, sizeof b, "never calibrated"); }
+        else if (due && clk && today >= due) { fmt_day(c, sizeof c, due); color(C_WARN); snprintf(b, sizeof b, "DUE since %s", c); }
+        else if (due) { fmt_day(c, sizeof c, due); color(C_MUTE); snprintf(b, sizeof b, "due %s", c); }
+        else { fmt_day(c, sizeof c, r.time); color(C_MUTE); snprintf(b, sizeof b, "%s, %s", cal_kind(r.kind), c); }
+        text(480, (int16_t)(y + 23), F_SMALL, OPT_CENTERY | OPT_RIGHTX, b);
+        eve_tag(E, 0);
+    }
+    if (n > 4) { color(C_MUTE); snprintf(b, sizeof b, "+%u more on the web page", (unsigned)(n - 4)); text(32, BODY_Y + 226, F_SMALL, 0, b); }
+    /* history */
+    box(16, BODY_Y + 256, 480, 184, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 266, F_TEXT, 0, "History");
+    plat_cal_record_t h;
+    unsigned shown = 0;
+    for (unsigned i = 0; shown < 6 && plat_cal_history(i, &h); ++i, ++shown) {
+        int16_t y = (int16_t)(BODY_Y + 300 + shown * 22);
+        fmt_day(c, sizeof c, h.time);
+        snprintf(b, sizeof b, "%s  %.12s  %s  %s", c, plat_cal_name(h.channel), cal_kind(h.kind), lvl_name(h.level));
+        color(C_INK); text(32, y, F_SMALL, 0, b);
+        color(cal_outcome_color(h.outcome)); text(480, y, F_SMALL, OPT_RIGHTX, plat_cal_outcome_name(h.outcome));
+    }
+    if (!shown) { color(C_MUTE); text(32, BODY_Y + 300, F_SMALL, 0, "No calibrations yet"); }
+    /* the selected channel */
+    box(508, BODY_Y, 500, 440, C_CARD, 8);
+    if (!n) return;
+    color(C_INK); text(524, BODY_Y + 10, F_BIG, 0, plat_cal_name(U.cal_ch));
+    plat_cal_record_t r;
+    bool have = plat_cal_in_force(U.cal_ch, &r);
+    if (have) {
+        fmt_day(c, sizeof c, r.time);
+        snprintf(b, sizeof b, "In force: %s, %s, %s", cal_kind(r.kind), c, plat_cal_outcome_name(r.outcome));
+    } else snprintf(b, sizeof b, "No calibration in force");
+    color(have ? C_MUTE : C_BAD); text(524, BODY_Y + 50, F_SMALL, 0, b);
+    plat_cal_record_t f;
+    if (plat_cal_factory(U.cal_ch, &f)) { fmt_day(c, sizeof c, f.time); snprintf(b, sizeof b, "Factory: %s", c); }
+    else snprintf(b, sizeof b, "Factory: none");
+    color(C_MUTE); text(524, BODY_Y + 72, F_SMALL, 0, b);
+    if (have && r.n_pts) {                                /* reference points of the record in force */
+        static const int16_t cx[] = { 524, 640, 770, 900 };
+        static const char *const hd[] = { "Point", "Reference", "As found", "As left" };
+        color(C_MUTE);
+        for (int k = 0; k < 4; ++k) text(cx[k], BODY_Y + 104, F_SMALL, 0, hd[k]);
+        for (unsigned i = 0; i < r.n_pts && i < PLAT_CAL_PTS_MAX; ++i) {
+            int16_t y = (int16_t)(BODY_Y + 128 + i * 24);
+            color(C_INK);
+            snprintf(b, sizeof b, "%u", i + 1u); text(cx[0], y, F_SMALL, 0, b);
+            fmt_f(b, sizeof b, r.ref[i]); text(cx[1], y, F_SMALL, 0, b);
+            fmt_f(b, sizeof b, r.found[i]); text(cx[2], y, F_SMALL, 0, b);
+            fmt_f(b, sizeof b, r.left[i]); text(cx[3], y, F_SMALL, 0, b);
+        }
+    }
+    /* actions: what is refused shows greyed with the reason under it */
+    int16_t by = BODY_Y + 296;
+    if (active && act_ch == U.cal_ch) {
+        color(C_WARN); text(524, (int16_t)(by - 26), F_SMALL, 0, "Calibrating: the procedure runs, then accept or abort");
+        button(T_CAL_ACCEPT, 524, by, 228, 64, "Accept", C_OK, plat_cal_check(PLAT_CAL_CMD_ACCEPT, U.cal_ch, U.level) == PERR_OK);
+        button(T_CAL_ABORT, 764, by, 228, 64, "Abort", 0x5B6577u, true);
+    } else {
+        bool can = plat_cal_check(PLAT_CAL_CMD_BEGIN, U.cal_ch, U.level) == PERR_OK;
+        const char *why = can ? NULL : plat_cal_refusal();
+        char wb[64]; snprintf(wb, sizeof wb, "%s", why ? why : "");
+        bool rv = plat_cal_check(PLAT_CAL_CMD_REVERT, U.cal_ch, U.level) == PERR_OK;
+        eve_tag(E, T_CAL_START);                         /* tappable even when refused, so the reason toasts */
+        eve_fgcolor(E, U.pressed == T_CAL_START ? C_PRESS : can ? C_ACCENT : C_GREY);
+        color(0xFFFFFFu); ebutton(524, by, 228, 64, F_TEXT, OPT_FLAT, "Start calibration");
+        eve_tag(E, T_CAL_REVERT);
+        eve_fgcolor(E, U.pressed == T_CAL_REVERT ? C_PRESS : rv ? 0x5B6577u : C_GREY);
+        color(0xFFFFFFu); ebutton(764, by, 228, 64, F_TEXT, OPT_FLAT, "Revert to factory");
+        eve_tag(E, 0);
+        if (why) { color(C_MUTE); text(524, (int16_t)(by + 74), F_SMALL, 0, wb); }
+    }
+    (void)now;
+}
+
 static void draw_iob(void) {
     char b[64], c[20];
     for (unsigned k = 0; k < IOB_BOARDS; ++k) {
@@ -1755,6 +1898,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;
     case UI_IOB:   draw_iob(); break;
+    case UI_CAL:   draw_cal(now); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {

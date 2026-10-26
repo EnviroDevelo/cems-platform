@@ -26,6 +26,7 @@
 #include "iob_node_sim.h"
 #include "plat_state.h"
 #include "plat_power.h"
+#include "plat_cal.h"
 
 static eve_sim_t sim;
 static eve_t eve;
@@ -35,7 +36,7 @@ static plat_seqlock_t lk;
 /* an application table like the demo's */
 static uint32_t a_delay = 2000, a_run = 5;
 static bool a_valve, a_in;
-static float a_gain = 1.5f, a_temp = 182.5f;
+static float a_gain = 1.5f, a_temp = 182.5f, a_zero = 0.0f;
 static char a_name[11] = "Valve 1";
 static const char name_def[11] = "Valve 1";       /* defaults are the full size of the block */
 static bool a_ack[4];
@@ -48,6 +49,7 @@ static const param_def_t defs[] = {
     PARAM_ARRAY_BOOL(1006, "ack", a_ack, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_REAL(1007, "gain", a_gain, 0.0f, 10.0f, 1.5f, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_CONFIRM),
     PARAM_REAL(1008, "stack_temp", a_temp, -50.0f, 500.0f, 182.5f, "\xC2\xB0" "C", PLAT_LVL_VIEW, PF_RO),
+    PARAM_REAL(1009, "zero_offset", a_zero, -100.0f, 100.0f, 0.0f, NULL, PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY),
 };
 static const uint16_t home_ids[] = { 1001, 1002, 1003, 1005 };
 static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = "0.5.0", .home_ids = home_ids, .n_home = 4 };
@@ -512,6 +514,57 @@ static void t_state_quality(void) {
     plat_state_reset_for_test();
 }
 
+/* CIP-18: System -> Calibrate: a refusal in words, start, the procedure's points, accept, the
+ * record in force and the history, revert to factory */
+static const plat_cal_channel_t ui_cal[] = { { .name = "Zero gas", .coef_id = { 1009 }, .interval_days = 90 } };
+static void cal_scan(void) {
+    for (int k = 0; k < 3; ++k) { scan(); bsp_host_advance_ms(10); plat_cal_scan(bsp_ms()); plat_state_scan(bsp_ms()); }
+    param_publish(); frame();
+}
+static void t_cal_screen(void) {
+    setup();
+    plat_state_reset_for_test(); plat_cal_reset_for_test();
+    CHECK_EQ(plat_cal_init(ui_cal, 1), 0);
+    static nvm_dev_t d; static nvm_ram_t r;
+    memset(fram, 0, sizeof fram);
+    nvm_ram_init(&d, &r, fram, sizeof fram, true);
+    CHECK(param_store_init(&d, NULL, NULL, 0, 1, NULL));
+    param_store_boot();
+    cal_scan();
+    CHECK(tap("System"));
+    CHECK(tap("Calibrate"));
+    CHECK_EQ(ui_screen(), UI_CAL);
+    CHECK(shows("Zero gas")); CHECK(shows("never calibrated")); CHECK(shows("No calibrations yet"));
+    CHECK(tap("Start calibration"));                  /* not logged in: refused, and why */
+    CHECK(strlen(ui_toast()) > 0); CHECK_EQ(ui_screen(), UI_CAL);
+    CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));
+    CHECK(tap("System")); CHECK(tap("Calibrate"));
+    CHECK(tap("Start calibration"));
+    CHECK(shows("Start calibrating Zero gas?"));
+    CHECK(tap("Yes"));
+    cal_scan();
+    unsigned ch = 9;
+    CHECK(plat_cal_active(&ch)); CHECK_EQ(ch, 0u);
+    CHECK(shows("calibrating now")); CHECK(shows("Accept"));
+    CHECK(shows("CALIBRATION") || shows("FAULT"));    /* blank FRAM: CAL_INVALID's FAULT outranks CALIBRATION */
+    /* the application's procedure: one point, then the new coefficient */
+    CHECK(plat_cal_point(0, 0.0f, 1.2f, 0.1f));
+    float coef[1] = { -1.1f };
+    CHECK(plat_cal_propose(coef, 1));
+    CHECK(tap("Accept")); CHECK(tap("Yes"));
+    cal_scan();
+    CHECK(!plat_cal_active(&ch));
+    CHECK(fabsf(a_zero + 1.1f) < 1e-6f);
+    CHECK(shows("In force: factory")); CHECK(shows("pass")); CHECK(shows("As found")); CHECK(shows("1.2"));
+    dump("calibration");
+    /* revert to factory: confirmed, then a REVERTED record */
+    CHECK(tap("Revert to factory")); CHECK(shows("Put the factory calibration"));
+    CHECK(tap("Yes"));
+    cal_scan();
+    CHECK(shows("reverted"));
+    plat_cal_reset_for_test(); plat_state_reset_for_test();
+}
+
 /* System -> I/O boards: board states, lit outputs and inputs, faults in words */
 static void iob_run(uint32_t ms) {
     for (uint32_t t = 0; t < ms; t += 20) {
@@ -595,4 +648,5 @@ void test_ui_all(void) {
     RUN(t_ui);
     RUN(t_iob_screen);
     RUN(t_state_quality);
+    RUN(t_cal_screen);
 }
