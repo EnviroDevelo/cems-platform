@@ -346,6 +346,10 @@ If CubeMX also generates an `osKernelInitialize()` / `MX_FREERTOS_Init()` /
 `osKernelStart()` block, `plat_start()` must come before it (it never returns), or that
 block can be disabled.
 
+**Debug builds:** set `third_party/mbedtls` and `platform/net/tls.c` to -O2 even in the Debug configuration (Properties on the folder/file → C/C++ Build → Settings → Optimization). At -O0 each HTTPS handshake took 0.8-2.8 s on the DK, and a browser's six parallel connections then timed out ("Connection lost", logins reported as wrong password); at -O2 it is 0.24 s (28 Oct).
+
+**After flashing:** power-cycle the board (unplug the USB) before testing the network. After an ST-LINK reset or a flash the DK's peripheral interrupts stayed off until a real power-up (Ethernet answered a few frames, then went deaf), and the debugger's view of the NVIC on this part reads as zero even when the CPU has the interrupt enabled, so don't diagnose interrupts from SWD reads alone.
+
 ## 6. First run: what you should see
 
 - Hold the user button (DI_01) for 2 s and LED DO_01 comes on; release it and the LED goes off. That is the demo TON running on the 10 ms scan.
