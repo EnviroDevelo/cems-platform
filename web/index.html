@@ -376,10 +376,39 @@ const $ = id => document.getElementById(id);
 const LV = ["view","operator","admin","factory"];
 let defs = [], byId = {}, level = 0, mode = "local", lastOk = 0, editing = null;
 
-async function api(path, body, raw) {
+/* One request at a time. The instrument keeps one connection alive, so parallel polls each
+   cost a new TLS handshake (0.24 s on the H5, against 24 ms for a request on the kept one) and
+   some ran past the timeout (DK bench, 28 Oct). Requests go in order, writes ahead of polls; a
+   GET already waiting for the same path is shared; each timeout runs from when it is sent. */
+const apiQ = [];
+let apiBusy = false;
+function apiEnqueue(job, first) {
+  job.p = new Promise((res, rej) => { job.res = res; job.rej = rej; });
+  const i = first ? apiQ.findIndex(j => j.get) : -1;      /* writes keep their own order */
+  apiQ.splice(i < 0 ? apiQ.length : i, 0, job);
+  apiPump();
+  return job.p;
+}
+async function apiPump() {
+  if (apiBusy || !apiQ.length) return;
+  apiBusy = true;
+  const job = apiQ.shift();
+  try { job.res(await job.run()); } catch (e) { job.rej(e); }
+  apiBusy = false;
+  apiPump();
+}
+function api(path, body, raw) {
+  const get = body === undefined;
+  if (get) { const w = apiQ.find(j => j.get && j.path === path); if (w) return w.p; }
+  return apiEnqueue({ path, get, run: () => apiSend(path, body, raw) }, !get);
+}
+/* a request made some other way (firmware upload, text download) holds the line until fn's promise settles */
+const apiExclusive = fn => apiEnqueue({ run: fn }, true);
+async function apiSend(path, body, raw) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "X-CEMS": "1" }, body };
   if (body !== undefined && !raw) opt.headers["Content-Type"] = "application/x-www-form-urlencoded";
-  if (body === undefined) opt.signal = AbortSignal.timeout(5000);   /* a hung poll counts as lost, not as live */
+  /* a hung poll counts as lost, not as live; a hung write must not hold the queue for ever */
+  opt.signal = AbortSignal.timeout(body === undefined ? 5000 : raw ? 120000 : 30000);
   const r = await fetch(path, opt);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status, info: j });
@@ -851,7 +880,7 @@ async function diagPackage() {
   const pkg = { kind: "cems-diagnostic-package", version: 1, generated: new Date().toISOString(), page_url: location.origin };
   const get = async (k, path, text) => {
     try {
-      if (text) { const r = await fetch(path, { signal: AbortSignal.timeout(20000) }); pkg[k] = r.ok ? await r.text() : { error: r.status }; }
+      if (text) pkg[k] = await apiExclusive(async () => { const r = await fetch(path, { signal: AbortSignal.timeout(20000) }); return r.ok ? await r.text() : { error: r.status }; });
       else pkg[k] = await api(path);
     } catch (e) { pkg[k] = { error: e.message }; }
   };
@@ -1597,6 +1626,7 @@ async function refreshFw() {
 $("fwup").onclick = () => {
   const f = $("fwfile").files[0]; $("fwerr").textContent = "";
   if (!f) { $("fwerr").textContent = "Choose a .cfw file first"; return; }
+  apiExclusive(() => new Promise(done => {
   const x = new XMLHttpRequest(), p = $("fwprog");
   x.open("POST", "/api/fw/upload"); x.setRequestHeader("X-CEMS", "1");
   x.setRequestHeader("Content-Type", "application/octet-stream");
@@ -1606,10 +1636,12 @@ $("fwup").onclick = () => {
     p.style.display = "none";
     let j = {}; try { j = JSON.parse(x.responseText); } catch (e) { }
     $("fwerr").textContent = x.status === 200 ? `Uploaded ${j.staged}` : (j.error || "Upload failed");
-    refreshFw();
+    done(); refreshFw();
   };
-  x.onerror = () => { p.style.display = "none"; $("fwerr").textContent = "Upload failed (connection)"; };
+  x.onerror = () => { p.style.display = "none"; $("fwerr").textContent = "Upload failed (connection)"; done(); };
+  x.onloadend = () => done();                            /* also after an abort or timeout */
   x.send(f);
+  }));
 };
 $("fwact").onclick = async () => {
   if (!confirm("Restart the instrument on the new firmware now? Measurement stops for the restart.")) return;
