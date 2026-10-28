@@ -290,12 +290,31 @@ extern IWDG_HandleTypeDef hiwdg;
 static bsp_reset_cause_t reset_cause = BSP_RESET_UNKNOWN;
 static bool reset_cause_read;
 
+#ifdef HAL_IWDG_MODULE_ENABLED
+/* Start-up runs before the supervisor task and can take longer than the 1 s IWDG: the
+ * first-boot HTTPS key, and on the DK (no FRAM) a new key at every boot, measured 1.1 s
+ * from reset to the first scan in a -O0 build (28 Oct, bench). So bsp_init stretches the
+ * IWDG to about 8 s and the first kick from a task (thread mode on the process stack,
+ * i.e. the scheduler is running) puts back the 1 s from CubeMX. */
+static uint32_t wdg_run_prescaler;
+static bool wdg_stretched;
+static void wdg_set_prescaler(uint32_t pr) {
+    if (!wdg_stretched) wdg_run_prescaler = hiwdg.Init.Prescaler;
+    hiwdg.Init.Prescaler = pr;
+    (void)HAL_IWDG_Init(&hiwdg);               /* already running: reloads PR and kicks */
+    wdg_stretched = (pr != wdg_run_prescaler);
+}
+#endif
+
 /* ---------------- time ---------------- */
 void bsp_init(void) {
     /* DWT cycle counter for scan execution-time statistics */
     DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+#ifdef HAL_IWDG_MODULE_ENABLED
+    wdg_set_prescaler(IWDG_PRESCALER_256);    /* about 8 s until the tasks run: see bsp_wdg_kick */
+#endif
 }
 
 uint32_t bsp_ms(void) { return HAL_GetTick(); }         /* HAL timebase: 1 kHz (TIM6 when FreeRTOS owns SysTick) */
@@ -377,6 +396,10 @@ void bsp_io_safe_state(void) {
 /* ---------------- watchdog and reset ---------------- */
 void bsp_wdg_kick(void) {
 #ifdef HAL_IWDG_MODULE_ENABLED
+    if (wdg_stretched && __get_IPSR() == 0u && (__get_CONTROL() & CONTROL_SPSEL_Msk)) {
+        wdg_set_prescaler(wdg_run_prescaler);
+        return;
+    }
     (void)HAL_IWDG_Refresh(&hiwdg);
 #endif
 }
@@ -478,7 +501,11 @@ void bsp_random(void *buf, uint32_t len) {
     }
 }
 
-/* the 96-bit unique device ID (RM0481 "Unique device ID register") */
+/* the 96-bit unique device ID (RM0481 "Unique device ID register"). Word reads only: a
+ * byte read of this area is a bus fault on the H5 (seen on the DK, 28 Oct). */
 void bsp_chip_uid(uint8_t uid[12]) {
-    for (unsigned k = 0; k < 12u; ++k) uid[k] = *((const volatile uint8_t *)UID_BASE + k);
+    for (unsigned w = 0; w < 3u; ++w) {
+        uint32_t v = ((const volatile uint32_t *)UID_BASE)[w];
+        for (unsigned k = 0; k < 4u; ++k) uid[4u * w + k] = (uint8_t)(v >> (8u * k));
+    }
 }
