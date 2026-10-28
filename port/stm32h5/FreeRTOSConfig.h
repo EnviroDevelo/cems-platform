@@ -87,7 +87,8 @@ void plat_assert_failed(const char *file, int line);
 #define INCLUDE_xTimerPendFunctionCall          1
 
 /* The ARM_CM33_NTZ port defines SVC_Handler, PendSV_Handler and SysTick_Handler
- * itself: CubeMX must NOT generate them in stm32h5xx_it.c, and the HAL timebase
- * must be a TIM (e.g. TIM6), not SysTick. */
+ * itself: CubeMX must NOT generate them in stm32h5xx_it.c. The HAL timebase is SysTick
+ * in the .ioc, but bsp_stm32h5.c replaces HAL_InitTick/HAL_GetTick (no TIM timebase:
+ * one froze the DK's start-up, 28 Oct). */
 
 #endif

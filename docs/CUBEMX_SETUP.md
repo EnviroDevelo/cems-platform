@@ -1,7 +1,7 @@
 # Bringing the platform up on the STM32H573I-DK (STM32CubeIDE)
 
 These steps set up the CubeIDE project that the platform sources drop into. The
-platform needs four things from CubeMX: the HAL, a TIM timebase, RTC, IWDG, the GPIO
+platform needs four things from CubeMX: the HAL, RTC, IWDG, the GPIO
 labels and FreeRTOS. Everything else stays in the platform files.
 
 Check each value marked **(check)** against the DK user manual or schematic before
@@ -19,7 +19,7 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 
 | Peripheral | Setting |
 |---|---|
-| SYS | Timebase source: **TIM6** (FreeRTOS needs SysTick) |
+| SYS | Timebase source: **SysTick** (the default). Not a TIM: on the DK a TIM6 timebase froze the start-up after a power-up (28 Oct). `bsp_stm32h5.c` supplies `HAL_InitTick`/`HAL_GetTick` (the DWT cycle counter before the scheduler, the FreeRTOS tick after), so CubeMX's SysTick setup is never used and FreeRTOS keeps SysTick |
 | RCC | Clocks as the board default gives (250 MHz SYSCLK). Enable LSE for the RTC **(check that the DK fits a 32.768 kHz crystal)** |
 | RTC | Activate clock source and calendar. Hour format 24, binary data format. Clock source LSE. The product board has a VBAT supply (coin cell or supercap; `docs/HARDWARE.md` H1) so the clock survives a power cut; without one every power-up starts "clock not set" until someone, the PLC or the time server sets it |
 | IWDG | Prescaler 32, reload 999: about 1 s at the nominal 32 kHz LSI. The supervisor kicks it every 100 ms |

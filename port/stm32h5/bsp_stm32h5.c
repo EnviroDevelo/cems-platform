@@ -13,6 +13,8 @@
 #include "plat_io.h"
 #include "nvm.h"
 #include "plat_config.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #ifndef DI_01_ACTIVE_LOW
 #define DI_01_ACTIVE_LOW 0
@@ -309,15 +311,55 @@ static void wdg_set_prescaler(uint32_t pr) {
 /* ---------------- time ---------------- */
 void bsp_init(void) {
     /* DWT cycle counter for scan execution-time statistics */
-    DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
-    DWT->CYCCNT = 0;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    (void)HAL_InitTick(0);                     /* starts it if the HAL has not (keeps the count) */
 #ifdef HAL_IWDG_MODULE_ENABLED
     wdg_set_prescaler(IWDG_PRESCALER_256);    /* about 8 s until the tasks run: see bsp_wdg_kick */
 #endif
 }
 
-uint32_t bsp_ms(void) { return HAL_GetTick(); }         /* HAL timebase: 1 kHz (TIM6 when FreeRTOS owns SysTick) */
+/* ---------------- HAL timebase ----------------
+ * No timer of its own: on the DK a CubeMX TIM6 timebase froze the start-up after a power-up
+ * (28 Oct, bench; it ran only once a debugger had attached), while ST's examples and Gary's
+ * Smart Filter project, which keep the HAL on SysTick, boot every time. SysTick belongs to
+ * FreeRTOS, so the HAL's millisecond count is taken from the DWT cycle counter until the
+ * scheduler runs and from the FreeRTOS tick (1 kHz, configTICK_RATE_HZ) after that. These
+ * replace the HAL's weak HAL_InitTick and HAL_GetTick; in the .ioc, SYS Timebase = SysTick
+ * and no SysTick handler generated (the FreeRTOS port has it). */
+static uint32_t boot_ms;                       /* counted before the scheduler started */
+static uint32_t boot_rem, boot_last;           /* cycles not yet a whole ms; CYCCNT last seen */
+static uint32_t boot_ms_at_start;              /* the count when the scheduler took over */
+static bool     sched_seen;
+
+HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority) {
+    (void)TickPriority;                        /* called again after each clock change: keeps the count */
+    if (!(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
+        DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
+        DWT->CYCCNT = 0;
+        DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+        boot_last = 0;
+    }
+    return HAL_OK;
+}
+
+uint32_t HAL_GetTick(void) {
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        TickType_t t = __get_IPSR() ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
+        if (!sched_seen) {                     /* first call after the start: carry the count on */
+            sched_seen = true;
+            boot_ms_at_start = boot_ms - (uint32_t)t;
+        }
+        return boot_ms_at_start + (uint32_t)t;
+    }
+    /* whole ms at the current clock, so a clock change only affects time from then on;
+     * CYCCNT wraps every 17 s at 250 MHz, and start-up calls this far more often */
+    uint32_t now = DWT->CYCCNT, per_ms = SystemCoreClock / 1000u;
+    boot_rem += now - boot_last;
+    boot_last = now;
+    if (per_ms) { boot_ms += boot_rem / per_ms; boot_rem %= per_ms; }
+    return boot_ms;
+}
+
+uint32_t bsp_ms(void) { return HAL_GetTick(); }         /* the HAL timebase above: 1 kHz */
 uint32_t bsp_cycles(void) { return DWT->CYCCNT; }
 uint32_t bsp_cycles_per_us(void) {
     uint32_t c = SystemCoreClock / 1000000u;
