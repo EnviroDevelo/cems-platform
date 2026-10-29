@@ -27,3 +27,6 @@ DK bring-up changes (28-29 Oct, before release):
   takes a kept place only if one is free or idle over 1 s; otherwise it is served once on the
   spare and closed, so a browser's extra sockets never push out another's. TLS pool 44 -> 80 KB;
   the RAM stand-in for a missing FRAM shrinks to the used map (STORE_META_ADDR + 1 KB).
+- Ethernet receive no longer depends on the RX interrupt alone: the receive task drains the ring
+  every 50 ms and restarts a DMA suspended for lack of buffers (RBU); transmit frees sent
+  descriptors before each send. Meant to stop the port going deaf after a debugger halt.
