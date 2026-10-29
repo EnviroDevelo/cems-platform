@@ -213,6 +213,7 @@ section.offtab{display:none!important}
       <h2>Parameters</h2>
       <input id="filter" placeholder="Filter by name or ID">
     </div>
+    <p class="note" id="localnote" style="display:none">The instrument is in LOCAL mode, so settings marked "remote mode" can only be changed here after someone at the instrument switches it to REMOTE on the touchscreen.</p>
     <table id="partab">
       <thead><tr><th>ID</th><th>Name</th><th>Value</th><th class="lim">Range</th><th>Access</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
@@ -990,6 +991,7 @@ async function refreshInfo() {
     $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}${i.build && i.build !== "dev" ? " (" + i.build + ")" : ""}${i.core ? "  ·  core " + i.core : ""}` +
       `${i.board_rev !== undefined && i.board_rev !== null ? "  ·  board rev " + i.board_rev : ""}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
+    $("localnote").style.display = i.mode === "remote" || !LV.indexOf(i.session.level) ? "none" : "";
     showAlarmBadge(i.alarms);
     showState(i.state);
     showSelftest(i.selftest);
