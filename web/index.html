@@ -1578,7 +1578,12 @@ async function pollSvc(once) {
     $("svctest").innerHTML = "";
     if (!t) $("svctest").textContent = "No manufacturing test recorded.";
     else {
-      const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : "b-bad"); b.textContent = t.passed ? "PASSED" : "FAILED";
+      /* nothing failed but something was skipped: not passed, yet not a fault (a part absent or not answering) */
+      const nFail = t.results.filter(r => r === 2).length, nSkip = t.results.filter(r => r === 0).length, skipOnly = !t.passed && !nFail && nSkip;
+      const skipW = t.names ? "skipped" : "not run";
+      if (t.names) words[0] = "skipped";
+      const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : skipOnly ? "b-warn" : "b-bad");
+      b.textContent = t.passed ? "PASSED" : skipOnly ? `NOT PASSED: ${nSkip} ${skipW}, 0 failed` : "FAILED";
       const n = document.createElement("span");
       const nm = k => t.names && t.names[k] ? (ST_NAMES[t.names[k]] || t.names[k]) : k + 1;   /* the board test names its tests */
       n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${nm(k)} ${words[r] || r}`).join(", ");

@@ -84,6 +84,8 @@ async def run(sim):
         await pg.wait_for_timeout(1500)
         rec = await pg.inner_text("#svctest")
         check("station board" in rec and "Settings memory (FRAM)" in rec, f"the test record names its tests ({rec[:90]!r})")
+        want = "NOT PASSED" if " 0 fail" in state and "skipped" in state else "FAILED"   # only skips: not a fault
+        check(rec.startswith(want), f"record badge {want!r} ({rec[:40]!r})")
         if sim:
             sim.post_refuse = True
             await pg.click("#btrun")
