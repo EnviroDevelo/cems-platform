@@ -56,7 +56,7 @@ typedef struct {
 
 /* One block holds both staging images, after room for the backup file's own header, so
  * between saves it is also the web server's backup/restore buffer (param_store_lease). */
-static uint8_t img_all[STORE_BACKUP_MAX];
+static uint8_t img_all[STORE_BACKUP_MAX] PLAT_EXTRAM;   /* external PSRAM when the board has it */
 #define img_fac (img_all + STORE_BACKUP_HDR)
 #define img_usr (img_all + STORE_BACKUP_HDR + STORE_FAC_SLOT)
 

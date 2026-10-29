@@ -8,7 +8,7 @@ module, and before choosing hardware. Last run: 2026-10-29.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 469.5 KB | 1016.0 KB | 46 % | 546.5 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 469.6 KB | 1016.0 KB | 46 % | 546.4 KB |
 | RAM (STM32H573/H563, 640 KB) | 462.8 KB | 640.0 KB | 72 % | 177.2 KB |
 
 ## By module (KB)
@@ -28,7 +28,7 @@ module, and before choosing hardware. Last run: 2026-10-29.
 | Web server + page + logins | 70.2 | 33.5 |
 | HTTPS (tls.c + mbedTLS) | 96.5 | 83.4 |
 | Touch UI + EVE driver | 58.9 | 2.5 |
-| Task layer (FreeRTOS glue) | 3.1 | 99.7 |
+| Task layer (FreeRTOS glue) | 3.2 | 99.7 |
 | Board support (BSP) | 1.5 | 0.8 |
 | lwIP + Ethernet driver | 53.5 | 39.3 |
 | FreeRTOS kernel + heap | 9.8 | 64.8 |
@@ -48,15 +48,15 @@ about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate,
 added about 40 KB of RAM: the store's working copy of a 40 KB settings slot. Since 29 Oct
 that working copy is also the backup/restore buffer, lent to the web server between saves
 (param_store_lease), so the web server's own buffer is 8 KB instead of 49 KB, and lwIP's
-unused PBUF_POOL (12 KB) is gone: 52 KB less RAM in all.
+unused PBUF_POOL (12 KB) is gone: 52 KB less RAM in all. The CORE PCB adds an 8 MB PSRAM
+(Gary, 29 Oct): with PLAT_PSRAM=1 the TLS pool and that staging block (127 KB) move there and
+the MCU's RAM in use drops to about 339 KB (`tools/check_target.sh` prints both builds).
 
 ## Still to come (estimates, update when built)
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
 | Application alarm table (the ~50 alarms of 70_alarm_map) | ~2.5 | 0 | 24 bytes of constants each; RAM per alarm is already reserved (96 slots) |
-| Emissions math engine (PR #15) | | 4.4 | measured on its branch |
-| Instrument acquisition, Modbus TCP master (PR #16) | | 8.1 | fixed size: 8 instruments, 32 values, 3 connections + explorer; runs in the I/O bus task; about 2.6 KB of the parameter blob pool (already reserved) |
 
 ## Other non-volatile memory
 

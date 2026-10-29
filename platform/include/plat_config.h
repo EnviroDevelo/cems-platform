@@ -104,6 +104,18 @@
 #ifndef PLAT_HTTP_PORT
 #define PLAT_HTTP_PORT            80     /* only redirects to https:// (parameter 6 turns it off) */
 #endif
+/* External PSRAM (CORE PCB: APS6404L, 8 MB on OCTOSPI1, memory-mapped; port/stm32h5/psram_stm32h5.c).
+ * PLAT_PSRAM=1 in the project's defines for boards that have it; the DK has none. Large buffers
+ * marked PLAT_EXTRAM (the TLS pool, the settings staging block) then live there instead of the
+ * MCU's 640 KB. Never stacks, interrupt or DMA buffers. */
+#ifndef PLAT_PSRAM
+#define PLAT_PSRAM                0
+#endif
+#if PLAT_PSRAM && !defined(PLAT_HOST)
+#define PLAT_EXTRAM               __attribute__((section(".extram")))
+#else
+#define PLAT_EXTRAM
+#endif
 #ifndef PLAT_HTTP_BUF
 #define PLAT_HTTP_BUF             8192u  /* web request buffer: headers and form bodies, log reads in 128-record
                                             chunks. Backup files use the store's staging buffer and firmware

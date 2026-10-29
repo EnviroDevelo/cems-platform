@@ -175,7 +175,9 @@ about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate,
 added about 40 KB of RAM: the store's working copy of a 40 KB settings slot. Since 29 Oct
 that working copy is also the backup/restore buffer, lent to the web server between saves
 (param_store_lease), so the web server's own buffer is 8 KB instead of 49 KB, and lwIP's
-unused PBUF_POOL (12 KB) is gone: 52 KB less RAM in all.
+unused PBUF_POOL (12 KB) is gone: 52 KB less RAM in all. The CORE PCB adds an 8 MB PSRAM
+(Gary, 29 Oct): with PLAT_PSRAM=1 the TLS pool and that staging block (127 KB) move there and
+the MCU's RAM in use drops to about 339 KB (`tools/check_target.sh` prints both builds).
 
 ## Still to come (estimates, update when built)
 
