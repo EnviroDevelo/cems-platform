@@ -53,6 +53,9 @@
 #define F_TEXT  28
 #define F_BIG   30
 #define F_HUGE  31
+#define DT_TRAIL 128             /* touch test: points kept */
+#define DT_PATTERNS 7            /* display test: full-screen patterns */
+#define REG_CLOCK_DT 0x302008u   /* BT817 REG_CLOCK: counts system clock cycles (display test) */
 #define IDLE_DIM_MS (10u * 60u * 1000u)
 #define LOCK_MS 30000u
 
@@ -68,7 +71,8 @@ enum {
     T_TAB0 = 1, T_W0 = 10, T_WMAX = 118, T_DLG_YES = 120, T_DLG_NO = 121,
     T_ROW0 = 200,           /* .. T_ROW0 + ROWS - 1 */
     T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
-    T_AL_ROW0 = 220         /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
+    T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
+    T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE   /* display test (bench bring-up) */
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
@@ -123,6 +127,15 @@ static struct {
     uint16_t tmap_i[128];          /* tag -> grid item / cell (row << 6 | element) */
     char     ok_msg[48];
     uint8_t  cal_ch, cal_cmd;      /* calibration screen: the channel selected; the command being confirmed */
+    /* display test: 0 = the status page, 1 = full-screen patterns (dt_pat), 2 = touch test */
+    uint8_t  dt_mode, dt_pat;
+    int16_t  dt_x[DT_TRAIL], dt_y[DT_TRAIL];   /* touch test: the points seen, oldest first */
+    uint16_t dt_n;
+    bool     dt_down;              /* a finger is on the glass (touch test) */
+    int16_t  dt_dx, dt_dy;         /* the last touch-down's offset from the nearest target */
+    uint8_t  dt_tgt;               /* that target + 1 (0 = none yet) */
+    uint32_t dt_t0, dt_frames0, dt_clock0;   /* REG_FRAMES and REG_CLOCK at dt_t0, for the rates */
+    uint32_t dt_hz10, dt_mhz10;    /* refresh rate and system clock measured, x 10 (0 = not yet) */
     /* record editor */
     const ui_record_t *rec;
     uint8_t  rec_buf[PARAM_RECORD_MAX];
@@ -604,6 +617,7 @@ static void tap(uint8_t t, uint32_t now) {
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
             ask(ACT_FW, m);
         } else if (t == T_IOB) goto_scr(UI_IOB);
+        else if (t == T_DISP) { U.dt_mode = 0; U.dt_t0 = 0; U.dt_hz10 = U.dt_mhz10 = 0; goto_scr(UI_DISPLAY); }
         else if (t == T_CAL) { unsigned a; if (plat_cal_active(&a)) U.cal_ch = (uint8_t)a; goto_scr(UI_CAL); }
         else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
@@ -614,6 +628,14 @@ static void tap(uint8_t t, uint32_t now) {
         else if (t == T_CAL_ACCEPT) cal_tap(PLAT_CAL_CMD_ACCEPT, now);
         else if (t == T_CAL_ABORT) cal_tap(PLAT_CAL_CMD_ABORT, now);
         else if (t == T_CAL_REVERT) cal_tap(PLAT_CAL_CMD_REVERT, now);
+        break;
+    case UI_DISPLAY:
+        if (t == T_BACK) { U.dt_mode = 0; goto_scr(UI_SYSTEM); }
+        else if (t == T_DT_COLOURS) { U.dt_mode = 1; U.dt_pat = 0; U.dirty = true; }
+        else if (t == T_DT_TOUCH) { U.dt_mode = 2; U.dt_n = 0; U.dt_tgt = 0; U.dirty = true; }
+        else if (t == T_DT_NEXT && U.dt_mode == 1) { if (++U.dt_pat >= DT_PATTERNS) U.dt_mode = 0; U.dirty = true; }
+        else if (t == T_DT_CLEAR) { U.dt_n = 0; U.dt_tgt = 0; U.dirty = true; }
+        else if (t == T_DT_DONE) { U.dt_mode = 0; U.dirty = true; }
         break;
     default:
         break;
@@ -750,7 +772,7 @@ static void nav(void) {
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
     for (int k = 0; k < 4; ++k) {
         bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
-                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL));
+                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL || U.scr == UI_DISPLAY));
         button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
     char b[32];
@@ -1002,9 +1024,10 @@ static void draw_system(uint32_t now) {
     /* brightness */
     color(C_INK); text(32, BODY_Y + 266, F_TEXT, 0, "Screen brightness");
     snprintf(b, sizeof b, "%u %%", U.bright);
-    button(T_BRIGHT_DN, 32, BODY_Y + 306, 140, 64, "-", C_ACCENT, true);
-    color(C_INK); text(262, BODY_Y + 338, F_BIG, OPT_CENTER, b);
-    button(T_BRIGHT_UP, 352, BODY_Y + 306, 140, 64, "+", C_ACCENT, true);
+    button(T_BRIGHT_DN, 32, BODY_Y + 306, 100, 64, "-", C_ACCENT, true);
+    color(C_INK); text(182, BODY_Y + 338, F_BIG, OPT_CENTER, b);
+    button(T_BRIGHT_UP, 232, BODY_Y + 306, 100, 64, "+", C_ACCENT, true);
+    button(T_DISP, 344, BODY_Y + 306, 148, 64, "Display test", 0x5B6577u, true);   /* bench bring-up page */
     /* HTTPS fingerprint: a technician compares it with the browser's to know it reached this unit */
     const char *fp = tls_fingerprint();
     color(C_MUTE); text(32, BODY_Y + 378, F_SMALL, 0, fp[0] ? "HTTPS certificate fingerprint (SHA-256)" : "HTTPS not available");
@@ -1066,6 +1089,136 @@ static void draw_system(uint32_t now) {
     button(T_CLOCK, 884, BODY_Y + 318, 116, 64, "Set clock", C_ACCENT, true);
     button(T_IOB, 884, BODY_Y + 244, 116, 64, "I/O boards", C_ACCENT, true);
     if (plat_cal_count()) button(T_CAL, 884, BODY_Y + 40, 116, 64, plat_cal_any_due() ? "Cal DUE" : "Calibrate", plat_cal_any_due() ? C_WARN : C_ACCENT, true);
+}
+
+/* ---------------- display test (bench bring-up, HMI_BENCH_TEST.md) ----------------
+ * Status page: what the BT817 reports and what the driver has seen, with the refresh rate and
+ * system clock measured from REG_FRAMES and REG_CLOCK. "Colour test": full-screen patterns, a
+ * tap anywhere for the next. "Touch test": five targets; the trail of points touched and each
+ * touch-down's offset from the nearest target, to check the touch lines up with the picture. */
+static const int16_t dt_tx[5] = { 40, W - 40, 40, W - 40, W / 2 }, dt_ty[5] = { 40, 40, 560, 560, 300 };
+static const char *const dt_pat_name[DT_PATTERNS] = { "Colour bars and grey ramp", "White", "Black", "Red", "Green", "Blue", "Grid, 50 px" };
+
+static void dt_cross(int16_t x, int16_t y, uint32_t c) {
+    color(c);
+    eve_line(E, (int16_t)(x - 24), y, (int16_t)(x + 24), y, 2);
+    eve_line(E, x, (int16_t)(y - 24), x, (int16_t)(y + 24), 2);
+}
+
+static void draw_display_patterns(void) {
+    eve_tag(E, T_DT_NEXT);
+    switch (U.dt_pat) {
+    case 0: {
+        static const uint32_t bars[8] = { 0xFFFFFFu, 0xFFFF00u, 0x00FFFFu, 0x00FF00u, 0xFF00FFu, 0xFF0000u, 0x0000FFu, 0x000000u };
+        for (int k = 0; k < 8; ++k) box((int16_t)(k * 128), 0, 128, 400, bars[k], 0);
+        for (int k = 0; k < 32; ++k) { uint32_t g = (uint32_t)(k * 255 / 31); box((int16_t)(k * 32), 400, 32, 200, g << 16 | g << 8 | g, 0); }
+        break; }
+    case 1: box(0, 0, W, 600, 0xFFFFFFu, 0); break;
+    case 2: box(0, 0, W, 600, 0x000000u, 0); break;
+    case 3: box(0, 0, W, 600, 0xFF0000u, 0); break;
+    case 4: box(0, 0, W, 600, 0x00FF00u, 0); break;
+    case 5: box(0, 0, W, 600, 0x0000FFu, 0); break;
+    default:
+        box(0, 0, W, 600, 0x000000u, 0);
+        color(0xFFFFFFu);
+        for (int16_t x = 0; x < W; x = (int16_t)(x + 50)) eve_line(E, x, 0, x, 599, 1);
+        for (int16_t y = 0; y < 600; y = (int16_t)(y + 50)) eve_line(E, 0, y, W - 1, y, 1);
+        eve_line(E, W - 1, 0, W - 1, 599, 1); eve_line(E, 0, 599, W - 1, 599, 1);   /* the last pixel on every edge */
+        break;
+    }
+    char b[64];
+    snprintf(b, sizeof b, "%u of %u: %s. Tap for the next", (unsigned)U.dt_pat + 1u, (unsigned)DT_PATTERNS, dt_pat_name[U.dt_pat]);
+    color(U.dt_pat == 1 || U.dt_pat == 4 ? 0x000000u : 0xFFFFFFu);
+    if (U.dt_pat != 0) text(W / 2, 560, F_SMALL, OPT_CENTERX, b);
+    eve_tag(E, 0);
+}
+
+static void draw_display_touch(void) {
+    eve_tag(E, 255);                                  /* the glass itself: no tap, just points */
+    box(0, 0, W, 600, 0xFFFFFFu, 0);
+    eve_tag(E, 0);
+    int16_t x, y;
+    bool down = eve_touch_xy(E, &x, &y);
+    if (down) {
+        if (U.dt_n == DT_TRAIL) { memmove(U.dt_x, U.dt_x + 1, sizeof U.dt_x - sizeof U.dt_x[0]); memmove(U.dt_y, U.dt_y + 1, sizeof U.dt_y - sizeof U.dt_y[0]); U.dt_n--; }
+        U.dt_x[U.dt_n] = x; U.dt_y[U.dt_n] = y; U.dt_n++;
+        if (!U.dt_down) {                             /* touch-down: offset from the nearest target */
+            int32_t best = INT32_MAX;
+            for (uint8_t k = 0; k < 5; ++k) {
+                int32_t dx = x - dt_tx[k], dy = y - dt_ty[k], d = dx * dx + dy * dy;
+                if (d < best) { best = d; U.dt_tgt = (uint8_t)(k + 1); U.dt_dx = (int16_t)dx; U.dt_dy = (int16_t)dy; }
+            }
+        }
+    }
+    U.dt_down = down;
+    U.dirty = true;                                   /* follow the finger at the task's rate */
+    for (int k = 0; k < 5; ++k) dt_cross(dt_tx[k], dt_ty[k], U.dt_tgt == k + 1 ? C_ACCENT : C_INK);
+    color(C_BAD);
+    for (unsigned i = 0; i < U.dt_n; ++i) eve_rect(E, (int16_t)(U.dt_x[i] - 2), (int16_t)(U.dt_y[i] - 2), 5, 5, 1);
+    char b[96];
+    color(C_INK);
+    text(W / 2, 150, F_TEXT, OPT_CENTERX, "Touch each cross, then draw along the edges");
+    if (down) snprintf(b, sizeof b, "Finger at %d, %d", x, y);
+    else snprintf(b, sizeof b, "No finger on the glass");
+    text(W / 2, 190, F_SMALL, OPT_CENTERX, b);
+    if (U.dt_tgt) {
+        int16_t ax = (int16_t)(U.dt_dx < 0 ? -U.dt_dx : U.dt_dx), ay = (int16_t)(U.dt_dy < 0 ? -U.dt_dy : U.dt_dy);
+        snprintf(b, sizeof b, "Last touch: %d px %s, %d px %s of the cross", ax, U.dt_dx < 0 ? "left" : "right", ay, U.dt_dy < 0 ? "above" : "below");
+        color(ax > 10 || ay > 10 ? C_BAD : C_OK);     /* about 1.5 mm at 6.64 px/mm */
+        text(W / 2, 220, F_SMALL, OPT_CENTERX, b);
+    }
+    button(T_DT_CLEAR, 332, 420, 160, 64, "Clear", 0x5B6577u, true);
+    button(T_DT_DONE, 532, 420, 160, 64, "Done", C_ACCENT, true);
+}
+
+static void draw_display(uint32_t now) {
+    if (U.dt_mode == 1) { draw_display_patterns(); return; }
+    if (U.dt_mode == 2) { draw_display_touch(); return; }
+    char b[96];
+    uint32_t frames = eve_rd32(E, REG_FRAMES), clk = eve_rd32(E, REG_CLOCK_DT);
+    if (!U.dt_t0) { U.dt_t0 = now ? now : 1u; U.dt_frames0 = frames; U.dt_clock0 = clk; }
+    else if (now - U.dt_t0 >= 1000u) {                /* rates over the last second or more */
+        uint32_t ms = now - U.dt_t0;
+        U.dt_hz10 = (uint32_t)((uint64_t)(frames - U.dt_frames0) * 10000u / ms);
+        U.dt_mhz10 = (uint32_t)((uint64_t)(clk - U.dt_clock0) / 100u / ms);
+        U.dt_t0 = now; U.dt_frames0 = frames; U.dt_clock0 = clk;
+    }
+    box(16, BODY_Y, 640, 392, C_CARD, 8);
+    color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, "Display");
+    uint8_t id = eve_rd8(E, REG_ID);
+    uint32_t chip = eve_rd32(E, 0x0C0000u);           /* BT817: 08 17 01 00 (RAM_G chip ID, read after boot) */
+    snprintf(b, sizeof b, "REG_ID 0x%02X%s, chip %02X%02X", id, id == EVE_CHIP_ID ? " (answering)" : " (WRONG)", (unsigned)(chip & 0xFFu), (unsigned)((chip >> 8) & 0xFFu));
+    kv(32, BODY_Y + 44, "Controller", b);
+    snprintf(b, sizeof b, "%lu frames, %lu faults, %lu timeouts", (unsigned long)E->frames, (unsigned long)E->faults, (unsigned long)E->timeouts);
+    kv(32, BODY_Y + 70, "Driver", b);
+    kv(32, BODY_Y + 96, "Last fault", E->fault_msg[0] ? E->fault_msg : "none");
+    if (U.dt_hz10) snprintf(b, sizeof b, "%lu.%lu Hz", (unsigned long)(U.dt_hz10 / 10u), (unsigned long)(U.dt_hz10 % 10u));
+    else snprintf(b, sizeof b, "measuring...");
+    kv(32, BODY_Y + 122, "Refresh", b);
+    if (U.dt_mhz10) snprintf(b, sizeof b, "%lu.%lu MHz measured, %lu MHz set", (unsigned long)(U.dt_mhz10 / 10u), (unsigned long)(U.dt_mhz10 % 10u), (unsigned long)(eve_rd32(E, REG_FREQUENCY) / 1000000u));
+    else snprintf(b, sizeof b, "%lu MHz set, measuring...", (unsigned long)(eve_rd32(E, REG_FREQUENCY) / 1000000u));
+    kv(32, BODY_Y + 148, "System clock", b);
+    snprintf(b, sizeof b, "PCLK %lu, PCLK_FREQ 0x%03lX, 2X %lu", (unsigned long)eve_rd8(E, REG_PCLK), (unsigned long)eve_rd16(E, REG_PCLK_FREQ), (unsigned long)eve_rd8(E, REG_PCLK_2X));
+    kv(32, BODY_Y + 174, "Pixel clock", b);
+    snprintf(b, sizeof b, "%lu x %lu", (unsigned long)eve_rd16(E, REG_HSIZE), (unsigned long)eve_rd16(E, REG_VSIZE));
+    kv(32, BODY_Y + 200, "Size", b);
+    unsigned nf = 0;
+    for (unsigned i = 0; i < EVE_FONTS; ++i) nf += (E->fonts_ok >> i) & 1u;
+    snprintf(b, sizeof b, "%u of %u own fonts loaded%s", nf, (unsigned)EVE_FONTS, nf == EVE_FONTS ? "" : " (ROM fonts used)");
+    kv(32, BODY_Y + 226, "Fonts", b);
+    int16_t tx, ty;
+    bool td = eve_touch_xy(E, &tx, &ty);
+    if (td) snprintf(b, sizeof b, "config 0x%04X, finger at %d, %d", (unsigned)eve_rd16(E, REG_TOUCH_CONFIG), tx, ty);
+    else snprintf(b, sizeof b, "config 0x%04X, mode %u", (unsigned)eve_rd16(E, REG_TOUCH_CONFIG), (unsigned)eve_rd8(E, REG_TOUCH_MODE));
+    kv(32, BODY_Y + 252, "Touch", b);
+    snprintf(b, sizeof b, "%u %%, PWM duty %u of 128", (unsigned)U.bright, (unsigned)eve_rd8(E, REG_PWM_DUTY));
+    kv(32, BODY_Y + 278, "Backlight", b);
+    color(C_MUTE);
+    text(32, BODY_Y + 320, F_SMALL, 0, "Use this page for the bench checks in docs/HMI_BENCH_TEST.md.");
+    text(32, BODY_Y + 344, F_SMALL, 0, "Brightness is set on the System page.");
+    button(T_DT_COLOURS, 672, BODY_Y, 336, 120, "Colour test", C_ACCENT, true);
+    button(T_DT_TOUCH, 672, BODY_Y + 136, 336, 120, "Touch test", C_ACCENT, true);
+    button(T_BACK, 672, BODY_Y + 272, 336, 120, "Back", 0x5B6577u, true);
 }
 
 /* I/O boards (iobus.h): one card per board, outputs and inputs as lit squares, faults in words */
@@ -1954,6 +2107,13 @@ void ui_draw(eve_t *e, uint32_t now) {
     eve_frame_begin(e, 0xF4, 0xF5, 0xF7);
     eve_fonts_use(e);
     eve_tag(e, 0);
+    if (U.scr == UI_DISPLAY && U.dt_mode) {           /* full screen: no header, toasts or navigation */
+        draw_display(now);
+        (void)eve_frame_end(e);
+        U.dirty = U.dt_mode == 2;
+        U.last_draw = now;
+        return;
+    }
     header(now);
     switch (U.scr) {
     case UI_PARAMS: draw_params(); break;
@@ -1968,6 +2128,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_REC:   draw_rec(); break;
     case UI_IOB:   draw_iob(); break;
     case UI_CAL:   draw_cal(now); break;
+    case UI_DISPLAY: draw_display(now); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {

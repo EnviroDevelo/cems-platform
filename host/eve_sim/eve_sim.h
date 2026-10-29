@@ -39,6 +39,7 @@ typedef struct {
 
 void eve_sim_init(eve_sim_t *s);
 void eve_sim_touch(eve_sim_t *s, uint8_t tag);            /* 0 = finger lifted */
+void eve_sim_touch_xy(eve_sim_t *s, int16_t x, int16_t y);   /* REG_TOUCH_SCREEN_XY; -32768, -32768 = no finger */
 
 /* Inspect the last frame */
 bool eve_sim_has_text(const eve_sim_t *s, const char *needle);   /* in any text/button/keys string */

@@ -168,11 +168,18 @@ void eve_sim_init(eve_sim_t *s) {
     s->zbuf = zbuf_pool;
     memset(ram_g_pool, 0, sizeof ram_g_pool);
     s->regs[REG_ID - EVE_RAM_REG] = EVE_CHIP_ID;
+    eve_sim_touch_xy(s, -32768, -32768);             /* no finger, as the chip reports it */
+    static const uint8_t chip[4] = { 0x08, 0x17, 0x01, 0x00 };   /* BT817 chip ID in RAM_G after boot */
+    memcpy(ram_g_pool + 0x0C0000u, chip, sizeof chip);
     s->bus.select = b_select; s->bus.write = b_write; s->bus.read = b_read;
     s->bus.delay_ms = b_delay; s->bus.ctx = s;
 }
 
 void eve_sim_touch(eve_sim_t *s, uint8_t tag) { s->regs[REG_TOUCH_TAG - EVE_RAM_REG] = tag; }
+void eve_sim_touch_xy(eve_sim_t *s, int16_t x, int16_t y) {
+    uint32_t v = (uint32_t)(uint16_t)x << 16 | (uint16_t)y;
+    for (int k = 0; k < 4; ++k) s->regs[REG_TOUCH_SCREEN_XY - EVE_RAM_REG + k] = (uint8_t)(v >> (8 * k));
+}
 
 /* ---- frame walking ---- */
 typedef void (*visit_fn)(void *ctx, uint32_t cmd, const uint8_t *args, const char *str, uint8_t tag);

@@ -656,6 +656,55 @@ static void t_iob_screen(void) {
     iob_link = IOB_LINK_ETH;
 }
 
+/* the display test page for bench bring-up (HMI_BENCH_TEST.md): controller status and measured
+ * rates, the colour patterns (a tap anywhere steps on, the last goes back), and the touch test
+ * (points from REG_TOUCH_SCREEN_XY, the offset from the nearest cross) */
+static void t_display_screen(void) {
+    setup();
+    CHECK(tap("System"));
+    CHECK(tap("Display test"));
+    CHECK_EQ(ui_screen(), UI_DISPLAY);
+    CHECK(shows("Colour test")); CHECK(shows("Touch test"));
+    CHECK(shows("(answering)")); CHECK(shows("chip 0817"));
+    CHECK(shows("1024 x 600"));
+    CHECK(shows("measuring..."));
+    /* rates over a second: 60 frames and 72 M clocks */
+    for (int k = 0; k < 4; ++k) sim.regs[REG_FRAMES - EVE_RAM_REG + k] = 0;
+    sim.regs[0x302008u - EVE_RAM_REG] = 0; sim.regs[0x302009u - EVE_RAM_REG] = 0; sim.regs[0x30200Au - EVE_RAM_REG] = 0; sim.regs[0x30200Bu - EVE_RAM_REG] = 0;
+    frame();
+    now += 980;                                        /* frame() adds 20 */
+    sim.regs[REG_FRAMES - EVE_RAM_REG] = 60;
+    { uint32_t c = 72000000u; for (int k = 0; k < 4; ++k) sim.regs[0x302008u - EVE_RAM_REG + k] = (uint8_t)(c >> (8 * k)); }
+    frame();
+    CHECK(shows("Hz")); CHECK(shows("MHz measured"));
+    dump("display");
+    /* patterns: full screen, no navigation; seven taps go through them and back */
+    CHECK(tap("Colour test"));
+    CHECK(!shows("Home"));
+    for (int k = 0; k < 6; ++k) { press(233); CHECK_EQ(ui_screen(), UI_DISPLAY); }   /* T_DT_NEXT */
+    CHECK(shows("Grid, 50 px"));
+    dump("display_grid");
+    press(233);
+    CHECK(shows("Colour test")); CHECK(shows("Home"));
+    /* touch test: a touch 6 px right and 4 px below the top-left cross */
+    CHECK(tap("Touch test"));
+    CHECK(shows("Touch each cross"));
+    CHECK(shows("No finger on the glass"));
+    eve_sim_touch_xy(&sim, 46, 44); eve_sim_touch(&sim, 255);
+    ui_input(255, now); frame();
+    CHECK(shows("Finger at 46, 44"));
+    CHECK(shows("Last touch: 6 px right, 4 px below of the cross"));
+    eve_sim_touch_xy(&sim, 60, 44); frame();
+    eve_sim_touch_xy(&sim, -32768, -32768); eve_sim_touch(&sim, 0);
+    ui_input(0, now); frame();
+    CHECK(shows("No finger on the glass"));
+    CHECK(shows("Last touch: 6 px right"));           /* only a touch-down moves it */
+    dump("display_touch");
+    CHECK(tap("Clear")); CHECK(!shows("Last touch"));
+    CHECK(tap("Done")); CHECK(shows("Colour test"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
@@ -665,4 +714,5 @@ void test_ui_all(void) {
     RUN(t_iob_screen);
     RUN(t_state_quality);
     RUN(t_cal_screen);
+    RUN(t_display_screen);
 }
