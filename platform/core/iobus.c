@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "iobus.h"
+#include "inst.h"
 #include "mb_rtu.h"
 #include "bsp.h"
 #include "plat_alarm.h"
@@ -883,6 +884,7 @@ void iob_scan_out(const plat_io_out_t *o, uint32_t now_ms) {
 void plat_hw_io_read(plat_io_in_t *in) {
     bsp_io_read(in);
     iob_scan_in(in, bsp_ms());
+    inst_scan(bsp_ms());          /* third-party instruments: settings in, values out (inst.h) */
 }
 
 void plat_hw_io_write(const plat_io_out_t *out) {

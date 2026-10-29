@@ -16,6 +16,12 @@ self-test, PBKDF2 passwords with token recovery.
 Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the interface
 snapshots (`make snapshots APP=<dir>`).
 
+Third-party instruments (29 Oct, before release; docs/MODBUS_ROLES.md, `inst.h`): the CORE as
+Modbus TCP master for gas analysers and other devices on the I/O port (W5500 sockets 4-7), up to 8
+instruments and 32 points with type, word order, scaling, range and quality from the instrument's
+status word; parameters 500-621; `/api/inst` and the register explorer (`/api/inst/explore`).
+Products: nothing to do (off until set up).
+
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
   in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds

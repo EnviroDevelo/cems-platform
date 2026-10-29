@@ -50,6 +50,8 @@ static bool ready(iob_w5500_t *t) {
     return t->chip.ok;
 }
 
+bool iob_w5500_ready(iob_w5500_t *t) { return t->bus && ready(t); }
+
 static void drop(iob_w5500_t *t, unsigned k) {
     if (t->conn[k].open) w5500_close(&t->chip, (uint8_t)k);
     t->conn[k].open = false;

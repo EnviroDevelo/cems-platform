@@ -135,6 +135,19 @@ bool w5500_tcp_connect(w5500_t *w, uint8_t s, uint32_t ip, uint16_t port, uint16
     return false;
 }
 
+bool w5500_tcp_connect_start(w5500_t *w, uint8_t s, uint32_t ip, uint16_t port, uint16_t local_port) {
+    if (!usable(w, s) || !open_as(w, s, W5500_MR_TCP | W5500_MR_ND, local_port, W5500_SOCK_INIT)) return false;
+    wr32(w, W5500_SREG(s), W5500_Sn_DIPR, ip);
+    wr16(w, W5500_SREG(s), W5500_Sn_DPORT, port);
+    if (cmd(w, s, W5500_CR_CONNECT)) return true;
+    w5500_close(w, s);
+    return false;
+}
+
+uint8_t w5500_sock_state(w5500_t *w, uint8_t s) {
+    return usable(w, s) ? rd8(w, W5500_SREG(s), W5500_Sn_SR) : (uint8_t)W5500_SOCK_CLOSED;
+}
+
 bool w5500_tcp_ok(w5500_t *w, uint8_t s) {
     return usable(w, s) && rd8(w, W5500_SREG(s), W5500_Sn_SR) == W5500_SOCK_ESTABLISHED;
 }

@@ -8,6 +8,7 @@
 #include "iobus.h"
 #include "plat_state.h"
 #include "plat_cal.h"
+#include "inst.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -97,6 +98,63 @@ extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
     PARAM_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 11, "iob" N "_cj_temp", iob_tags[K].cj_temp, CT_I16, -32768, 32767, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
     PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 12, "iob" N "_pump_rpm", iob_tags[K].pump_rpm, CT_U16, 0, 65535, 0, PLAT_LVL_VIEW, PF_RO, "rpm"), \
     PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL)
+
+/* third-party instruments (inst.h): defaults that are not zero */
+#define INST_ALL(V) { V, V, V, V, V, V, V, V }
+#define PT_ALL(V)   { V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V }
+static const uint16_t inst_d_port[INST_MAX] = INST_ALL(502), inst_d_ms[INST_MAX] = INST_ALL(1000);
+static const uint8_t  inst_d_unit[INST_MAX] = INST_ALL(1), inst_d_max[INST_MAX] = INST_ALL(64);
+static const uint8_t  pt_d_fc[INST_POINTS] = PT_ALL(INST_FC_HOLDING);
+static const float    pt_d_gain[INST_POINTS] = PT_ALL(1.0f);
+#define ARR_D(ID, NAME, VAR, CT, MIN, MAX, DFLT) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .vmin.u = (MIN), .vmax.u = (MAX), .size = (uint16_t)sizeof(VAR), .name = (NAME), .dflt = (DFLT) }
+#define ARR(ID, NAME, VAR, CT, MIN, MAX) ARR_D(ID, NAME, VAR, CT, MIN, MAX, NULL)
+#define ARR_RO(ID, NAME, VAR, CT) PARAM_ARRAY_UINT(ID, NAME, VAR, CT, 0, 0xFFFFFFFFu, PLAT_LVL_VIEW, PF_RO)
+#define INST_NAME(K, N) PARAM_TEXT(PARAM_ID_INST_NAME_FIRST + (K), "inst" N "_name", inst_tags.name[K], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
+#define PT_TEXT(P, N) PARAM_TEXT(PARAM_ID_PT_NAME_FIRST + (P), "pt" N "_name", inst_pt.name[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST), \
+                      PARAM_TEXT(PARAM_ID_PT_UNIT_FIRST + (P), "pt" N "_unit", inst_pt.unit[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
+#define INST_DEFS \
+    PARAM_ARRAY_BOOL(PARAM_ID_INST_ENABLE, "inst_enable", inst_tags.enable, PLAT_LVL_ADMIN, PF_PERSIST), \
+    ARR(PARAM_ID_INST_IP, "inst_ip", inst_tags.ip, CT_U32, 0, 0xFFFFFFFFu), \
+    ARR_D(PARAM_ID_INST_PORT, "inst_port", inst_tags.port, CT_U16, 1, 65535, inst_d_port), \
+    ARR_D(PARAM_ID_INST_UNIT, "inst_unit", inst_tags.unit, CT_U8, 0, 255, inst_d_unit), \
+    ARR_D(PARAM_ID_INST_PERIOD, "inst_period_ms", inst_tags.period_ms, CT_U16, 100, 60000, inst_d_ms), \
+    ARR_D(PARAM_ID_INST_TIMEOUT, "inst_timeout_ms", inst_tags.timeout_ms, CT_U16, 50, 10000, inst_d_ms), \
+    ARR_D(PARAM_ID_INST_MAX_REGS, "inst_max_regs", inst_tags.max_regs, CT_U8, 1, 125, inst_d_max), \
+    ARR(PARAM_ID_INST_GAP, "inst_gap", inst_tags.gap, CT_U8, 0, 32), \
+    ARR(PARAM_ID_INST_STATUS_PT, "inst_status_pt", inst_tags.status_pt, CT_U8, 0, INST_POINTS), \
+    ARR(PARAM_ID_INST_FAULT_MASK, "inst_fault_mask", inst_tags.fault_mask, CT_U16, 0, 0xFFFF), \
+    ARR(PARAM_ID_INST_MAINT_MASK, "inst_maint_mask", inst_tags.maint_mask, CT_U16, 0, 0xFFFF), \
+    ARR(PARAM_ID_INST_CAL_MASK, "inst_cal_mask", inst_tags.cal_mask, CT_U16, 0, 0xFFFF), \
+    ARR_RO(PARAM_ID_INST_STATE, "inst_state", inst_tags.state, CT_U8), \
+    ARR_RO(PARAM_ID_INST_GOOD, "inst_good", inst_tags.good, CT_U32), \
+    ARR_RO(PARAM_ID_INST_ERRORS, "inst_errors", inst_tags.errors, CT_U32), \
+    ARR_RO(PARAM_ID_INST_LAST_ERR, "inst_last_err", inst_tags.last_err, CT_U8), \
+    ARR_RO(PARAM_ID_INST_LAST_EXC, "inst_last_exc", inst_tags.last_exc, CT_U8), \
+    ARR_RO(PARAM_ID_INST_RESP_MS, "inst_resp_ms", inst_tags.resp_ms, CT_U16), \
+    INST_NAME(0, "1"), INST_NAME(1, "2"), INST_NAME(2, "3"), INST_NAME(3, "4"), \
+    INST_NAME(4, "5"), INST_NAME(5, "6"), INST_NAME(6, "7"), INST_NAME(7, "8"), \
+    ARR(PARAM_ID_PT_INST, "pt_inst", inst_pt.inst, CT_U8, 0, INST_MAX), \
+    ARR_D(PARAM_ID_PT_FC, "pt_fc", inst_pt.fc, CT_U8, INST_FC_COILS, INST_FC_INPUT, pt_d_fc), \
+    ARR(PARAM_ID_PT_ADDR, "pt_addr", inst_pt.addr, CT_U16, 0, 65535), \
+    ARR(PARAM_ID_PT_TYPE, "pt_type", inst_pt.type, CT_U8, 0, INST_T_COUNT - 1), \
+    ARR(PARAM_ID_PT_ORDER, "pt_order", inst_pt.order, CT_U8, 0, INST_O_COUNT - 1), \
+    ARR(PARAM_ID_PT_BIT, "pt_bit", inst_pt.bit, CT_U8, 0, 15), \
+    { .id = PARAM_ID_PT_GAIN, .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = inst_pt.gain, \
+      .vmin.f = -1e9f, .vmax.f = 1e9f, .size = (uint16_t)sizeof inst_pt.gain, .name = "pt_gain", .dflt = pt_d_gain }, \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_OFFSET, "pt_offset", inst_pt.offset, -1e9f, 1e9f, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_LO, "pt_lo", inst_pt.lo, -1e9f, 1e9f, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_HI, "pt_hi", inst_pt.hi, -1e9f, 1e9f, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_VALUE, "pt_value", inst_pt.value, -3.4e38f, 3.4e38f, PLAT_LVL_VIEW, PF_RO), \
+    ARR_RO(PARAM_ID_PT_Q, "pt_q", inst_pt.q, CT_U8), \
+    ARR_RO(PARAM_ID_PT_RAW, "pt_raw", inst_pt.raw, CT_U32), \
+    PT_TEXT(0, "1"), PT_TEXT(1, "2"), PT_TEXT(2, "3"), PT_TEXT(3, "4"), PT_TEXT(4, "5"), PT_TEXT(5, "6"), \
+    PT_TEXT(6, "7"), PT_TEXT(7, "8"), PT_TEXT(8, "9"), PT_TEXT(9, "10"), PT_TEXT(10, "11"), PT_TEXT(11, "12"), \
+    PT_TEXT(12, "13"), PT_TEXT(13, "14"), PT_TEXT(14, "15"), PT_TEXT(15, "16"), PT_TEXT(16, "17"), PT_TEXT(17, "18"), \
+    PT_TEXT(18, "19"), PT_TEXT(19, "20"), PT_TEXT(20, "21"), PT_TEXT(21, "22"), PT_TEXT(22, "23"), PT_TEXT(23, "24"), \
+    PT_TEXT(24, "25"), PT_TEXT(25, "26"), PT_TEXT(26, "27"), PT_TEXT(27, "28"), PT_TEXT(28, "29"), PT_TEXT(29, "30"), \
+    PT_TEXT(30, "31"), PT_TEXT(31, "32")
 
 static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
@@ -189,6 +247,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
                PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
+    INST_DEFS,
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
 

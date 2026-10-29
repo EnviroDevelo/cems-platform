@@ -45,6 +45,11 @@ bool w5500_link_up(w5500_t *w);                         /* PHY link (cable in, s
  * IP, or the time ran out; the socket is closed again). */
 bool     w5500_tcp_connect(w5500_t *w, uint8_t s, uint32_t ip, uint16_t port, uint16_t local_port, uint32_t timeout_ms);
 bool     w5500_tcp_ok(w5500_t *w, uint8_t s);           /* still established */
+/* Without waiting (the instrument poller, inst.h): start a connection and come back for it.
+ * start: false when the socket could not be opened; then watch w5500_sock_state for
+ * W5500_SOCK_ESTABLISHED (connected) or W5500_SOCK_CLOSED (refused, or the chip gave up). */
+bool     w5500_tcp_connect_start(w5500_t *w, uint8_t s, uint32_t ip, uint16_t port, uint16_t local_port);
+uint8_t  w5500_sock_state(w5500_t *w, uint8_t s);       /* Sn_SR (W5500_SOCK_CLOSED without a chip) */
 bool     w5500_send(w5500_t *w, uint8_t s, const uint8_t *buf, uint16_t n, uint32_t timeout_ms);   /* whole or nothing */
 uint16_t w5500_rx_avail(w5500_t *w, uint8_t s);
 uint16_t w5500_recv(w5500_t *w, uint8_t s, uint8_t *buf, uint16_t cap);   /* up to cap of what has arrived */

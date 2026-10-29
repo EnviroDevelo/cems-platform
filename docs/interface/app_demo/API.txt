@@ -107,6 +107,33 @@ GET /api/info .tls.pool_peak number
 GET /api/info .tls.resumed number
 GET /api/info .tls_fingerprint string
 GET /api/info .uptime_s number
+GET /api/inst .instruments[].enabled bool
+GET /api/inst .instruments[].errors number
+GET /api/inst .instruments[].good number
+GET /api/inst .instruments[].ip string
+GET /api/inst .instruments[].last_error string
+GET /api/inst .instruments[].last_exception number
+GET /api/inst .instruments[].n number
+GET /api/inst .instruments[].name string
+GET /api/inst .instruments[].port number
+GET /api/inst .instruments[].resp_ms number
+GET /api/inst .instruments[].state string
+GET /api/inst .instruments[].unit number
+GET /api/inst .points[] empty
+GET /api/inst/explore .addr number
+GET /api/inst/explore .busy bool
+GET /api/inst/explore .count number
+GET /api/inst/explore .exception number
+GET /api/inst/explore .fc number
+GET /api/inst/explore .hex string
+GET /api/inst/explore .ip string
+GET /api/inst/explore .ms number
+GET /api/inst/explore .ok bool
+GET /api/inst/explore .port number
+GET /api/inst/explore .result string
+GET /api/inst/explore .seq number
+GET /api/inst/explore .unit number
+GET /api/inst/explore .words[] empty
 GET /api/iob .boards[].address number
 GET /api/iob .boards[].cj null
 GET /api/iob .boards[].enabled bool
@@ -264,6 +291,7 @@ POST /api/auth/reset
 POST /api/cal
 POST /api/fw/activate
 POST /api/fw/upload
+POST /api/inst/explore
 POST /api/iob/assign
 POST /api/iob/find
 POST /api/iob/net/find
@@ -439,6 +467,109 @@ param 330 run_hours uint 0.1 h level=0 flags=ro
 param 331 service_hours uint 0.1 h level=0 flags=ro
 param 332 config_crc uint - level=0 flags=ro
 param 333 selftest_fail uint - level=0 flags=ro
+param 500 inst_enable array - level=2 flags=persist
+param 501 inst_ip array - level=2 flags=persist
+param 502 inst_port array - level=2 flags=persist
+param 503 inst_unit array - level=2 flags=persist
+param 504 inst_period_ms array - level=2 flags=persist
+param 505 inst_timeout_ms array - level=2 flags=persist
+param 506 inst_max_regs array - level=2 flags=persist
+param 507 inst_gap array - level=2 flags=persist
+param 508 inst_status_pt array - level=2 flags=persist
+param 509 inst_fault_mask array - level=2 flags=persist
+param 510 inst_maint_mask array - level=2 flags=persist
+param 511 inst_cal_mask array - level=2 flags=persist
+param 515 inst_state array - level=0 flags=ro
+param 516 inst_good array - level=0 flags=ro
+param 517 inst_errors array - level=0 flags=ro
+param 518 inst_last_err array - level=0 flags=ro
+param 519 inst_last_exc array - level=0 flags=ro
+param 520 inst_resp_ms array - level=0 flags=ro
+param 521 inst1_name text - level=2 flags=persist
+param 522 inst2_name text - level=2 flags=persist
+param 523 inst3_name text - level=2 flags=persist
+param 524 inst4_name text - level=2 flags=persist
+param 525 inst5_name text - level=2 flags=persist
+param 526 inst6_name text - level=2 flags=persist
+param 527 inst7_name text - level=2 flags=persist
+param 528 inst8_name text - level=2 flags=persist
+param 530 pt_inst array - level=2 flags=persist
+param 531 pt_fc array - level=2 flags=persist
+param 532 pt_addr array - level=2 flags=persist
+param 533 pt_type array - level=2 flags=persist
+param 534 pt_order array - level=2 flags=persist
+param 535 pt_bit array - level=2 flags=persist
+param 536 pt_gain array - level=2 flags=persist
+param 537 pt_offset array - level=2 flags=persist
+param 538 pt_lo array - level=2 flags=persist
+param 539 pt_hi array - level=2 flags=persist
+param 540 pt_value array - level=0 flags=ro
+param 541 pt_q array - level=0 flags=ro
+param 542 pt_raw array - level=0 flags=ro
+param 550 pt1_name text - level=2 flags=persist
+param 551 pt2_name text - level=2 flags=persist
+param 552 pt3_name text - level=2 flags=persist
+param 553 pt4_name text - level=2 flags=persist
+param 554 pt5_name text - level=2 flags=persist
+param 555 pt6_name text - level=2 flags=persist
+param 556 pt7_name text - level=2 flags=persist
+param 557 pt8_name text - level=2 flags=persist
+param 558 pt9_name text - level=2 flags=persist
+param 559 pt10_name text - level=2 flags=persist
+param 560 pt11_name text - level=2 flags=persist
+param 561 pt12_name text - level=2 flags=persist
+param 562 pt13_name text - level=2 flags=persist
+param 563 pt14_name text - level=2 flags=persist
+param 564 pt15_name text - level=2 flags=persist
+param 565 pt16_name text - level=2 flags=persist
+param 566 pt17_name text - level=2 flags=persist
+param 567 pt18_name text - level=2 flags=persist
+param 568 pt19_name text - level=2 flags=persist
+param 569 pt20_name text - level=2 flags=persist
+param 570 pt21_name text - level=2 flags=persist
+param 571 pt22_name text - level=2 flags=persist
+param 572 pt23_name text - level=2 flags=persist
+param 573 pt24_name text - level=2 flags=persist
+param 574 pt25_name text - level=2 flags=persist
+param 575 pt26_name text - level=2 flags=persist
+param 576 pt27_name text - level=2 flags=persist
+param 577 pt28_name text - level=2 flags=persist
+param 578 pt29_name text - level=2 flags=persist
+param 579 pt30_name text - level=2 flags=persist
+param 580 pt31_name text - level=2 flags=persist
+param 581 pt32_name text - level=2 flags=persist
+param 590 pt1_unit text - level=2 flags=persist
+param 591 pt2_unit text - level=2 flags=persist
+param 592 pt3_unit text - level=2 flags=persist
+param 593 pt4_unit text - level=2 flags=persist
+param 594 pt5_unit text - level=2 flags=persist
+param 595 pt6_unit text - level=2 flags=persist
+param 596 pt7_unit text - level=2 flags=persist
+param 597 pt8_unit text - level=2 flags=persist
+param 598 pt9_unit text - level=2 flags=persist
+param 599 pt10_unit text - level=2 flags=persist
+param 600 pt11_unit text - level=2 flags=persist
+param 601 pt12_unit text - level=2 flags=persist
+param 602 pt13_unit text - level=2 flags=persist
+param 603 pt14_unit text - level=2 flags=persist
+param 604 pt15_unit text - level=2 flags=persist
+param 605 pt16_unit text - level=2 flags=persist
+param 606 pt17_unit text - level=2 flags=persist
+param 607 pt18_unit text - level=2 flags=persist
+param 608 pt19_unit text - level=2 flags=persist
+param 609 pt20_unit text - level=2 flags=persist
+param 610 pt21_unit text - level=2 flags=persist
+param 611 pt22_unit text - level=2 flags=persist
+param 612 pt23_unit text - level=2 flags=persist
+param 613 pt24_unit text - level=2 flags=persist
+param 614 pt25_unit text - level=2 flags=persist
+param 615 pt26_unit text - level=2 flags=persist
+param 616 pt27_unit text - level=2 flags=persist
+param 617 pt28_unit text - level=2 flags=persist
+param 618 pt29_unit text - level=2 flags=persist
+param 619 pt30_unit text - level=2 flags=persist
+param 620 pt31_unit text - level=2 flags=persist
+param 621 pt32_unit text - level=2 flags=persist
 param 1001 start_delay uint ms level=1 flags=persist
 param 1002 run_seconds uint s level=0 flags=ro,persist
 param 1003 valve_out bool - level=0 flags=ro
