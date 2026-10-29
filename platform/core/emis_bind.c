@@ -47,6 +47,12 @@ const retain_def_t *plat_emis_blocks(size_t *n) { *n = sizeof blocks / sizeof bl
 #define KEEP 0                         /* the 32 KB development FRAM: no room; a restart loses the period in progress */
 #endif
 
+/* Instrument points (the instrument poller, inst.c, provides the strong one): false = no such point. */
+__attribute__((weak)) bool emis_inst_point(unsigned p, float *value, uint8_t *q) {
+    (void)p; (void)value; (void)q;
+    return false;
+}
+
 /* the plant settings in force (the engine keeps a pointer; the channels it reads from emis_set.ch in
  * place: a change there is seen by the checksum below before the next step, and restarts the engine) */
 static emis_cfg_t    cur_g;
@@ -94,7 +100,11 @@ void emis_bind_scan(uint32_t now_ms) {
     for (unsigned i = 0; i < N; ++i) {
         uint8_t src = S.src[i];
         in[i].range = 0u;
-        if (src != EMIS_NONE && src < nm) {
+        float ix; uint8_t iq;
+        if (src >= EMIS_SRC_INST && src != EMIS_NONE) {   /* an instrument point read over Modbus (inst.h) */
+            if (emis_inst_point((unsigned)(src - EMIS_SRC_INST), &ix, &iq)) { in[i].x = ix; in[i].q = iq; }
+            else { in[i].x = 0.0f; in[i].q = PLAT_Q_UNAVAILABLE; }
+        } else if (src < nm) {
             const plat_meas_def_t *m = plat_meas_at(src);
             float x = plat_meas_value(src);
             in[i].x = x; in[i].q = plat_meas_quality(src);

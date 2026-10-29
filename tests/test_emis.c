@@ -376,6 +376,11 @@ static void t_bind(void) {
     emis_set.ch.molar_mass[3] = 28.010f;
     emis_bind_scan(bsp_ms());
     CHECK_EQ(emis_p_cfg_error, 0);
+    /* an instrument point as the source: no poller in this build, so unavailable */
+    emis_set.src[3] = (uint8_t)(EMIS_SRC_INST + 2u);
+    emis_bind_scan(bsp_ms());
+    CHECK_EQ(emis_res.q[EMIS_Q_IN][3], PLAT_Q_UNAVAILABLE);
+    emis_set.src[3] = 0;
     emis_set.enable = false;
     emis_bind_scan(bsp_ms());
     plat_state_reset_for_test(); emis_bind_reset_for_test();

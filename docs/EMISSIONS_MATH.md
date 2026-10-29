@@ -165,7 +165,8 @@ fixed), 409 H2O channel, 410 fixed H2O %, 411/412 T and p channels (255 = fixed 
 validated below zero as zero, 421 calibration range extension % of ELV, 422 plant operating
 (operator level, the application or a PLC writes it), 423 RO configuration error.
 
-Per channel (arrays of 32, index = Modbus standard-block slot): 430 source measurement (255 none),
+Per channel (arrays of 32, index = Modbus standard-block slot): 430 source (0-199 a declared
+measurement, 200 + p instrument point p read over Modbus by the instrument poller, 255 none),
 431 unit (1 ppm, 2 %, 3 mg/m3 actual, 4 mg/m3 standard, 5 flow actual, 6 flow standard, 7 plain),
 432 wet, 433 O2-corrected, 434 added channel, 435 molar mass (times any factor), 437/438 QAL2 a and
 b, 439 ys,max, 440 daily ELV, 441 CI %. A channel with a unit but no source is configured but

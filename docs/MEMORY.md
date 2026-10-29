@@ -8,7 +8,7 @@ module, and before choosing hardware. Last run: 2026-10-29.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 480.6 KB | 1016.0 KB | 47 % | 535.4 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 480.7 KB | 1016.0 KB | 47 % | 535.3 KB |
 | RAM (STM32H573/H563, 640 KB) | 519.3 KB | 640.0 KB | 81 % | 120.7 KB |
 
 ## By module (KB)
@@ -20,7 +20,7 @@ module, and before choosing hardware. Last run: 2026-10-29.
 | Parameter store (FRAM) | 6.7 | 57.3 |
 | Event log / data logger | 15.0 | 6.8 |
 | Alarm manager, state, supply, calibration, service, self-test | 15.8 | 7.4 |
-| Emissions calculations (emis) | 8.3 | 4.4 |
+| Emissions calculations (emis) | 8.4 | 4.4 |
 | Alarm email (SMTP client) | 6.1 | 2.2 |
 | Clock + SNTP | 2.0 | 0.1 |
 | Firmware update, signatures, serial | 6.9 | 2.0 |

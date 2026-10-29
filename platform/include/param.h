@@ -213,7 +213,7 @@ enum {
     PARAM_ID_EMIS_CAL_EXT     = 421, /* valid calibration range: ys,max + this % of the ELV */
     PARAM_ID_EMIS_OPERATING   = 422, /* the plant is in its effective operating time (the application or a PLC writes it) */
     PARAM_ID_EMIS_CFG_ERROR   = 423, /* RO: 0, or the emis_check result (channel + 1; 33 = plant settings) */
-    PARAM_ID_EMIS_SRC         = 430, /* [32] measurement (plat_meas index) feeding the channel, 255 = none */
+    PARAM_ID_EMIS_SRC         = 430, /* [32] source: 0-199 measurement (plat_meas index), 200+p instrument point p, 255 none */
     PARAM_ID_EMIS_UNIT        = 431, /* [32] EMIS_U_* */
     PARAM_ID_EMIS_WET         = 432, /* [32] the reading is wet */
     PARAM_ID_EMIS_REF         = 433, /* [32] correct to the reference diluent */

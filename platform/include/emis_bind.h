@@ -8,6 +8,12 @@
 void emis_bind_scan(uint32_t now_ms);    /* scan task, after plat_state_scan (plat_sys.c) */
 void emis_bind_reset_for_test(void);
 
+/* Source of a channel (parameter 430): 0..199 a declared measurement (plat_meas index), 200..254
+ * instrument point (src - 200), 255 none. The instrument poller defines emis_inst_point (a weak
+ * stub here answers "no such point"); its quality is a PLAT_Q_* code. */
+#define EMIS_SRC_INST 200u
+bool emis_inst_point(unsigned p, float *value, uint8_t *q);
+
 /* the tags behind parameters 400-469 (param.c builds the table entries) */
 #include <stdbool.h>
 #include "emis.h"
