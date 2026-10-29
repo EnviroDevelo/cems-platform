@@ -167,13 +167,15 @@ module, and before choosing hardware. Last run: {datetime.date.today().isoformat
 {app_sec}
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (64 KB, in
-"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
-shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
-(web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
+"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 80 KB pool (inside "HTTPS"),
+shared by the web server (three connections: two kept browsers and a spare, ~70 KB) and the alarm-email client one at a time: measured peaks 28 KB
+(one web connection), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
 about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
 11 KB of RAM (the larger pool, the client context and buffers). The 128 KB FRAM map (D6)
-added about 60 KB of RAM: the store's working copy of a 40 KB settings slot and the web
-server's buffer, which holds a whole backup file for restore.
+added about 40 KB of RAM: the store's working copy of a 40 KB settings slot. Since 29 Oct
+that working copy is also the backup/restore buffer, lent to the web server between saves
+(param_store_lease), so the web server's own buffer is 8 KB instead of 49 KB, and lwIP's
+unused PBUF_POOL (12 KB) is gone: 52 KB less RAM in all.
 
 ## Still to come (estimates, update when built)
 

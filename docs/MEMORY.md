@@ -8,16 +8,16 @@ module, and before choosing hardware. Last run: 2026-10-29.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 467.5 KB | 1016.0 KB | 46 % | 548.5 KB |
-| RAM (STM32H573/H563, 640 KB) | 514.9 KB | 640.0 KB | 80 % | 125.1 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 469.5 KB | 1016.0 KB | 46 % | 546.5 KB |
+| RAM (STM32H573/H563, 640 KB) | 462.8 KB | 640.0 KB | 72 % | 177.2 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 26.9 | 0.1 |
+| Scan engine, queue, watchdog, diag | 27.4 | 0.1 |
 | Parameter table | 13.0 | 25.8 |
-| Parameter store (FRAM) | 6.7 | 57.3 |
+| Parameter store (FRAM) | 6.8 | 57.3 |
 | Event log / data logger | 15.0 | 6.8 |
 | Alarm manager, state, supply, calibration, service, self-test | 15.8 | 7.4 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
@@ -25,34 +25,38 @@ module, and before choosing hardware. Last run: 2026-10-29.
 | Firmware update, signatures, serial | 6.9 | 2.0 |
 | I/O boards (Ethernet/RS-485 master) | 18.8 | 1.7 |
 | Modbus TCP | 8.9 | 18.1 |
-| Web server + page + logins | 68.6 | 73.5 |
+| Web server + page + logins | 70.2 | 33.5 |
 | HTTPS (tls.c + mbedTLS) | 96.5 | 83.4 |
-| Touch UI + EVE driver | 59.0 | 2.5 |
+| Touch UI + EVE driver | 58.9 | 2.5 |
 | Task layer (FreeRTOS glue) | 3.1 | 99.7 |
 | Board support (BSP) | 1.5 | 0.8 |
-| lwIP + Ethernet driver | 53.5 | 51.4 |
+| lwIP + Ethernet driver | 53.5 | 39.3 |
 | FreeRTOS kernel + heap | 9.8 | 64.8 |
 | ST HAL + startup | 19.3 | 0.0 |
 | Application | 2.5 | 0.2 |
-| C library | 27.8 | 0.8 |
+| C library | 27.7 | 0.8 |
 | Other | 5.7 | 4.3 |
 | Main stack (interrupts, start-up) + C heap | 0.0 | 12.0 |
 
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (64 KB, in
-"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 44 KB pool (inside "HTTPS"),
-shared by the web server and the alarm-email client one at a time: measured peaks 28 KB
-(web), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
+"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 80 KB pool (inside "HTTPS"),
+shared by the web server (three connections: two kept browsers and a spare, ~70 KB) and the alarm-email client one at a time: measured peaks 28 KB
+(one web connection), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
 about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
 11 KB of RAM (the larger pool, the client context and buffers). The 128 KB FRAM map (D6)
-added about 60 KB of RAM: the store's working copy of a 40 KB settings slot and the web
-server's buffer, which holds a whole backup file for restore.
+added about 40 KB of RAM: the store's working copy of a 40 KB settings slot. Since 29 Oct
+that working copy is also the backup/restore buffer, lent to the web server between saves
+(param_store_lease), so the web server's own buffer is 8 KB instead of 49 KB, and lwIP's
+unused PBUF_POOL (12 KB) is gone: 52 KB less RAM in all.
 
 ## Still to come (estimates, update when built)
 
 | Item | Flash | RAM | Note |
 |---|---|---|---|
 | Application alarm table (the ~50 alarms of 70_alarm_map) | ~2.5 | 0 | 24 bytes of constants each; RAM per alarm is already reserved (96 slots) |
+| Emissions math engine (PR #15) | | 4.4 | measured on its branch |
+| Instrument acquisition, Modbus TCP master (PR #16) | | 8.1 | fixed size: 8 instruments, 32 values, 3 connections + explorer; runs in the I/O bus task; about 2.6 KB of the parameter blob pool (already reserved) |
 
 ## Other non-volatile memory
 

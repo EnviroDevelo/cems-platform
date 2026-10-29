@@ -104,6 +104,11 @@
 #ifndef PLAT_HTTP_PORT
 #define PLAT_HTTP_PORT            80     /* only redirects to https:// (parameter 6 turns it off) */
 #endif
+#ifndef PLAT_HTTP_BUF
+#define PLAT_HTTP_BUF             8192u  /* web request buffer: headers and form bodies, log reads in 128-record
+                                            chunks. Backup files use the store's staging buffer and firmware
+                                            uploads stream, so neither needs it to be large (was 49 KB) */
+#endif
 #define PLAT_SILENCE_NET_MS       5000u
 #define PLAT_SILENCE_IOBUS_MS     1000u
 

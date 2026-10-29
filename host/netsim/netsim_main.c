@@ -278,7 +278,7 @@ plat_seqlock_t plat_snap_lock;
 static mbtcp_server_t mbs;
 static http_server_t hs, hr;           /* HTTPS, and the plain-HTTP redirect on the next port */
 static uint8_t redirect_buf[2048];
-static uint8_t http_buf[4096 + STORE_FAC_SLOT + STORE_USR_SLOT + 64];
+static uint8_t http_buf[PLAT_HTTP_BUF];
 static volatile int running = 1;
 
 static void sleep_until(struct timespec *t, long ms) {
