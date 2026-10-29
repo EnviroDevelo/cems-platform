@@ -103,7 +103,10 @@ async def run(mp, sim):
         check(cover.get("Register map version") == mp["map_version"] and cover.get("Modbus TCP port") and cover.get("Serial number") is not None
               and "operator login" in (cover.get("Generated") or ""), f"Cover (map v{cover.get('Register map version')}, port {cover.get('Modbus TCP port')}, {cover.get('Generated')})")
         codes = [r[0].value for r in wb["Codes"].iter_rows(min_row=2)]
-        check("Alarm ID" in codes and "Modbus exception" in codes, f"Codes sheet: {sorted(set(codes))}")
+        check("Alarm ID" in codes and codes.count("Modbus exception") == len((mp.get("codes") or {}).get("exceptions") or [1, 2, 3, 4, 6]),
+              f"Codes sheet: {sorted(set(codes))}, exceptions once")
+        if mp.get("codes"):
+            check("Quality" in codes and "State" in codes and "Common alarm bit" in codes, "the map's codes (quality, state, common alarm bits)")
         nf = sum(1 for e in mp["entries"] if e.get("forceable"))
         check(sum(1 for r in wb["Commissioning"].iter_rows() if r[0].value in ("Coil", "Discrete input", "Input register", "Holding register")) == nf,
               f"Commissioning lists the {nf} forceable entries")
