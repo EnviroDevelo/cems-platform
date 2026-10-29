@@ -343,7 +343,7 @@ The agreed state/action matrix is in section 7.
 | CIP-25.2 | Traceable hardware revisions | M | Done (host) | Board straps and the factory `hw_rev` (CIP-01.3); schematic in git |
 | CIP-25.3 | Traceable configuration and calibration revisions | M | Done | Configuration checksum (CIP-05.4) and calibration history (CIP-18.2) |
 | CIP-25.4 | Release notes | M | Missing | **Gap:** `CHANGELOG.md` and a release note per version |
-| CIP-25.5 | Supported combinations identified | M | Missing | **Gap:** a matrix of firmware × core hardware revision × I/O board register map version |
+| CIP-25.5 | Supported combinations identified | M | Partial | `docs/SUPPORTED.md`: firmware × core hardware × I/O board map, with what each was tested on. **Gap:** kept up at each release (from the first one) |
 
 ### 4.26 Verification and documentation
 

@@ -47,3 +47,4 @@ DK bring-up changes (28-29 Oct, before release):
 - `docs/INTERFACES.md`: how to add an interface (CIP-13.5) and the compatibility policy (CIP-14.5).
 - `tools/dk_soak.py`: read-only soak test against a real unit (HTTPS + Modbus load, heap/stack/
   restart checks from `/api/info`, CSV), standard-library Python only (CIP-26.6).
+- `docs/SUPPORTED.md`: the supported-combinations matrix (CIP-25.5).
