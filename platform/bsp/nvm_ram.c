@@ -26,5 +26,5 @@ static int ram_write(nvm_dev_t *d, uint32_t addr, const void *buf, uint32_t len)
 
 void nvm_ram_init(nvm_dev_t *d, nvm_ram_t *r, uint8_t *mem, uint32_t size, bool persistent) {
     r->mem = mem; r->size = size; r->fail_after = -1; r->writes = 0; r->bytes_written = 0;
-    d->read = ram_read; d->write = ram_write; d->size = size; d->persistent = persistent; d->ctx = r;
+    d->read = ram_read; d->write = ram_write; d->size = size; d->persistent = persistent; d->ctx = r; d->parts = persistent ? 1u : 0u;
 }

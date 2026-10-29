@@ -134,6 +134,7 @@ void param_store_poll(uint32_t now_ms);       /* store task; returns quickly, ca
 
 bool          param_store_calibration_valid(void);
 uint32_t      param_store_status(void);
+uint32_t      param_store_nvm_size(unsigned *parts);   /* settings memory found: bytes (0 = none), chips */
 store_stats_t param_store_stats(void);
 
 /* Backup file: both regions as currently stored, wrapped with its own CRC.

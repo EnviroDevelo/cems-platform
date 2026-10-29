@@ -481,6 +481,10 @@ void param_store_poll(uint32_t now_ms) {
     S.req = REQ_SNAPSHOT;
 }
 
+uint32_t param_store_nvm_size(unsigned *parts) {
+    if (parts) *parts = S.dev ? S.dev->parts : 0u;
+    return S.dev && S.dev->persistent ? S.dev->size : 0u;
+}
 bool          param_store_calibration_valid(void) { return !(S.status & PSTAT_CAL_INVALID); }
 uint32_t      param_store_status(void) { return S.status; }
 store_stats_t param_store_stats(void) { return S.st; }

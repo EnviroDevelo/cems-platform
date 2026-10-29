@@ -191,7 +191,7 @@ static int f_write(nvm_dev_t *d, uint32_t a, const void *b, uint32_t n) {
     fseek(f, (long)a, SEEK_SET); size_t w = fwrite(b, 1, n, f); fclose(f);
     return w == n ? 0 : -1;
 }
-static nvm_dev_t fram_dev = { f_read, f_write, sizeof fram, true, NULL };
+static nvm_dev_t fram_dev = { f_read, f_write, sizeof fram, true, NULL, 1 };
 
 /* NOR flash for the logs: 1 MB, RAM image written through to a file */
 #define NOR_SIZE (1024u * 1024u)

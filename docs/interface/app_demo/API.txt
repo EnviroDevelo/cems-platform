@@ -61,6 +61,8 @@ GET /api/info .cal_valid bool
 GET /api/info .config_crc string
 GET /api/info .core string
 GET /api/info .default_passwords bool
+GET /api/info .fram.bytes number
+GET /api/info .fram.chips number
 GET /api/info .fw string
 GET /api/info .health.heap_free number
 GET /api/info .health.heap_min number

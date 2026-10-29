@@ -15,3 +15,10 @@ self-test, PBKDF2 passwords with token recovery.
 
 Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the interface
 snapshots (`make snapshots APP=<dir>`).
+
+DK bring-up changes (28-29 Oct, before release):
+- The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
+  in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds
+  `"fram":{"bytes","chips"}`. The settings map is unchanged.
+- An uncalibrated unit (factory region never set) keeps CAL_INVALID across power cuts while its
+  service hours are saved (factory image flag HF_UNCAL).
