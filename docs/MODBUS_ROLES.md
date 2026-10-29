@@ -119,7 +119,7 @@ Up to **32 points** (values) in all, each:
 | bit (for type bit) | 535 `pt_bit[p]` | 0 |
 | scaling: value = raw x gain + offset | 536-537 | 1, 0 |
 | valid range lo..hi | 538-539 | none |
-| name, unit | 550-581, 590-621 | "" |
+| name (ASCII), unit (UTF-16 text, up to 7 characters: "°C", "mg/Nm³") | 550-581, 590-621 | "" |
 
 Read-only results: 540 `pt_value[p]` (float, NaN until read), 541 `pt_q[p]` (quality code), 542
 `pt_raw[p]` (the bits as received, for fault finding), 515-520 per instrument (state, polls that
@@ -173,7 +173,9 @@ instrument with the explorer; none are shipped until a model has been checked.
 ### Where the values go
 
 - **Web and touchscreen:** `/api/inst` (state per instrument, value and quality per point), and the
-  parameters in `/api/values` like any other.
+  parameters in `/api/values` like any other. A block parameter (an array or text) reads `null` in
+  `/api/values` when the scan was publishing it at that moment: clients retry rather than taking
+  `null` as empty.
 - **Calculations:** `inst_point(p, &value, &quality)` gives any task the value and quality as of the
   last scan. The emissions engine (PR #15) picks its inputs by measurement index (parameter 430);
   instrument points are to be added as a source there (asked of the emissions engine thread).

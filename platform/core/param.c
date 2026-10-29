@@ -113,7 +113,7 @@ static const float    pt_d_gain[INST_POINTS] = PT_ALL(1.0f);
 #define ARR_RO(ID, NAME, VAR, CT) PARAM_ARRAY_UINT(ID, NAME, VAR, CT, 0, 0xFFFFFFFFu, PLAT_LVL_VIEW, PF_RO)
 #define INST_NAME(K, N) PARAM_TEXT(PARAM_ID_INST_NAME_FIRST + (K), "inst" N "_name", inst_tags.name[K], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
 #define PT_TEXT(P, N) PARAM_TEXT(PARAM_ID_PT_NAME_FIRST + (P), "pt" N "_name", inst_pt.name[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST), \
-                      PARAM_TEXT(PARAM_ID_PT_UNIT_FIRST + (P), "pt" N "_unit", inst_pt.unit[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
+                      PARAM_TEXT16(PARAM_ID_PT_UNIT_FIRST + (P), "pt" N "_unit", inst_pt.unit[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
 #define INST_DEFS \
     PARAM_ARRAY_BOOL(PARAM_ID_INST_ENABLE, "inst_enable", inst_tags.enable, PLAT_LVL_ADMIN, PF_PERSIST), \
     ARR(PARAM_ID_INST_IP, "inst_ip", inst_tags.ip, CT_U32, 0, 0xFFFFFFFFu), \

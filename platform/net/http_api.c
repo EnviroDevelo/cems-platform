@@ -1574,7 +1574,9 @@ static void get_inst(http_out_t *o) {
         out_str(o, "{\"n\":"); json_uint(o, p + 1u);
         out_str(o, ",\"inst\":"); json_uint(o, inst_pt.inst[p]);
         out_str(o, ",\"name\":"); json_str(o, inst_pt.name[p]);
-        out_str(o, ",\"unit\":"); json_str(o, inst_pt.unit[p]);
+        char u8[3 * INST_UNIT_LEN];
+        out_str(o, ",\"unit\":");
+        if (utf16le_to_utf8(inst_pt.unit[p], INST_UNIT_LEN / 2u, u8, sizeof u8) < 0) out_str(o, "null"); else json_str(o, u8);
         out_str(o, ",\"fc\":"); json_uint(o, inst_pt.fc[p]);
         out_str(o, ",\"addr\":"); json_uint(o, inst_pt.addr[p]);
         out_str(o, ",\"type\":"); json_str(o, inst_type_name(inst_pt.type[p]));

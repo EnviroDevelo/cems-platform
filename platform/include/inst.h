@@ -58,7 +58,7 @@
 #define INST_LOST_FAILS  3u     /* polls in a row that failed: the instrument is lost */
 #define INST_RETRY_MS    5000u  /* a lost instrument is tried this often (or its period, if longer) */
 #define INST_NAME_LEN    24u
-#define INST_UNIT_LEN    12u
+#define INST_UNIT_LEN    16u    /* bytes: UTF-16LE, up to 7 characters ("°C", "mg/Nm³") */
 #define INST_EX_MAX      125u   /* registers the explorer reads at once (coils: up to 2000 bits) */
 
 /* data types */
@@ -146,7 +146,7 @@ typedef struct {
     float    gain[INST_POINTS], offset[INST_POINTS];   /* value = raw x gain + offset (1, 0) */
     float    lo[INST_POINTS], hi[INST_POINTS];         /* valid range (lo >= hi: none) */
     char     name[INST_POINTS][INST_NAME_LEN];
-    char     unit[INST_POINTS][INST_UNIT_LEN];
+    uint8_t  unit[INST_POINTS][INST_UNIT_LEN];   /* UTF-16LE text (PT_TEXT16), NUL terminated */
     /* RO */
     float    value[INST_POINTS];        /* NaN until read */
     uint8_t  q[INST_POINTS];            /* PLAT_Q_* */

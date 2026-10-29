@@ -88,7 +88,7 @@ def main():
              ("id", 536), ("o", 3), ("v", "0.1"),
              ("id", 538), ("o", 0), ("v", "0"), ("id", 539), ("o", 0), ("v", "25"),
              ("id", 550), ("v", "O2"), ("id", 590), ("v", "%"),
-             ("id", 551), ("v", "CO"), ("id", 591), ("v", "mg/m3")]
+             ("id", 551), ("v", "CO"), ("id", 591), ("v", "mg/m³"), ("id", 593), ("v", "°C")]
         groups, cur = [], []                               # a few items per request (the write queue is short)
         for kv in w:
             if kv[0] == "id" and len([x for x in cur if x[0] == "id"]) >= 6:
@@ -105,6 +105,7 @@ def main():
         check(o2["value"] is not None and 7.4 < o2["value"] < 8.1 and o2["q"] == "valid", f"O2 {o2['value']} {o2['q']}")
         check(co["value"] is not None and 11.9 < co["value"] < 16.1, f"CO {co['value']}")
         check(o2["name"] == "O2" and o2["unit"] == "%" and o2["type"] == "f32" and o2["order"] == "CDAB", "point described")
+        check(co["unit"] == "mg/m³" and temp["unit"] == "°C", f"units with symbols: {co['unit']} {temp['unit']}")
         check(temp["value"] is not None and 44.9 < temp["value"] < 46.1, f"cell temperature {temp['value']}")
         check(inst(1)["name"] == "Stack analyser" and inst(1)["errors"] == 0, "instrument named, no errors")
         v = get("/api/values?ids=540")["v"]["540"]
