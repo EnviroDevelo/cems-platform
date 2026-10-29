@@ -1,3 +1,5 @@
 build/
 __pycache__/
 *.pem
+netsim_fram.bin
+netsim_nor.bin
