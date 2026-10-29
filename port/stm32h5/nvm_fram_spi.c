@@ -118,7 +118,7 @@ static bool fram_probe(void) {
 
 bool nvm_fram_spi_open(nvm_dev_t *d) {
     if (!fram_probe()) return false;
-    d->read = fram_read; d->write = fram_write; d->size = FRAM_SIZE; d->persistent = true; d->ctx = NULL;
+    d->read = fram_read; d->write = fram_write; d->size = FRAM_SIZE; d->persistent = true; d->ctx = NULL; d->parts = 1;
     return true;
 }
 

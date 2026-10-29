@@ -1,7 +1,7 @@
 # Bringing the platform up on the STM32H573I-DK (STM32CubeIDE)
 
 These steps set up the CubeIDE project that the platform sources drop into. The
-platform needs four things from CubeMX: the HAL, a TIM timebase, RTC, IWDG, the GPIO
+platform needs four things from CubeMX: the HAL, RTC, IWDG, the GPIO
 labels and FreeRTOS. Everything else stays in the platform files.
 
 Check each value marked **(check)** against the DK user manual or schematic before
@@ -9,7 +9,7 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 
 ## 1. Project
 
-1. STM32CubeIDE → New STM32 Project → Board Selector → **STM32H573I-DK**.
+1. **STM32CubeMX** (standalone: from STM32CubeIDE 2.0 the IDE no longer has CubeMX built in, and its New STM32 Project wizard makes an empty project) → New Project → Board Selector → **STM32H573I-DK**. In the Board Project Options dialog press **Unselect All** (no ST BSP drivers: the platform drives the LEDs and button by pin label) and leave "Generate demonstration code" off. Project Manager → Toolchain/IDE **STM32CubeIDE**; Generate Code, then in CubeIDE File → Import → Existing Projects into Workspace. (First bring-up, 28 Oct: project `CEMS_CORE`.)
 2. When asked about TrustZone, choose **without TrustZone** (the platform uses the `ARM_CM33_NTZ` FreeRTOS port).
 3. Don't initialise all peripherals to their default mode. Add only the ones below, so the project stays readable.
 4. **Memory for stacks (Gary, 25 Oct: stack overflows on earlier DK prototypes; set these large from the start).** Project Manager → Project → Linker Settings: **Minimum Stack Size 0x2000** (8 KB, the main stack: interrupts, and start-up before the scheduler, which includes the HTTPS key generation on first boot) and **Minimum Heap Size 0x1000** (4 KB, the C library's heap). ST's defaults are 0x400 and 0x200, too small. These are minimums the linker checks; the build fails rather than run short.
@@ -19,7 +19,7 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 
 | Peripheral | Setting |
 |---|---|
-| SYS | Timebase source: **TIM6** (FreeRTOS needs SysTick) |
+| SYS | Timebase source: **SysTick** (the default). Not a TIM: on the DK a TIM6 timebase froze the start-up after a power-up (28 Oct). `bsp_stm32h5.c` supplies `HAL_InitTick`/`HAL_GetTick` (the DWT cycle counter before the scheduler, the FreeRTOS tick after), so CubeMX's SysTick setup is never used and FreeRTOS keeps SysTick |
 | RCC | Clocks as the board default gives (250 MHz SYSCLK). Enable LSE for the RTC **(check that the DK fits a 32.768 kHz crystal)** |
 | RTC | Activate clock source and calendar. Hour format 24, binary data format. Clock source LSE. The product board has a VBAT supply (coin cell or supercap; `docs/HARDWARE.md` H1) so the clock survives a power cut; without one every power-up starts "clock not set" until someone, the PLC or the time server sets it |
 | IWDG | Prescaler 32, reload 999: about 1 s at the nominal 32 kHz LSI. The supervisor kicks it every 100 ms |
@@ -304,6 +304,9 @@ to sign" gives the command line; run it on the developer's PC
 (`python3 tools/serial_token.py --key ~/cems-dev/cems-dev-key.pem --uid <chip ID> --old <now> --new <serial>`)
 and paste the token back. The token only works on that chip, once.
 
+Behind the first-stage bootloader (docs/BOOTLOADER.md 4) the application is linked at
+0x08008000 with `VECT_TAB_OFFSET 0x00008000U`; nothing else changes here.
+
 The first update on the DK should be done with the debugger attached (see
 `docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to
 return to a plain setup, clear it in STM32CubeProgrammer (Option bytes → User
@@ -325,7 +328,7 @@ configuration → SWAP_BANK).
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, `port/stm32h5/fault_stm32h5.c`, `port/stm32h5/supply_stm32h5.c`, and for a first test `app_demo/`, into the project.
+1. Link into the project exactly the sources that `port/stm32h5/check.mk` lists in `SRCS` (platform core, os, net, ui, the stm32h5 port, lwIP, mbedTLS, lan8742, FreeRTOS with `portable/MemMang/heap_4.c`), except `port/stm32h5/check/check_main.c`, and its include paths except `port/stm32h5/check`. That list is the one the compile and link checks keep current; the HAL and CMSIS come from the CubeMX project. In the .ioc enable at least ETH (RMII; `MX_ETH_Init` is not called, `ethernetif.c` initialises it), RNG, RTC, IWDG and ICACHE. Keep the board preset's MPU region that makes the OTP/UID area non-cacheable.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.
@@ -346,11 +349,15 @@ If CubeMX also generates an `osKernelInitialize()` / `MX_FREERTOS_Init()` /
 `osKernelStart()` block, `plat_start()` must come before it (it never returns), or that
 block can be disabled.
 
+**Debug builds:** set `third_party/mbedtls` and `platform/net/tls.c` to -O2 even in the Debug configuration (Properties on the folder/file → C/C++ Build → Settings → Optimization). At -O0 each HTTPS handshake took 0.8-2.8 s on the DK, and a browser's six parallel connections then timed out ("Connection lost", logins reported as wrong password); at -O2 it is 0.24 s (28 Oct).
+
+**After flashing:** power-cycle the board (unplug the USB) before testing the network. After an ST-LINK reset or a flash the DK's peripheral interrupts stayed off until a real power-up (Ethernet answered a few frames, then went deaf), and the debugger's view of the NVIC on this part reads as zero even when the CPU has the interrupt enabled, so don't diagnose interrupts from SWD reads alone.
+
 ## 6. First run: what you should see
 
 - Hold the user button (DI_01) for 2 s and LED DO_01 comes on; release it and the LED goes off. That is the demo TON running on the 10 ms scan.
 - In the debugger: `plat_scan.stats.scans` rises by 100 per second, `plat_scan.stats.max_exec_us` stays tiny for the demo, and `plat_diag.boots` counts warm resets.
-- `param_store_status()` reads 0x001C on a bare DK (calibration invalid, user defaulted, RAM stand-in). With an FRAM fitted it reads 0x000C on the first boot and 0x0006 after a power cycle (user valid, calibration still invalid until a factory value is set).
+- `param_store_status()` reads 0x001C on a bare DK (calibration invalid, user defaulted, RAM stand-in). With an FRAM fitted it reads 0x000C on the first boot and 0x0006 after a power cycle (user valid, calibration still invalid until a factory value is set). `/api/info` "fram" shows the bytes and chips found: the I2C driver scans 0x50-0x57 and joins every MB85RC it finds, so keep chips at the same addresses once settings are stored.
 - Watchdog test: put a breakpoint-free `for(;;);` in `plat_ui_task_body` (define it in a test file) and the unit resets after about 5 s, with `plat_diag.fault_name` = "ui". The debugger can stop the IWDG; enable `DBGMCU` IWDG freeze only if you want it frozen while halted.
 
 ## 7. Networking (next module, decision D3)

@@ -40,7 +40,9 @@ bool plat_net_ready(void) { return ready; }
 uint32_t plat_lwip_rand(void) { uint32_t r; bsp_random(&r, sizeof r); return r; }
 
 void plat_net_mac(uint8_t m[6]) {
-    uint32_t a = plat_crc32(0, (const void *)UID_BASE, 12);
+    uint8_t uid[12];
+    bsp_chip_uid(uid);                             /* word reads: see bsp_chip_uid */
+    uint32_t a = plat_crc32(0, uid, sizeof uid);
     uint32_t b = plat_crc32(a, "CEMS", 4);
     m[0] = 0x02;                                   /* locally administered, unicast */
     m[1] = (uint8_t)(a >> 24); m[2] = (uint8_t)(a >> 16); m[3] = (uint8_t)(a >> 8);

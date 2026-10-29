@@ -42,6 +42,7 @@
 #include "plat_selftest.h"
 
 #define ETHIF_TX_TIMEOUT_MS   2000U
+#define ETHIF_RX_POLL_MS      50U     /* receive also checked this often without an interrupt */
 #define ETH_RX_BUFFER_SIZE    1000U       /* must be the same as heth.Init.RxBuffLen */
 #define ETH_RX_BUFFER_CNT     12U         /* must be greater than ETH_RX_DESC_CNT */
 #define IFNAME0 'e'
@@ -127,15 +128,26 @@ static struct pbuf *low_level_input(struct netif *netif) {
     return p;
 }
 
+/* Receive does not rely on the interrupt alone. After the core was halted (a debugger
+ * attach) the RX interrupt could stay silent and the DMA sit suspended with every
+ * descriptor full (RBU), so the port went deaf until a power cycle (DK bench, 29 Oct).
+ * Every ETHIF_RX_POLL_MS the task drains the ring anyway and, if the DMA reports
+ * buffers unavailable, clears the flag and rewrites the tail pointer to resume it. */
+uint32_t ethernetif_rx_kicks;          /* DMA receive restarts (diagnostics) */
+
 static void ethernetif_input(void *argument) {
     struct netif *netif = (struct netif *)argument;
     for (;;) {
-        if (xSemaphoreTake(RxPktSemaphore, portMAX_DELAY) == pdTRUE) {
-            struct pbuf *p;
-            do {
-                p = low_level_input(netif);
-                if (p != NULL && netif->input(p, netif) != ERR_OK) pbuf_free(p);
-            } while (p != NULL);
+        bool irq = xSemaphoreTake(RxPktSemaphore, pdMS_TO_TICKS(ETHIF_RX_POLL_MS)) == pdTRUE;
+        struct pbuf *p;
+        do {
+            p = low_level_input(netif);
+            if (p != NULL && netif->input(p, netif) != ERR_OK) pbuf_free(p);
+        } while (p != NULL);
+        if (!irq && (EthHandle.Instance->DMACSR & ETH_DMACSR_RBU)) {
+            EthHandle.Instance->DMACSR = ETH_DMACSR_RBU;                    /* write 1 to clear */
+            EthHandle.Instance->DMACRDTPR = EthHandle.Instance->DMACRDTPR;  /* poll demand: resume */
+            ethernetif_rx_kicks++;
         }
     }
 }
@@ -204,6 +216,7 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p) {
     TxConfig.pData = p;
 
     pbuf_ref(p);
+    HAL_ETH_ReleaseTxPacket(&EthHandle);         /* free sent descriptors first: works without the TX interrupt too */
     do {
         if (HAL_ETH_Transmit_IT(&EthHandle, &TxConfig) == HAL_OK) {
             errval = ERR_OK;

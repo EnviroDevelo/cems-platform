@@ -552,6 +552,60 @@ static void t_http(void) {
     sid[0] = 0;
 }
 
+/* ---------------- behind the bootloader (boot.h) ---------------- */
+static void t_boot_offset(void) {
+    const uint32_t ioff = 2u * 8192u;                        /* PLAT_BOOT_SIZE: two sectors here */
+    fw_flash_sim_init(&fl, &fs, b0, b1, BANK);
+    fl.image_off = ioff;
+    memset(b0, 0xB5, BANK); memset(b1, 0xB5, BANK);          /* "bootloader" in both banks */
+    nvm_ram_init(&fr, &fr_ram, fr_mem, sizeof fr_mem, true);
+    memset(fr_mem, 0, sizeof fr_mem);
+    fw_status_t st;
+    power_up("0.8.0", BSP_RESET_POWER_ON);
+    CHECK(!fs.trial);
+    fs.trial = true;                                         /* a stale mark ... */
+    power_up("0.8.0", BSP_RESET_POWER_ON);
+    CHECK(!fs.trial);                                        /* ... is cleared at an ordinary start */
+
+    uint32_t len = make_image(BANK - 8192u - ioff + 1u, "0.9.0", PLAT_FW_PRODUCT, 21);   /* one byte too large */
+    CHECK_EQ(upload(len, 3000), FW_E_SIZE);
+    len = make_image(BANK - 8192u - ioff, "0.9.0", PLAT_FW_PRODUCT, 21);                 /* fills the image area */
+    CHECK_EQ(upload(len, 3000), FW_OK);
+    fw_status(&st); CHECK(st.staged);
+    uint8_t *fb = fw_flash_sim_free(&fs);
+    CHECK(memcmp(fb + ioff, file + FW_HDR_SIZE, len - FW_HDR_SIZE) == 0);
+    unsigned keep = 0;
+    for (uint32_t k = 0; k < ioff; ++k) keep += fb[k] == 0xB5;
+    CHECK_EQ(keep, ioff);                                    /* the bootloader was never erased */
+    CHECK_EQ(fs.violations, 0);
+
+    CHECK_EQ(fw_request_activate(), FW_OK);
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial); CHECK(fs.swapped);                      /* marked before the swap */
+    fw_trial_ms = 1000;
+    power_up("0.9.0", BSP_RESET_SOFTWARE);
+    CHECK(fs.trial);                                         /* still counting during the trial */
+    CHECK_EQ(fw_running_check(BANK), 1);                     /* the running image checks out at its offset */
+    uint32_t t = bsp_host.ms;
+    fw_service(t, true);
+    fw_service(t + 1500, true);
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE);
+    CHECK(!fs.trial);                                        /* confirmed */
+
+    /* a rollback clears the mark before swapping back */
+    len = make_image(20000, "0.9.1", PLAT_FW_PRODUCT, 22);
+    CHECK_EQ(upload(len, 3000), FW_OK);
+    CHECK_EQ(fw_request_activate(), FW_OK);
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial);
+    power_up("0.9.1", BSP_RESET_SOFTWARE);
+    power_up("0.9.1", BSP_RESET_IWDG);
+    CHECK(fs.reset_requested); CHECK(!fs.trial);
+    power_up("0.9.0", BSP_RESET_SOFTWARE);
+    fw_status(&st); CHECK(st.rolled_back); CHECK(!fs.trial);
+    fl.image_off = 0;
+}
+
 void test_fw_all(void) {
     bsp_host_reset();
     bsp_host.ms = 5000;
@@ -564,6 +618,7 @@ void test_fw_all(void) {
     RUN(t_hw_range);
     RUN(t_http);
     RUN(t_gates);
+    RUN(t_boot_offset);
     fw_reset_for_test();
     fw_trial_ms = FW_TRIAL_MS;
 }

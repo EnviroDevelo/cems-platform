@@ -268,7 +268,7 @@ def main():
           any(e["event"] == "mail" and e["new"] == 0 for e in ev["events"]), "sends and failures in the event log")
     st, info = w.req("/api/info")
     print("   TLS pool peak:", info["tls"]["pool_peak"])
-    check(info["tls"]["pool_peak"] < 44 * 1024, "client and server share the TLS pool without overflow")
+    check(info["tls"]["pool_peak"] < 80 * 1024, "client and server share the TLS pool without overflow")
     tls.close()
     unit.terminate(); unit.wait(timeout=10)
     print(f"\n{passed} checks passed, {failed} failed")

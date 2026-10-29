@@ -12,6 +12,8 @@ typedef struct {
     uint32_t swaps, erases, writes, violations;
     long     fail_after_writes;    /* -1 = never */
     bool     reset_requested;
+    bool     trial;            /* the bootloader's trial mark (boot.h) */
+    uint32_t trial_marks;      /* calls to trial_mark */
 } fw_flash_sim_t;
 
 void fw_flash_sim_init(fw_flash_t *f, fw_flash_sim_t *s, uint8_t *bank0, uint8_t *bank1, uint32_t size);

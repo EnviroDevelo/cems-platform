@@ -44,11 +44,18 @@ static void sim_swap(fw_flash_t *f) {
     s->reset_requested = true;
 }
 
+static void sim_trial(fw_flash_t *f, bool on) {
+    fw_flash_sim_t *s = f->ctx;
+    s->trial = on;
+    s->trial_marks++;
+}
+
 void fw_flash_sim_init(fw_flash_t *f, fw_flash_sim_t *s, uint8_t *bank0, uint8_t *bank1, uint32_t size) {
     memset(s, 0, sizeof *s);
     s->bank[0] = bank0; s->bank[1] = bank1; s->size = size;
     s->fail_after_writes = -1;
     f->bank_size = size; f->sector = SECTOR; f->prog_unit = UNIT;
     f->erase = sim_erase; f->write = sim_write; f->read = sim_read; f->swap_and_reset = sim_swap;
+    f->trial_mark = sim_trial;
     f->ctx = s;
 }

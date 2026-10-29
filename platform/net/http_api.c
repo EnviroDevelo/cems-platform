@@ -262,6 +262,8 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
         }
         out_str(o, "}}"); }
     out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
+    { unsigned parts; uint32_t sz = param_store_nvm_size(&parts);
+      out_str(o, ",\"fram\":{\"bytes\":"); json_uint(o, sz); out_str(o, ",\"chips\":"); json_uint(o, parts); out_str(o, "}"); }
     out_str(o, ",\"log_status\":"); json_uint(o, plat_log_status());
     out_str(o, ",\"default_passwords\":"); json_bool(o, auth_any_default());
     out_str(o, ",\"login_locked_s\":"); json_uint(o, (auth_locked_ms(now) + 999u) / 1000u);

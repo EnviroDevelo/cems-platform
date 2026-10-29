@@ -151,10 +151,13 @@ static void rec_load(void) {
 
 /* ---------------- the free bank ---------------- */
 static uint32_t trailer_off(void) { return F.fl->bank_size - F.fl->sector; }
+static uint32_t img_off(void) { return F.fl->image_off; }               /* after the bootloader */
+static uint32_t img_max(void) { return trailer_off() - img_off(); }
+static void trial_mark(bool on) { if (F.fl && F.fl->trial_mark) F.fl->trial_mark(F.fl, on); }
 
 static bool read_trailer(fw_header_t *h) {
     return F.fl && F.fl->read(F.fl, false, trailer_off(), h, sizeof *h) == 0 && fw_header_ok(h) &&
-           h->image_size <= trailer_off();
+           h->image_size <= img_max();
 }
 
 /* SHA-256 of the image in the free bank, read back from the flash */
@@ -164,7 +167,7 @@ static bool bank_hash_ok(const fw_header_t *h) {
     sha256_init(&s);
     for (uint32_t off = 0; off < h->image_size; off += WBUF) {
         uint32_t n = h->image_size - off < WBUF ? h->image_size - off : WBUF;
-        if (F.fl->read(F.fl, false, off, buf, n) != 0) return false;
+        if (F.fl->read(F.fl, false, img_off() + off, buf, n) != 0) return false;
         sha256_update(&s, buf, n);
     }
     sha256_final(&s, dig);
@@ -187,7 +190,7 @@ int fw_running_check(uint32_t max_bytes) {
          * debugger) or one for another version (the debugger wrote over an updated bank)
          * leaves nothing to check against */
         if (!F.fl || F.fl->read(F.fl, true, trailer_off(), &RC.h, sizeof RC.h) != 0 || !fw_header_ok(&RC.h) ||
-            RC.h.image_size > trailer_off() || strncmp(RC.h.version_str, F.running, sizeof RC.h.version_str) != 0)
+            RC.h.image_size > img_max() || strncmp(RC.h.version_str, F.running, sizeof RC.h.version_str) != 0)
             return RC.result = -2;
         sha256_init(&RC.sha);
         RC.off = 0;
@@ -196,7 +199,7 @@ int fw_running_check(uint32_t max_bytes) {
     uint8_t buf[WBUF];
     for (uint32_t done = 0; RC.off < RC.h.image_size && done < max_bytes; done += WBUF) {
         uint32_t n = RC.h.image_size - RC.off < WBUF ? RC.h.image_size - RC.off : WBUF;
-        if (F.fl->read(F.fl, true, RC.off, buf, n) != 0) return RC.result = -1;
+        if (F.fl->read(F.fl, true, img_off() + RC.off, buf, n) != 0) return RC.result = -1;
         sha256_update(&RC.sha, buf, n);
         RC.off += n;
     }
@@ -295,6 +298,7 @@ void fw_boot(uint8_t cause, uint32_t now_ms) {
         }
         F.rec.state = FW_ST_ROLLED_BACK;
         rec_save();
+        trial_mark(false);                      /* (or the bootloader would count the previous image's starts) */
         if (F.fl && F.fl->swap_and_reset) F.fl->swap_and_reset(F.fl);   /* back to the previous image */
         return;                                 /* (simulation only) */
     }
@@ -304,8 +308,10 @@ void fw_boot(uint8_t cause, uint32_t now_ms) {
         plat_log_event(LOG_EV_FW_ROLLBACK, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, F.rec.to);
         F.rec.state = FW_ST_IDLE;
         rec_save();
+        trial_mark(false);
         break;
     default:
+        trial_mark(false);                      /* no trial: a stale mark must not roll this image back */
         break;
     }
     F.boot_ms = now_ms;
@@ -327,7 +333,7 @@ static fw_err_t flush_wbuf(bool final) {
     if (final) { uint32_t u = F.fl->prog_unit; while (n % u) F.wbuf[n++] = 0xFF; }
     else if (n % F.fl->prog_unit) return FW_OK;              /* wait for a whole unit */
     for (uint32_t k = 0; k < n; ) {
-        uint32_t off = F.woff + k;
+        uint32_t off = img_off() + F.woff + k;
         if (off >= F.next_erase) {                           /* erase as the image grows */
             if (F.fl->erase(F.fl, F.next_erase) != 0) return FW_E_FLASH;
             F.next_erase += F.fl->sector;
@@ -344,7 +350,7 @@ static fw_err_t flush_wbuf(bool final) {
 fw_err_t fw_upload_begin(uint32_t file_len) {
     if (!F.fl) return FW_E_STATE;
     if (F.uploading) return FW_E_BUSY;
-    if (file_len <= FW_HDR_SIZE || file_len - FW_HDR_SIZE > trailer_off()) return F.last_err = FW_E_SIZE;
+    if (file_len <= FW_HDR_SIZE || file_len - FW_HDR_SIZE > img_max()) return F.last_err = FW_E_SIZE;
     /* the free bank no longer holds a valid image from here on */
     if (F.fl->erase(F.fl, trailer_off()) != 0) return F.last_err = FW_E_FLASH;
     F.staged = false;
@@ -352,7 +358,8 @@ fw_err_t fw_upload_begin(uint32_t file_len) {
     F.total = file_len;
     F.received = 0;
     F.hdr_ok = false;
-    F.wn = F.woff = F.next_erase = 0;
+    F.wn = F.woff = 0;
+    F.next_erase = img_off();                                /* the bootloader's sectors are never touched */
     F.last_err = FW_OK;
     sha256_init(&F.sha);
     return FW_OK;
@@ -372,7 +379,7 @@ fw_err_t fw_upload_data(const uint8_t *p, uint32_t n) {
                 if (F.hdr.product != PLAT_FW_PRODUCT) return fail(FW_E_PRODUCT);
                 if (F.hdr.version < min_version()) return fail(FW_E_OLD);
                 if (!hw_fits(&F.hdr)) return fail(FW_E_HARDWARE);
-                if (F.hdr.image_size != F.total - FW_HDR_SIZE || F.hdr.image_size > trailer_off()) return fail(FW_E_SIZE);
+                if (F.hdr.image_size != F.total - FW_HDR_SIZE || F.hdr.image_size > img_max()) return fail(FW_E_SIZE);
                 F.hdr_ok = true;
             }
             continue;
@@ -488,6 +495,7 @@ void fw_service(uint32_t now_ms, bool healthy) {
         F.rec.src = F.act_src; F.rec.level = F.act_level;
         rec_save();
         if (fw_before_swap) fw_before_swap();
+        trial_mark(true);                                    /* the bootloader counts its starts from here */
         if (F.fl->swap_and_reset) F.fl->swap_and_reset(F.fl);
         return;
     }
@@ -506,6 +514,7 @@ void fw_service(uint32_t now_ms, bool healthy) {
         plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_INTERNAL, 0, fw_parse_version(F.rec.to), NAN, NAN, txt);
         F.rec.state = FW_ST_IDLE;
         rec_save();
+        trial_mark(false);                                   /* confirmed: the bootloader stops counting */
         hist_add(FWH_UPDATED);
         F.staged = read_trailer(&F.staged_hdr);              /* the free bank now holds the previous image */
     }

@@ -28,6 +28,9 @@
  * set; the application must block measurement (param_store_calibration_valid()).
  * The defaults are NOT written over the factory region until someone actually
  * changes a factory value, so a corrupted image is never silently replaced.
+ * On a new (blank) FRAM the unit's own history (RF_UNIT: service hours, log) is
+ * saved in an image marked uncalibrated, which keeps CAL_INVALID across power
+ * cuts until a factory value is set.
  *
  * Threading
  *   param_store_boot()          once, before the first scan (single-threaded)
@@ -131,6 +134,7 @@ void param_store_poll(uint32_t now_ms);       /* store task; returns quickly, ca
 
 bool          param_store_calibration_valid(void);
 uint32_t      param_store_status(void);
+uint32_t      param_store_nvm_size(unsigned *parts);   /* settings memory found: bytes (0 = none), chips */
 store_stats_t param_store_stats(void);
 
 /* Backup file: both regions as currently stored, wrapped with its own CRC.
