@@ -603,6 +603,21 @@ static void t_boot_offset(void) {
     CHECK(fs.reset_requested); CHECK(!fs.trial);
     power_up("0.9.0", BSP_RESET_SOFTWARE);
     fw_status(&st); CHECK(st.rolled_back); CHECK(!fs.trial);
+
+    /* the bootloader rolls back by itself (the new image never reached fw_boot): the
+     * previous image must not swap "back" to the one that failed */
+    CHECK_EQ(fw_request_activate(), FW_OK);                  /* 0.9.1 again, still staged */
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial);
+    uint32_t sw = fs.swaps;
+    fs.swapped = !fs.swapped; fs.trial = false;              /* what the bootloader does after 3 starts */
+    power_up("0.9.0", BSP_RESET_IWDG);
+    CHECK_EQ(fs.swaps, sw); CHECK(!fs.reset_requested);      /* no swap */
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK(st.rolled_back);
+    CHECK(!strcmp(st.running_version, "0.9.0"));
+    CHECK(st.staged); CHECK(!strcmp(st.staged_version, "0.9.1"));
+    power_up("0.9.0", BSP_RESET_POWER_ON);                   /* and it stays that way */
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK_EQ(fs.swaps, sw);
     fl.image_off = 0;
 }
 

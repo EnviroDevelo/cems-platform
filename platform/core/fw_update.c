@@ -283,6 +283,13 @@ void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char 
 }
 
 void fw_boot(uint8_t cause, uint32_t now_ms) {
+    /* The bootloader (boot.h) rolled back on its own: the record still says the new image is
+     * pending or on trial, but the previous one is running. Swapping "back" now would start
+     * the image that just failed, so take it as a finished rollback. (Not detectable when the
+     * new image has the same version string as the old one.) */
+    if ((F.rec.state == FW_ST_PENDING || F.rec.state == FW_ST_TRIAL) &&
+        strncmp(F.running, F.rec.to, sizeof F.rec.to) != 0 && strncmp(F.running, F.rec.from, sizeof F.rec.from) == 0)
+        F.rec.state = FW_ST_ROLLED_BACK;
     switch (F.rec.state) {
     case FW_ST_PENDING:                         /* first start of the new image */
         F.rec.state = FW_ST_TRIAL;
