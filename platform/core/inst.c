@@ -600,6 +600,11 @@ bool inst_point(unsigned p, float *value, uint8_t *q) {
     return true;
 }
 
+/* The emissions engine's source hook (emis_bind.h, PR #15: parameter 430 = 200 + p). It overrides
+ * the engine's weak stub; scan task. */
+bool emis_inst_point(unsigned p, float *value, uint8_t *q);
+bool emis_inst_point(unsigned p, float *value, uint8_t *q) { return inst_point(p, value, q); }
+
 /* ---------------- explorer (any task) ---------------- */
 bool inst_ex_start(uint32_t ip, uint16_t port, uint8_t unit, uint8_t fc, uint16_t addr, uint16_t count) {
     if (fc < INST_FC_COILS || fc > INST_FC_INPUT || ip == 0 || port == 0 || count == 0) return false;
