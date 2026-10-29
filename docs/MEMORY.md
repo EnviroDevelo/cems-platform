@@ -8,8 +8,8 @@ module, and before choosing hardware. Last run: 2026-10-29.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 455.5 KB | 1016.0 KB | 45 % | 560.5 KB |
-| RAM (STM32H573/H563, 640 KB) | 489.9 KB | 640.0 KB | 77 % | 150.1 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 455.7 KB | 1016.0 KB | 45 % | 560.3 KB |
+| RAM (STM32H573/H563, 640 KB) | 510.1 KB | 640.0 KB | 80 % | 129.9 KB |
 
 ## By module (KB)
 
@@ -26,7 +26,7 @@ module, and before choosing hardware. Last run: 2026-10-29.
 | I/O boards (Ethernet/RS-485 master) | 18.8 | 1.7 |
 | Modbus TCP | 6.6 | 17.6 |
 | Web server + page + logins | 62.6 | 73.5 |
-| HTTPS (tls.c + mbedTLS) | 96.5 | 63.2 |
+| HTTPS (tls.c + mbedTLS) | 96.5 | 83.4 |
 | Touch UI + EVE driver | 59.0 | 2.5 |
 | Task layer (FreeRTOS glue) | 3.1 | 99.7 |
 | Board support (BSP) | 1.5 | 0.8 |
@@ -40,8 +40,8 @@ module, and before choosing hardware. Last run: 2026-10-29.
 
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (64 KB, in
-"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 60 KB pool (inside "HTTPS"),
-shared by the web server (two connections, ~49 KB) and the alarm-email client one at a time: measured peaks 28 KB
+"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 80 KB pool (inside "HTTPS"),
+shared by the web server (three connections: two kept browsers and a spare, ~70 KB) and the alarm-email client one at a time: measured peaks 28 KB
 (one web connection), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
 about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
 11 KB of RAM (the larger pool, the client context and buffers). The 128 KB FRAM map (D6)
@@ -61,8 +61,8 @@ The application itself: 83.5 KB of flash, 46.1 KB of RAM (its tags, timers and t
 
 
 RAM includes every task stack (inside "Task layer"), the FreeRTOS heap (64 KB, in
-"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 60 KB pool (inside "HTTPS"),
-shared by the web server (two connections, ~49 KB) and the alarm-email client one at a time: measured peaks 28 KB
+"FreeRTOS kernel + heap", used by lwIP), and TLS's own fixed 80 KB pool (inside "HTTPS"),
+shared by the web server (three connections: two kept browsers and a spare, ~70 KB) and the alarm-email client one at a time: measured peaks 28 KB
 (one web connection), 32 KB (mail server with an RSA-2048 key), 38 KB (RSA-4096). Alarm email added
 about 31 KB of flash (TLS client, RSA, SHA-384/512 for the server's certificate, SMTP) and
 11 KB of RAM (the larger pool, the client context and buffers). The 128 KB FRAM map (D6)

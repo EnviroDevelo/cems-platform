@@ -11,8 +11,11 @@
  * Keep-alive (HTTPS only): after a GET the connection stays open, so the page's
  * polls reuse it instead of making a TLS connection each time. Up to HTTP_KEPT stay
  * open together (each on its own TLS connection, tls_use), so two browsers each keep
- * theirs. A new connection that speaks takes a free place, or else the place of the
- * longest-idle kept one (the server is never held by one browser). A kept connection
+ * theirs. A new connection that speaks takes a free place, or the place of a kept one
+ * idle for HTTP_EVICT_IDLE_MS; if every kept one is in use it is served once on the
+ * spare TLS connection and closed. So the extra sockets a browser opens (Chrome opens
+ * several) never push out another browser's working connection, and a third browser
+ * is still served, one TLS connection (resumed) per request. A kept connection
  * is also closed after 5 s idle, after 200 requests, after any POST (a browser does
  * not retry a POST on a connection the server closed), and before the alarm email
  * borrows the TLS context. Requests are served one at a time, the kept connections
@@ -21,10 +24,12 @@
 #define HTTP_SERVER_H
 #include <stdint.h>
 #include <stdbool.h>
+#include "tls.h"
 
 #define HTTP_PENDING    3u      /* accepted, waiting for their first bytes */
 #define HTTP_PENDING_MS 2000u   /* closed if silent this long */
-#define HTTP_KEPT       2u      /* kept-alive connections at once (<= TLS_CONNS) */
+#define HTTP_KEPT       (TLS_CONNS - 1u)   /* kept-alive connections at once; the last TLS connection serves the rest */
+#define HTTP_EVICT_IDLE_MS 1000u           /* a kept connection idle this long gives way to a new one */
 
 typedef struct {
     int      lfd;
@@ -39,6 +44,8 @@ typedef struct {
     uint32_t kept_ms[HTTP_KEPT]; /* each one's last activity */
     uint32_t kept_n[HTTP_KEPT];  /* requests on each */
     unsigned kturn;         /* the kept connection served first next time (taking turns) */
+    uint32_t evicted;       /* kept connections that gave way to a new one */
+    uint32_t once;          /* connections served once and closed (every kept place busy) */
     uint32_t reused;        /* requests served on a kept connection (no new TLS connection) */
     int      pfd[HTTP_PENDING];  /* waiting connections, -1 = free */
     uint32_t pms[HTTP_PENDING];  /* when each was accepted */

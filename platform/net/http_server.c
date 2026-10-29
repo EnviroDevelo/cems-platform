@@ -54,13 +54,13 @@ void http_close(http_server_t *s) {
     s->lfd = -1;
 }
 
-_Static_assert(HTTP_KEPT <= TLS_CONNS, "each kept connection needs its own TLS connection");
+_Static_assert(TLS_CONNS >= 2u, "a kept connection and the spare one each need their own TLS connection");
 
 #define KEEP_IDLE_MS 5000u
 #define KEEP_MAX     200u
 
 /* one request on fd (TLS already up if HTTPS); true = the connection may stay open */
-static bool serve(http_server_t *s, int fd) {
+static bool serve(http_server_t *s, int fd, bool may_keep) {
     http_out_t o;
     conn_t c = { fd, s };
     out_init(&o, send_fd, &c);
@@ -92,7 +92,7 @@ static bool serve(http_server_t *s, int fd) {
     }
     r.body = s->buf + hl;
     r.body_len = r.content_length;
-    o.keep = s->tls && r.keep_alive && !strcmp(r.method, "GET") && n == (uint32_t)hl + r.content_length;
+    o.keep = may_keep && s->tls && r.keep_alive && !strcmp(r.method, "GET") && n == (uint32_t)hl + r.content_length;
     http_handle(&r, &o, bsp_ms());
     s->served++;
     return o.keep && !o.err;
@@ -125,16 +125,20 @@ static void set_timeouts(int fd) {
 static void start(http_server_t *s, int fd) {
     uint8_t b;
     if (recv(fd, &b, 1, MSG_PEEK | MSG_DONTWAIT) == 0) { s->silent++; closesocket(fd); return; }   /* closed unused */
-    unsigned k = 0;                                     /* a free place, else the longest idle one gives way */
+    unsigned k = 0;                                     /* a free place, else the longest idle one */
     for (unsigned i = 0; i < HTTP_KEPT; i++) {
         if (s->kfd[i] < 0) { k = i; break; }
         if ((int32_t)(s->kept_ms[i] - s->kept_ms[k]) < 0) k = i;
     }
-    drop_one(s, k);
+    bool keep = true;
+    if (s->kfd[k] >= 0) {
+        if (bsp_ms() - s->kept_ms[k] >= HTTP_EVICT_IDLE_MS) { s->evicted++; drop_one(s, k); }
+        else { k = HTTP_KEPT; keep = false; s->once++; }   /* all in use: served once on the spare connection */
+    }
     set_timeouts(fd);
     if (s->tls) tls_use(k);
     if (s->tls && tls_accept(fd) != 0) { s->tls_failed++; finish(s, fd); return; }
-    if (serve(s, fd)) { s->kfd[k] = fd; s->kept_ms[k] = bsp_ms(); s->kept_n[k] = 1; }
+    if (serve(s, fd, keep) && keep) { s->kfd[k] = fd; s->kept_ms[k] = bsp_ms(); s->kept_n[k] = 1; }
     else finish(s, fd);
 }
 
@@ -183,7 +187,7 @@ void http_poll(http_server_t *s, uint32_t timeout_ms) {
         s->kturn = (k + 1u) % HTTP_KEPT;
         s->reused++;
         if (s->tls) tls_use(k);
-        if (serve(s, fd)) { s->kept_ms[k] = bsp_ms(); s->kept_n[k]++; }
+        if (serve(s, fd, true)) { s->kept_ms[k] = bsp_ms(); s->kept_n[k]++; }
         else { s->kfd[k] = -1; finish(s, fd); }
         return;
     }

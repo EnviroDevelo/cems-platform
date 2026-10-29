@@ -22,6 +22,8 @@ DK bring-up changes (28-29 Oct, before release):
   `"fram":{"bytes","chips"}`. The settings map is unchanged.
 - An uncalibrated unit (factory region never set) keeps CAL_INVALID across power cuts while its
   service hours are saved (factory image flag HF_UNCAL).
-- The HTTPS server keeps two browser connections open together (tls_use, HTTP_KEPT 2): a second
-  viewer no longer forces the first to reconnect. TLS pool 44 -> 60 KB; the RAM stand-in for a
-  missing FRAM shrinks to the used map (STORE_META_ADDR + 1 KB).
+- The HTTPS server keeps two browser connections open together (TLS_CONNS 3: two kept and a
+  spare, tls_use): a second viewer no longer forces the first to reconnect. A new connection
+  takes a kept place only if one is free or idle over 1 s; otherwise it is served once on the
+  spare and closed, so a browser's extra sockets never push out another's. TLS pool 44 -> 80 KB;
+  the RAM stand-in for a missing FRAM shrinks to the used map (STORE_META_ADDR + 1 KB).

@@ -304,15 +304,20 @@ def main():
             c.request("GET", "/api/values?ids=1"); rr = c.getresponse(); body = rr.read()
             ok_all &= rr.status == 200 and rr.getheader("Connection") == "keep-alive"
     check(ok_all and kinfo() == hs2, "two kept connections served in turn, no further TLS handshakes")
-    time.sleep(0.2)
-    kc2.request("GET", "/api/values?ids=1"); kc2.getresponse().read()   # kc is now the longer idle one
-    other = Web(); other.json("/api/info")                # a third client: the longest idle gives way
     def alive(c):
         try:
             c.request("GET", "/api/values?ids=1"); rr = c.getresponse(); rr.read(); return True
         except (http.client.RemoteDisconnected, ConnectionError, ssl.SSLError):
             return False
-    check(not alive(kc) and alive(kc2), "a third client takes the place of the longest idle kept connection")
+    k3 = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)   # a third client, both places busy
+    k3.request("GET", "/api/values?ids=1"); rr = k3.getresponse(); rr.read()
+    check(rr.status == 200 and rr.getheader("Connection") == "close", "a third client is served once (Connection: close)")
+    k3.close()
+    check(alive(kc) and alive(kc2), "... and both kept connections stay")
+    for _ in range(4):                                    # kc idles past HTTP_EVICT_IDLE_MS, kc2 keeps polling
+        time.sleep(0.3); kc2.request("GET", "/api/values?ids=1"); kc2.getresponse().read()
+    other = Web(); other.json("/api/info")                # now the idle one gives way
+    check(not alive(kc) and alive(kc2), "a new client takes the place of a kept connection idle over 1 s")
     kc.close(); kc2.close()
     kc = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
     kc.request("POST", "/api/logout", body=b"", headers={"X-CEMS": "1", "Content-Type": "application/x-www-form-urlencoded"})
@@ -321,7 +326,7 @@ def main():
     kc.close()
     st, info = web.json("/api/info")
     print(f"   TLS: {info['tls']}")
-    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 60 * 1024, "TLS statistics")
+    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 80 * 1024, "TLS statistics")
 
     # ---------------- alarms ----------------
     def alarms(w=web):

@@ -24,12 +24,13 @@
 #include "nvm.h"
 
 #ifndef TLS_CONNS
-#define TLS_CONNS 2u                   /* server connections open together (one per kept browser connection) */
+#define TLS_CONNS 3u                   /* server connections open together: the kept browser connections (HTTP_KEPT)
+                                          plus one for connections served once and closed. 2 = one kept (RAM-tight builds) */
 #endif
 #ifndef TLS_POOL_SIZE
-#define TLS_POOL_SIZE (60u * 1024u)    /* each server connection holds ~21 KB of buffers (16 KB in / 4 KB out) from start:
-                                          measured peak 28 KB for one, so ~49 KB for two; the mail client (32 KB RSA-2048,
-                                          38 KB RSA-4096) runs with the server connections freed */
+#define TLS_POOL_SIZE ((20u + 20u * TLS_CONNS) * 1024u)   /* each server connection holds ~21 KB of buffers (16 KB in /
+                                          4 KB out) from start: measured on the H5 28 KB for one, 49 KB for two; the mail
+                                          client (32 KB RSA-2048, 38 KB RSA-4096) runs with the server connections freed */
 #endif
 
 void tls_crypto_init(void);                 /* the mbedTLS memory pool (once; tls_init does it too) */
