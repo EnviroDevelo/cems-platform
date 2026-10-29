@@ -199,6 +199,9 @@ def main():
     e = [x for x in j["entries"] if x["name"] == "demo_level"]
     check(st == 200 and j["addressing"] == "0-based" and e and e[0]["table"] == "input" and e[0]["addr"] == 100
           and e[0]["scale_dec"] == 1 and e[0]["forceable"] and e[0]["access"] == "read", "register map for the handover file")
+    c = j["codes"]
+    check(len(c["quality"]) == 8 and c["quality"][0]["name"] == "valid" and c["state"][4]["key"] == "MEASURING"
+          and any(b["bit"] == 4 for b in c["common_bits"]) and len(c["exceptions"]) == 5, "codes for the handover file")
     st, j = web.json("/api/log/events?n=50")
     ev = [x for x in j["events"] if x["event"] == "force"]
     check(len(ev) >= 4 and any(x["detail"] == "demo_level" and x["new"] == 42.5 for x in ev)

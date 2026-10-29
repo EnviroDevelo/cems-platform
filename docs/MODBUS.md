@@ -193,7 +193,7 @@ So the control system can be checked against known values, an admin on the touch
 - **What can be forced**: any numeric or bool value the PLC only reads: input registers,
   discrete inputs, and read-only holding registers or coils, including single elements of an
   array (quality codes, alarm bits) and the platform block's state. Settings the PLC writes,
-  text, and the block's layout and map versions can't be forced. A forced bool is a test bit.
+  text, the block's versions, the identity (serial number, revisions) and the clock can't be forced. A forced bool is a test bit.
 - **What it changes**: only what Modbus serves. The screens, the web page, alarms, logs and the
   instrument's own control keep the real value.
 - **How long**: 30 s, then it reverts by itself. Forcing it again restarts the 30 s. A force can
