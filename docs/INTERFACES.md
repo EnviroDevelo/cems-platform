@@ -66,7 +66,7 @@ What a SCADA system, a script or a saved browser bookmark can rely on.
 - **Core version** (`plat_version.h`, MAJOR.MINOR.PATCH): the rules there. PATCH fixes only;
   MINOR adds; MAJOR may break, with a migration note in CHANGELOG.md.
 - **Modbus map version** (input register 9001) and **platform block layout** (register 9000 block,
-  layout 2 today).
+  layout 3 today).
 - **Web API version** (`/api/info` `"api"`, 2 today).
 - **Settings layout version** (the FRAM image, `--layout` in the update file).
 

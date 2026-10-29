@@ -2,7 +2,7 @@
 
 This page covers what is the same on every product built on the CEMS core: the connection,
 the function codes, the rules for reads and writes, and the platform block at input registers
-9000-9089. Each product's own registers are in its generated map, for example
+9000-9090. Each product's own registers are in its generated map, for example
 [`interface/app_demo/MODBUS_MAP.md`](interface/app_demo/MODBUS_MAP.md) for the demo application.
 That file is produced from the firmware's tables by `make modbus-map`, so it can't drift from
 what the unit actually serves.
@@ -105,14 +105,14 @@ any mode, with no login.
 | 04 | Server device failure | refused in the current mode (LOCAL), or by an interlock at the time of the check |
 | 06 | Server busy | the write queue is full; retry after one scan period |
 
-## 6. The platform block (input registers 9000-9089)
+## 6. The platform block (input registers 9000-9090)
 
 The same addresses in every product (CIP-01.6, 14.4, 15.1, 15.2). Input registers 9000-9199 are
 reserved for it; a product's own map can't use them.
 
 | Register | Size | Contents |
 |---|---|---|
-| 9000 | 1 | block layout version: **2** |
+| 9000 | 1 | block layout version: **3** |
 | 9001 | 1 | the product's own map version (changes when an address in the product's map moves or a value is removed) |
 | 9002 | 1 | heartbeat: +1 every 100 ms, wraps at 65535. If it stops changing, the core's scan has stopped. |
 | 9003 | 1 | instrument state (table below) |
@@ -134,8 +134,9 @@ reserved for it; a product's own map can't use them.
 | 9086 | 1 | clock synchronised: 1 = set and confirmed recently |
 | 9087 | 1 | clock source: 0 none, 1 SNTP, 2 touchscreen, 3 web, 4 Modbus |
 | 9088-9089 | 2 | when the clock was last set or confirmed (u32, local seconds since 1970) |
+| 9090 | 1 | values forced on Modbus now (section 7; 0 = none) |
 
-Layout 2 added 9084-9089; nothing in layout 1 moved. A master should read 9000 once at connect,
+Layout 2 added 9084-9089, and layout 3 added 9090; nothing earlier moved. A master should read 9000 once at connect,
 and use only the registers that layout has.
 
 **Instrument state (9003)**
@@ -176,6 +177,7 @@ each value in the web page and on the touchscreen (UI_CONVENTIONS.md).
 | 1 | 0x0002 | an alarm routed to Modbus waits for an acknowledge |
 | 2 | 0x0004 | any alarm is active |
 | 3 | 0x0008 | any alarm waits for an acknowledge |
+| 4 | 0x0010 | values are forced on Modbus for commissioning (section 7) |
 | 8 + k | 0x0100 << k | alarm relay k is in alarm (before any inversion) |
 
 Which alarms count in bits 0 and 1 is set per alarm in the web page's Alarm setup tab (the
@@ -183,7 +185,30 @@ Modbus column). Every alarm's own state is always readable, routed or not.
 The alarm IDs, and the per-alarm active and unacknowledged bits, are in the product's map
 (`alarm_active_bits`, `alarm_unack_bits`) and in [`FAULT_CODES.md`](FAULT_CODES.md).
 
-## 7. Supervising the link
+## 7. Forced values (commissioning)
+
+So the control system can be checked against known values, an admin on the touchscreen
+(System > Force values) or the web page (the Force buttons) can force a value the PLC reads:
+
+- **What can be forced**: any numeric or bool value the PLC only reads: input registers,
+  discrete inputs, and read-only holding registers or coils, including single elements of an
+  array (quality codes, alarm bits) and the platform block's state. Settings the PLC writes,
+  text, and the block's layout and map versions can't be forced. A forced bool is a test bit.
+- **What it changes**: only what Modbus serves. The screens, the web page, alarms, logs and the
+  instrument's own control keep the real value.
+- **How long**: 30 s, then it reverts by itself. Forcing it again restarts the 30 s. A force can
+  be cleared at once, one at a time or all together. Forces are never kept over a restart.
+- **Any value of the right type**, also outside the value's normal range, so the PLC's own range
+  handling can be tried. Up to 16 values at once.
+- **How the PLC can tell**: input register 9090 counts the values forced now, and common alarm
+  bit 4 (0x0010) is set while any is. A DAHS should mark data as test data while 9090 isn't 0.
+- **Logged**: each force, clear and expiry is in the event log, with who did it.
+
+Web API: `GET /api/modbus/force` (forces and the forceable list), `POST /api/modbus/force`
+(`id`, `index` for arrays, `v`), `POST /api/modbus/force/clear` (`id` [`index`] or `all`). The
+whole map for the integrator's handover file: `GET /api/modbus/map`.
+
+## 8. Supervising the link
 
 - **From the master's side**: watch the heartbeat (9002). If it hasn't changed for 1 s or more,
   the unit isn't scanning, even if it still answers.
@@ -192,10 +217,10 @@ The alarm IDs, and the per-alarm active and unacknowledged bits, are in the prod
   Poll at least every few seconds to keep it clear. What the product does beyond the alarm is
   given in its own documentation.
 
-## 8. Commissioning checklist
+## 9. Commissioning checklist
 
 1. Set the unit's IP in the web page. Optionally set `modbus_allow_ip` to the PLC's address.
-2. Read 9000-9019 (function 04): layout 2, the map version you configured for, a heartbeat that
+2. Read 9000-9019 (function 04): layout 3, the map version you configured for, a heartbeat that
    moves, state 3 or 4.
 3. Read 9052-9067 and check the product name. Or use 43/14.
 4. Read the product's own registers from its map.
@@ -204,7 +229,7 @@ The alarm IDs, and the per-alarm active and unacknowledged bits, are in the prod
 6. Check the web Service tab's Modbus panel: your connection is listed, and exceptions don't rise
    in normal polling.
 
-## 9. Not offered on the core
+## 10. Not offered on the core
 
 - **Modbus RTU / RS-485**: removed from the core board (decision D27, revised 24 Oct). The I/O
   boards' bus is internal and isn't for the plant.

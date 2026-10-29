@@ -2,6 +2,7 @@
 #include <math.h>
 #include <string.h>
 #include "param.h"
+#include "modbus.h"
 #include "plat_clock.h"
 #include "plat_port.h"
 #include "plat_seqlock.h"
@@ -63,6 +64,7 @@ extern uint32_t plat_state_since_tag, plat_supply_mv_tag;                   /* p
 extern uint16_t plat_board_rev_tag;                                         /* fw_update.c */
 extern uint32_t plat_svc_hours_tag, plat_svc_since_tag, plat_config_crc_tag;   /* plat_service.c */
 extern uint32_t plat_selftest_tag;                                         /* plat_selftest.c */
+extern uint16_t plat_mb_forced;                                            /* modbus.c */
 extern uint32_t plat_cal_cmd_tag;                                          /* plat_cal.c */
 extern uint8_t  plat_cal_level_tag;
 extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
@@ -184,6 +186,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_SERVICE_HOURS, "service_hours", plat_svc_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "0.1 h"),
     PARAM_UINT(PARAM_ID_CONFIG_CRC, "config_crc", plat_config_crc_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_SELFTEST, "selftest_fail", plat_selftest_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_FORCED, "mb_forced", plat_mb_forced, CT_U16, 0, MB_FORCE_MAX, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_BOARD_REV, "board_rev", plat_board_rev_tag, CT_U16, 0, 65535, 65535, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,

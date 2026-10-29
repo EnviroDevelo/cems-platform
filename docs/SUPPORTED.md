@@ -29,7 +29,7 @@ The I/O board reports its map version in register 65 (`IOB_R_MAP_VERSION`) and i
 
 | Interface | Version | Where it is read |
 |---|---|---|
-| Modbus platform block layout | 2 | input register 9000 |
+| Modbus platform block layout | 3 | input register 9000 |
 | Application map version | per product | input register 9001 |
 | Web API | 2 | `/api/info` `"api"` |
 | Bootloader | 1 | `/api/fw` `"bootloader"."version"` |

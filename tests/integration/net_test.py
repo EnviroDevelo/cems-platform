@@ -162,6 +162,47 @@ def main():
     check(st == 401, "wrong password -> 401")
     st, j = web.json("/api/login", {"level": "admin", "password": "2222"})
     check(st == 200 and j["level"] == "admin", "admin login")
+
+    # ---------------- Modbus force for commissioning (admin, 30 s, Modbus only) ----------------
+    real = mb.read_input_registers(100, 1, slave=1).registers[0]
+    st, j = web.json("/api/modbus/force")
+    names = {f["name"] for f in j["forceable"]}
+    check(st == 200 and j["max_s"] == 30 and "demo_level" in names and "start_in" in names and "start_delay" not in names,
+          "forceable list: values the PLC reads, not settings")
+    st, j = web.json("/api/modbus/force", {"id": 1008, "v": "42.5"})
+    check(st == 200 and j["forced"] == 1, "admin forces demo_level")
+    st, j = web.json("/api/modbus/force", {"id": 1004, "v": "true"})
+    check(st == 200 and j["forced"] == 2, "admin toggles a test bit (start_in)")
+    time.sleep(0.15)
+    check(mb.read_input_registers(100, 1, slave=1).registers[0] == 425, "the PLC reads the forced value (x10)")
+    check(mb.read_discrete_inputs(0, 1, slave=1).bits[0] is True, "the PLC reads the forced bit")
+    blk = mb.read_input_registers(9090, 1, slave=1).registers[0]
+    com = mb.read_input_registers(9006, 1, slave=1).registers[0]
+    check(blk == 2 and com & 0x10, "the PLC can tell values are forced (9090, common bit 4)")
+    st, j = web.json("/api/values")
+    check(st == 200 and abs(j["v"]["1008"] * 10 - real) < 1, "the web keeps the real value")
+    st, j = web.json("/api/modbus/force")
+    f = [x for x in j["forces"] if x["id"] == 1008]
+    check(f and f[0]["v"] == 42.5 and 0 < f[0]["left_s"] <= 30 and f[0]["by"] == "web" and f[0]["index"] is None,
+          "force listed with the time left")
+    st, j = web.json("/api/info")
+    check(j["modbus"]["forced"] == 2, "/api/info modbus.forced")
+    st, j = web.json("/api/modbus/force", {"id": 1001, "v": "5"})
+    check(st == 404, "a setting is not forceable")
+    st, j = web.json("/api/modbus/force/clear", {"id": 1008})
+    check(st == 200 and j["forced"] == 1, "clear one force")
+    time.sleep(0.15)
+    check(abs(mb.read_input_registers(100, 1, slave=1).registers[0] - real) <= 1, "...and the PLC reads the real value again")
+    st, j = web.json("/api/modbus/force/clear", {"all": 1})
+    check(st == 200 and j["forced"] == 0, "clear all")
+    st, j = web.json("/api/modbus/map")
+    e = [x for x in j["entries"] if x["name"] == "demo_level"]
+    check(st == 200 and j["addressing"] == "0-based" and e and e[0]["table"] == "input" and e[0]["addr"] == 100
+          and e[0]["scale_dec"] == 1 and e[0]["forceable"] and e[0]["access"] == "read", "register map for the handover file")
+    st, j = web.json("/api/log/events?n=50")
+    ev = [x for x in j["events"] if x["event"] == "force"]
+    check(len(ev) >= 4 and any(x["detail"] == "demo_level" and x["new"] == 42.5 for x in ev)
+          and any(x["detail"] == "demo_level" and x["new"] is None for x in ev), "force set and clear in the event log")
     st, j = web.json("/api/write", [("id", 1001), ("v", 2500), ("id", 1005), ("v", "Inlet 9")])
     check(st == 200 and j["queued"] == 2, "web batch write")
     time.sleep(0.05)

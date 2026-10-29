@@ -327,6 +327,64 @@ static void t_platform_block(void) {
     setup();
 }
 
+/* forced values for commissioning (Gary 29 Oct): admin only, Modbus only, 30 s, logged */
+static void t_force(void) {
+    setup();
+    m_inreg = 5; m_mode = 2; m_di = false; scan();
+    CHECK(mb_forceable(P_IN)); CHECK(mb_forceable(P_MODE));          /* input register; read-only holding */
+    CHECK(mb_forceable(P_DI)); CHECK(mb_forceable(P_ALARMS));        /* discrete input; read-only coil array */
+    CHECK(!mb_forceable(P_FLOW)); CHECK(!mb_forceable(P_PRESET));    /* settings the PLC writes */
+    CHECK(!mb_forceable(P_NAME)); CHECK(!mb_forceable(P_ACK));       /* text; writable coils */
+    CHECK(!mb_forceable(PARAM_ID_MB_BLOCK_VERSION)); CHECK(!mb_forceable(PARAM_ID_MB_FORCED));
+    CHECK(mb_forceable(PARAM_ID_STATE));                             /* the block's state: the PLC's FAULT handling */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_OPERATOR, 1000), PERR_ACCESS);
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_MODBUS, PLAT_LVL_FACTORY, 1000), PERR_ACCESS);
+    CHECK_EQ(mb_force_set(P_FLOW, MB_FORCE_SCALAR, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_NO_ID);
+    CHECK_EQ(mb_force_set(P_IN, 0, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);            /* not an array */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 70000, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);   /* not a u16 */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1.5, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);
+    CHECK_EQ(mb_force_set(P_ALARMS, 22, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);       /* 22 elements */
+    CHECK_EQ(mb_force_count(), 0);
+    /* outside the parameter's range is allowed (mode is -1..10): the PLC's own range checks can be tried */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_MODE, MB_FORCE_SCALAR, 99, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_DI, MB_FORCE_SCALAR, 1, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN, 1000), PERR_OK);       /* a test bit */
+    CHECK_EQ(mb_force_set(P_ALARMS, 3, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_count(), 4);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 1234);
+    rd(3, 0, 1); CHECK_EQ(reg(0), 99);
+    rd(2, 0, 1); CHECK_EQ(rsp[2], 1);
+    rd(1, 13, 8); CHECK_EQ(rsp[2], 0x08);
+    plat_val_t v; CHECK(param_read(P_IN, &v)); CHECK_EQ(v.u, 5);    /* the real value is untouched */
+    mb_block_scan(1000); scan();
+    rd(4, 9090, 1); CHECK_EQ(reg(0), 4);                             /* the PLC can see something is forced */
+    mb_force_t f;
+    CHECK(mb_force_get(0, &f, 11000)); CHECK_EQ(f.id, P_IN); CHECK_EQ(f.left_ms, 20000); CHECK_EQ(f.src, PLAT_SRC_WEB);
+    CHECK(!mb_force_get(4, &f, 11000));
+    /* forcing again restarts the 30 s; a clear ends one at once */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 4321, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 20000), PERR_OK);
+    CHECK_EQ(mb_force_count(), 4);
+    CHECK_EQ(mb_force_clear(P_MODE, MB_FORCE_SCALAR, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK);
+    CHECK_EQ(mb_force_clear(P_MODE, MB_FORCE_SCALAR, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_NO_ID);
+    rd(3, 0, 1); CHECK_EQ(reg(0), 2);
+    /* 30 s after: the others revert by themselves; the one set again lasts until 50 s */
+    mb_block_scan(31000); scan();
+    CHECK_EQ(mb_force_count(), 1);
+    rd(2, 0, 1); CHECK_EQ(rsp[2], 0);
+    rd(1, 13, 8); CHECK_EQ(rsp[2], 0x00);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 4321);
+    mb_block_scan(50000); scan();
+    CHECK_EQ(mb_force_count(), 0);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 5);
+    rd(4, 9090, 1); CHECK_EQ(reg(0), 0);
+    /* at most MB_FORCE_MAX; clear all */
+    for (uint16_t k = 0; k < MB_FORCE_MAX; ++k) CHECK_EQ(mb_force_set(P_ALARMS, k, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 60000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 60000), PERR_BUSY);
+    CHECK_EQ(mb_force_clear_all(PLAT_SRC_WEB, PLAT_LVL_OPERATOR), PERR_ACCESS);
+    CHECK_EQ(mb_force_clear_all(PLAT_SRC_WEB, PLAT_LVL_ADMIN), PERR_OK);
+    CHECK_EQ(mb_force_count(), 0);
+}
+
 void test_modbus_all(void) {
     RUN(t_mbtcp_framing);
     RUN(t_map_validation);
@@ -340,4 +398,5 @@ void test_modbus_all(void) {
     RUN(t_busy);
     RUN(t_device_id);
     RUN(t_platform_block);
+    RUN(t_force);
 }

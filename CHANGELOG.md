@@ -8,7 +8,7 @@ take it (usually nothing). Product releases keep their own notes in their direct
 
 The CORE platform as built against the Common Instrument Platform Specification Rev 0.3:
 scan engine, parameter table and store, event and data log, alarms, Modbus TCP/RTU with the
-platform block (input registers 9000-9199, layout 2), HTTPS web interface (API version in
+platform block (input registers 9000-9199, layout 3), HTTPS web interface (API version in
 `/api/info`), touchscreen, I/O boards over Ethernet, firmware update with trial and rollback,
 instrument state and quality, calibration records, clock quality, service history, start-up
 self-test, PBKDF2 passwords with token recovery.
@@ -48,3 +48,9 @@ DK bring-up changes (28-29 Oct, before release):
 - `tools/dk_soak.py`: read-only soak test against a real unit (HTTPS + Modbus load, heap/stack/
   restart checks from `/api/info`, CSV), standard-library Python only (CIP-26.6).
 - `docs/SUPPORTED.md`: the supported-combinations matrix (CIP-25.5).
+- Modbus forced values for commissioning (`modbus.h` `mb_force_*`): an admin forces a value the
+  PLC reads for 30 s from the touchscreen or web (`/api/modbus/force`); Modbus only, logged
+  (event `force`), counted at input register 9090 (block layout 3) and common alarm bit 4.
+- `GET /api/modbus/map`: the register map in force as JSON, for the integrator's handover file.
+- `/api/info` `"modbus"`: server status for the web Service tab. `docs/MODBUS.md`: the
+  integrator's guide (CIP-26.7).
