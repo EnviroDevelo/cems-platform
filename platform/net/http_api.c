@@ -7,6 +7,8 @@
 #include "http_api.h"
 #include "iobus.h"
 #include "mb_rtu.h"
+#include "mbtcp.h"
+#include "modbus.h"
 #include "param.h"
 #include "param_store.h"
 #include "plat_diag.h"
@@ -202,6 +204,8 @@ static void level_name_json(http_out_t *o, uint8_t l) {
     json_str(o, l <= 3 ? n[l] : "view");
 }
 
+static void json_ip(http_out_t *o, uint32_t ip);
+
 static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     plat_val_t v;
     uint32_t left = 0;
@@ -240,6 +244,25 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"resumed\":"); json_uint(o, t.resumed);
       out_str(o, ",\"failed\":"); json_uint(o, t.failed);
       out_str(o, ",\"pool_peak\":"); json_uint(o, t.pool_peak); out_str(o, "}"); }
+    {   const mbtcp_server_t *m = mbtcp_main();      /* the web Service tab's Modbus panel */
+        mb_stats_t st = mb_stats();
+        out_str(o, ",\"modbus\":{\"listening\":"); json_bool(o, m != NULL);
+        out_str(o, ",\"port\":"); if (m) json_uint(o, m->port); else out_str(o, "null");
+        out_str(o, ",\"clients\":"); json_uint(o, m ? (unsigned)mbtcp_clients(m) : 0u);
+        out_str(o, ",\"max_clients\":"); json_uint(o, MBTCP_MAX_CLIENTS);
+        out_str(o, ",\"requests\":"); json_uint(o, st.requests);
+        out_str(o, ",\"exceptions\":"); json_uint(o, st.exceptions);
+        out_str(o, ",\"writes_queued\":"); json_uint(o, st.writes_queued);
+        out_str(o, ",\"read_only\":"); json_bool(o, !(param_read(PARAM_ID_MODBUS_WRITE_EN, &v) && v.b));
+        out_str(o, ",\"allow_ip\":");                  /* null: any client */
+        if (param_read(PARAM_ID_MODBUS_ALLOW_IP, &v) && v.u) json_ip(o, v.u); else out_str(o, "null");
+        out_str(o, ",\"accepted\":"); json_uint(o, m ? m->accepted : 0u);
+        out_str(o, ",\"refused_ip\":"); json_uint(o, m ? m->refused_ip : 0u);
+        out_str(o, ",\"evicted\":"); json_uint(o, m ? m->evicted : 0u);
+        out_str(o, ",\"protocol_errors\":"); json_uint(o, m ? m->protocol_errors : 0u);
+        out_str(o, ",\"last_request_s\":");
+        if (m && m->frames) json_uint(o, (uint32_t)(bsp_ms() - m->last_frame_ms) / 1000u); else out_str(o, "null");
+        out_str(o, "}"); }
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     { alarm_summary_t s; alarm_summary(&s);
