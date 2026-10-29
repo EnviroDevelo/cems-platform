@@ -128,6 +128,14 @@ shows the record in force, the factory record and when the next calibration is d
 - **Modbus TCP**: whether the server is listening, control systems connected, requests and when
   the last one came, refused requests, whether Modbus writes are allowed and the allowed client
   address. **Modbus settings** opens the Modbus settings. See `docs/MODBUS.md` 7 and 8.
+- **Force Modbus values** (admin login, for commissioning): pick a value, enter what the control
+  system should read, and **Force for 30 s**. The control system reads the forced value for 30
+  seconds, then the real value again; forcing again restarts the 30 seconds. Test bits have one
+  button each: click for forced on, again for forced off, again to release. **Release** or
+  **Clear all** ends forcing early. This page, the touchscreen, alarms and the logs always keep the
+  real value, and the table shows both. While anything is forced, the header shows an amber
+  **MODBUS FORCED** on every tab, and the PLC can see it in register 9090 and the common alarm.
+  Every force is in the event log.
 
 ## 10. Event log and downloads
 

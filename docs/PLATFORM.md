@@ -303,6 +303,18 @@ Settings tab filtered to the modbus_* parameters. `tests/integration/modbus_web_
 real Modbus request to netsim and checks the panel; firmware without the block gets it simulated.
 Screenshot: `docs/web_modbus.png`.
 
+**Forcing Modbus values** (Service tab, admin login, any mode; Gary 29 Oct): for commissioning,
+an administrator picks a forceable value (`GET /api/modbus/force` "forceable": numeric or on/off
+values that are read-only to Modbus, never settings) and forces it for 30 s
+(`POST /api/modbus/force`, form fields id, index for arrays, v). Forcing again restarts the 30 s.
+Only what Modbus serves changes: the page, touchscreen, alarms and logging keep the real value,
+so the table shows both, with the time left, and the Settings row adds "(Modbus: forced to X,
+n s left)". On/off values without an index are test bits, one button each: forced on, forced
+off, released. Release and Clear all end forces (`POST /api/modbus/force/clear`). While any value
+is forced the header shows an amber MODBUS FORCED n on every tab (`/api/info` "modbus"."forced").
+A refused force says why (16 already forced, not forceable, bad value). Test:
+`tests/integration/modbus_force_web_test.py` (the agreed API simulated until the firmware has it).
+
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
 512 bytes is red), logic scans with the longest scan, overruns and late starts, secure connections

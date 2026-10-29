@@ -89,6 +89,7 @@ section.offtab{display:none!important}
   <span class="badge" id="mode">-</span>
   <span class="badge" id="link" style="display:none"></span>
   <a href="#alarms" class="badge" id="alarmbadge" style="display:none;text-decoration:none"></a>
+  <a href="#service" class="badge b-warn" id="forcebadge" style="display:none;text-decoration:none" title="Modbus is serving forced values"></a>
   <span class="badge" id="conn">connecting</span>
 </header>
 <div id="lost">Connection lost. Last update <span id="lasttime">-</span>. Retrying.</div>
@@ -213,6 +214,22 @@ section.offtab{display:none!important}
       <p class="note" id="mbwhy"></p>
       <div class="wrow" id="mbtiles"></div>
       <div class="row"><button class="ghost" id="mbset">Modbus settings</button></div>
+      <div id="fcbox" style="display:none;margin-top:8px">
+        <h2 style="margin-top:8px">Force Modbus values</h2>
+        <p class="note">For commissioning: the control system reads the forced value instead of the real one for 30 s, then the
+          real value comes back. Forcing again restarts the 30 s. Only what Modbus serves changes: this page, the touchscreen, alarms
+          and logging keep the real value. Every force is in the event log.</p>
+        <div class="row">
+          <select id="fcid"></select>
+          <input id="fcidx" size="4" placeholder="index" style="display:none">
+          <input id="fcv" size="10" placeholder="value">
+          <button id="fcgo">Force for 30 s</button>
+          <button class="ghost" id="fcall" style="display:none">Clear all</button>
+          <span class="err" id="fcerr"></span>
+        </div>
+        <div class="row" id="fcbits" style="flex-wrap:wrap"></div>
+        <table id="fctab" style="display:none;max-width:640px;margin-top:6px"><thead><tr><th>Value</th><th>Modbus serves</th><th>Real value</th><th>Left</th><th>By</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
     </div>
   </section>
 
@@ -971,6 +988,8 @@ function showHealth(i) {
 
 /* Modbus TCP server: /api/info "modbus" (counts since start); its settings are modbus_* parameters */
 function showModbus(m) {
+  const nf = m && m.forced || 0;                       /* on every tab: the control system is reading forced values */
+  $("forcebadge").style.display = nf ? "" : "none"; $("forcebadge").textContent = `MODBUS FORCED ${nf}`;
   $("mbbox").style.display = m ? "" : "none";
   if (!m) return;
   const ago = s => s === null || s === undefined ? "none yet" : s < 120 ? `${s} s ago` : s < 7200 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
@@ -982,6 +1001,7 @@ function showModbus(m) {
   if ("allow_ip" in m) tiles.push(["Allowed client", m.allow_ip || "any address", false]);
   if (m.accepted !== undefined)
     tiles.push(["Connections: accepted / refused / dropped", `${m.accepted} / ${m.refused_ip || 0} / ${m.evicted || 0}`, false]);
+  if (nf) tiles.push(["Forced values", `${nf}`, true]);
   if (m.protocol_errors) tiles.push(["Malformed frames", `${m.protocol_errors}`, true]);
   $("mbtiles").replaceChildren(...tiles.map(([k, v, bad]) => {
     const d = document.createElement("div"); d.className = "tile";
@@ -994,7 +1014,92 @@ function showModbus(m) {
     "Refused requests got a Modbus exception (an unknown register, a value outside its range, or a write while writes are off). " +
     "Refused connections came from an address that isn't allowed; dropped ones made room for a new client. Counts restart at each power-up.";
   $("mbwhy").style.color = down ? "var(--bad)" : "";
+  forceKick();
 }
+/* Modbus forcing (admin): /api/modbus/force. A force changes only what Modbus serves, for max_s seconds */
+let fc = null, fcAt = 0, fcPolling = false;
+const fcName = f => f.name + (f.index !== null && f.index !== undefined ? `[${f.index}]` : "");
+const fcVal = (f, v) => typeof v === "boolean" ? (v ? "on" : "off") : v + (f && f.unit ? " " + f.unit : "");
+async function pollForce(once) {
+  if (level < 2 || !$("mbbox").offsetParent) { fcPolling = false; showForce(); return; }
+  try { fc = await api("/api/modbus/force"); fcAt = Date.now(); }
+  catch (e) { if (e.status === 404) { fc = null; fcPolling = false; showForce(); return; } }
+  showForce();
+  if (once) return;
+  setTimeout(pollForce, fc && fc.forces && fc.forces.length ? 1000 : 5000);
+}
+setInterval(() => { if (fc && fc.forces && fc.forces.length && level >= 2) showForce(); }, 1000);   /* the countdown between polls */
+function forceKick() { if (!fcPolling && level >= 2) { fcPolling = true; pollForce(); } else if (level < 2) showForce(); }
+function showForce() {
+  const on = !!fc && level >= 2;
+  $("fcbox").style.display = on ? "" : "none";
+  if (!on) return;
+  const list = fc.forceable || [], byF = Object.fromEntries(list.map(f => [f.id, f]));
+  const sel = $("fcid"), key = list.map(f => f.id).join(",");
+  if (sel.dataset.key !== key) {
+    const cur = sel.value; sel.dataset.key = key;
+    sel.replaceChildren(...list.filter(f => f.type !== "bool" || f.count).map(f => {
+      const o = document.createElement("option"); o.value = f.id;
+      o.textContent = `${f.name} (${f.id})` + (f.unit ? `, ${f.unit}` : "") + (f.count ? `, ${f.count} values` : "") + (f.type === "bool" ? ", on/off" : "");
+      return o;
+    }));
+    if (cur) sel.value = cur;
+    fcSel();
+  }
+  const active = fc.forces || [], isOn = f => active.some(a => a.id === f.id && (a.index === null || a.index === undefined));
+  $("fcbits").replaceChildren(...list.filter(f => f.type === "bool" && !f.count).map(f => {
+    const a = active.find(x => x.id === f.id && (x.index === null || x.index === undefined));
+    const b = document.createElement("button"); b.className = a ? "" : "ghost";
+    b.textContent = `Test bit ${f.name}: ` + (a ? (a.v ? "forced on" : "forced off") : "real");
+    b.title = "Click to force on, again to force off, again to release";
+    b.onclick = () => a ? (a.v ? fcPost({ id: f.id, v: "false" }) : fcClear({ id: f.id })) : fcPost({ id: f.id, v: "true" });
+    return b;
+  }));
+  const gone = Math.floor((Date.now() - fcAt) / 1000);
+  $("fctab").style.display = active.length ? "" : "none";
+  $("fcall").style.display = active.length ? "" : "none";
+  $("fctab").tBodies[0].replaceChildren(...active.map(a => {
+    const f = byF[a.id], tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td></td>";
+    const real = lastValues[a.id], rv = Array.isArray(real) && a.index !== null && a.index !== undefined ? real[a.index] : real;
+    tr.cells[0].textContent = fcName(a); tr.cells[1].textContent = fcVal(f, a.v); tr.cells[1].style.color = "var(--warn)";
+    tr.cells[2].textContent = rv === undefined ? "-" : fcVal(f, rv);
+    tr.cells[3].textContent = `${Math.max(0, a.left_s - gone)} s`; tr.cells[4].textContent = a.by || "";
+    const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Release";
+    b.onclick = () => fcClear(a.index === null || a.index === undefined ? { id: a.id } : { id: a.id, index: a.index });
+    tr.cells[5].appendChild(b);
+    return tr;
+  }));
+}
+function fcSel() {
+  const f = (fc && fc.forceable || []).find(x => String(x.id) === $("fcid").value);
+  $("fcidx").style.display = f && f.count ? "" : "none";
+  $("fcv").placeholder = f && f.type === "bool" ? "on / off" : "value" + (f && f.unit ? " in " + f.unit : "");
+}
+$("fcid").onchange = fcSel;
+async function fcPost(o) {
+  $("fcerr").textContent = "";
+  try { await api("/api/modbus/force", form(o)); }
+  catch (e) {
+    $("fcerr").textContent = { access: "Log in as admin to force values", "409": "16 values are already forced: release one first",
+      "404": "This value can't be forced", "400": "Not a valid value or index" }[e.status === 403 ? "access" : String(e.status)] || explain(e);
+  }
+  pollForce(true);
+}
+async function fcClear(o) {
+  $("fcerr").textContent = "";
+  try { await api("/api/modbus/force/clear", form(o)); } catch (e) { $("fcerr").textContent = explain(e); }
+  pollForce(true);
+}
+$("fcgo").onclick = () => {
+  const f = (fc && fc.forceable || []).find(x => String(x.id) === $("fcid").value);
+  if (!f) return;
+  let v = $("fcv").value.trim();
+  if (f.type === "bool") v = /^(on|1|true)$/i.test(v) ? "true" : /^(off|0|false)$/i.test(v) ? "false" : v;
+  const o = { id: f.id, v };
+  if (f.count) o.index = $("fcidx").value.trim();
+  fcPost(o);
+};
+$("fcall").onclick = () => fcClear({ all: "true" });
 $("mbset").onclick = () => { $("filter").value = "modbus"; showTab("settings"); build(); };
 
 /* start-up self-test (CIP-11.1): one badge per check, from /api/info */
@@ -1053,7 +1158,13 @@ async function pollValues() {
     lastValues = j.v; lastQ = j.q || {}; lastOk = Date.now();
     renderApp();
     trRecord(j.v, lastQ);
-    for (const d of defs) { const c = $("v" + d.id); if (c) { c.textContent = fmt(d, j.v[d.id]); markQ(c, d.id); } }
+    const fx = fc && level >= 2 ? fc.forces || [] : [], gone = Math.floor((Date.now() - fcAt) / 1000);
+    for (const d of defs) { const c = $("v" + d.id); if (c) {
+      c.textContent = fmt(d, j.v[d.id]); markQ(c, d.id);
+      const f = fx.filter(a => a.id === d.id);                 /* Modbus serves a forced value; this is the real one */
+      if (f.length) c.textContent += " (Modbus: forced " + f.map(a => (a.index !== null && a.index !== undefined ? `[${a.index}] ` : "") +
+        `to ${typeof a.v === "boolean" ? (a.v ? "on" : "off") : a.v}, ${Math.max(0, a.left_s - gone)} s left`).join("; ") + ")";
+    } }
     document.body.classList.remove("stale");
     $("conn").textContent = "live"; $("conn").className = "badge b-ok";
   } catch (e) {

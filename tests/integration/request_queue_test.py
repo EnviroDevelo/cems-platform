@@ -75,9 +75,10 @@ async def run():
         bg = {k: paths.count(k) for k in ("/api/log/events", "/api/service", "/api/iob", "/api/cal")}
         check(all(n <= 1 for n in bg.values()) and paths.count("/api/values") >= 10,
               f"on Overview for 10 s: {paths.count('/api/values')} value polls, closed tabs {bg}")
+        n0 = await pg.evaluate("window.__paths.length")       # only what is asked for after the click counts
         await pg.click('#tabbar button[data-tab="events"]')
         await pg.wait_for_timeout(1500)
-        check(await pg.evaluate("window.__paths.slice(-6).includes('/api/log/events')"), "opening the Event log tab asks for the events at once")
+        check(await pg.evaluate(f"window.__paths.slice({n0}).includes('/api/log/events')"), "opening the Event log tab asks for the events at once")
         check(errs == [], f"no script errors {errs}")
         await b.close()
 
