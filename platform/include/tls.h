@@ -1,5 +1,5 @@
 /* tls.h - HTTPS for the web server (decision D11): the unit's own key and
- * certificate, and one TLS 1.2 connection at a time.
+ * certificate, and TLS 1.2 server connections (TLS_CONNS of them open together).
  *
  * Key: an ECDSA P-256 key made by the unit at its first start from the hardware
  * random-number generator and kept in FRAM (META area, two copies, never in a
@@ -23,9 +23,13 @@
 #include <stddef.h>
 #include "nvm.h"
 
+#ifndef TLS_CONNS
+#define TLS_CONNS 2u                   /* server connections open together (one per kept browser connection) */
+#endif
 #ifndef TLS_POOL_SIZE
-#define TLS_POOL_SIZE (44u * 1024u)    /* one session at a time (16 KB in / 4 KB out buffers): measured peaks 28 KB as the
-                                          web server, 32 KB (RSA-2048) / 38 KB (RSA-4096) as the mail client */
+#define TLS_POOL_SIZE (60u * 1024u)    /* each server connection holds ~21 KB of buffers (16 KB in / 4 KB out) from start:
+                                          measured peak 28 KB for one, so ~49 KB for two; the mail client (32 KB RSA-2048,
+                                          38 KB RSA-4096) runs with the server connections freed */
 #endif
 
 void tls_crypto_init(void);                 /* the mbedTLS memory pool (once; tls_init does it too) */
@@ -38,7 +42,10 @@ const uint8_t *tls_cert(size_t *len);
 const char    *tls_fingerprint(void);
 void           tls_set_ip(uint32_t ip);    /* address changed: the next connection gets a new certificate */
 
-/* one connection: handshake on an accepted socket, then read/write; close always */
+/* Server connections: tls_use(k) picks connection k (0..TLS_CONNS-1) for the calls
+ * below, which then act on it alone: handshake on an accepted socket, read/write,
+ * close always. Connections are independent; only one is in use at a time (one task). */
+void tls_use(unsigned k);
 int  tls_accept(int fd);                    /* 0 = ok */
 int  tls_read(uint8_t *buf, uint32_t cap);  /* bytes, <= 0 on close/timeout/error */
 int  tls_write(const uint8_t *p, uint32_t n);   /* 0 = all sent */

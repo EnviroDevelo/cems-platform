@@ -25,7 +25,8 @@ static mbedtls_ctr_drbg_context drbg;
 static mbedtls_pk_context key;
 static mbedtls_x509_crt crt;
 static mbedtls_ssl_config conf;
-static mbedtls_ssl_context ssl;
+static mbedtls_ssl_context ssl[TLS_CONNS];   /* server connections; [cur] is the one in use */
+static unsigned cur;
 static mbedtls_ssl_ticket_context ticket;
 static mbedtls_ssl_config conf_cli;          /* alarm email: TLS client */
 static bool cli_conf_done, cli_on;
@@ -35,7 +36,7 @@ static const uint8_t *der_p;
 static char fp[96];
 static uint32_t cert_ip, cert_serial, want_ip;
 static bool ready, created, resumed, conf_done;
-static int sock = -1;
+static int sock[TLS_CONNS];                 /* each connection's socket, -1 = none (set in tls_init) */
 static tls_stats_t st;
 
 /* ---- glue ---- */
@@ -124,12 +125,12 @@ static int make_cert(void) {
 
 static int send_cb(void *ctx, const unsigned char *p, size_t n) {
     (void)ctx;
-    ssize_t w = send(sock, p, n, 0);
+    ssize_t w = send(sock[cur], p, n, 0);
     return w > 0 ? (int)w : -0x004E /* MBEDTLS_ERR_NET_SEND_FAILED */;
 }
 static int recv_cb(void *ctx, unsigned char *p, size_t n) {
     (void)ctx;
-    ssize_t r = recv(sock, p, n, 0);
+    ssize_t r = recv(sock[cur], p, n, 0);
     if (r > 0) return (int)r;
     return r == 0 ? MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY : MBEDTLS_ERR_SSL_TIMEOUT;
 }
@@ -151,17 +152,20 @@ void tls_crypto_init(void) {
 
 int tls_init(nvm_dev_t *fram, uint32_t key_addr, uint32_t serial, uint32_t ip) {
     if (ready) {                               /* (again, e.g. in tests) */
-        mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); mbedtls_ssl_ticket_free(&ticket);
+        for (unsigned k = 0; k < TLS_CONNS; ++k) mbedtls_ssl_free(&ssl[k]);
+        mbedtls_ssl_config_free(&conf); mbedtls_ssl_ticket_free(&ticket);
         mbedtls_x509_crt_free(&crt); mbedtls_pk_free(&key); mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&ent);
     }
     ready = created = conf_done = false;
+    cur = 0;
+    for (unsigned k = 0; k < TLS_CONNS; ++k) sock[k] = -1;
     tls_crypto_init();
     mbedtls_entropy_init(&ent);
     mbedtls_ctr_drbg_init(&drbg);
     mbedtls_pk_init(&key);
     mbedtls_x509_crt_init(&crt);
     mbedtls_ssl_config_init(&conf);
-    mbedtls_ssl_init(&ssl);
+    for (unsigned k = 0; k < TLS_CONNS; ++k) mbedtls_ssl_init(&ssl[k]);
     mbedtls_ssl_ticket_init(&ticket);
     int rc = mbedtls_ctr_drbg_seed(&drbg, mbedtls_entropy_func, &ent, (const unsigned char *)"cems-tls", 8);
     if (rc) return rc;
@@ -192,8 +196,10 @@ int tls_init(nvm_dev_t *fram, uint32_t key_addr, uint32_t serial, uint32_t ip) {
     mbedtls_ssl_conf_session_tickets_cb(&conf, mbedtls_ssl_ticket_write, ticket_parse, &ticket);
     conf_done = true;
     if ((rc = mbedtls_ssl_conf_own_cert(&conf, &crt, &key)) != 0) return rc;
-    if ((rc = mbedtls_ssl_setup(&ssl, &conf)) != 0) return rc;
-    mbedtls_ssl_set_bio(&ssl, NULL, send_cb, recv_cb, NULL);
+    for (unsigned k = 0; k < TLS_CONNS; ++k) {
+        if ((rc = mbedtls_ssl_setup(&ssl[k], &conf)) != 0) return rc;
+        mbedtls_ssl_set_bio(&ssl[k], NULL, send_cb, recv_cb, NULL);
+    }
     ready = true;
     return 0;
 }
@@ -203,15 +209,16 @@ bool tls_key_was_created(void) { return created; }
 const uint8_t *tls_cert(size_t *len) { *len = ready ? der_len : 0; return der_p; }
 const char *tls_fingerprint(void) { return ready ? fp : ""; }
 void tls_set_ip(uint32_t ip) { want_ip = ip; }
+void tls_use(unsigned k) { if (k < TLS_CONNS && !cli_on) cur = k; }
 
 int tls_accept(int fd) {
     if (!ready) return -1;
     if (want_ip != cert_ip && make_cert() != 0) return -1;
-    sock = fd;
+    sock[cur] = fd;
     resumed = false;
-    mbedtls_ssl_session_reset(&ssl);
+    mbedtls_ssl_session_reset(&ssl[cur]);
     int rc;
-    while ((rc = mbedtls_ssl_handshake(&ssl)) != 0) {
+    while ((rc = mbedtls_ssl_handshake(&ssl[cur])) != 0) {
         if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) { st.failed++; return rc; }
     }
     st.handshakes++;
@@ -221,13 +228,13 @@ int tls_accept(int fd) {
 
 int tls_read(uint8_t *buf, uint32_t cap) {
     int r;
-    do r = mbedtls_ssl_read(&ssl, buf, cap); while (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE);
+    do r = mbedtls_ssl_read(&ssl[cur], buf, cap); while (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE);
     return r;
 }
 
 int tls_write(const uint8_t *p, uint32_t n) {
     while (n) {
-        int w = mbedtls_ssl_write(&ssl, p, n);
+        int w = mbedtls_ssl_write(&ssl[cur], p, n);
         if (w == MBEDTLS_ERR_SSL_WANT_READ || w == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
         if (w <= 0) return -1;
         p += w; n -= (uint32_t)w;
@@ -236,25 +243,28 @@ int tls_write(const uint8_t *p, uint32_t n) {
 }
 
 void tls_close(void) {
-    if (sock >= 0) (void)mbedtls_ssl_close_notify(&ssl);
-    sock = -1;
+    if (sock[cur] >= 0) (void)mbedtls_ssl_close_notify(&ssl[cur]);
+    sock[cur] = -1;
 }
 
 bool tls_resumed(void) { return resumed; }
-bool tls_pending(void) { return sock >= 0 && !cli_on && mbedtls_ssl_get_bytes_avail(&ssl) > 0; }
+bool tls_pending(void) { return sock[cur] >= 0 && !cli_on && mbedtls_ssl_get_bytes_avail(&ssl[cur]) > 0; }
 
 /* ---------------- client (alarm email) ----------------
- * The one ssl context is lent to the client: the server's buffers are freed for the
- * time it is out, so the pool never holds two sessions. Same task as the server. */
+ * The client borrows context 0 while every server context is freed, so the pool
+ * never holds the client and the server sessions together. Same task as the server. */
 static void server_ssl_back(void) {
-    mbedtls_ssl_free(&ssl);
-    mbedtls_ssl_init(&ssl);
-    if (ready && mbedtls_ssl_setup(&ssl, &conf) == 0) mbedtls_ssl_set_bio(&ssl, NULL, send_cb, recv_cb, NULL);
+    for (unsigned k = 0; k < TLS_CONNS; ++k) {
+        mbedtls_ssl_free(&ssl[k]);
+        mbedtls_ssl_init(&ssl[k]);
+        if (ready && mbedtls_ssl_setup(&ssl[k], &conf) == 0) mbedtls_ssl_set_bio(&ssl[k], NULL, send_cb, recv_cb, NULL);
+    }
     cli_on = false;
 }
 
 int tls_client_open(int fd, uint8_t peer_fp[32]) {
-    if (!ready || cli_on || sock >= 0) return -1;        /* a web connection still holds the context */
+    if (!ready || cli_on) return -1;
+    for (unsigned k = 0; k < TLS_CONNS; ++k) if (sock[k] >= 0) return -1;   /* a web connection is still open */
     if (!cli_conf_done) {
         mbedtls_ssl_config_init(&conf_cli);
         int rc = mbedtls_ssl_config_defaults(&conf_cli, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
@@ -266,26 +276,26 @@ int tls_client_open(int fd, uint8_t peer_fp[32]) {
         mbedtls_ssl_conf_session_tickets(&conf_cli, MBEDTLS_SSL_SESSION_TICKETS_DISABLED);
         cli_conf_done = true;
     }
-    mbedtls_ssl_free(&ssl);
-    mbedtls_ssl_init(&ssl);
+    for (unsigned k = 0; k < TLS_CONNS; ++k) { mbedtls_ssl_free(&ssl[k]); mbedtls_ssl_init(&ssl[k]); }
+    cur = 0;
     cli_on = true;
-    int rc = mbedtls_ssl_setup(&ssl, &conf_cli);
+    int rc = mbedtls_ssl_setup(&ssl[cur], &conf_cli);
     if (rc) { server_ssl_back(); return rc; }
-    mbedtls_ssl_set_bio(&ssl, NULL, send_cb, recv_cb, NULL);
-    sock = fd;
-    while ((rc = mbedtls_ssl_handshake(&ssl)) != 0) {
-        if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) { sock = -1; server_ssl_back(); return rc; }
+    mbedtls_ssl_set_bio(&ssl[cur], NULL, send_cb, recv_cb, NULL);
+    sock[cur] = fd;
+    while ((rc = mbedtls_ssl_handshake(&ssl[cur])) != 0) {
+        if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) { sock[cur] = -1; server_ssl_back(); return rc; }
     }
-    const mbedtls_x509_crt *pc = mbedtls_ssl_get_peer_cert(&ssl);
-    if (!pc) { sock = -1; server_ssl_back(); return -1; }
+    const mbedtls_x509_crt *pc = mbedtls_ssl_get_peer_cert(&ssl[cur]);
+    if (!pc) { sock[cur] = -1; server_ssl_back(); return -1; }
     mbedtls_sha256(pc->raw.p, pc->raw.len, peer_fp, 0);
     return 0;
 }
 
 void tls_client_close(void) {
     if (!cli_on) return;
-    if (sock >= 0) (void)mbedtls_ssl_close_notify(&ssl);
-    sock = -1;
+    if (sock[cur] >= 0) (void)mbedtls_ssl_close_notify(&ssl[cur]);
+    sock[cur] = -1;
     server_ssl_back();
 }
 

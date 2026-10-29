@@ -12,6 +12,7 @@
 #include "bsp.h"
 #include "plat_io.h"
 #include "nvm.h"
+#include "param_store.h"
 #include "plat_config.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -476,8 +477,9 @@ nvm_dev_t *bsp_param_nvm(void) {
     if (nvm_fram_spi_open(&dev)) return &dev;
 #if !defined(FRAM_CS_Pin) && !defined(FRAM_I2C_HANDLE)
     /* No FRAM in this hardware configuration: RAM stand-in with the same map, so the
-     * store logic runs; nothing survives power-off (PSTAT_NVM_VOLATILE). */
-    static uint8_t   mem[PLAT_FRAM_SIZE];
+     * store logic runs; nothing survives power-off (PSTAT_NVM_VOLATILE). Only as long
+     * as the map's last area (META, 1 KB): the part above it is reserved, unused. */
+    static uint8_t   mem[STORE_META_ADDR + 1024u];
     static nvm_ram_t ram;
     nvm_ram_init(&dev, &ram, mem, sizeof mem, false);
     return &dev;

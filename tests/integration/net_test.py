@@ -294,13 +294,26 @@ def main():
     check(ok_all and hs1 == hs0, f"22 requests on one kept connection: no further TLS handshakes ({hs1 - hs0})")
     kc.request("GET", "/api/log/events.csv"); rr = kc.getresponse(); body = rr.read()
     check(rr.getheader("Transfer-Encoding") == "chunked" and body.startswith(b"seq,time,event"), "a streamed CSV is chunked on a kept connection")
-    other = Web(); other.json("/api/info")                # another client: the kept connection gives way
-    try:
-        kc.request("GET", "/api/values?ids=1"); rr = kc.getresponse(); rr.read(); gave_way = False
-    except (http.client.RemoteDisconnected, ConnectionError, ssl.SSLError):
-        gave_way = True
-    check(gave_way, "a waiting client closes the kept connection (one connection at a time)")
-    kc.close()
+    # a second browser keeps its own connection: both are served in turn, no new handshakes
+    kc2 = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
+    kc2.request("GET", "/api/values?ids=1"); kc2.getresponse().read()
+    hs2 = kinfo()
+    ok_all = True
+    for k in range(10):
+        for c in (kc, kc2):
+            c.request("GET", "/api/values?ids=1"); rr = c.getresponse(); body = rr.read()
+            ok_all &= rr.status == 200 and rr.getheader("Connection") == "keep-alive"
+    check(ok_all and kinfo() == hs2, "two kept connections served in turn, no further TLS handshakes")
+    time.sleep(0.2)
+    kc2.request("GET", "/api/values?ids=1"); kc2.getresponse().read()   # kc is now the longer idle one
+    other = Web(); other.json("/api/info")                # a third client: the longest idle gives way
+    def alive(c):
+        try:
+            c.request("GET", "/api/values?ids=1"); rr = c.getresponse(); rr.read(); return True
+        except (http.client.RemoteDisconnected, ConnectionError, ssl.SSLError):
+            return False
+    check(not alive(kc) and alive(kc2), "a third client takes the place of the longest idle kept connection")
+    kc.close(); kc2.close()
     kc = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
     kc.request("POST", "/api/logout", body=b"", headers={"X-CEMS": "1", "Content-Type": "application/x-www-form-urlencoded"})
     rr = kc.getresponse(); rr.read()
@@ -308,7 +321,7 @@ def main():
     kc.close()
     st, info = web.json("/api/info")
     print(f"   TLS: {info['tls']}")
-    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 44 * 1024, "TLS statistics")
+    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 60 * 1024, "TLS statistics")
 
     # ---------------- alarms ----------------
     def alarms(w=web):
