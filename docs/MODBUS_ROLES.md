@@ -50,14 +50,19 @@ What each role adds to that:
    client rules: one connection per device (or per gateway), one transaction outstanding at a time,
    transaction ids checked so a late answer is never taken for the next one, unit id = the
    instrument's own address behind a gateway (1 when it is a direct Modbus TCP device; set 255 for
-   devices that ask for it). There is no common register map for gas analysers: each maker publishes
-   its own. That is why this role has to be configurable, and it is the only place the CORE accepts
-   non-standard word orders.
+   devices that ask for it). The published standard for a measuring instrument's digital interface
+   to a data acquisition system is VDI 4201 (Part 1 general, Part 3 Modbus), referenced by EN 17255
+   and EN 15267-3; newer certified analysers implement it, older ones and most other devices publish
+   their own maps. So this role stays configurable (the only place the CORE accepts non-standard
+   word orders), and a VDI 4201 profile is the first profile to write once the standard text is
+   bought (the Modbus map thread has asked Gary for it).
 3. **Client output.** The proposed standard block (input registers 7000-7999, Modbus standard map
    thread) puts the common values (O2, CO, NOx, SO2, dust, flow, temperature ...) at fixed addresses
    in every product, in IEEE floats high word first, with a NAMUR status word per value, the same way
    ABB, SICK, Thermo and Emerson give their analysers one fixed map. Project-specific values stay in
    0-6999. Holding registers mirror the input registers for PLCs that can only read 03.
+   The block's layout is provisional until it is checked against VDI 4201 Part 3, the published
+   CEMS-to-DAHS Modbus standard (Modbus map thread).
 
 ## Role 2 in detail: third-party instruments
 
@@ -159,8 +164,9 @@ settings.
 
 ### Instrument profiles
 
-A profile is a file of point settings for one analyser model (its registers, types, order, status
-word and masks), imported on the web page and written as ordinary parameters. Profiles are only
+A profile is a file of point settings for one analyser model (or for the VDI 4201-3 layout, which
+covers every analyser that implements it): its registers, types, order, status
+word and masks, imported on the web page and written as ordinary parameters. Profiles are only
 written from the maker's Modbus manual for that model and firmware, and checked on the real
 instrument with the explorer; none are shipped until a model has been checked.
 
