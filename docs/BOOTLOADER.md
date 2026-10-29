@@ -91,6 +91,9 @@ chosen with the CORE PCB work and only with Gary's go. The DK stays OPEN.
 - Host tests: `tests/test_boot.c` (decision, signatures, header checks, never swapping back and
   forth, debugger images, trial counter) and `tests/test_fw.c` `t_boot_offset` (update behind the
   bootloader, trial mark). `make boot` links and fits.
+- Start-up time: the bootloader runs on the reset clock (32 MHz) and hashes the whole image in
+  software, so expect roughly 0.5-1 s per start for a 600 KB image. Measure it on the DK. If it is
+  too slow, raise the clock to 64 MHz (HSIDIV) or use the H5's HASH unit.
 - To do on the DK: program bootloader + factory bank, start; update over the network and back;
   a damaged image swaps; a hanging image rolls back after 3 starts; flash ECC NMI on a cut-off
   write; WRP refuses an erase of sector 0.
