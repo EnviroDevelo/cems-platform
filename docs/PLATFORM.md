@@ -280,6 +280,14 @@ reload, and a second tab next to an open one, keep the login. The instrument sti
 minutes after the last change (`AUTH_IDLE_MS`). Decided by this thread on 29 Oct as the default,
 since Gary asked whether closing the browser logged out (`tests/integration/session_health_test.py`).
 
+**Board test** (Service tab, factory login): Run board test starts the firmware's factory
+board test (`POST /api/service/boardtest`, CIP-23.3) and the page polls every second while it
+runs, filling a table of the 12 results (pass, fail, "not checked") with their detail. When it
+finishes it is the manufacturing test record (station "board"), which then shows its tests by
+name. A refused start (409: one running, or the start-up self-test not finished) is explained.
+`tests/integration/boardtest_web_test.py` uses the firmware's board test when the build has it,
+and otherwise simulates the agreed API in the browser.
+
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
 512 bytes is red), logic scans with the longest scan, overruns and late starts, secure connections

@@ -197,6 +197,10 @@ section.offtab{display:none!important}
       <input id="svcres" placeholder="Results in test order: 1 pass, 2 fail, 0 not run (e.g. 1,1,2)" style="flex:1;min-width:260px">
       <button class="ghost" id="svcrec">Record test</button>
     </div>
+    <div id="btbox" style="display:none;margin-top:8px">
+      <div class="row"><button id="btrun" style="display:none">Run board test</button><span class="note" id="btstate"></span></div>
+      <table id="bttab" style="display:none;max-width:640px;margin-top:6px"><thead><tr><th>Board test</th><th>Result</th><th>Detail</th></tr></thead><tbody></tbody></table>
+    </div>
     <span class="err" id="svcerr"></span>
     <p class="note">Entries are kept in the instrument's factory memory: they survive firmware updates and restore defaults, and a backup restored into another unit never copies them. Adding to the log or recording a test needs the factory login.</p>
     <h2 style="margin-top:12px">System health</h2>
@@ -961,7 +965,8 @@ function showHealth(i) {
 
 /* start-up self-test (CIP-11.1): one badge per check, from /api/info */
 const ST_NAMES = { image: "Firmware image", ram: "RAM", rtc: "Clock", settings: "Settings memory", calibration: "Calibration",
-                   log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display" };
+                   log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display",
+                   fram: "Settings memory (FRAM)", net_link: "Ethernet link", io_link: "I/O port link", supply: "Supply", hw_rev: "Board revision" };
 let stKey = "";
 function showSelftest(st) {
   if (!st || !Array.isArray(st.tests)) { $("stsum").textContent = "Not reported by this firmware."; $("stlist").replaceChildren(); return; }
@@ -1575,13 +1580,58 @@ async function pollSvc(once) {
     else {
       const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : "b-bad"); b.textContent = t.passed ? "PASSED" : "FAILED";
       const n = document.createElement("span");
-      n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${k + 1} ${words[r] || r}`).join(", ");
+      const nm = k => t.names && t.names[k] ? (ST_NAMES[t.names[k]] || t.names[k]) : k + 1;   /* the board test names its tests */
+      n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${nm(k)} ${words[r] || r}`).join(", ");
       $("svctest").append(b, n);
     }
     $("svcform").style.display = $("svctestform").style.display = level >= 3 ? "flex" : "none";
+    showBoardTest(j.boardtest);
   } catch (e) { if (e.status === 404) { $("svcsec").style.display = "none"; return; } }
   if (!once) setTimeout(pollSvcTick, 10000);
 }
+/* factory board test (CIP-23.3): POST /api/service/boardtest runs ~2.5 s, then saves itself as the test record (station "board") */
+let btWatching = false;
+function showBoardTest(bt) {
+  $("btbox").style.display = bt && (level >= 3 || (bt.tests || []).length) ? "" : "none";   /* viewers: only a result */
+  if (!bt) return;
+  $("btrun").style.display = level >= 3 ? "" : "none";
+  $("btrun").disabled = !!bt.running;
+  const tests = bt.tests || [], cnt = r => tests.filter(x => x.result === r).length;
+  $("btstate").textContent = bt.running ? "Board test running..." : bt.done
+    ? `Last board test: ${cnt("pass")} pass, ${cnt("fail")} fail, ${cnt("skipped")} skipped${bt.saved ? ", saved as the manufacturing test record" : ""}.`
+    : level >= 3 ? "Checks the board's memories, clock, network, I/O port, display and supply (about 3 s)." : "";
+  $("bttab").style.display = tests.length ? "" : "none";
+  $("bttab").tBodies[0].replaceChildren(...tests.map(x => {
+    const tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td><td></td>";
+    tr.cells[0].textContent = ST_NAMES[x.name] || x.name;
+    const b = document.createElement("span");
+    b.className = "badge " + ({ pass: "b-ok", fail: "b-bad" }[x.result] || "");
+    b.textContent = x.result === "skipped" ? "not checked" : x.result;
+    tr.cells[1].appendChild(b);
+    tr.cells[2].textContent = x.detail || "";
+    return tr;
+  }));
+  if (bt.running && !btWatching) btWatch();
+}
+async function btWatch() {                            /* every second while it runs */
+  btWatching = true;
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    let j; try { j = await api("/api/service"); } catch (e) { continue; }
+    if (!j.boardtest || !j.boardtest.running) break;
+    showBoardTest(j.boardtest);
+  }
+  btWatching = false;
+  pollSvc(true);
+}
+$("btrun").onclick = async () => {
+  $("svcerr").textContent = "";
+  try { await api("/api/service/boardtest", ""); $("btrun").disabled = true; $("btstate").textContent = "Board test running..."; if (!btWatching) btWatch(); }
+  catch (e) {
+    $("svcerr").textContent = e.status === 403 ? "Needs the factory login" : e.status === 409
+      ? "Not now: a board test is running, or the start-up self-test has not finished" : explain(e);
+  }
+};
 async function svcPost(path, body) {
   $("svcerr").textContent = "";
   try { await api(path, form(body)); return true; }
