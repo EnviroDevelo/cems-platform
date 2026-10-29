@@ -56,8 +56,8 @@ These hold across every item below and override any item where they conflict.
 | 6 | Non-volatile storage | M | Done | Not yet proved on the real FRAM and NOR | Firmware |
 | 7 | Power management | M | Done | Supply sense and shutdown built; not yet proved on the core board | Firmware, PCB |
 | 8 | Watchdog and fault recovery | M | Done | None at platform level (safe mode after a reboot loop) | Firmware |
-| 9 | Instrument operating states | M | Partial | State shown on the touchscreen and web header (HMI, HTTPS pull requests) | Firmware (+ HMI, HTTPS) |
-| 10 | Measurement validity and quality flags | M | Partial | Quality shown on every value on the touchscreen and web (HMI, HTTPS) | Firmware (+ HMI, HTTPS) |
+| 9 | Instrument operating states | M | Partial | State shown in the touchscreen and web headers (done) | Firmware (+ HMI, HTTPS) |
+| 10 | Measurement validity and quality flags | M | Partial | Quality shown on every value on the touchscreen and web (done) | Firmware (+ HMI, HTTPS) |
 | 11 | Diagnostics and self-tests | M | Done | None at platform level (self-test list, published code list) | Firmware |
 | 12 | Alarm management | M | Done | None at platform level | Firmware |
 | 13 | Communications framework | M (interfaces O) | Done | No written framework document for new interfaces | Firmware |
@@ -68,14 +68,14 @@ These hold across every item below and override any item where they conflict.
 | 18 | Calibration framework | M | Done | The procedure itself is per product | Firmware |
 | 19 | User and service access | M | Done | None at platform level (calibration permission, token recovery) | Firmware, HMI, HTTPS |
 | 20 | Cybersecurity | M | Partial | Debug lock, secure boot (4-character passwords accepted by Gary) | Firmware, PCB |
-| 21 | User interface conventions | M (screen O) | Partial | No written convention; quality and comms health not on every value | HMI, HTTPS |
+| 21 | User interface conventions | M (screen O) | Done | `docs/UI_CONVENTIONS.md`, checked by `tests/integration/ui_conventions_test.py` in `make test` | HMI, HTTPS |
 | 22 | Service and maintenance support | S | Partial | Diagnostic package download; service manual | Firmware, HTTPS |
 | 23 | Factory provisioning and testing | S | Partial | No provisioning procedure or board test (test results are stored) | Firmware, PCB |
 | 24 | Electrical and environmental robustness | M | Partial | No written design basis (EMC levels, IP, humidity) or test plan | PCB |
 | 25 | Version control and traceability | M | Partial | Release notes and the supported-combinations matrix | Firmware |
 | 26 | Verification and documentation | M | Partial | Nothing run on hardware; no operator, service or comms manuals | All |
 
-Score: 16 Done, 10 Partial, 0 Missing (refreshed 26 Oct after the section 8 firmware work).
+Score: 17 Done, 9 Partial, 0 Missing (refreshed 29 Oct: item 21, UI conventions, done in the HMI work).
 
 ## 4. Requirements
 
@@ -174,7 +174,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-09.1 | One shared state model: STARTING, INITIALISING, WARMING_UP, READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT (and SAFE_MODE from CIP-08.5) | M | Done | `plat_state.h`: the agreed states (section 7), parameter, Modbus, `/api/info` `state` |
 | CIP-09.2 | Defined data permitted in each state (which quality flag readings get) | M | Done | The state forces each value's quality (warming up, maintenance, calibration, fault) |
 | CIP-09.3 | Defined actions permitted in each state | M | Done | State/action rules in `plat_state.h` (update, calibrate, restore defaults); `fw_safe()` |
-| CIP-09.4 | State shown on every interface | M | Partial | Modbus block and `/api/info`; touchscreen and web headers in the HMI and HTTPS pull requests |
+| CIP-09.4 | State shown on every interface | M | Done | Modbus block, `/api/info`, the touchscreen header state pill and the web header |
 | CIP-09.5 | State changes logged | M | Done | `state` event on every change |
 The agreed state/action matrix is in section 7.
 
@@ -298,12 +298,12 @@ The agreed state/action matrix is in section 7.
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-21.1 | Readings shown with units | M | Done | Units in the table; own fonts for ° ³ µ (D24) |
-| CIP-21.2 | Instrument state always visible | M | Partial | LOCAL/REMOTE and alarms in the header. **Gap:** the CIP-09 state |
+| CIP-21.2 | Instrument state always visible | M | Done | State pill, LOCAL/REMOTE and alarms in the header of every screen (`t_state_quality`) |
 | CIP-21.3 | Alarms always visible | M | Done | Alarm pill / badge on every screen |
-| CIP-21.4 | Quality shown on every value | M | Missing | **Gap:** a non-valid value is greyed or marked with its status on the touchscreen and web |
-| CIP-21.5 | Communications health visible | M | Partial | Web "Connection lost" banner; LINK LOST in the header; I/O boards screen. **Gap:** a common indicator for the supervisory link on the touchscreen |
+| CIP-21.4 | Quality shown on every value | M | Done | Greyed with the quality word on tiles, settings rows, widgets and per grid cell (`t_state_quality`, `app_grid_quality`); web `"q"` |
+| CIP-21.5 | Communications health visible | M | Done | LINK OK / LINK LOST / NO LINK in the touchscreen header; web "Connection lost" banner and live/offline badge; I/O boards screen |
 | CIP-21.6 | Version information | M | Done | System screen, web Administration |
-| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Missing | **Gap:** one page every product's screens follow |
+| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Done | `docs/UI_CONVENTIONS.md`; palette, quality words and touch-target sizes checked against both interfaces by `make test` |
 | CIP-21.8 | A local screen | O | Done | RVT70 touchscreen; a product may ship with web only |
 
 ### 4.22 Service and maintenance support
