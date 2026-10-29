@@ -40,6 +40,7 @@
 #include "plat_diag.h"
 #include "plat_tasks.h"
 #include "fw_update.h"
+#include "plat_boardtest.h"
 #include "plat_serial.h"
 #include "tls.h"
 #include "iobus.h"
@@ -294,7 +295,7 @@ static void *store_thread(void *a) {
     (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
     uint32_t fw_t = bsp_ms(), fw_scans = 0;
     while (running) {
-        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); plat_selftest_poll(bsp_ms());
+        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); plat_selftest_poll(bsp_ms()); plat_boardtest_poll(bsp_ms());
         uint32_t now = bsp_ms();
         if (now - fw_t >= 1000u) { uint32_t sc = scan_stats(&plat_scan).scans; fw_service(now, sc - fw_scans >= 50u); fw_scans = sc; fw_t = now; }
     }

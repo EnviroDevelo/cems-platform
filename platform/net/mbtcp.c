@@ -37,8 +37,12 @@ int mbtcp_feed(mbtcp_rx_t *rx, const uint8_t *in, uint16_t len, uint16_t *used, 
     }
 }
 
+static const mbtcp_server_t *main_srv;
+const mbtcp_server_t *mbtcp_main(void) { return main_srv; }
+
 int mbtcp_open(mbtcp_server_t *s, uint16_t port) {
     memset(s, 0, sizeof *s);
+    s->port = port;
     for (int k = 0; k < MBTCP_MAX_CLIENTS; ++k) s->c[k].fd = -1;
     s->lfd = socket(AF_INET, SOCK_STREAM, 0);
     if (s->lfd < 0) return -1;
@@ -50,6 +54,7 @@ int mbtcp_open(mbtcp_server_t *s, uint16_t port) {
     if (bind(s->lfd, (struct sockaddr *)&a, sizeof a) != 0 || listen(s->lfd, 2) != 0) {
         closesocket(s->lfd); s->lfd = -1; return -1;
     }
+    main_srv = s;
     return 0;
 }
 
@@ -68,6 +73,7 @@ void mbtcp_close_all(mbtcp_server_t *s) {
     for (int k = 0; k < MBTCP_MAX_CLIENTS; ++k) drop(s, &s->c[k]);
     if (s->lfd >= 0) closesocket(s->lfd);
     s->lfd = -1;
+    if (main_srv == s) main_srv = NULL;
 }
 
 static void accept_one(mbtcp_server_t *s, uint32_t now) {
@@ -130,6 +136,7 @@ void mbtcp_poll(mbtcp_server_t *s, uint32_t timeout_ms) {
             if (o < 0) { s->protocol_errors++; ok = false; break; }
             if (o > 0) {
                 s->frames++;
+                s->last_frame_ms = now;
                 c->last_ms = now;
                 param_comms_activity(PLAT_SRC_MODBUS, now);
                 ok = send_all(c->fd, out, o);

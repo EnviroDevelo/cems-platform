@@ -44,11 +44,15 @@ typedef struct {
     int            lfd;
     mbtcp_client_t c[MBTCP_MAX_CLIENTS];
     uint32_t       accepted, refused_ip, evicted, closed, frames, protocol_errors;
+    uint32_t       last_frame_ms;   /* bsp_ms() of the last request answered (frames > 0) */
+    uint16_t       port;
 } mbtcp_server_t;
 
 int  mbtcp_open(mbtcp_server_t *s, uint16_t port);   /* 0 = listening */
 void mbtcp_poll(mbtcp_server_t *s, uint32_t timeout_ms);
 void mbtcp_close_all(mbtcp_server_t *s);
 int  mbtcp_clients(const mbtcp_server_t *s);
+/* The server opened last (the Modbus task's), for /api/info; NULL before one is listening. */
+const mbtcp_server_t *mbtcp_main(void);
 
 #endif

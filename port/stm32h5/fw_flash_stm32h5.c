@@ -98,6 +98,10 @@ fw_flash_t *fw_flash_stm32h5(void) {
                             .trial_mark = fl_trial };
     f.bank_size = FLASH_BANK_SIZE;        /* from the flash-size register: 1 MB on the H573 */
     f.image_off = (uint32_t)(uintptr_t)g_pfnVectors - FLASH_BASE;   /* PLAT_BOOT_SIZE, or 0 */
+    if (f.image_off) {                    /* behind the bootloader: what it found at this start */
+        f.boot_report = BOOT_REPORT_REG;
+        BOOT_REPORT_REG = 0u;             /* (a stale one must not be shown after a debugger load) */
+    }
     return &f;
 }
 

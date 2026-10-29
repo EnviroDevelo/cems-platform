@@ -7,6 +7,7 @@
 #include "tst.h"
 #include "fw_update.h"
 #include "fw_flash_sim.h"
+#include "boot.h"
 #include "plat_sha256.h"
 #include "plat_log.h"
 #include "http_api.h"
@@ -537,6 +538,16 @@ static void t_http(void) {
     CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
     CHECK(strstr(out, "\"running\":\"0.5.0\",\"state\":\"idle\"") != NULL);
     CHECK(strstr(out, "\"staged\":\"0.7.0\"") != NULL);
+    CHECK(strstr(out, "\"bootloader\":null") != NULL);                    /* none ran */
+    boot_report_t br = { .mapped = BOOT_IMG_OK, .after_swap = true };
+    fl.boot_report = boot_report_word(BOOT_JUMP, &br);
+    CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
+    CHECK(strstr(out, "\"bootloader\":{\"version\":1,\"image\":\"ok\",\"swapped\":true,\"rollback\":false}") != NULL);
+    br.mapped = BOOT_IMG_NONE; br.other = BOOT_IMG_NONE; br.after_swap = false;   /* a debugger image, other bank empty */
+    fl.boot_report = boot_report_word(BOOT_JUMP, &br);
+    CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
+    CHECK(strstr(out, "\"image\":\"none\",\"swapped\":false,\"rollback\":false,\"other\":\"none\"}") != NULL);
+    fl.boot_report = 0;
     file[FW_HDR_SIZE + 10] ^= 1;
     CHECK_EQ(req("POST", "/api/fw/upload", file, len, 0), 400);
     CHECK(strstr(out, "checksum mismatch") != NULL);
@@ -603,6 +614,21 @@ static void t_boot_offset(void) {
     CHECK(fs.reset_requested); CHECK(!fs.trial);
     power_up("0.9.0", BSP_RESET_SOFTWARE);
     fw_status(&st); CHECK(st.rolled_back); CHECK(!fs.trial);
+
+    /* the bootloader rolls back by itself (the new image never reached fw_boot): the
+     * previous image must not swap "back" to the one that failed */
+    CHECK_EQ(fw_request_activate(), FW_OK);                  /* 0.9.1 again, still staged */
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial);
+    uint32_t sw = fs.swaps;
+    fs.swapped = !fs.swapped; fs.trial = false;              /* what the bootloader does after 3 starts */
+    power_up("0.9.0", BSP_RESET_IWDG);
+    CHECK_EQ(fs.swaps, sw); CHECK(!fs.reset_requested);      /* no swap */
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK(st.rolled_back);
+    CHECK(!strcmp(st.running_version, "0.9.0"));
+    CHECK(st.staged); CHECK(!strcmp(st.staged_version, "0.9.1"));
+    power_up("0.9.0", BSP_RESET_POWER_ON);                   /* and it stays that way */
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK_EQ(fs.swaps, sw);
     fl.image_off = 0;
 }
 

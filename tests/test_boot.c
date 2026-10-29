@@ -172,7 +172,26 @@ static void t_trial_counter(void) {
     CHECK(r.rollback); CHECK_EQ(swapped, 1); CHECK_EQ(trial, 0);
 }
 
+static void t_report_word(void) {
+    swapped = 0; io.verify = NULL;
+    put_image(0, 30000, 1, false, 0); put_image(1, 20000, 2, false, 0);
+    bank[0][IOFF + 5000] ^= 0x40;
+    uint32_t trial = 0; boot_report_t r, d; boot_action_t a, da; unsigned v;
+    a = boot(&trial, &r);                                    /* swap */
+    uint32_t w = boot_report_word(a, &r);
+    CHECK(boot_report_decode(w, &da, &d, &v));
+    CHECK_EQ(da, BOOT_SWAP); CHECK_EQ(d.mapped, BOOT_IMG_HASH); CHECK_EQ(d.other, BOOT_IMG_OK);
+    CHECK(!d.after_swap); CHECK(!d.rollback); CHECK_EQ(v, BOOT_VERSION);
+    a = boot(&trial, &r);                                    /* the start after it */
+    CHECK(boot_report_decode(boot_report_word(a, &r), &da, &d, NULL));
+    CHECK_EQ(da, BOOT_JUMP); CHECK(d.after_swap); CHECK_EQ(d.mapped, BOOT_IMG_OK);
+    CHECK(!boot_report_decode(0, NULL, NULL, NULL));          /* no bootloader ran */
+    CHECK(!boot_report_decode(0xB50000FFu, NULL, NULL, NULL)); /* not a valid one */
+    CHECK(!strcmp(boot_img_name(BOOT_IMG_SIGNATURE), "signature"));
+}
+
 void test_boot_all(void) {
+    RUN(t_report_word);
     RUN(t_good_image_starts);
     RUN(t_damaged_image_swaps_to_good);
     RUN(t_never_ping_pong);

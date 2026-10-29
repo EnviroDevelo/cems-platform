@@ -8,7 +8,7 @@ take it (usually nothing). Product releases keep their own notes in their direct
 
 The CORE platform as built against the Common Instrument Platform Specification Rev 0.3:
 scan engine, parameter table and store, event and data log, alarms, Modbus TCP/RTU with the
-platform block (input registers 9000-9199, layout 2), HTTPS web interface (API version in
+platform block (input registers 9000-9199, layout 3), HTTPS web interface (API version in
 `/api/info`), touchscreen, I/O boards over Ethernet, firmware update with trial and rollback,
 instrument state and quality, calibration records, clock quality, service history, start-up
 self-test, PBKDF2 passwords with token recovery.
@@ -36,3 +36,21 @@ DK bring-up changes (28-29 Oct, before release):
   `fw_update` writes the image at `fw_flash_t.image_off` (from the link address) and sets and
   clears the trial mark. `mkfwimage.py --factory` writes a whole bank for factory programming.
   Products: none until the application is linked at 0x08008000 (BOOTLOADER.md 4).
+- A rollback made by the bootloader is no longer undone: the previous image used to read its
+  record as a failed trial and swap back to the image that had just failed.
+- `/api/fw` gains `"bootloader"` (null when none ran; otherwise version, what it found in the
+  running bank, whether it swapped or rolled back) from TAMP backup register 30.
+- Factory board test (CIP-23.3, `plat_boardtest.h`): 12 checks, started by
+  `POST /api/service/boardtest` at factory login and shown in `/api/service` `"boardtest"`. It
+  saves itself as the test record (station "board"; that record also gets `"names"`).
+- `docs/SERVICE_PROCEDURES.md`: the technician's update, recovery and factory provisioning.
+- `docs/INTERFACES.md`: how to add an interface (CIP-13.5) and the compatibility policy (CIP-14.5).
+- `tools/dk_soak.py`: read-only soak test against a real unit (HTTPS + Modbus load, heap/stack/
+  restart checks from `/api/info`, CSV), standard-library Python only (CIP-26.6).
+- `docs/SUPPORTED.md`: the supported-combinations matrix (CIP-25.5).
+- Modbus forced values for commissioning (`modbus.h` `mb_force_*`): an admin forces a value the
+  PLC reads for 30 s from the touchscreen or web (`/api/modbus/force`); Modbus only, logged
+  (event `force`), counted at input register 9090 (block layout 3) and common alarm bit 4.
+- `GET /api/modbus/map`: the register map in force as JSON, for the integrator's handover file.
+- `/api/info` `"modbus"`: server status for the web Service tab. `docs/MODBUS.md`: the
+  integrator's guide (CIP-26.7).

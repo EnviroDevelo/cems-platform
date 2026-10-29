@@ -191,7 +191,7 @@ mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes
 allowed client IP. TCP keepalive notices a vanished client in about 50 s.
 
 **The platform's block (CIP-01.6, 14.4, 15.1, 15.2).** Whatever the application maps, the
-platform adds its own read-only block at input registers 9000-9089 (9000-9199 reserved), the
+platform adds its own read-only block at input registers 9000-9090 (9000-9199 reserved), the
 same in every product, so a PLC or DAHS can identify and supervise any CEMS instrument the same
 way: block layout version (9000), the application's map version (9001, `mb_ident_t.map_version`),
 a heartbeat that counts every 100 ms (9002), the instrument state (9003), seconds since the last
@@ -199,7 +199,8 @@ Modbus or web request (9004), alarms active and the common alarm word (9005-9006
 revision, serial number and firmware version (9007-9012), web API version (9013), uptime
 (9014-9015), the supply voltage (9016-9017), when the state was entered (9018-9019), the quality
 of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083); layout 2 adds the
-clock and its quality (9084-9089: the clock, synchronised, source, when last set or confirmed).
+clock and its quality (9084-9089: the clock, synchronised, source, when last set or confirmed);
+layout 3 adds the count of values forced for commissioning (9090, `mb_force_*`, MODBUS.md 7).
 Registers are only ever added, never moved, and each addition raises the layout version. The full
 layout is in `modbus.h`. An application map entry in that range of the input registers stops the
 start-up ("modbus map"). Function 43/14 (device identification) gives vendor, product and firmware

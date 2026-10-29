@@ -23,7 +23,9 @@ vpath %.c $(sort $(dir $(SRCS) $(HALSRC)))
 vpath %.s $(EXT)/cmsis-device-h5/Source/Templates/gcc
 LDT     = $(EXT)/cmsis-device-h5/Source/Templates/gcc/linker/STM32H573xx_FLASH.ld
 
+.PHONY: all boot
 all: $(OUT)/cems_boot.bin
+boot: all
 $(HOBJS): CFLAGS := $(filter-out -Werror -Wconversion -Wshadow -Wextra,$(CFLAGS))
 $(OUT)/%.o: %.c | $(OUT)
 	$(ARMCC) $(CFLAGS) $(DEV) $(INC) -c $< -o $@
