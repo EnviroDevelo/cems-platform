@@ -128,7 +128,20 @@ static void t_fonts(void) {
     CHECK(!strcmp(eve_font_encode("tab\there", b, sizeof b, true), "tabhere"));
 }
 
+static uint32_t sim_rd32(uint32_t reg) {
+    uint32_t v = 0;
+    for (int k = 0; k < 4; ++k) v |= (uint32_t)sim.regs[reg - EVE_RAM_REG + k] << (8 * k);
+    return v;
+}
+
 static void t_eve_driver(void) {
+    /* the system clock check: a BT817 left on 60 MHz gets REG_FREQUENCY 60 MHz; 72 MHz stays */
+    eve_sim_init(&sim); sim.sysclk_hz = 60000000u;
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(sim_rd32(REG_FREQUENCY), 60000000u);
+    eve_sim_init(&sim); sim.sysclk_hz = 72000000u;
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(sim_rd32(REG_FREQUENCY), 72000000u);
     eve_sim_init(&sim);
     CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
     CHECK(eve.ok);

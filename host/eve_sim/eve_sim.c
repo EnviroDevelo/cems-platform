@@ -159,11 +159,20 @@ static int b_read(eve_bus_t *b, uint8_t *p, uint32_t n) {
     return 0;
 }
 
-static void b_delay(uint32_t ms) { (void)ms; }
+static eve_sim_t *sim_now;                              /* the simulator in use (one at a time) */
+static void b_delay(uint32_t ms) {                      /* time passes for REG_CLOCK at sysclk_hz */
+    eve_sim_t *s = sim_now;
+    if (!s || !s->sysclk_hz) return;
+    uint32_t a = 0x302008u - EVE_RAM_REG, v = 0;
+    for (int k = 0; k < 4; ++k) v |= (uint32_t)s->regs[a + k] << (8 * k);
+    v += (uint32_t)((uint64_t)s->sysclk_hz * ms / 1000u);
+    for (int k = 0; k < 4; ++k) s->regs[a + k] = (uint8_t)(v >> (8 * k));
+}
 
 void eve_sim_init(eve_sim_t *s) {
     memset(s, 0, sizeof *s);
     s->present = true;
+    sim_now = s;
     s->ram_g = ram_g_pool;
     s->zbuf = zbuf_pool;
     memset(ram_g_pool, 0, sizeof ram_g_pool);

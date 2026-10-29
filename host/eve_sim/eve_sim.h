@@ -14,6 +14,7 @@ typedef struct {
     uint16_t  patch_ptr;
     bool      present;              /* answers at all */
     bool      fault_next;           /* the next frame faults the co-processor */
+    uint32_t  sysclk_hz;            /* REG_CLOCK advances at this rate in delays (0 = stands still) */
     uint32_t  host_cmds, last_host_cmd;
     /* SPI transaction being decoded */
     bool      cs;

@@ -56,7 +56,7 @@ The status page lists what the BT817 reports. Write down every line.
 | 3.1 | Controller: "REG_ID 0x7C (answering), chip 0817" | As shown | "WRONG": SPI corruption at the fast clock. Lower `EVE_SPI_FAST` one step and retest |
 | 3.2 | Driver: frames rising, faults 0, timeouts 0; Last fault "none" | 0 faults after 1 min on this page | Write down the fault text. Co-processor faults mean a bad command list (send the text) |
 | 3.3 | Refresh | 58-62 Hz | Far off: the pixel clock (REG_PCLK_FREQ 0xD12, PCLK 1). Check the timing against the module's datasheet |
-| 3.4 | System clock: measured against set | Measured within 1 % of 72 MHz | **About 60 MHz:** the BT817 needs a clock select (host command CLKSEL, 0x61 with 0x46) before ACTIVE. Riverdi's library doesn't send it, so this is the likeliest surprise. Send the number |
+| 3.4 | System clock: measured against set | Measured within 1 % of the set value. "72 MHz set" is expected; "60 MHz set" means start-up found the chip on its 60 MHz default and corrected REG_FREQUENCY to match | Write down both numbers. If it is 60 MHz, everything still works; the 72 MHz clock select (host command CLKSEL, 0x61 with 0x46, before ACTIVE) can then be added as a follow-up. Measured more than 2 % off the set value: send the number |
 | 3.5 | Size "1024 x 600"; Fonts "4 of 4 own fonts loaded" | As shown | Fonts fewer: inflate/CRC failed in RAM_G. Values still show, in the ROM fonts, but ° ² ³ µ come out as "?" |
 | 3.6 | Touch: config value and mode 3 | Write the config value down | Used in 5.1 if touch doesn't work |
 | 3.7 | Backlight "80 %, PWM duty 102 of 128"; change brightness on System and come back | Duty follows (10 % → 12, 100 % → 128) | |
