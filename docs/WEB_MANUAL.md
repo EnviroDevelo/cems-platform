@@ -70,6 +70,7 @@ log in with the level's password:
 | Calibration | Only on products with calibrated channels |
 | Service | Hours, self-test, service log, manufacturing test, board test, system health, Modbus |
 | I/O boards | Only when an I/O board is enabled |
+| Instruments | Analysers and other devices read over Modbus TCP (shown once one is set up; always at admin login) |
 | Event log | The newest events and the downloads |
 | Administration | admin login: passwords, clock, backup, firmware, email |
 | Alarm setup | admin login: what each alarm does |
@@ -149,7 +150,35 @@ shows the record in force, the factory record and when the next calibration is d
 - **Diagnostic package** downloads one file with everything service needs (settings, alarms,
   events, firmware, health). It contains no passwords. Send it with a fault report.
 
-## 11. Administration (admin login)
+## 11. Instruments (analysers on the I/O network)
+
+The instrument can read up to 8 other devices, such as gas analysers, over Modbus TCP on its I/O
+network port, and up to 32 values from them in all. It asks; they answer. A device with only
+RS-485 goes through a Modbus TCP gateway: give the gateway's IP and the device's RS-485 address
+as the unit ID.
+
+- **The list** shows each device's state (ok, connecting, failing, lost, bad settings), how many
+  reads worked and failed, the last error and the reply time, and a tile per value with the same
+  quality words as everywhere else. When the device's status word says fault, maintenance or
+  calibration, its values carry that word.
+- **Set up / Edit** (admin login, REMOTE): IP, port, unit ID, how often to read, the timeout, the
+  most registers per read and the gap allowed inside one read (leave 0 unless the device's manual
+  says it accepts reads across unused registers), the status point and which of its bits mean
+  fault, maintenance and calibration. Below, one row per value: name, unit, function (03 holding,
+  04 input, 01 coils, 02 discrete inputs), address (0-based, as on the wire: Modicon 40001 is
+  holding 0), type, byte order, bit, gain and offset (value = raw × gain + offset), and the valid
+  range. **Save** writes them; the device is read again at once.
+- **Register explorer** (admin): reads registers from any address on the I/O network without
+  writing anything. Each row shows the words decoded every way: unsigned and signed 16-bit (and
+  byte-swapped), and 32-bit float, unsigned and signed in all four byte orders (ABCD is the Modbus
+  standard; CDAB is the common "word swapped" order). Type the number the device shows on its own
+  display into **Find value**: the matching readings turn green. Click the right one and **Use this
+  for a new point** fills a row in the editor.
+- **Profiles**: **Export profile** saves a device's settings and points as a JSON file, without its
+  IP. **Import profile** loads one into the instrument being edited, so the same analyser model is
+  set up in one step on the next site.
+
+## 12. Administration (admin login)
 
 - **Passwords** for each level.
 - **Clock**: set it to the computer's time, or give an SNTP time server. The panel says where
@@ -163,13 +192,13 @@ shows the record in force, the factory record and when the next calibration is d
 - **Email**: mail server, sender, recipients. **Send test email** checks the settings.
 - **I/O boards**: find the boards on the I/O port and give a new board its address.
 
-## 12. Alarm setup (admin login)
+## 13. Alarm setup (admin login)
 
 For each alarm, tick what it does: **Email** sends a message, **Modbus** counts it in the
 common-alarm register, **Relay 1-4** switches a relay output. No tick: the alarm is only shown.
 **Default** puts the row back. The relay mode (fail-safe or not) is set here too.
 
-## 13. If something is wrong
+## 14. If something is wrong
 
 | What you see | What to do |
 |---|---|

@@ -42,6 +42,9 @@ td.c{text-align:center}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .tabs button{background:#5b6577;border-color:#5b6577}.tabs button.cur{background:#14213d;border-color:#14213d}
 .wrow{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.extab td,.extab th{white-space:nowrap;font-variant-numeric:tabular-nums}.extab td.d{cursor:pointer}.extab td.d:hover{background:#e8ecf3}
+.extab td.hit{background:#e5f4e4;font-weight:600}.extab td.pick{outline:2px solid var(--accent)}
+.ptab input,.ptab select{width:100%;min-width:56px;box-sizing:border-box}.ptab td{padding:2px 3px}
 .tile{border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-width:150px;cursor:default}
 .tile .k{font-size:12px;color:var(--mute)}.tile .v{font-size:18px;font-variant-numeric:tabular-nums}
 .tile.can{cursor:pointer;border-color:var(--accent)}
@@ -100,6 +103,7 @@ section.offtab{display:none!important}
   <button data-tab="cal">Calibration</button>
   <button data-tab="service">Service</button>
   <button data-tab="iob">I/O boards</button>
+  <button data-tab="inst">Instruments</button>
   <button data-tab="events">Event log</button>
   <button data-tab="admin">Administration</button>
   <button data-tab="alarmcfg">Alarm setup</button>
@@ -236,6 +240,68 @@ section.offtab{display:none!important}
     </div>
   </section>
 
+  <section id="instsec" data-tab="inst" style="display:none">
+    <h2>Instruments</h2>
+    <p class="note">Analysers and other devices the instrument reads over Modbus TCP on the I/O network (it is the master; they answer).
+      RS-485 devices go through a Modbus TCP gateway: the gateway's IP, and the device's address as the unit ID.</p>
+    <p class="note" id="instmode" style="display:none;color:var(--warn)">Changing instrument settings needs REMOTE (set at the touchscreen) and an admin login.</p>
+    <table id="insttab"><thead><tr><th>#</th><th>Name</th><th>Address</th><th>State</th><th>Polls (failed)</th><th>Last error</th><th>Reply</th><th></th></tr></thead><tbody></tbody></table>
+    <div id="instedit" style="display:none;margin-top:8px" class="card">
+      <h2 id="iehead">Instrument</h2>
+      <div class="row" style="flex-wrap:wrap">
+        <label><input type="checkbox" id="ie_en"> Enabled</label>
+        <label>Name <input id="ie_name" size="18" maxlength="23"></label>
+        <label>IP <input id="ie_ip" size="14" placeholder="192.168.1.70"></label>
+        <label>Port <input id="ie_port" size="5"></label>
+        <label>Unit ID <input id="ie_unit" size="3"></label>
+        <label>Poll every <input id="ie_period" size="5"> ms</label>
+        <label>Timeout <input id="ie_timeout" size="5"> ms</label>
+        <label>Registers per read <input id="ie_max" size="3"></label>
+        <label>Gap allowed <input id="ie_gap" size="2"></label>
+      </div>
+      <div class="row" style="flex-wrap:wrap">
+        <label>Status point <select id="ie_stpt"></select></label>
+        <label>Fault bits <input id="ie_fm" size="6" placeholder="0x0001"></label>
+        <label>Maintenance bits <input id="ie_mm" size="6"></label>
+        <label>Calibration bits <input id="ie_cm" size="6"></label>
+      </div>
+      <h2 style="margin-top:8px">Points</h2>
+      <table class="ptab" id="ptab"><thead><tr><th>#</th><th>Name</th><th>Unit</th><th>Read with</th><th>Address</th><th>Type</th><th>Order</th><th>Bit</th>
+        <th>Gain</th><th>Offset</th><th>Low</th><th>High</th><th>Now</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="row" style="flex-wrap:wrap;margin-top:6px">
+        <button class="ghost" id="ieadd">Add point</button>
+        <button id="iesave">Save</button>
+        <button class="ghost" id="iecancel">Close</button>
+        <button class="ghost" id="ieexp">Export profile</button>
+        <label class="ghost" style="cursor:pointer">Import profile <input type="file" id="ieimp" accept=".json,application/json" style="display:none"></label>
+        <span class="err" id="ieerr"></span>
+      </div>
+      <p class="note">value = raw × gain + offset. Outside Low..High the value reads "out of range" (leave both 0 for no check). The status point's bits,
+        when set, mark every point of this instrument fault, maintenance or calibration. A profile file holds the device's settings and points
+        but not its IP, so it can be used for the same model on another site.</p>
+    </div>
+    <div id="exbox" style="display:none;margin-top:12px">
+      <h2>Register explorer</h2>
+      <p class="note">Reads registers from any device on the I/O network (admin; reads only, nothing is written to the device). Every row shows the
+        words decoded every way: find the one that matches the device's own display, then click it to fill a point.</p>
+      <div class="row" style="flex-wrap:wrap">
+        <label>IP <input id="ex_ip" size="14"></label><label>Port <input id="ex_port" size="5" value="502"></label>
+        <label>Unit ID <input id="ex_unit" size="3" value="1"></label>
+        <label><select id="ex_fc"><option value="3">03 holding registers</option><option value="4">04 input registers</option>
+          <option value="1">01 coils</option><option value="2">02 discrete inputs</option></select></label>
+        <label>From <input id="ex_addr" size="6" value="0"></label><label>Count <input id="ex_count" size="4" value="20"></label>
+        <button id="exgo">Read</button>
+        <label>Find value <input id="ex_find" size="9" placeholder="as displayed"></label>
+        <span class="note" id="exstate"></span>
+      </div>
+      <div style="overflow-x:auto"><table class="extab" id="extab" style="display:none"><thead></thead><tbody></tbody></table></div>
+      <div class="row" id="expick" style="display:none;flex-wrap:wrap">
+        <span id="expicktxt"></span>
+        <label>for <select id="expinst"></select></label>
+        <button id="exuse">Use this for a new point</button>
+      </div>
+    </div>
+  </section>
   <section id="iobsec" data-tab="iob" style="display:none">
     <h2>I/O boards</h2>
     <div class="iobgrid" id="iobcards"></div>
@@ -1336,6 +1402,7 @@ async function refreshInfo() {
     $("actions").style.display = adm ? "block" : "none";
     $("mailsec").style.display = adm ? "block" : "none";
     if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); refreshDc(); } }
+    if (changed) pollInst(true);                       /* the Instruments tab shows for admin even with none set up */
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
@@ -1763,6 +1830,319 @@ async function pollIob(once) {
 }
 pollIob();
 
+/* ---- third-party instruments (Modbus TCP master on the I/O port; firmware inst.h, docs/MODBUS_ROLES.md role 2) ----
+   Settings are parameters 500-621 (arrays indexed by instrument 0-7 or point 0-31) written with /api/write. */
+const IP_ = { en: 500, ip: 501, port: 502, unit: 503, period: 504, timeout: 505, max: 506, gap: 507, stpt: 508, fm: 509, mm: 510, cm: 511, name: 521,
+              pinst: 530, fc: 531, addr: 532, type: 533, order: 534, bit: 535, gain: 536, offset: 537, lo: 538, hi: 539, pname: 550, punit: 590 };
+const PT_TYPES = ["u16", "i16", "u32", "i32", "f32", "bit"], PT_ORDERS = ["ABCD", "CDAB", "BADC", "DCBA"];
+const PT_FC = { 1: "01 coils", 2: "02 discrete inputs", 3: "03 holding", 4: "04 input" };
+const INST_N = 8, PT_N = 32;
+let inst = null, instEdit = 0, instCfg = null, instRows = [];
+const ipStr = v => [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".");
+const ipNum = t => { const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(t.trim()); return m && m.slice(1).every(x => +x < 256) ? ((+m[1] << 24) | (+m[2] << 16) | (+m[3] << 8) | +m[4]) >>> 0 : null; };
+const hexIn = t => { t = String(t).trim(); if (!t) return 0; const v = /^0x/i.test(t) ? parseInt(t, 16) : /^[01]+b$/i.test(t) ? parseInt(t, 2) : Number(t); return Number.isInteger(v) && v >= 0 && v <= 0xFFFF ? v : null; };
+const instCan = () => level >= 2 && byId[IP_.ip] && writable(byId[IP_.ip]);
+TAB_KICK.inst = () => pollInst(true);
+async function pollInst(once) {
+  if (!once && bgSkip("inst")) { setTimeout(pollInst, 1000); return; }
+  try {
+    inst = await api("/api/inst");
+    const any = inst.instruments.some(i => i.enabled);
+    $("instsec").style.display = any || level >= 2 ? "block" : "none";
+    showInst();
+  } catch (e) { if (e.status === 404) { $("instsec").style.display = "none"; return; } }
+  if (!once) setTimeout(pollInst, 1000);
+}
+function qSpan(el, q) {                                /* the same marks as every other value (docs/UI_CONVENTIONS.md 4) */
+  el.classList.toggle("q", !!q && q !== "valid"); el.classList.toggle("qbad", q === "fault" || q === "range"); el.classList.toggle("qgrey", q === "unavailable");
+  if (q && q !== "valid") el.dataset.q = QTXT[q] || q; else delete el.dataset.q;
+}
+function ptVal(p) { return p.value === null || p.value === undefined ? "----" : (Math.abs(p.value) >= 1e5 || Number.isInteger(p.value) ? String(p.value) : p.value.toPrecision(5).replace(/\.?0+$/, "")) + (p.unit ? " " + p.unit : ""); }
+function showInst() {
+  if (!inst) return;
+  $("instmode").style.display = level >= 2 && !instCan() ? "" : "none";
+  $("exbox").style.display = level >= 2 ? "" : "none";
+  const ST = { ok: "b-ok", connecting: "b-warn", failing: "b-warn", lost: "b-bad", "bad settings": "b-bad" };
+  const rows = inst.instruments.filter(i => i.enabled || i.state !== "off" || level >= 2 && (i.name || i.ip !== "0.0.0.0") || level >= 2 && i.n === firstFreeInst());
+  $("insttab").tBodies[0].replaceChildren(...rows.flatMap(i => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>";
+    tr.cells[0].textContent = i.n; tr.cells[1].textContent = i.name || (i.enabled ? "" : "(not set up)");
+    tr.cells[2].textContent = i.ip === "0.0.0.0" ? "-" : `${i.ip}:${i.port}, unit ${i.unit}`;
+    tr.cells[3].innerHTML = `<span class="badge ${ST[i.state] || ""}"></span>`; tr.cells[3].firstChild.textContent = i.enabled ? i.state : "off";
+    tr.cells[4].textContent = `${i.good} (${i.errors})`;
+    tr.cells[5].textContent = i.last_error ? i.last_error + (i.last_exception ? ` (exception ${String(i.last_exception).padStart(2, "0")})` : "") : "";
+    tr.cells[6].textContent = i.resp_ms ? i.resp_ms + " ms" : "";
+    if (level >= 2) { const b = document.createElement("button"); b.className = "ghost"; b.textContent = i.enabled || i.name ? "Edit" : "Set up"; b.onclick = () => openInst(i.n); tr.cells[7].appendChild(b); }
+    const pts = inst.points.filter(p => p.inst === i.n);
+    if (!pts.length) return [tr];
+    const sub = document.createElement("tr"), td = document.createElement("td"); td.colSpan = 8; sub.appendChild(td);
+    td.innerHTML = '<div class="wrow"></div>';
+    td.firstChild.replaceChildren(...pts.map(p => {
+      const d = document.createElement("div"); d.className = "tile";
+      d.innerHTML = '<div class="k"></div><div class="v" style="font-size:16px"></div><div class="note"></div>';
+      d.children[0].textContent = p.name || "Point " + p.n; d.children[1].textContent = ptVal(p); qSpan(d.children[1], p.q);
+      d.children[2].textContent = `${PT_FC[p.fc] || p.fc} ${p.addr}, ${p.type} ${p.type === "bit" || p.type.endsWith("16") ? "" : p.order}`.trim() + (p.raw ? `, raw ${p.raw}` : "");
+      return d;
+    }));
+    return [tr, sub];
+  }));
+  if (instEdit) for (const r of instRows) {                         /* live values in the editor */
+    const p = inst.points.find(x => x.n === r.n); if (r.now) { r.now.textContent = p ? ptVal(p) : ""; qSpan(r.now, p && p.q); }
+  }
+  const sel = $("expinst"), want = inst.instruments.filter(i => i.enabled || i.name || i.ip !== "0.0.0.0").map(i => i.n);
+  if (sel.dataset.k !== want.join()) { sel.dataset.k = want.join(); sel.replaceChildren(...want.map(n => { const o = document.createElement("option"); o.value = n; o.textContent = `Instrument ${n}` + (inst.instruments[n - 1].name ? " " + inst.instruments[n - 1].name : ""); return o; })); }
+}
+function firstFreeInst() { const f = inst && inst.instruments.find(i => !i.enabled && !i.name && i.ip === "0.0.0.0"); return f ? f.n : 0; }
+async function instLoad() {                           /* every instrument and point setting, as the parameter table holds it */
+  const ids = [...Object.values(IP_).filter(x => x < 521 || (x >= 530 && x < 550))];
+  for (let k = 0; k < INST_N; k++) ids.push(IP_.name + k);
+  for (let p = 0; p < PT_N; p++) ids.push(IP_.pname + p, IP_.punit + p);
+  const v = {};
+  for (let i = 0; i < ids.length; i += 40) {
+    const part = ids.slice(i, i + 40);
+    for (let t = 0; ; t++) {                          /* null: the settings task was writing that one just then (a guarded read), ask again */
+      const got = (await api("/api/values?ids=" + part.join(","))).v;
+      if (part.every(id => got[id] !== null && got[id] !== undefined)) { Object.assign(v, got); break; }
+      if (t >= 20) throw new Error("busy");
+      await new Promise(ok => setTimeout(ok, 100));
+    }
+  }
+  return v;
+}
+async function openInst(n, prefill, cfg) {        /* cfg: values already read back after a save */
+  $("ieerr").textContent = "";
+  try { instCfg = cfg || await instLoad(); } catch (e) { $("ieerr").textContent = explain(e); return; }
+  instEdit = n; const k = n - 1, c = instCfg, A = id => c[id] || [];
+  $("iehead").textContent = `Instrument ${n}`;
+  $("ie_en").checked = !!A(IP_.en)[k]; $("ie_name").value = c[IP_.name + k] || ""; $("ie_ip").value = A(IP_.ip)[k] ? ipStr(A(IP_.ip)[k]) : "";
+  $("ie_port").value = A(IP_.port)[k] ?? 502; $("ie_unit").value = A(IP_.unit)[k] ?? 1; $("ie_period").value = A(IP_.period)[k] ?? 1000;
+  $("ie_timeout").value = A(IP_.timeout)[k] ?? 1000; $("ie_max").value = A(IP_.max)[k] ?? 64; $("ie_gap").value = A(IP_.gap)[k] ?? 0;
+  const hx = v => v ? "0x" + v.toString(16).toUpperCase().padStart(4, "0") : "";
+  $("ie_fm").value = hx(A(IP_.fm)[k]); $("ie_mm").value = hx(A(IP_.mm)[k]); $("ie_cm").value = hx(A(IP_.cm)[k]);
+  instRows = [];
+  for (let p = 0; p < PT_N; p++) if (A(IP_.pinst)[p] === n)
+    instRows.push({ n: p + 1, name: c[IP_.pname + p] || "", unit: c[IP_.punit + p] || "", fc: A(IP_.fc)[p], addr: A(IP_.addr)[p], type: A(IP_.type)[p], order: A(IP_.order)[p],
+                    bit: A(IP_.bit)[p], gain: A(IP_.gain)[p], offset: A(IP_.offset)[p], lo: A(IP_.lo)[p], hi: A(IP_.hi)[p] });
+  instRows.stpt = A(IP_.stpt)[k] || 0;
+  if (prefill) instRows.push({ n: 0, name: "", unit: "", gain: 1, offset: 0, lo: 0, hi: 0, bit: 0, ...prefill });
+  drawPts();
+  $("instedit").style.display = "";
+  $("instedit").scrollIntoView({ block: "nearest" });
+}
+function drawPts() {
+  const can = instCan();
+  for (const id of ["ie_en", "ie_name", "ie_ip", "ie_port", "ie_unit", "ie_period", "ie_timeout", "ie_max", "ie_gap", "ie_stpt", "ie_fm", "ie_mm", "ie_cm", "ieadd", "iesave"]) $(id).disabled = !can;
+  const opt = (list, cur) => list.map(([v, t]) => `<option value="${v}"${String(v) === String(cur) ? " selected" : ""}>${esc(t)}</option>`).join("");
+  $("ptab").tBodies[0].replaceChildren(...instRows.map((r, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.n || "new"}</td><td><input data-f="name" maxlength="23"></td><td><input data-f="unit" maxlength="7" size="5"></td>` +
+      `<td><select data-f="fc">${opt(Object.entries(PT_FC), r.fc ?? 3)}</select></td><td><input data-f="addr" size="5"></td>` +
+      `<td><select data-f="type">${opt(PT_TYPES.map((t, k) => [k, t]), r.type ?? 0)}</select></td><td><select data-f="order">${opt(PT_ORDERS.map((t, k) => [k, t]), r.order ?? 0)}</select></td>` +
+      `<td><input data-f="bit" size="2"></td><td><input data-f="gain" size="6"></td><td><input data-f="offset" size="6"></td><td><input data-f="lo" size="6"></td><td><input data-f="hi" size="6"></td>` +
+      `<td class="val"></td><td><button class="ghost">Remove</button></td>`;
+    for (const el of tr.querySelectorAll("input")) { el.value = r[el.dataset.f] ?? ""; el.disabled = !can; el.oninput = () => { r[el.dataset.f] = el.value; }; }
+    for (const el of tr.querySelectorAll("select")) { el.disabled = !can; el.onchange = () => { r[el.dataset.f] = +el.value; }; }
+    r.now = tr.cells[12];
+    const b = tr.querySelector("button"); b.disabled = !can; b.onclick = () => { r.removed = true; tr.style.display = "none"; };
+    return tr;
+  }));
+  $("ie_stpt").replaceChildren(...[[0, "none"], ...instRows.filter(r => r.n).map(r => [r.n, `point ${r.n}` + (r.name ? " " + r.name : "")])].map(([v, t]) => {
+    const o = document.createElement("option"); o.value = v; o.textContent = t; if (v === instRows.stpt) o.selected = true; return o;
+  }));
+  showInst();
+}
+async function instWrite(items) {                     /* [{id, o?, v}] a few per request: the write queue is short */
+  for (let i = 0; i < items.length; i += 6) {
+    const body = items.slice(i, i + 6).map(x => `id=${x.id}` + (x.o !== undefined ? `&o=${x.o}` : "") + `&v=${encodeURIComponent(x.v)}`).join("&");
+    for (let t = 0; ; t++) {                          /* "busy": the queue is still saving the last batch */
+      try { await api("/api/write", body); break; }
+      catch (e) { if (e.message !== "busy" || t >= 20) throw e; await new Promise(ok => setTimeout(ok, 250)); }
+    }
+  }
+}
+async function instSettled(items) {                  /* writes are queued and saved by the settings task: wait until they read back */
+  const same = (a, b) => typeof a === "number" || typeof b === "number" ? Math.abs(Number(a) - Number(b)) <= 1e-4 * Math.max(1, Math.abs(Number(b))) : String(a ?? "") === String(b ?? "");
+  for (let t = 0; t < 20; t++) {
+    const v = await instLoad();
+    if (items.every(x => { const c = v[x.id]; const got = x.o === undefined ? c : Array.isArray(c) ? c[x.o] : undefined;
+                           return same(typeof got === "boolean" ? +got : got, x.v); })) return v;
+    await new Promise(ok => setTimeout(ok, 200));
+  }
+  throw new Error("busy");
+}
+function instItems(n, rows, stpt) {                   /* the editor's contents as parameter writes; points get free numbers */
+  const k = n - 1, w = [], num = (t, f) => { const v = Number(t); if (t === "" || !Number.isFinite(v)) throw new Error("value:" + f); return v; };
+  const ip = $("ie_ip").value.trim() ? ipNum($("ie_ip").value) : 0;
+  if (ip === null) throw new Error("value:IP address");
+  const masks = ["ie_fm", "ie_mm", "ie_cm"].map(id => hexIn($(id).value));
+  if (masks.includes(null)) throw new Error("value:status bits (0x0000-0xFFFF)");
+  w.push({ id: IP_.name + k, v: $("ie_name").value.trim() }, { id: IP_.ip, o: k, v: ip }, { id: IP_.port, o: k, v: num($("ie_port").value, "port") },
+         { id: IP_.unit, o: k, v: num($("ie_unit").value, "unit ID") }, { id: IP_.period, o: k, v: num($("ie_period").value, "poll period") },
+         { id: IP_.timeout, o: k, v: num($("ie_timeout").value, "timeout") }, { id: IP_.max, o: k, v: num($("ie_max").value, "registers per read") },
+         { id: IP_.gap, o: k, v: num($("ie_gap").value, "gap") }, { id: IP_.fm, o: k, v: masks[0] }, { id: IP_.mm, o: k, v: masks[1] }, { id: IP_.cm, o: k, v: masks[2] });
+  const used = new Set((instCfg[IP_.pinst] || []).map((v, p) => v ? p + 1 : 0).filter(Boolean));
+  for (const r of rows) {
+    if (r.removed) { if (r.n) { w.push({ id: IP_.pinst, o: r.n - 1, v: 0 }); used.delete(r.n); } continue; }
+    if (!r.n) { let p = 1; while (used.has(p) && p <= PT_N) p++; if (p > PT_N) throw new Error("full"); r.n = p; used.add(p); }
+    const p = r.n - 1;
+    w.push({ id: IP_.pname + p, v: String(r.name || "").trim() }, { id: IP_.punit + p, v: String(r.unit || "").trim() },
+           { id: IP_.fc, o: p, v: num(r.fc ?? 3, "function") }, { id: IP_.addr, o: p, v: num(r.addr, "address") }, { id: IP_.type, o: p, v: num(r.type ?? 0, "type") },
+           { id: IP_.order, o: p, v: num(r.order ?? 0, "order") }, { id: IP_.bit, o: p, v: num(r.bit || 0, "bit") }, { id: IP_.gain, o: p, v: num(r.gain ?? 1, "gain") },
+           { id: IP_.offset, o: p, v: num(r.offset || 0, "offset") }, { id: IP_.lo, o: p, v: num(r.lo || 0, "low") }, { id: IP_.hi, o: p, v: num(r.hi || 0, "high") },
+           { id: IP_.pinst, o: p, v: n });
+  }
+  w.push({ id: IP_.stpt, o: k, v: stpt }, { id: IP_.en, o: k, v: $("ie_en").checked ? 1 : 0 });   /* enable last, once its points exist */
+  return w;
+}
+$("iesave").onclick = async () => {
+  $("ieerr").textContent = "";
+  try {
+    const w = instItems(instEdit, instRows, +$("ie_stpt").value);
+    await instWrite(w);
+    await openInst(instEdit, null, await instSettled(w)); pollInst(true); $("ieerr").textContent = "Saved";
+  } catch (e) {
+    $("ieerr").textContent = e.message === "full" ? `All ${PT_N} points are in use: remove some first` :
+      e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e);
+  }
+};
+$("ieadd").onclick = () => { instRows.push({ n: 0, name: "", unit: "", fc: 3, addr: 0, type: 0, order: 0, bit: 0, gain: 1, offset: 0, lo: 0, hi: 0 }); drawPts(); };
+$("iecancel").onclick = () => { instEdit = 0; $("instedit").style.display = "none"; };
+/* a profile: one device model's settings and points, without its IP (kind "cems-instrument-profile") */
+$("ieexp").onclick = () => {
+  const live = instRows.filter(r => !r.removed), sp = live.findIndex(r => r.n && r.n === +$("ie_stpt").value);
+  const prof = { kind: "cems-instrument-profile", version: 1, name: $("ie_name").value.trim(), exported: new Date().toISOString(),
+    device: { port: +$("ie_port").value, unit: +$("ie_unit").value, period_ms: +$("ie_period").value, timeout_ms: +$("ie_timeout").value,
+              max_regs: +$("ie_max").value, gap: +$("ie_gap").value },
+    status: { point: sp >= 0 ? sp : null, fault_bits: hexIn($("ie_fm").value) || 0, maint_bits: hexIn($("ie_mm").value) || 0, cal_bits: hexIn($("ie_cm").value) || 0 },
+    points: live.map(r => ({ name: r.name, unit: r.unit, fc: +r.fc || 3, addr: +r.addr || 0, type: PT_TYPES[+r.type || 0], order: PT_ORDERS[+r.order || 0],
+                             bit: +r.bit || 0, gain: r.gain === "" ? 1 : +r.gain, offset: +r.offset || 0, lo: +r.lo || 0, hi: +r.hi || 0 })) };
+  const nm = (prof.name || "instrument").replace(/[^\w.-]+/g, "-");
+  saveBlob(new Blob([JSON.stringify(prof, null, 1)], { type: "application/json" }), `profile-${nm}.json`);
+};
+$("ieimp").onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ""; $("ieerr").textContent = "";
+  if (!f) return;
+  try {
+    const prof = JSON.parse(await f.text());
+    if (prof.kind !== "cems-instrument-profile" || !Array.isArray(prof.points)) throw new Error("profile");
+    const d = prof.device || {}, st = prof.status || {};
+    if (instRows.some(r => !r.removed && r.n) && !confirm(`Replace the ${instRows.filter(r => !r.removed && r.n).length} points of instrument ${instEdit} with the profile's ${prof.points.length}?`)) return;
+    for (const r of instRows) r.removed = true;
+    if (prof.name) $("ie_name").value = prof.name;
+    for (const [id, key] of [["ie_port", "port"], ["ie_unit", "unit"], ["ie_period", "period_ms"], ["ie_timeout", "timeout_ms"], ["ie_max", "max_regs"], ["ie_gap", "gap"]])
+      if (d[key] !== undefined) $(id).value = d[key];
+    const hx = v => v ? "0x" + Number(v).toString(16).toUpperCase().padStart(4, "0") : "";
+    $("ie_fm").value = hx(st.fault_bits); $("ie_mm").value = hx(st.maint_bits); $("ie_cm").value = hx(st.cal_bits);
+    const fresh = prof.points.map(p => ({ n: 0, name: p.name || "", unit: p.unit || "", fc: +p.fc || 3, addr: +p.addr || 0, type: Math.max(0, PT_TYPES.indexOf(p.type)),
+      order: Math.max(0, PT_ORDERS.indexOf(p.order)), bit: +p.bit || 0, gain: p.gain ?? 1, offset: p.offset || 0, lo: p.lo || 0, hi: p.hi || 0 }));
+    const rows = [...instRows, ...fresh];
+    const w = instItems(instEdit, rows, 0);                          /* numbers the new points, then the status point by its place in the profile */
+    if (Number.isInteger(st.point) && fresh[st.point]) w.find(x => x.id === IP_.stpt).v = fresh[st.point].n;
+    await instWrite(w);
+    await openInst(instEdit, null, await instSettled(w)); pollInst(true);
+    $("ieerr").textContent = `Profile loaded: ${fresh.length} points`;
+  } catch (e) {
+    $("ieerr").textContent = e instanceof SyntaxError || e.message === "profile" ? "Not an instrument profile file" :
+      e.message === "full" ? `Not enough free points (${PT_N} in all)` : e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e);
+  }
+};
+
+/* register explorer: POST /api/inst/explore, then GET it until busy is false */
+let exData = null, exPick = null;
+$("exgo").onclick = async () => {
+  $("exstate").textContent = ""; $("exgo").disabled = true;
+  const q = { ip: $("ex_ip").value.trim(), port: $("ex_port").value.trim() || 502, unit: $("ex_unit").value.trim() || 1, fc: $("ex_fc").value,
+              addr: $("ex_addr").value.trim() || 0, count: $("ex_count").value.trim() || 1 };
+  try {
+    await api("/api/inst/explore", form(q));
+    $("exstate").textContent = "Reading...";
+    let r;
+    for (let t = 0; t < 40; t++) { await new Promise(ok => setTimeout(ok, 250)); r = await api("/api/inst/explore"); if (!r.busy) break; }
+    exData = r; showEx();
+  } catch (e) {
+    $("exstate").textContent = { ip: "Enter the device's IP address", range: "Check port, unit, address and count (count up to 125 registers)" }[e.message] ||
+      (e.status === 409 ? "A read is still running, or the count is too large" : explain(e));
+  }
+  $("exgo").disabled = false;
+};
+function exDecodes(w, i) {                             /* every reading of the words at i (and i+1) */
+  const dv = new DataView(new ArrayBuffer(4)), out = [];
+  const a = w[i], b = w[i + 1];
+  dv.setUint16(0, a); out.push(["u16", "ABCD", dv.getUint16(0)], ["i16", "ABCD", dv.getInt16(0)]);
+  dv.setUint16(0, ((a & 255) << 8) | (a >> 8)); out.push(["u16", "BADC", dv.getUint16(0)], ["i16", "BADC", dv.getInt16(0)]);
+  if (b !== undefined) {
+    const A = a >> 8, B = a & 255, C = b >> 8, D = b & 255;
+    for (const [o, bytes] of [["ABCD", [A, B, C, D]], ["CDAB", [C, D, A, B]], ["BADC", [B, A, D, C]], ["DCBA", [D, C, B, A]]]) {
+      bytes.forEach((x, k) => dv.setUint8(k, x));
+      out.push(["f32", o, dv.getFloat32(0)], ["u32", o, dv.getUint32(0)], ["i32", o, dv.getInt32(0)]);
+    }
+  }
+  return out;
+}
+const exFmt = (t, v) => t === "f32" ? (Number.isFinite(v) && Math.abs(v) < 1e9 && (v === 0 || Math.abs(v) > 1e-6) ? String(+v.toPrecision(6)) : "-") : String(v);
+function showEx() {
+  const r = exData; if (!r) return;
+  exPick = null; $("expick").style.display = "none";
+  if (!r.ok) {
+    $("extab").style.display = "none";
+    $("exstate").textContent = r.result === "exception" ? `The device answered with exception ${String(r.exception).padStart(2, "0")}` +
+      ({ 1: " (function not supported)", 2: " (no such address: try another range)", 3: " (bad value or count)", 4: " (device failure)", 6: " (busy)", 10: " (gateway path)", 11: " (no answer behind the gateway)" }[r.exception] || "")
+      : `No answer: ${r.result}`;
+    return;
+  }
+  $("exstate").textContent = `${r.count} ${r.fc <= 2 ? "bits" : "registers"} in ${r.ms} ms`;
+  const th = $("extab").tHead, tb = $("extab").tBodies[0];
+  if (r.fc <= 2) {                                    /* coils, discrete inputs: packed, first one in bit 0 */
+    const bytes = (r.hex.match(/../g) || []).map(h => parseInt(h, 16));
+    th.innerHTML = "<tr><th>Address</th><th>State</th></tr>";
+    tb.replaceChildren(...Array.from({ length: r.count }, (_, k) => {
+      const tr = document.createElement("tr"), on = (bytes[k >> 3] >> (k & 7)) & 1;
+      tr.innerHTML = `<td>${r.addr + k}</td><td class="d">${on ? "1 (on)" : "0 (off)"}</td>`;
+      tr.cells[1].onclick = () => exChoose(tr.cells[1], { fc: r.fc, addr: r.addr + k, type: 0, order: 0 });
+      return tr;
+    }));
+  } else {
+    const w = r.words, cols = exDecodes([0, 0], 0).map(([t, o]) => [t, o]);
+    th.innerHTML = "<tr><th>Address</th><th>Hex</th>" + cols.map(([t, o]) => `<th>${t}${t.endsWith("16") ? (o === "BADC" ? " swapped" : "") : " " + o}</th>`).join("") + "</tr>";
+    tb.replaceChildren(...w.map((x, i) => {
+      const tr = document.createElement("tr"); tr.innerHTML = `<td>${r.addr + i}</td><td>${x.toString(16).toUpperCase().padStart(4, "0")}</td>`;
+      for (const [t, o, v] of exDecodes(w, i)) {
+        const td = document.createElement("td"); td.className = "d"; td.textContent = exFmt(t, v); td.dataset.v = v;
+        td.title = `${t} ${o} at ${r.addr + i}: click to use`;
+        td.onclick = () => exChoose(td, { fc: r.fc, addr: r.addr + i, type: PT_TYPES.indexOf(t), order: PT_ORDERS.indexOf(o) });
+        tr.appendChild(td);
+      }
+      for (let k = tr.cells.length; k < cols.length + 2; k++) tr.appendChild(document.createElement("td"));
+      return tr;
+    }));
+  }
+  $("extab").style.display = "";
+  exFind();
+}
+function exFind() {                                   /* mark the readings within 0.5 % of the value the device displays */
+  const t = $("ex_find").value.trim(), want = Number(t);
+  for (const td of document.querySelectorAll("#extab td.d")) {
+    const v = Number(td.dataset.v);
+    td.classList.toggle("hit", t !== "" && Number.isFinite(want) && Number.isFinite(v) && (want === 0 ? Math.abs(v) < 1e-6 : Math.abs(v - want) <= Math.abs(want) * 0.005));
+  }
+}
+$("ex_find").oninput = exFind;
+function exChoose(td, pick) {
+  for (const x of document.querySelectorAll("#extab td.pick")) x.classList.remove("pick");
+  td.classList.add("pick"); exPick = pick;
+  $("expicktxt").textContent = `${PT_FC[pick.fc]} ${pick.addr}` + (pick.fc > 2 ? `, ${PT_TYPES[pick.type]}${PT_TYPES[pick.type].endsWith("16") ? (pick.order ? " swapped" : "") : " " + PT_ORDERS[pick.order]}` : "") + `: ${td.textContent}`;
+  const match = inst && inst.instruments.find(i => i.ip === $("ex_ip").value.trim());
+  if (match) $("expinst").value = match.n;
+  $("expick").style.display = "";
+}
+$("exuse").onclick = () => {
+  if (!exPick) return;
+  const n = +$("expinst").value || firstFreeInst() || 1;
+  openInst(n, { fc: exPick.fc, addr: exPick.addr, type: exPick.fc <= 2 ? 0 : exPick.type, order: exPick.fc <= 2 ? 0 : exPick.order });
+};
+pollInst();
+
 /* ---- calibration records (CIP-18, /api/cal): channels, the one calibrating, history ---- */
 const calT = t => { if (!t) return "-"; const d = new Date(t * 1000), z = n => String(n).padStart(2, "0");   /* the unit's local time */
   return `${d.getUTCFullYear()}-${z(d.getUTCMonth() + 1)}-${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}`; };
@@ -1995,8 +2375,9 @@ async function pollEvents(once) {
   if (!once) setTimeout(pollEvents, 5000);
 }
 
+let loginHere = false;                                /* a login made on this page is never "left over" */
 $("loginbtn").onclick = async () => {
-  $("loginerr").textContent = "";
+  $("loginerr").textContent = ""; loginHere = true;
   try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
   catch (e) { $("loginerr").textContent = e.message === "locked" ? "Too many attempts, wait 30 s" : "Wrong password"; }
 };
@@ -2118,11 +2499,11 @@ try { tabCh = new BroadcastChannel("cems-page"); tabCh.addEventListener("message
 async function leftOverLogin(i) {
   let mine = false;
   try { mine = sessionStorage.getItem("cems-open") === "1"; } catch (e) { return false; }   /* no storage: leave it */
-  if (mine || !i.session || i.session.level === "view") return false;
+  if (mine || loginHere || !i.session || i.session.level === "view") return false;
   if (!tabCh) return true;
   return new Promise(res => {
     const h = e => { if (e.data === "here") { clearTimeout(t); tabCh.removeEventListener("message", h); res(false); } };
-    const t = setTimeout(() => { tabCh.removeEventListener("message", h); res(true); }, 300);
+    const t = setTimeout(() => { tabCh.removeEventListener("message", h); res(!loginHere); }, 300);
     tabCh.addEventListener("message", h);
     tabCh.postMessage("anyone");
   });

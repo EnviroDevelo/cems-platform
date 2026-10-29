@@ -276,7 +276,8 @@ use them). Screenshots: `docs/web_ui.png`, `docs/web_phone_tabs.png`.
 can keep running after its window is closed (Edge does). So a page opened in a new tab or window,
 while no other page of this instrument is open in that browser, ends a login it finds left over
 (`BroadcastChannel` asks the other pages; `sessionStorage` marks a page that is already open). A
-reload, and a second tab next to an open one, keep the login. The instrument still ends a login 10
+reload, and a second tab next to an open one, keep the login, and so does a login made on the page
+before that check has finished (a quick login right after opening). The instrument still ends a login 10
 minutes after the last change (`AUTH_IDLE_MS`). Decided by this thread on 29 Oct as the default,
 since Gary asked whether closing the browser logged out (`tests/integration/session_health_test.py`).
 
@@ -329,6 +330,24 @@ by integrator" column), Platform block, Codes (the map's "codes" when it has the
 Modbus exceptions) and Commissioning (how forcing works, the forceable entries). **CSV** beside
 it gives the project map. `tests/integration/modbus_map_web_test.py` opens the file with
 openpyxl and checks it against the map (19 checks on the sim, 17 against the firmware's map).
+
+**Instruments tab** (third-party devices over Modbus TCP, firmware PR #16, `docs/MODBUS_ROLES.md`
+role 2): shown when `GET /api/inst` exists and a device is enabled, and always at admin login.
+The list shows each device's state, poll counts, last error and reply time, with a tile per point
+(quality marked as everywhere else). The editor (admin, REMOTE: the 500-621 parameters are not
+any-mode) reads every setting with `/api/values?ids=`, writes changes with `/api/write` six items
+per request (arrays with "o"), retries "busy", and waits until the values read back before it
+reloads. A setting that reads `null` (the settings task was writing it at that moment) is asked
+for again, never taken as empty: an empty `pt_inst` would make used points look free. New points take the first free point numbers; the device is enabled last. The register
+explorer posts `/api/inst/explore`, polls it until `busy` is false, and decodes the words 16
+ways (u16, i16 and their byte swap; f32, u32, i32 in ABCD, CDAB, BADC, DCBA); **Find value**
+marks the readings within 0.5 % of what the device displays, and a click fills a new point.
+Profiles are JSON (`"kind": "cems-instrument-profile"`, version 1): device settings, status
+point (by its place in the list) and bits, and the points, never the IP. Import replaces the
+instrument's points after a confirmation. Test: `tests/integration/inst_web_test.py` against
+netsim's simulated analyser (22 checks: explorer, find, pick, save, live value, status word to
+maintenance, export, import into a second instrument, viewer view); without the firmware it only
+checks the tab stays hidden. Screenshot: `docs/web_instruments.png`.
 
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under

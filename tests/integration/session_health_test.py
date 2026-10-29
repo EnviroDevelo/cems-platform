@@ -54,6 +54,13 @@ async def run():
         check(not await logged_in(c) and await c.is_visible("#loginrow"), "a page opened after all were closed ends the left-over login")
         errs = c.errs
         await c.close()
+        d = await ctx.new_page()                      # logging in the moment the page opens: that login is this page's, not left over
+        d.on("pageerror", lambda e: errs.append(str(e)))
+        await d.goto(URL, wait_until="domcontentloaded")
+        await d.fill("#pw", "1111"); await d.click("#loginbtn")
+        await d.wait_for_timeout(2500)
+        check(await logged_in(d), "a login made straight after the page opens is kept")
+        await d.close()
         print("System health panel")
         async def add_health(route):
             r = await route.fetch(); j = await r.json()
