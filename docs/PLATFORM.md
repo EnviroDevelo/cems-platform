@@ -258,6 +258,20 @@ not retry a POST on a connection the server closed) and before an alarm email bo
 the TLS context. Measured with Chromium and the page open: about 0.7 new TLS
 connections a second (all resumed by ticket) instead of one per request (3-4 a second).
 
+**Tabs.** The page shows one group of sections at a time, picked from a tab bar under the
+header (it stays in view while scrolling, and scrolls sideways on a phone): Overview (the
+product's screen and the alarm list), Trends, Settings (the parameter table), Calibration,
+Service, I/O boards, Event log, Administration (passwords, network, I/O board set-up, firmware,
+serial number, clock) and Alarm setup (alarm actions, relays, email). The login row stays above
+the tabs. A tab shows only when one of its sections does, as before: Calibration when the
+product has calibrated channels, I/O boards when one is enabled, Administration and Alarm setup
+at admin login. The open tab is kept in the address (`#service`), so a reload or a bookmark
+opens it again; one that needs a login opens once the login shows it. Only the open tab's data
+is polled at its normal rate; a closed tab's is asked for at most every 30 s (enough to know
+whether its section exists), and opening a tab asks for its data at once. Values, alarms and
+the unit's information are polled on every tab (the header, trends and the connection check
+use them). Screenshots: `docs/web_ui.png`, `docs/web_phone_tabs.png`.
+
 **One request at a time.** The page sends its requests through one queue, one at a time, with
 writes ahead of polls; a poll already waiting for the same path is shared, and each timeout
 (5 s for a poll, 30 s for a write, 120 s for an upload) runs from when the request is sent. The

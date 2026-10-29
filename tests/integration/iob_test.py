@@ -65,7 +65,7 @@ def screenshot():
                                   bypass_csp=True)   # wait_for_function evaluates strings; the page's CSP forbids that
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
-            await pg.goto(BASE + "/")
+            await pg.goto(BASE + "/#iob")                 # the address opens the I/O boards tab
             await pg.wait_for_selector("#iobsec", state="visible", timeout=8000)
             await pg.wait_for_timeout(1500)
             txt = await pg.inner_text("#iobsec")
@@ -95,7 +95,7 @@ def commission():
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
-            await pg.goto(BASE + "/")
+            await pg.goto(BASE + "/#admin")               # opens once the admin login shows the tab
             await pg.select_option("#lvl", "admin")
             await pg.fill("#pw", "2222")
             await pg.click("#loginbtn")
@@ -135,7 +135,7 @@ def net_commission():
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
-            await pg.goto(BASE + "/")
+            await pg.goto(BASE + "/#admin")               # opens once the admin login shows the tab
             await pg.select_option("#lvl", "admin")
             await pg.fill("#pw", "2222")
             await pg.click("#loginbtn")

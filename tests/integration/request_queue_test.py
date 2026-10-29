@@ -2,7 +2,8 @@
 """The web page sends one request at a time (DK bench, 28 Oct: parallel polls each cost a TLS
 handshake on the H5 and some timed out). Against build/netsim, logged in as admin so every
 poller runs, for 15 s: at most one request in flight, the browser stays on very few
-connections, the values keep updating, and a write made meanwhile goes through.
+connections, the values keep updating, and a write made meanwhile goes through. On the
+Overview tab, the closed tabs' data is asked for at most every 30 s.
 Needs Python Playwright and a Chromium."""
 import asyncio, glob, os, subprocess, sys, tempfile
 from playwright.async_api import async_playwright
@@ -13,9 +14,9 @@ URL = f"https://127.0.0.1:{WEB}/"
 passed = failed = 0
 
 COUNT_FETCH = """(() => {
-  const f = window.fetch; window.__inflight = 0; window.__maxInflight = 0; window.__requests = 0;
+  const f = window.fetch; window.__inflight = 0; window.__maxInflight = 0; window.__requests = 0; window.__paths = [];
   window.fetch = async (...a) => {
-    window.__inflight++; window.__requests++; window.__maxInflight = Math.max(window.__maxInflight, window.__inflight);
+    window.__inflight++; window.__requests++; window.__paths.push(String(a[0]).split("?")[0]); window.__maxInflight = Math.max(window.__maxInflight, window.__inflight);
     try { return await f(...a); } finally { window.__inflight--; }
   };
 })();"""
@@ -65,6 +66,18 @@ async def run():
         check(up1 - up0 > 13000 and await pg.inner_text("#conn") == "live", "values still update, page live")
         lost = await pg.evaluate("document.body.classList.contains('stale')")
         check(not lost, "no connection-lost banner")
+        # tabs: what a closed tab shows is asked for at most every 30 s
+        await pg.click('#tabbar button[data-tab="overview"]')
+        await pg.wait_for_timeout(1000)
+        await pg.evaluate("window.__paths = []")
+        await pg.wait_for_timeout(10000)
+        paths = await pg.evaluate("window.__paths")
+        bg = {k: paths.count(k) for k in ("/api/log/events", "/api/service", "/api/iob", "/api/cal")}
+        check(all(n <= 1 for n in bg.values()) and paths.count("/api/values") >= 10,
+              f"on Overview for 10 s: {paths.count('/api/values')} value polls, closed tabs {bg}")
+        await pg.click('#tabbar button[data-tab="events"]')
+        await pg.wait_for_timeout(1500)
+        check(await pg.evaluate("window.__paths.slice(-6).includes('/api/log/events')"), "opening the Event log tab asks for the events at once")
         check(errs == [], f"no script errors {errs}")
         await b.close()
 
