@@ -68,7 +68,7 @@ These hold across every item below and override any item where they conflict.
 | 18 | Calibration framework | M | Done | The procedure itself is per product | Firmware |
 | 19 | User and service access | M | Done | None at platform level (calibration permission, token recovery) | Firmware, HMI, HTTPS |
 | 20 | Cybersecurity | M | Partial | Debug lock, secure boot (4-character passwords accepted by Gary) | Firmware, PCB |
-| 21 | User interface conventions | M (screen O) | Partial | No written convention; quality and comms health not on every value | HMI, HTTPS |
+| 21 | User interface conventions | M (screen O) | Partial | Written convention done (`docs/UI_CONVENTIONS.md`, checked by a test); a common supervisory link indicator on the touchscreen (CIP-21.5) | HMI, HTTPS |
 | 22 | Service and maintenance support | S | Partial | Diagnostic package download; service manual | Firmware, HTTPS |
 | 23 | Factory provisioning and testing | S | Partial | No provisioning procedure or board test (test results are stored) | Firmware, PCB |
 | 24 | Electrical and environmental robustness | M | Partial | No written design basis (EMC levels, IP, humidity) or test plan | PCB |
@@ -303,7 +303,7 @@ The agreed state/action matrix is in section 7.
 | CIP-21.4 | Quality shown on every value | M | Missing | **Gap:** a non-valid value is greyed or marked with its status on the touchscreen and web |
 | CIP-21.5 | Communications health visible | M | Partial | Web "Connection lost" banner; LINK LOST in the header; I/O boards screen. **Gap:** a common indicator for the supervisory link on the touchscreen |
 | CIP-21.6 | Version information | M | Done | System screen, web Administration |
-| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Missing | **Gap:** one page every product's screens follow |
+| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Done | `docs/UI_CONVENTIONS.md`; `tests/integration/ui_conventions_test.py` (run by `make test`) checks the touchscreen colours, the web page colours and the quality words against it |
 | CIP-21.8 | A local screen | O | Done | RVT70 touchscreen; a product may ship with web only |
 
 ### 4.22 Service and maintenance support
@@ -447,7 +447,7 @@ after Gary's review.
 **Documentation (any thread)**
 1. Operator manual, service manual, Modbus register map document (CIP-26.7).
 2. `CHANGELOG.md`, release notes, supported-combinations matrix (CIP-25.4, 25.5).
-3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5); UI convention page (CIP-21.7).
+3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5).
 
 ## 9. Keeping the core common across the product family
 
