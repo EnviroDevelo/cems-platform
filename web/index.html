@@ -1592,11 +1592,12 @@ async function pollSvc(once) {
 /* factory board test (CIP-23.3): POST /api/service/boardtest runs ~2.5 s, then saves itself as the test record (station "board") */
 let btWatching = false;
 function showBoardTest(bt) {
-  $("btbox").style.display = bt && (level >= 3 || (bt.tests || []).length) ? "" : "none";   /* viewers: only a result */
+  const shown = bt && (bt.running || bt.done);         /* before the first run "tests" lists every name, all skipped */
+  $("btbox").style.display = bt && (level >= 3 || shown) ? "" : "none";   /* viewers: only a result */
   if (!bt) return;
   $("btrun").style.display = level >= 3 ? "" : "none";
   $("btrun").disabled = !!bt.running;
-  const tests = bt.tests || [], cnt = r => tests.filter(x => x.result === r).length;
+  const tests = shown ? bt.tests || [] : [], cnt = r => tests.filter(x => x.result === r).length;
   $("btstate").textContent = bt.running ? "Board test running..." : bt.done
     ? `Last board test: ${cnt("pass")} pass, ${cnt("fail")} fail, ${cnt("skipped")} skipped${bt.saved ? ", saved as the manufacturing test record" : ""}.`
     : level >= 3 ? "Checks the board's memories, clock, network, I/O port, display and supply (about 3 s)." : "";
@@ -1772,6 +1773,10 @@ async function refreshFw() {
     if (!f.signing_required) t += ". Development build: unsigned firmware is accepted";
     if (f.waiting_local) t += `. Waiting for someone at the instrument to confirm the restart (${f.waiting_left_s} s left)`;
     if (f.not_safe) t += `. Last restart refused: ${f.not_safe}`;
+    const b = f.bootloader, IMG = { ok: "image ok", none: "no image", header: "bad header", hash: "bad hash", signature: "bad signature" };
+    if (b) t += `. Bootloader v${b.version}: ${IMG[b.image] || b.image}` + (b.swapped ? ", banks swapped" : "") +
+                (b.rollback ? ", rolled back" : "") + (b.other ? `, other bank ${IMG[b.other] || b.other}` : "");
+    else if (f.bootloader === null) t += ". No bootloader ran at this start";
     $("fwinfo").textContent = t + ".";
     const hk = JSON.stringify(f.history || []);
     if (hk !== fwHistKey) {

@@ -35,7 +35,9 @@ def real_boardtest():
 class Sim:                                    # the firmware's board test, as agreed, for builds without it
     def __init__(self): self.t0 = None; self.post_refuse = False
     def state(self):
-        if self.t0 is None: return {"running": False, "done": False, "saved": False, "tests": []}
+        if self.t0 is None:                   # like the firmware: every name listed, all skipped, before a run
+            return {"running": False, "done": False, "saved": False,
+                    "tests": [{"name": n, "result": "skipped", "detail": ""} for n in NAMES]}
         k = min(len(NAMES), int((time.time() - self.t0) / 0.2))
         tests = [{"name": n, "result": "skipped" if n in ("display", "io_link") else "fail" if n == "net_link" else "pass",
                   "detail": "no link" if n == "net_link" else ""} for n in NAMES[:k]]

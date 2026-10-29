@@ -287,6 +287,12 @@ finishes it is the manufacturing test record (station "board"), which then shows
 name. A refused start (409: one running, or the start-up self-test not finished) is explained.
 `tests/integration/boardtest_web_test.py` uses the firmware's board test when the build has it,
 and otherwise simulates the agreed API in the browser.
+Before the first run the firmware already lists every test as skipped, so the page shows results
+only once `running` or `done` is set.
+
+**Bootloader line** (Administration, Firmware panel): from `GET /api/fw` "bootloader" the page adds
+"Bootloader v1: image ok", with "banks swapped", "rolled back" and the other bank's state when the
+firmware reports them, or "No bootloader ran at this start" when the field is null.
 
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
