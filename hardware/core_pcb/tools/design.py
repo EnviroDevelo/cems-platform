@@ -148,6 +148,8 @@ mcu = {
     52: "NOR_SCK_MCU", 53: "NOR_MISO", 18: "NOR_MOSI", 57: "NOR_CS",
     # FRAM, I2C1
     92: "FRAM_SCL", 93: "FRAM_SDA",
+    # PSRAM, OCTOSPI1 (AF9: PB2 CLK, PB10 NCS, PC2 IO2; AF6: PB1 IO0, PB0 IO1, PA6 IO3)
+    37: "PSRAM_CLK_MCU", 47: "PSRAM_NCS", 36: "PSRAM_IO0", 35: "PSRAM_IO1", 17: "PSRAM_IO2", 31: "PSRAM_IO3",
     # service UART, SWD
     68: "UART_TX", 69: "UART_RX", 72: "SWDIO", 76: "SWCLK", 89: "SWO",
     # misc
@@ -300,6 +302,16 @@ part("U9", "cems_core:MB85RC1MT", "MB85RC1MT", "Package_SO:SOIC-8_3.9x4.9mm_P1.2
 c("C71", "100n", S, "+3V3", "GND")
 r("R74", "2k2", S, "+3V3", "FRAM_SCL")
 r("R75", "2k2", S, "+3V3", "FRAM_SDA")
+part("U10", "cems_core:APS6404L", "APS6404L", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", S,
+     {1: "PSRAM_NCS", 2: "PSRAM_IO1", 3: "PSRAM_IO2", 4: "GND", 5: "PSRAM_IO0", 6: "PSRAM_CLK",
+      7: "PSRAM_IO3", 8: "+3V3"},
+     mpn="AP Memory APS6404L-3SQR-SN (-ZR for -40 to 105 C)",
+     note="8 MB QSPI PSRAM on OCTOSPI1, up to about 100 MHz: keep it next to the MCU, "
+          "traces under 30 mm and roughly matched")
+c("C76", "100n", S, "+3V3", "GND", note="at U10 VDD")
+c("C77", "1u", S, "+3V3", "GND")
+r("R78", "33R", S, "PSRAM_CLK_MCU", "PSRAM_CLK", note="series, at the MCU")
+r("R79", "10k", S, "+3V3", "PSRAM_NCS", note="keeps the PSRAM deselected through reset")
 part("J4", "Connector_Generic:Conn_01x20", "RVT70 RiBUS",
      "Connector_FFC-FPC:Hirose_FH12-20S-0.5SH_1x20-1MP_P0.50mm_Horizontal", S,
      {1: "+3V3", 2: "GND", 3: "EVE_SCK", 4: "EVE_MISO", 5: "EVE_MOSI", 6: "EVE_CS", 7: "EVE_INT",
