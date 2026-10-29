@@ -56,7 +56,7 @@ concentrations with an averaged O2.
 | # | Step | Formula | Source |
 |---|---|---|---|
 | F1 | Molar volume | V_m = R T_ref / p_ref; R = 8.314462618 J/(mol K); 22.414 L/mol at 273.15 K, 101.325 kPa | Ideal gas; NSW eq 2.6 uses 22.4 |
-| F2 | ppm to mg/m3 | c = ppm x k x M / V_m (k: factor, e.g. 3 for TOC calibrated on propane, expressed as C) | NSW eq 2.6; EN 12619 for TOC as C |
+| F2 | ppm to mg/m3 | c = ppm x M / V_m; M is what the value is expressed as, times any factor (TOC as C from a propane-calibrated FID: 3 x 12.011 = 36.033) | NSW eq 2.6; EN 12619 for TOC as C |
 | F3 | Actual to standard (concentration) | c_std = c_act x (T / T_ref) x (p_ref / p) | NSW eq 1.2, 1.3 (inverted for a concentration) |
 | F4 | Actual to standard (flow) | Q_std = Q_act x (T_ref / T) x (p / p_ref) | NSW eq 1.2, 1.3 |
 | F5 | Wet to dry (concentration, O2) | c_dry = c_wet x 100 / (100 - H2O) | NSW eq 1.1; IED Annex VI Pt 3 pt 1 "after correcting for the water vapour content" |
@@ -69,7 +69,8 @@ concentrations with an averaged O2.
 | F12 | Daily average | mean of the day's validated short-term averages | IED Annex VI Pt 8 1.2 |
 
 Molar masses to configure (g/mol): NO 30.006, NO2 46.0055 (NOx as NO2), SO2 64.066, CO 28.010,
-HCl 36.461, HF 20.006, NH3 17.031, CH4 16.043, N2O 44.013, H2S 34.081, C 12.011 (TOC as C).
+HCl 36.461, HF 20.006, NH3 17.031, CH4 16.043, N2O 44.013, H2S 34.081, TOC as C from propane 36.033
+(3 x 12.011). NOx from an NO-only analyser with an assumed NO2 share f: 46.0055 / (1 - f).
 
 The O2 used in F7 is dry. A zirconia probe (in-situ, hot) measures wet O2: configure it as a wet %
 channel and the engine dries it with F5 before using it.
@@ -89,8 +90,9 @@ broken or missing input outranks the instrument's own modes. Inputs per bank:
 | REF | STD, plus the O2 (or CO2) channel's STD if corrected |
 | MASS | STD and the flow channel's STD |
 
-The engine also gives OUT OF RANGE itself when: the raw reading is outside the analyser range
-setting (status OVER_RANGE / BELOW_RANGE), the dry O2 is above the O2 limit (20 % default:
+The engine also gives OUT OF RANGE itself when: the raw reading is outside its measurement's lo..hi
+(the analyser range, declared once in the application's measurement table; status OVER_RANGE /
+BELOW_RANGE), the dry O2 is above the O2 limit (20 % default:
 21 - O2 heads for zero; status O2_HIGH, B_REF is then computed with the limit and is not
 averaged), the water content is outside 0-80 %, the CO2 is below 0.5 %, or a result is not finite.
 UNAVAILABLE when an input is missing (status INPUT_MISSING).
@@ -120,9 +122,10 @@ while it was being collected; of a day, VALID or the worst reason among its disc
   where they are. No clock (never set): live values only, no averages.
 - **Configuration change.** Any change restarts the engine: the periods in progress are dropped, so
   an average never mixes two configurations. The change is in the event log as a parameter change.
-- **Power cycle.** The periods and the day in progress, the last averages and the counters are kept
-  in retained block 910 (refreshed once a minute and at power fail), and carry on after a restart
-  if the configuration is unchanged. The minutes while the power was off are simply not operating
+- **Power cycle.** The period and the day in progress and the counters are kept in retained block
+  910 (0.9 KB, refreshed once a minute and at power fail), and carry on after a restart if the
+  configuration is unchanged. The last completed averages are not kept: they read UNAVAILABLE until
+  the first period after the restart ends. The minutes while the power was off are simply not operating
   time. (On the 32 KB development FRAM there is no room: a restart drops the period in progress.)
 - **Valid calibration range** (EN 14181 6.5): 0 to ys,max + cal_ext % of the ELV (settings 439, 421).
   Live bit ABOVE_CAL on each value above it. Each week (Monday to Sunday) the short-term averages
@@ -164,8 +167,9 @@ validated below zero as zero, 421 calibration range extension % of ELV, 422 plan
 
 Per channel (arrays of 32, index = Modbus standard-block slot): 430 source measurement (255 none),
 431 unit (1 ppm, 2 %, 3 mg/m3 actual, 4 mg/m3 standard, 5 flow actual, 6 flow standard, 7 plain),
-432 wet, 433 O2-corrected, 434 added channel, 435 molar mass, 436 factor, 437/438 QAL2 a and b, 439
-ys,max, 440 daily ELV, 441 CI %, 442/443 analyser range.
+432 wet, 433 O2-corrected, 434 added channel, 435 molar mass (times any factor), 437/438 QAL2 a and
+b, 439 ys,max, 440 daily ELV, 441 CI %. A channel with a unit but no source is configured but
+unwired: its results are UNAVAILABLE.
 
 Results (read only, arrays of 32): 450-457 banks 0-7, 460-465 qualities (raw, calc, mass, average,
 day, running), 466 status bits, 467 averages discarded today, 468 days invalid this year, 469 weeks
@@ -201,3 +205,10 @@ added later on top of the calibration records if a site needs it.
 Open points to confirm against a purchased copy of EN 14181:2014: the exact extension of the valid
 calibration range (setting 421, default 10 % of the ELV) and whether the weekly test counts
 short-term averages (this design) or individual values.
+
+## 10. RAM
+
+4.4 KB in all (docs/MEMORY.md): the settings 1.3 KB (the engine reads the channel settings in
+place, no copy), the results 1.5 KB (the parameter table points at the engine's own arrays), the
+accumulators 1 KB, the retained copy 0.9 KB. Measured with tools/check_target.sh: all eight
+configurations link; the tightest (no FRAM, settings in a RAM stand-in) has 136 bytes left.

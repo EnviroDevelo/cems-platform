@@ -31,8 +31,11 @@
 #include "bsp.h"
 #include "plat_log.h"
 #include "tls.h"
+#include "plat_boardtest.h"
 
 static struct netif nif;
+
+int plat_net_link_state(void) { return netif_is_link_up(&nif) ? 1 : 0; }   /* board test (plat_boardtest.h) */
 static volatile bool ready;
 static volatile bool tcpip_up;
 

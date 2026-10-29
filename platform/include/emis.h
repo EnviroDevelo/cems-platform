@@ -24,7 +24,8 @@
  *
  * Quality. Every calculated value carries one of the eight PLAT_Q_* codes: the worst of the
  * qualities of everything it was calculated from (emis_q_worst), or the engine's own verdict
- * (RANGE: O2 too high to correct, the water content impossible; UNAVAILABLE: an input missing).
+ * (RANGE: O2 too high to correct, the water content impossible, the analyser out of its range;
+ * UNAVAILABLE: an input missing).
  * Only VALID values go into averages. A short-term average is valid when the valid time is at
  * least min_avail of the plant's operating time in that period; periods with no operating time
  * have no average and are not counted. A daily average is valid when no more than max_discard
@@ -36,7 +37,7 @@
  * by more than a period, ends the period and the day in progress where they are. Clock 0 (never
  * set): no averages.
  *
- * Threading: the scan task only. The results (emis_out) are plain words and floats, written
+ * Threading: the scan task only. The results (emis_res) are plain words and floats, written
  * once per step. */
 #ifndef EMIS_H
 #define EMIS_H
@@ -87,21 +88,21 @@ enum { EMIS_H2O_NONE = 0,  /* every wet reading is refused (the sample is dried:
 #define EMIS_ST_BELOW_RANGE  0x4000u /* raw reading below the analyser's range (lo) */
 #define EMIS_ST_QAL2_REVIEW  0x8000u /* valid calibration range exceeded too often: a new QAL2 is due (EN 14181 6.5) */
 
-/* One channel's configuration (parameters 400-499, indexed by channel) */
+/* The channels' configuration, one array per setting (parameters 431-443 point straight at them) */
 typedef struct {
-    uint8_t  unit;        /* EMIS_U_* (OFF: not used) */
-    uint8_t  wet;         /* the raw reading is on a wet basis (hot-wet extractive, in-situ, zirconia O2) */
-    uint8_t  ref;         /* correct B_REF to the reference diluent (pollutants: 1; O2, flow, T: 0) */
-    uint8_t  add;         /* derived channel: also add this channel's raw reading (EMIS_NONE = no) */
-    float    molar_mass;  /* g/mol of the substance it is expressed as (NOx: as NO2 46.0055; TOC: as C 12.011) */
-    float    factor;      /* multiplier for ppm (TOC from propane: 3; NOx from NO only: 1/(1 - NO2 share)); 0 = 1 */
-    float    qal2_a, qal2_b; /* EN 14181 calibration function y = a + b x (b = 0: none yet, y = x) */
-    float    ys_max;      /* highest calibrated value at standard conditions in the QAL2 (0 = not known) */
-    float    elv;         /* daily emission limit, at standard conditions and reference O2 (0 = none) */
-    float    ci_pct;      /* 95 % confidence interval as % of the daily ELV (IED: CO 10, SO2 20, NOx 20, dust 30,
-                             TOC 30, HCl 40, HF 40) */
-    float    range_lo, range_hi; /* analyser range, raw unit (lo >= hi: not checked) */
-} emis_ch_cfg_t;
+    uint8_t  unit[EMIS_CH_MAX];   /* EMIS_U_* (OFF: not used) */
+    bool     wet[EMIS_CH_MAX];    /* the raw reading is on a wet basis (hot-wet extractive, in-situ, zirconia O2) */
+    bool     ref[EMIS_CH_MAX];    /* correct B_REF to the reference diluent (pollutants: 1; O2, flow, T: 0) */
+    uint8_t  add[EMIS_CH_MAX];    /* derived channel: also add this channel's raw reading (EMIS_NONE = no) */
+    float    molar_mass[EMIS_CH_MAX]; /* g/mol of what it is expressed as, times any factor: NOx as NO2 46.0055;
+                                     TOC as C from a propane-calibrated FID 3 x 12.011 = 36.033; NO only, as NOx with
+                                     an assumed NO2 share f: 46.0055 / (1 - f) */
+    float    qal2_a[EMIS_CH_MAX], qal2_b[EMIS_CH_MAX]; /* EN 14181 calibration function y = a + b x (b = 0: none yet, y = x) */
+    float    ys_max[EMIS_CH_MAX]; /* highest calibrated value at standard conditions in the QAL2 (0 = not known) */
+    float    elv[EMIS_CH_MAX];    /* daily emission limit, at standard conditions and reference O2 (0 = none) */
+    float    ci_pct[EMIS_CH_MAX]; /* 95 % confidence interval as % of the daily ELV (IED: CO 10, SO2 20, NOx 20, dust 30,
+                                     TOC 30, HCl 40, HF 40) */
+} emis_chs_t;
 
 /* The plant's configuration */
 typedef struct {
@@ -130,9 +131,12 @@ typedef struct {
 } emis_cfg_t;
 
 /* One channel's input for a step */
+#define EMIS_IN_BELOW 0x01u           /* the reading is below the analyser's range */
+#define EMIS_IN_OVER  0x02u           /* at or above it (saturated) */
 typedef struct {
     float   x;            /* raw reading */
     uint8_t q;            /* its quality, PLAT_Q_* */
+    uint8_t range;        /* EMIS_IN_* (the binding: from the measurement's lo..hi, plat_state.h) */
 } emis_in_t;
 
 /* One channel's results */
@@ -152,21 +156,35 @@ typedef struct {
 
 /* Defaults: IED waste incineration (11 % O2, half-hours, 5 discards a day, CI subtracted). */
 void emis_cfg_default(emis_cfg_t *g);
-void emis_ch_default(emis_ch_cfg_t *c);
+void emis_chs_default(emis_chs_t *c);
 
 /* Check a configuration. 0 = good; otherwise 1 + the channel at fault, or EMIS_CH_MAX + 1 for the
  * plant settings; why says what (for the web page). */
-int  emis_check(const emis_cfg_t *g, const emis_ch_cfg_t ch[EMIS_CH_MAX], char *why, size_t cap);
+int  emis_check(const emis_cfg_t *g, const emis_chs_t *ch, char *why, size_t cap);
 
-/* Start (or restart after a configuration change): forgets the periods in progress. */
-void emis_init(const emis_cfg_t *g, const emis_ch_cfg_t ch[EMIS_CH_MAX]);
+/* Start (or restart after a configuration change): forgets the periods in progress. The engine keeps
+ * the pointers, not copies: g and ch must stay valid and unchanged until the next emis_init. */
+void emis_init(const emis_cfg_t *g, const emis_chs_t *ch);
 
 /* One step: in[EMIS_CH_MAX] readings, operating = the plant is in its effective operating time
  * (fuel or waste being fired), clock_s = local s since 1970 (0 = not set), dt_ms = since the last
  * step. */
 void emis_step(const emis_in_t in[EMIS_CH_MAX], bool operating, uint32_t clock_s, uint32_t dt_ms);
 
-const emis_out_t *emis_out(unsigned ch);   /* NULL for ch >= EMIS_CH_MAX */
+/* The results, one array per kind so the parameter table can point straight at them (no copy). */
+enum { EMIS_Q_IN = 0, EMIS_Q_CALC, EMIS_Q_MASS, EMIS_Q_AVG, EMIS_Q_DAY, EMIS_Q_RUN, EMIS_QS };
+typedef struct {
+    float    v[EMIS_BANKS][EMIS_CH_MAX];
+    uint8_t  q[EMIS_QS][EMIS_CH_MAX];      /* PLAT_Q_* */
+    uint16_t status[EMIS_CH_MAX];          /* EMIS_ST_* */
+    uint16_t discarded[EMIS_CH_MAX];
+    uint16_t days_invalid[EMIS_CH_MAX];
+    uint16_t weeks_above[EMIS_CH_MAX];
+} emis_res_t;
+extern emis_res_t emis_res;                /* written by emis_step, the scan task */
+
+emis_out_t emis_out(unsigned ch);          /* one channel's results gathered (all UNAVAILABLE for ch >= EMIS_CH_MAX) */
+void emis_clear(void);                     /* every result 0 and UNAVAILABLE (the engine stopped) */
 
 /* ---- the formulas, on their own (docs/EMISSIONS_MATH.md section 3) ---- */
 uint8_t emis_q_worst(uint8_t a, uint8_t b);
@@ -182,8 +200,8 @@ float   emis_co2_ref(float c, float co2_meas, float co2_ref);            /* c co
 /* Power cycles: the periods and the day in progress, the last averages and the counters, as one
  * block (EMIS_SAVE_SIZE bytes) for the retained store. emis_load refuses a block saved under
  * another configuration (cfg_crc) or layout; the engine then starts fresh. */
-#define EMIS_SAVE_SIZE (32u + EMIS_CH_MAX * 80u)
-void emis_save(void *buf, uint32_t cfg_crc);
+#define EMIS_SAVE_SIZE (32u + EMIS_CH_MAX * 28u)
+void emis_save(void *buf, uint32_t cfg_crc);          /* buf: EMIS_SAVE_SIZE bytes, 8-byte aligned */
 bool emis_load(const void *buf, uint32_t cfg_crc);
 
 void emis_reset_for_test(void);

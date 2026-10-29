@@ -4,6 +4,7 @@
 #include "plat_power.h"
 #include "plat_cal.h"
 #include "plat_selftest.h"
+#include "modbus.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -281,6 +282,7 @@ static void publish(void) {
     }
     for (unsigned k = 0; k < ALARM_RELAYS; ++k) if (rel & (1u << k)) com |= ACOM_RELAY(k);
     relay_on = rel;
+    if (mb_force_count()) com |= ACOM_FORCED;
     plat_alarm_common = com;
     plat_alarm_active_count = na; plat_alarm_unack_count = nu;
     memcpy(plat_alarm_active_bits, ab, sizeof ab);

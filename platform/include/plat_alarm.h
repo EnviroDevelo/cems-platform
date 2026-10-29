@@ -69,6 +69,7 @@ enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
 #define ACOM_MB_UNACKED  0x0002u  /* a Modbus-routed alarm waits for an acknowledge */
 #define ACOM_ANY_ACTIVE  0x0004u
 #define ACOM_ANY_UNACKED 0x0008u
+#define ACOM_FORCED      0x0010u  /* values are forced on Modbus (commissioning, modbus.h mb_force_*) */
 #define ACOM_RELAY(k)    ((uint16_t)(0x0100u << (k)))   /* relay k is in alarm (before inversion) */
 
 /* flags */

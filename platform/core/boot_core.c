@@ -53,6 +53,7 @@ boot_action_t boot_decide(boot_io_t *io, uint32_t *trial, boot_report_t *rep) {
     boot_report_t r = { .mapped = BOOT_IMG_NONE, .other = BOOT_IMG_NONE };
     bool dev = io->verify == NULL;
     bool after_swap = *trial == BOOT_SWAP_MAGIC;        /* this bootloader swapped just before this start */
+    r.after_swap = after_swap;
     if ((*trial & 0xFFFF0000u) == BOOT_TRIAL_MAGIC) {   /* a new image on trial */
         uint32_t n = (*trial & 0xFFFFu) + 1u;
         if (n > BOOT_TRIAL_MAX) {                       /* it never confirmed: back to the previous one */
@@ -79,4 +80,29 @@ boot_action_t boot_decide(boot_io_t *io, uint32_t *trial, boot_report_t *rep) {
     }
     if (rep) *rep = r;
     return a;
+}
+
+uint32_t boot_report_word(boot_action_t a, const boot_report_t *r) {
+    return BOOT_REPORT_MAGIC | BOOT_VERSION << 16 | (uint32_t)r->after_swap << 10 | (uint32_t)r->vectors_ok << 9 |
+           (uint32_t)r->rollback << 8 | ((uint32_t)r->other & 7u) << 5 | ((uint32_t)r->mapped & 7u) << 2 | ((uint32_t)a & 3u);
+}
+
+bool boot_report_decode(uint32_t w, boot_action_t *a, boot_report_t *r, unsigned *version) {
+    if ((w & 0xFF000000u) != BOOT_REPORT_MAGIC || (w & 3u) > BOOT_HALT || ((w >> 2) & 7u) > BOOT_IMG_SIGNATURE ||
+        ((w >> 5) & 7u) > BOOT_IMG_SIGNATURE) return false;
+    if (a) *a = (boot_action_t)(w & 3u);
+    if (r) {
+        r->mapped = (boot_img_t)((w >> 2) & 7u);
+        r->other = (boot_img_t)((w >> 5) & 7u);
+        r->rollback = (w >> 8) & 1u;
+        r->vectors_ok = (w >> 9) & 1u;
+        r->after_swap = (w >> 10) & 1u;
+    }
+    if (version) *version = (w >> 16) & 0xFFu;
+    return true;
+}
+
+const char *boot_img_name(boot_img_t i) {
+    static const char *const n[] = { "ok", "none", "header", "hash", "signature" };
+    return (unsigned)i <= BOOT_IMG_SIGNATURE ? n[i] : "?";
 }

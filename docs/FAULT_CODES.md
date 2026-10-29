@@ -113,6 +113,7 @@ Event log codes (`/api/log/events`, the event CSV). Codes from 100 are the produ
 | 27 | `service` | Service |
 | 28 | `cal` | Calibration |
 | 29 | `selftest` | Self-test |
+| 30 | `force` | Modbus force |
 
 ## Firmware update refusals
 

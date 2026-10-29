@@ -186,6 +186,7 @@ enum {
     PARAM_ID_SERVICE_HOURS    = 331, /* RO: hours since the last service log entry x 10 */
     PARAM_ID_CONFIG_CRC       = 332, /* RO: checksum of the user settings (CIP-05.4) */
     PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
+    PARAM_ID_MB_FORCED        = 334, /* RO: values forced on Modbus now (modbus.h mb_force_*) */
     /* 400-499 emissions calculation (emis.h, docs/EMISSIONS_MATH.md); arrays are indexed by channel
      * = slot of the Modbus standard block. Settings at admin level, persisted, logged on change. */
     PARAM_ID_EMIS_ENABLE      = 400, /* the engine runs (off: every result unavailable) */
@@ -217,15 +218,12 @@ enum {
     PARAM_ID_EMIS_WET         = 432, /* [32] the reading is wet */
     PARAM_ID_EMIS_REF         = 433, /* [32] correct to the reference diluent */
     PARAM_ID_EMIS_ADD         = 434, /* [32] also add this channel's reading (NOx = NO + NO2), 255 = no */
-    PARAM_ID_EMIS_MOLAR_MASS  = 435, /* [32] g/mol */
-    PARAM_ID_EMIS_FACTOR      = 436, /* [32] ppm multiplier (TOC as C from propane: 3) */
+    PARAM_ID_EMIS_MOLAR_MASS  = 435, /* [32] g/mol of what it is expressed as, times any factor (TOC as C from propane: 36.033) */
     PARAM_ID_EMIS_QAL2_A      = 437, /* [32] EN 14181 calibration function intercept */
     PARAM_ID_EMIS_QAL2_B      = 438, /* [32] slope (0 = no QAL2 yet) */
     PARAM_ID_EMIS_YS_MAX      = 439, /* [32] highest calibrated value in the QAL2, standard conditions */
     PARAM_ID_EMIS_ELV         = 440, /* [32] daily ELV, standard conditions, reference O2 */
     PARAM_ID_EMIS_CI_PCT      = 441, /* [32] 95 % confidence interval, % of the ELV */
-    PARAM_ID_EMIS_RANGE_LO    = 442, /* [32] analyser range, raw unit */
-    PARAM_ID_EMIS_RANGE_HI    = 443,
     PARAM_ID_EMIS_BANK_FIRST  = 450, /* 450 + b: RO [32] float, bank b = EMIS_B_* (raw, std, ref, mass, run, avg, val, day) */
     PARAM_ID_EMIS_Q_IN        = 460, /* RO [32] PLAT_Q_* of the raw reading */
     PARAM_ID_EMIS_Q_CALC      = 461, /* RO [32] of banks 1-2 */

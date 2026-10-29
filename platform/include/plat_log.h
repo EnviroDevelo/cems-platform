@@ -95,6 +95,8 @@ typedef enum {
     LOG_EV_SERVICE,          /* service log entry (arg = services so far, text = technician) or test record (new = passed) */
     LOG_EV_CAL,              /* calibration (plat_cal.h): arg = channel, old = kind (1 factory, 2 field), new = outcome (0 started), text = channel and what */
     LOG_EV_SELFTEST,         /* start-up self-test finished (plat_selftest.h): arg = failed bits, text = "passed" or the failed names */
+    LOG_EV_FORCE,            /* Modbus force (modbus.h): arg = id | index << 16 (index 65535: not an array), old = real
+                                value, new = forced value (NaN: ended), text = name and "set" / "cleared" / "ended" */
     LOG_EV_APP = 100
 } log_event_code_t;
 

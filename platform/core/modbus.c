@@ -1,10 +1,13 @@
 /* modbus.c - see modbus.h */
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 #include "modbus.h"
 #include "plat_config.h"
 #include "plat_state.h"
 #include "fw_update.h"
+#include "plat_log.h"
+#include "plat_port.h"
 
 #ifndef MB_MAX_ENTRIES
 #define MB_MAX_ENTRIES 512
@@ -29,6 +32,7 @@ uint16_t plat_mb_heartbeat, plat_mb_link_age_s = 0xFFFFu, plat_mb_block_version 
 uint16_t plat_mb_map_version, plat_mb_api_version = PLAT_API_VERSION;
 uint32_t plat_mb_fw_version, plat_mb_uptime_s;
 char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
+uint16_t plat_mb_forced;
 
 #define B(OFF) (PLAT_MB_BLOCK_ADDR + (OFF))
 static const mb_map_t block[] = {
@@ -54,6 +58,7 @@ static const mb_map_t block[] = {
     MB_ENTRY(MB_INPUT, B(86), PARAM_ID_CLOCK_SYNCED,     MBF_U16),
     MB_ENTRY(MB_INPUT, B(87), PARAM_ID_CLOCK_SOURCE,     MBF_U16),
     MB_ENTRY(MB_INPUT, B(88), PARAM_ID_CLOCK_SYNC_TIME,  MBF_U32),
+    MB_ENTRY(MB_INPUT, B(90), PARAM_ID_MB_FORCED,        MBF_U16),     /* layout 3 */
 };
 #define N_BLOCK (sizeof block / sizeof block[0])
 
@@ -72,12 +77,197 @@ static void block_ident(void) {
     plat_mb_api_version = PLAT_API_VERSION;
 }
 
+/* ---------------- forced values (modbus.h) ---------------- */
+typedef struct { uint16_t id, index; double x; plat_val_t v; uint32_t until; uint8_t src, level; } force_t;
+static force_t  forces[MB_FORCE_MAX];
+static unsigned n_forces;                       /* PLAT_CRIT around every use: several tasks */
+
+static bool ct_signed(uint8_t ct) { return ct == CT_I8 || ct == CT_I16 || ct == CT_I32; }
+
+/* x as a value of type ct (CT_BOOL .. CT_F32): false when it is not one */
+static bool force_val(uint8_t ct, double x, plat_val_t *v) {
+    if (!isfinite(x)) return false;
+    if (ct == CT_BOOL) { v->u = 0; v->b = x != 0.0; return true; }
+    if (ct == CT_F32) { if (fabs(x) > 3.4e38) return false; v->f = (float)x; return true; }
+    if (x != floor(x)) return false;
+    double bits = 8.0 * (double)param_ctype_size(ct);
+    if (ct_signed(ct)) {
+        double lim = ldexp(1.0, (int)bits - 1);
+        if (x < -lim || x >= lim) return false;
+        v->i = (int32_t)x;
+    } else {
+        if (x < 0.0 || x >= ldexp(1.0, (int)bits)) return false;
+        v->u = (uint32_t)x;
+    }
+    return true;
+}
+
+/* a forced value of (id, index), if any: one copy taken under the lock */
+static bool forced(uint16_t id, uint16_t index, plat_val_t *v) {
+    bool hit = false;
+    PLAT_CRIT_ENTER();
+    for (unsigned k = 0; k < n_forces; ++k)
+        if (forces[k].id == id && forces[k].index == index) { *v = forces[k].v; hit = true; break; }
+    PLAT_CRIT_EXIT();
+    return hit;
+}
+
+/* array elements [first, first+n) as stored (es bytes each): forced ones replaced */
+static void force_patch(const param_def_t *d, uint16_t first, uint16_t n, uint8_t *b) {
+    if (!n_forces) return;
+    uint8_t es = (uint8_t)param_ctype_size(d->ctype);
+    for (uint16_t k = 0; k < n; ++k) {
+        plat_val_t v;
+        if (!forced(d->id, (uint16_t)(first + k), &v)) continue;
+        uint8_t *p = b + (size_t)k * es;
+        switch (d->ctype) {
+        case CT_BOOL: p[0] = v.b ? 1u : 0u; break;
+        case CT_U8:  p[0] = (uint8_t)v.u; break;
+        case CT_I8:  { int8_t t = (int8_t)v.i; memcpy(p, &t, 1); break; }
+        case CT_U16: { uint16_t t = (uint16_t)v.u; memcpy(p, &t, 2); break; }
+        case CT_I16: { int16_t t = (int16_t)v.i; memcpy(p, &t, 2); break; }
+        case CT_I32: memcpy(p, &v.i, 4); break;
+        case CT_F32: memcpy(p, &v.f, 4); break;
+        default:     memcpy(p, &v.u, 4); break;
+        }
+    }
+}
+
+
+static double real_value(const param_def_t *d, uint16_t index) {
+    plat_val_t v;
+    uint8_t ct = d->ctype;
+    if (index == MB_FORCE_SCALAR) { if (!param_read(d->id, &v)) return NAN; }
+    else {
+        uint8_t b[4] = { 0 };
+        if (param_read_blob(d->id, (uint16_t)(index * param_ctype_size(ct)), b, (uint16_t)param_ctype_size(ct)) != PERR_OK) return NAN;
+        switch (ct) {
+        case CT_BOOL: case CT_U8: return b[0];
+        case CT_I8:  { int8_t t; memcpy(&t, b, 1); return t; }
+        case CT_U16: { uint16_t t; memcpy(&t, b, 2); return t; }
+        case CT_I16: { int16_t t; memcpy(&t, b, 2); return t; }
+        case CT_I32: { int32_t t; memcpy(&t, b, 4); return t; }
+        case CT_F32: { float t; memcpy(&t, b, 4); return t; }
+        default:     { uint32_t t; memcpy(&t, b, 4); return t; }
+        }
+    }
+    return ct == CT_F32 ? (double)v.f : ct == CT_BOOL ? (v.b ? 1.0 : 0.0) : ct_signed(ct) ? (double)v.i : (double)v.u;
+}
+
+static void force_log(const param_def_t *d, uint16_t index, uint8_t src, uint8_t level, double real, double to) {
+    char t[24];
+    if (index == MB_FORCE_SCALAR) snprintf(t, sizeof t, "%s", d->name);
+    else snprintf(t, sizeof t, "%s[%u]", d->name, (unsigned)index);
+    plat_log_event(LOG_EV_FORCE, src, level, (uint32_t)d->id | (uint32_t)index << 16, real, to, t);
+}
+
+bool mb_forceable(uint16_t id) {
+    static const uint16_t never[] = { PARAM_ID_MB_BLOCK_VERSION, PARAM_ID_MB_MAP_VERSION, PARAM_ID_MB_FORCED,   /* identity and time */
+                                      PARAM_ID_SERIAL, PARAM_ID_HW_REV, PARAM_ID_FW_VERSION_NUM, PARAM_ID_API_VERSION,
+                                      PARAM_ID_CLOCK_UNIX, PARAM_ID_CLOCK_SYNC_TIME };
+    for (size_t k = 0; k < sizeof never / sizeof never[0]; ++k) if (id == never[k]) return false;
+    const param_def_t *d = param_find(id);
+    if (!d || d->ctype > CT_F32 || (PARAM_IS_BLOB(d) && d->ptype != PT_ARRAY)) return false;
+    bool on = false;
+    for (size_t i = 0; i < n_idx; ++i) {
+        if (idx[i].d != d) continue;
+        if (idx[i].m->fmt == MBF_BYTES) return false;
+        if (!(d->flags & PF_RO) && idx[i].m->table != MB_INPUT && idx[i].m->table != MB_DISCRETE) return false;   /* the PLC writes it */
+        on = true;
+    }
+    return on;
+}
+
+int mb_force_set(uint16_t id, uint16_t index, double x, uint8_t src, uint8_t level, uint32_t now_ms) {
+    if (level < PLAT_LVL_ADMIN || src == PLAT_SRC_MODBUS) return PERR_ACCESS;
+    if (!mb_forceable(id)) return PERR_NO_ID;
+    const param_def_t *d = param_find(id);
+    if (d->ptype == PT_ARRAY ? index >= d->size / param_ctype_size(d->ctype) : index != MB_FORCE_SCALAR) return PERR_RANGE;
+    plat_val_t v = { 0 };
+    if (!force_val(d->ctype, x, &v)) return PERR_RANGE;
+    if (d->ctype == CT_BOOL) x = v.b ? 1.0 : 0.0;
+    int rc = PERR_OK;
+    PLAT_CRIT_ENTER();
+    unsigned k = 0;
+    while (k < n_forces && !(forces[k].id == id && forces[k].index == index)) ++k;
+    if (k == n_forces && n_forces >= MB_FORCE_MAX) rc = PERR_BUSY;
+    else {
+        if (k == n_forces) n_forces++;
+        forces[k] = (force_t){ id, index, x, v, now_ms + PLAT_MB_FORCE_MS, src, level };
+        plat_mb_forced = (uint16_t)n_forces;
+    }
+    PLAT_CRIT_EXIT();
+    if (rc == PERR_OK) force_log(d, index, src, level, real_value(d, index), x);
+    return rc;
+}
+
+static void force_drop(unsigned k) {               /* under the lock */
+    forces[k] = forces[--n_forces];
+    plat_mb_forced = (uint16_t)n_forces;
+}
+
+int mb_force_clear(uint16_t id, uint16_t index, uint8_t src, uint8_t level) {
+    if (level < PLAT_LVL_ADMIN || src == PLAT_SRC_MODBUS) return PERR_ACCESS;
+    bool hit = false;
+    PLAT_CRIT_ENTER();
+    for (unsigned k = 0; k < n_forces; ++k)
+        if (forces[k].id == id && forces[k].index == index) { force_drop(k); hit = true; break; }
+    PLAT_CRIT_EXIT();
+    if (!hit) return PERR_NO_ID;
+    force_log(param_find(id), index, src, level, 0.0, NAN);
+    return PERR_OK;
+}
+
+int mb_force_clear_all(uint8_t src, uint8_t level) {
+    if (level < PLAT_LVL_ADMIN || src == PLAT_SRC_MODBUS) return PERR_ACCESS;
+    for (;;) {
+        force_t f;
+        PLAT_CRIT_ENTER();
+        bool any = n_forces > 0;
+        if (any) { f = forces[n_forces - 1]; force_drop(n_forces - 1); }
+        PLAT_CRIT_EXIT();
+        if (!any) return PERR_OK;
+        force_log(param_find(f.id), f.index, src, level, 0.0, NAN);
+    }
+}
+
+static void force_expire(uint32_t now_ms) {
+    for (;;) {
+        force_t f;
+        bool hit = false;
+        PLAT_CRIT_ENTER();
+        for (unsigned k = 0; k < n_forces; ++k)
+            if ((int32_t)(now_ms - forces[k].until) >= 0) { f = forces[k]; force_drop(k); hit = true; break; }
+        PLAT_CRIT_EXIT();
+        if (!hit) return;
+        force_log(param_find(f.id), f.index, f.src, f.level, 1.0, NAN);
+    }
+}
+
+unsigned mb_force_count(void) { return n_forces; }
+
+bool mb_force_active(uint16_t id, uint16_t index) { plat_val_t v; return forced(id, index, &v); }
+
+bool mb_force_get(unsigned i, mb_force_t *out, uint32_t now_ms) {
+    bool ok = false;
+    PLAT_CRIT_ENTER();
+    if (i < n_forces) {
+        const force_t *f = &forces[i];
+        int32_t left = (int32_t)(f->until - now_ms);
+        *out = (mb_force_t){ f->id, f->index, f->x, left > 0 ? (uint32_t)left : 0u, f->src, f->level };
+        ok = true;
+    }
+    PLAT_CRIT_EXIT();
+    return ok;
+}
+
 void mb_block_scan(uint32_t now_ms) {
     static uint32_t beat_ms;
     if (!beat_ms || (uint32_t)(now_ms - beat_ms) >= 100u) { beat_ms = now_ms ? now_ms : 1u; plat_mb_heartbeat++; }
     uint32_t age = plat_link_age_ms(now_ms);
     plat_mb_link_age_s = (uint16_t)(age / 1000u > 0xFFFFu ? 0xFFFFu : age / 1000u);
     plat_mb_uptime_s = now_ms / 1000u;
+    force_expire(now_ms);
     if (!plat_mb_product[0]) block_ident();              /* after a restore of defaults cleared the texts */
 }
 
@@ -110,6 +300,7 @@ uint16_t mb_entry_span(const mb_map_t *e) { return span_of(e, param_find(e->id))
 int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
     n_idx = 0;
     memset(&st, 0, sizeof st);
+    PLAT_CRIT_ENTER(); n_forces = 0; plat_mb_forced = 0; PLAT_CRIT_EXIT();
     if (id) ident = *id;
     block_ident();
     if (n + N_BLOCK > MB_MAX_ENTRIES) return (int)MB_MAX_ENTRIES + 1;
@@ -188,6 +379,7 @@ static float    bitsf(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static param_err_t scalar_regs(const ent_t *e, uint16_t *r) {
     plat_val_t v;
     if (!param_read(e->d->id, &v)) return PERR_NO_ID;
+    (void)forced(e->d->id, MB_FORCE_SCALAR, &v);
     const mb_map_t *m = e->m;
     bool isf = e->d->ptype == PT_FLOAT;
     double x = isf ? (double)v.f : e->d->ptype == PT_INT ? (double)v.i : e->d->ptype == PT_UINT ? (double)v.u : (v.b ? 1.0 : 0.0);
@@ -238,6 +430,7 @@ static param_err_t entry_regs(const ent_t *e, uint16_t r0, uint16_t n, uint16_t 
         uint8_t b[4 * MB_MAX_READ_REGS];
         param_err_t err = param_read_blob(e->d->id, (uint16_t)(first * es), b, (uint16_t)((last - first + 1u) * es));
         if (err != PERR_OK) return err;
+        force_patch(e->d, first, (uint16_t)(last - first + 1u), b);
         for (uint16_t k = 0; k < n; ++k) {
             uint16_t reg = (uint16_t)(r0 + k), el = (uint16_t)(reg / rpe), two[2];
             elem_regs(e, b + (el - first) * es, two);
@@ -257,10 +450,13 @@ static param_err_t entry_bits(const ent_t *e, uint16_t b0, uint16_t n, uint8_t *
     if (e->m->fmt == MBF_BIT) {
         plat_val_t v;
         if (!param_read(e->d->id, &v)) return PERR_NO_ID;
+        (void)forced(e->d->id, MB_FORCE_SCALAR, &v);
         bits[0] = e->d->ptype == PT_FLOAT ? (v.f != 0.0f) : e->d->ptype == PT_BOOL ? v.b : (v.u != 0);
         return PERR_OK;
     }
-    return param_read_blob(e->d->id, b0, bits, n);          /* bool array: one byte per element */
+    param_err_t err = param_read_blob(e->d->id, b0, bits, n);   /* bool array: one byte per element */
+    if (err == PERR_OK) force_patch(e->d, b0, n, bits);
+    return err;
 }
 
 /* ---------------- reads ---------------- */

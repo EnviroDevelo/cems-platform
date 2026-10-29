@@ -60,9 +60,9 @@ void emis_cfg_default(emis_cfg_t *g) {
     g->ci_subtract = 1u; g->clamp_zero = 1u; g->cal_ext_pct = 10.0f;
 }
 
-void emis_ch_default(emis_ch_cfg_t *c) {
+void emis_chs_default(emis_chs_t *c) {
     memset(c, 0, sizeof *c);
-    c->unit = EMIS_U_OFF; c->add = EMIS_NONE; c->factor = 1.0f;
+    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) { c->unit[i] = EMIS_U_OFF; c->add[i] = EMIS_NONE; }
 }
 
 static bool is_conc(uint8_t u) { return u == EMIS_U_PPM || u == EMIS_U_MG_ACT || u == EMIS_U_MG_STD; }
@@ -78,7 +78,7 @@ static int bad(char *why, size_t cap, int ret, const char *what, unsigned ch) {
     return ret;
 }
 
-int emis_check(const emis_cfg_t *g, const emis_ch_cfg_t ch[EMIS_CH_MAX], char *why, size_t cap) {
+int emis_check(const emis_cfg_t *g, const emis_chs_t *ch, char *why, size_t cap) {
     const int P = (int)EMIS_CH_MAX + 1;
     if (!(g->t_ref_k > 0.0f) || !(g->p_ref_kpa > 0.0f) || !fin(g->t_ref_k) || !fin(g->p_ref_kpa))
         return bad(why, cap, P, "reference temperature and pressure must be above zero", 0);
@@ -96,45 +96,43 @@ int emis_check(const emis_cfg_t *g, const emis_ch_cfg_t ch[EMIS_CH_MAX], char *w
     } else if (g->diluent == EMIS_DIL_CO2 && !(g->ref_pct > 0.0f && g->ref_pct <= 100.0f)) {
         return bad(why, cap, P, "reference CO2 must be above 0 %", 0);
     }
-    if (g->diluent != EMIS_DIL_NONE && (g->ch_o2 == EMIS_NONE || ch[g->ch_o2].unit != EMIS_U_PCT))
+    if (g->diluent != EMIS_DIL_NONE && (g->ch_o2 == EMIS_NONE || ch->unit[g->ch_o2] != EMIS_U_PCT))
         return bad(why, cap, P, "the diluent channel must be a % reading", 0);
     if (g->h2o_mode == EMIS_H2O_MEASURED &&
-        (g->ch_h2o == EMIS_NONE || ch[g->ch_h2o].unit != EMIS_U_PCT || ch[g->ch_h2o].wet || ch[g->ch_h2o].ref))
+        (g->ch_h2o == EMIS_NONE || ch->unit[g->ch_h2o] != EMIS_U_PCT || ch->wet[g->ch_h2o] || ch->ref[g->ch_h2o]))
         return bad(why, cap, P, "the water channel must be a % reading, not wet-corrected or O2-corrected", 0);
     if (g->h2o_mode == EMIS_H2O_FIXED && !(g->h2o_fixed >= 0.0f && g->h2o_fixed <= H2O_MAX))
         return bad(why, cap, P, "the fixed water content must be 0..80 %", 0);
-    if (g->ch_t != EMIS_NONE && (ch[g->ch_t].unit != EMIS_U_OTHER || ch[g->ch_t].ref || ch[g->ch_t].wet))
+    if (g->ch_t != EMIS_NONE && (ch->unit[g->ch_t] != EMIS_U_OTHER || ch->ref[g->ch_t] || ch->wet[g->ch_t]))
         return bad(why, cap, P, "the temperature channel must be a plain reading (degC)", 0);
-    if (g->ch_p != EMIS_NONE && (ch[g->ch_p].unit != EMIS_U_OTHER || ch[g->ch_p].ref || ch[g->ch_p].wet))
+    if (g->ch_p != EMIS_NONE && (ch->unit[g->ch_p] != EMIS_U_OTHER || ch->ref[g->ch_p] || ch->wet[g->ch_p]))
         return bad(why, cap, P, "the pressure channel must be a plain reading (kPa absolute)", 0);
     if (!(g->t_fixed_c > -273.15f) || !(g->p_fixed_kpa > 0.0f))
         return bad(why, cap, P, "the fixed temperature and pressure must be physical", 0);
-    if (g->ch_flow != EMIS_NONE && !is_flow(ch[g->ch_flow].unit))
+    if (g->ch_flow != EMIS_NONE && !is_flow(ch->unit[g->ch_flow]))
         return bad(why, cap, P, "the flow channel must be a flow reading", 0);
     if (!(g->cal_ext_pct >= 0.0f && g->cal_ext_pct <= 100.0f))
         return bad(why, cap, P, "the calibration range extension must be 0..100 % of the ELV", 0);
 
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        const emis_ch_cfg_t *c = &ch[i];
-        if (c->unit >= EMIS_U_COUNT) return bad(why, cap, (int)i + 1, "unknown unit", i);
-        if (c->unit == EMIS_U_OFF) continue;
-        if (!fin(c->qal2_a) || !fin(c->qal2_b) || !fin(c->ys_max) || !fin(c->elv) || !fin(c->range_lo) ||
-            !fin(c->range_hi) || !fin(c->factor) || !fin(c->molar_mass))
+        if (ch->unit[i] >= EMIS_U_COUNT) return bad(why, cap, (int)i + 1, "unknown unit", i);
+        if (ch->unit[i] == EMIS_U_OFF) continue;
+        if (!fin(ch->qal2_a[i]) || !fin(ch->qal2_b[i]) || !fin(ch->ys_max[i]) || !fin(ch->elv[i]) ||
+            !fin(ch->molar_mass[i]))
             return bad(why, cap, (int)i + 1, "a setting is not a number", i);
-        if (c->unit == EMIS_U_PPM && !(c->molar_mass > 0.0f))
+        if (ch->unit[i] == EMIS_U_PPM && !(ch->molar_mass[i] > 0.0f))
             return bad(why, cap, (int)i + 1, "a ppm reading needs the molar mass", i);
-        if (c->factor < 0.0f) return bad(why, cap, (int)i + 1, "the factor must not be negative", i);
-        if (c->ref && !is_conc(c->unit))
+        if (ch->ref[i] && !is_conc(ch->unit[i]))
             return bad(why, cap, (int)i + 1, "only concentrations are corrected to the reference O2", i);
-        if (c->ref && g->diluent == EMIS_DIL_NONE)
+        if (ch->ref[i] && g->diluent == EMIS_DIL_NONE)
             return bad(why, cap, (int)i + 1, "O2 correction asked for, but no reference diluent is set", i);
-        if (c->wet && g->h2o_mode == EMIS_H2O_NONE && (is_conc(c->unit) || c->unit == EMIS_U_PCT || is_flow(c->unit)))
+        if (ch->wet[i] && g->h2o_mode == EMIS_H2O_NONE && (is_conc(ch->unit[i]) || ch->unit[i] == EMIS_U_PCT || is_flow(ch->unit[i])))
             return bad(why, cap, (int)i + 1, "a wet reading needs the water content (measured or fixed)", i);
-        if (c->wet && c->unit == EMIS_U_OTHER) return bad(why, cap, (int)i + 1, "a plain reading has no wet basis", i);
-        if (!(c->ci_pct >= 0.0f && c->ci_pct <= 100.0f) || c->elv < 0.0f || c->ys_max < 0.0f)
+        if (ch->wet[i] && ch->unit[i] == EMIS_U_OTHER) return bad(why, cap, (int)i + 1, "a plain reading has no wet basis", i);
+        if (!(ch->ci_pct[i] >= 0.0f && ch->ci_pct[i] <= 100.0f) || ch->elv[i] < 0.0f || ch->ys_max[i] < 0.0f)
             return bad(why, cap, (int)i + 1, "ELV, ys,max and the confidence interval must not be negative", i);
-        if (c->add != EMIS_NONE) {
-            if (c->add >= EMIS_CH_MAX || c->add == i || ch[c->add].unit != c->unit)
+        if (ch->add[i] != EMIS_NONE) {
+            if (ch->add[i] >= EMIS_CH_MAX || ch->add[i] == i || ch->unit[ch->add[i]] != ch->unit[i])
                 return bad(why, cap, (int)i + 1, "the added reading must be another channel in the same unit", i);
         }
     }
@@ -143,47 +141,61 @@ int emis_check(const emis_cfg_t *g, const emis_ch_cfg_t ch[EMIS_CH_MAX], char *w
 
 /* ---------------- the engine ---------------- */
 
-typedef struct {
+typedef struct {                  /* 32 bytes a channel */
     double   sum;                 /* B_REF x ms over the period's valid time */
-    uint32_t valid_ms, op_ms;
-    uint8_t  q_bad;               /* worst non-valid quality seen while operating */
-    double   day_sum;             /* validated short-term averages of the day */
+    uint32_t valid_ms;
+    float    day_sum;             /* validated short-term averages of the day (at most 144) */
     uint16_t day_n, day_disc;
-    bool     day_op;
-    uint8_t  day_q_bad;
     uint16_t week_n, week_above;
+    uint8_t  q_bad;               /* worst non-valid quality seen while operating */
+    uint8_t  day_q_bad;
 } acc_t;
 
-static emis_cfg_t    G;
-static emis_ch_cfg_t C[EMIS_CH_MAX];
-static emis_out_t    O[EMIS_CH_MAX];
+static const emis_cfg_t    *G;       /* the caller's: kept, not copied (RAM) */
+static const emis_chs_t *C;
+emis_res_t                 emis_res;
+#define R emis_res
 static acc_t         A[EMIS_CH_MAX];
-static float         Y[EMIS_CH_MAX];     /* calibrated readings this step */
-static uint8_t       QY[EMIS_CH_MAX];
+static uint32_t      op_ms;              /* operating time in the period so far (the same for every channel) */
+static bool          day_op;             /* the day so far had operating time */
+/* Within a step, B_STD and q_calc first hold the calibrated reading y and its quality (pass 1),
+ * then B_STD in place (pass 2): no scratch arrays. */
+#define Y  R.v[EMIS_B_STD]
+#define QY R.q[EMIS_Q_CALC]
 static uint32_t      cur_period = NO_PERIOD, cur_day, cur_week;
 static int32_t       cur_year;
 
-static void out_clear(emis_out_t *o) {
-    memset(o, 0, sizeof *o);
-    o->q_in = o->q_calc = o->q_mass = o->q_avg = o->q_day = o->q_run = PLAT_Q_UNAVAILABLE;
+static void out_clear(unsigned i) {
+    for (unsigned b = 0; b < EMIS_BANKS; ++b) R.v[b][i] = 0.0f;
+    for (unsigned k = 0; k < EMIS_QS; ++k) R.q[k][i] = PLAT_Q_UNAVAILABLE;
+    R.status[i] = R.discarded[i] = R.days_invalid[i] = R.weeks_above[i] = 0u;
 }
 
-void emis_init(const emis_cfg_t *g, const emis_ch_cfg_t ch[EMIS_CH_MAX]) {
-    G = *g;
-    memcpy(C, ch, sizeof C);
+void emis_init(const emis_cfg_t *g, const emis_chs_t *ch) {
+    G = g; C = ch;
     memset(A, 0, sizeof A);
-    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) { out_clear(&O[i]); A[i].q_bad = A[i].day_q_bad = PLAT_Q_VALID; }
+    op_ms = 0u; day_op = false;
+    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) { out_clear(i); A[i].q_bad = A[i].day_q_bad = PLAT_Q_VALID; }
     cur_period = NO_PERIOD;
 }
 
-void emis_reset_for_test(void) {
-    emis_cfg_t g; emis_ch_cfg_t c[EMIS_CH_MAX];
-    emis_cfg_default(&g);
-    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) emis_ch_default(&c[i]);
-    emis_init(&g, c);
+void emis_clear(void) {
+    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) out_clear(i);
 }
 
-const emis_out_t *emis_out(unsigned ch) { return ch < EMIS_CH_MAX ? &O[ch] : NULL; }
+void emis_reset_for_test(void) { G = NULL; C = NULL; emis_clear(); }
+
+emis_out_t emis_out(unsigned ch) {
+    emis_out_t o;
+    memset(&o, 0, sizeof o);
+    if (ch >= EMIS_CH_MAX) { o.q_in = o.q_calc = o.q_mass = o.q_avg = o.q_day = o.q_run = PLAT_Q_UNAVAILABLE; return o; }
+    for (unsigned b = 0; b < EMIS_BANKS; ++b) o.v[b] = R.v[b][ch];
+    o.q_in = R.q[EMIS_Q_IN][ch]; o.q_calc = R.q[EMIS_Q_CALC][ch]; o.q_mass = R.q[EMIS_Q_MASS][ch];
+    o.q_avg = R.q[EMIS_Q_AVG][ch]; o.q_day = R.q[EMIS_Q_DAY][ch]; o.q_run = R.q[EMIS_Q_RUN][ch];
+    o.status = R.status[ch]; o.discarded_today = R.discarded[ch];
+    o.days_invalid = R.days_invalid[ch]; o.weeks_above = R.weeks_above[ch];
+    return o;
+}
 
 /* Gregorian year of a day count since 1970-01-01 (H. Hinnant's civil_from_days). */
 static int32_t year_of(uint32_t days) {
@@ -198,69 +210,68 @@ static int32_t year_of(uint32_t days) {
 }
 
 /* the upper end of the valid calibration range at standard conditions and reference O2 (0: none) */
-static float cal_upper(const emis_ch_cfg_t *c) {
-    if (!(c->ys_max > 0.0f)) return 0.0f;
-    return c->ys_max + c->elv * G.cal_ext_pct / 100.0f;
+static float cal_upper(unsigned i) {
+    if (!(C->ys_max[i] > 0.0f)) return 0.0f;
+    return C->ys_max[i] + C->elv[i] * G->cal_ext_pct / 100.0f;
 }
 
 static void close_period(unsigned i) {
-    emis_out_t *o = &O[i]; acc_t *a = &A[i]; const emis_ch_cfg_t *c = &C[i];
-    if (a->op_ms == 0u) {                                   /* not operating: no average, nothing discarded */
-        o->v[EMIS_B_AVG] = o->v[EMIS_B_VAL] = 0.0f;
-        o->q_avg = PLAT_Q_UNAVAILABLE;
-        o->status &= (uint16_t)~EMIS_ST_AVG_INCOMPLETE;
-    } else if (a->valid_ms > 0u && (double)a->valid_ms + 0.5 >= (double)G.min_avail * (double)a->op_ms) {
+    acc_t *a = &A[i];
+    if (op_ms == 0u) {                                   /* not operating: no average, nothing discarded */
+        R.v[EMIS_B_AVG][i] = R.v[EMIS_B_VAL][i] = 0.0f;
+        R.q[EMIS_Q_AVG][i] = PLAT_Q_UNAVAILABLE;
+        R.status[i] &= (uint16_t)~EMIS_ST_AVG_INCOMPLETE;
+    } else if (a->valid_ms > 0u && (double)a->valid_ms + 0.5 >= (double)G->min_avail * (double)op_ms) {
         float avg = (float)(a->sum / (double)a->valid_ms);
         float val = avg;
-        if (G.ci_subtract && c->elv > 0.0f) val = avg - c->elv * c->ci_pct / 100.0f;
-        if (G.clamp_zero && val < 0.0f) val = 0.0f;
-        o->v[EMIS_B_AVG] = avg; o->v[EMIS_B_VAL] = val;
-        o->q_avg = PLAT_Q_VALID;
-        o->status &= (uint16_t)~EMIS_ST_AVG_INCOMPLETE;
+        if (G->ci_subtract && C->elv[i] > 0.0f) val = avg - C->elv[i] * C->ci_pct[i] / 100.0f;
+        if (G->clamp_zero && val < 0.0f) val = 0.0f;
+        R.v[EMIS_B_AVG][i] = avg; R.v[EMIS_B_VAL][i] = val;
+        R.q[EMIS_Q_AVG][i] = PLAT_Q_VALID;
+        R.status[i] &= (uint16_t)~EMIS_ST_AVG_INCOMPLETE;
         a->day_sum += val; a->day_n++;
         a->week_n++;
-        float up = cal_upper(c);
+        float up = cal_upper(i);
         if (up > 0.0f && avg > up) a->week_above++;
     } else {                                                /* discarded: AMS malfunction or maintenance */
-        o->v[EMIS_B_AVG] = o->v[EMIS_B_VAL] = 0.0f;
-        o->q_avg = a->q_bad != PLAT_Q_VALID ? a->q_bad : PLAT_Q_UNAVAILABLE;
-        o->status |= EMIS_ST_AVG_INCOMPLETE;
+        R.v[EMIS_B_AVG][i] = R.v[EMIS_B_VAL][i] = 0.0f;
+        R.q[EMIS_Q_AVG][i] = a->q_bad != PLAT_Q_VALID ? a->q_bad : PLAT_Q_UNAVAILABLE;
+        R.status[i] |= EMIS_ST_AVG_INCOMPLETE;
         a->day_disc++;
-        a->day_q_bad = emis_q_worst(a->day_q_bad, o->q_avg);
-        if (o->discarded_today < 0xFFFFu) o->discarded_today++;
+        a->day_q_bad = emis_q_worst(a->day_q_bad, R.q[EMIS_Q_AVG][i]);
+        if (R.discarded[i] < 0xFFFFu) R.discarded[i]++;
     }
-    if (a->op_ms) a->day_op = true;
-    a->sum = 0.0; a->valid_ms = a->op_ms = 0u; a->q_bad = PLAT_Q_VALID;
+    a->sum = 0.0; a->valid_ms = 0u; a->q_bad = PLAT_Q_VALID;
 }
 
 static void close_day(unsigned i) {
-    emis_out_t *o = &O[i]; acc_t *a = &A[i];
-    if (!a->day_op) {
-        o->v[EMIS_B_DAY] = 0.0f; o->q_day = PLAT_Q_UNAVAILABLE;
-        o->status &= (uint16_t)~EMIS_ST_DAY_INVALID;
-    } else if (a->day_n > 0u && a->day_disc <= G.max_discard) {
-        o->v[EMIS_B_DAY] = (float)(a->day_sum / a->day_n); o->q_day = PLAT_Q_VALID;
-        o->status &= (uint16_t)~EMIS_ST_DAY_INVALID;
+    acc_t *a = &A[i];
+    if (!day_op) {
+        R.v[EMIS_B_DAY][i] = 0.0f; R.q[EMIS_Q_DAY][i] = PLAT_Q_UNAVAILABLE;
+        R.status[i] &= (uint16_t)~EMIS_ST_DAY_INVALID;
+    } else if (a->day_n > 0u && a->day_disc <= G->max_discard) {
+        R.v[EMIS_B_DAY][i] = a->day_sum / (float)a->day_n; R.q[EMIS_Q_DAY][i] = PLAT_Q_VALID;
+        R.status[i] &= (uint16_t)~EMIS_ST_DAY_INVALID;
     } else {
-        o->v[EMIS_B_DAY] = 0.0f;
-        o->q_day = a->day_q_bad != PLAT_Q_VALID ? a->day_q_bad : PLAT_Q_UNAVAILABLE;
-        o->status |= EMIS_ST_DAY_INVALID;
-        if (o->days_invalid < 0xFFFFu) o->days_invalid++;
+        R.v[EMIS_B_DAY][i] = 0.0f;
+        R.q[EMIS_Q_DAY][i] = a->day_q_bad != PLAT_Q_VALID ? a->day_q_bad : PLAT_Q_UNAVAILABLE;
+        R.status[i] |= EMIS_ST_DAY_INVALID;
+        if (R.days_invalid[i] < 0xFFFFu) R.days_invalid[i]++;
     }
-    a->day_sum = 0.0; a->day_n = a->day_disc = 0u; a->day_op = false; a->day_q_bad = PLAT_Q_VALID;
-    o->discarded_today = 0u;
+    a->day_sum = 0.0f; a->day_n = a->day_disc = 0u; a->day_q_bad = PLAT_Q_VALID;
+    R.discarded[i] = 0u;
 }
 
 static void close_week(unsigned i) {
-    emis_out_t *o = &O[i]; acc_t *a = &A[i];
+    acc_t *a = &A[i];
     if (a->week_n > 0u) {
         if ((uint32_t)a->week_above * 100u > (uint32_t)a->week_n * WEEK_ABOVE_PCT) {
-            if (o->weeks_above < 0xFFFFu) o->weeks_above++;
+            if (R.weeks_above[i] < 0xFFFFu) R.weeks_above[i]++;
         } else {
-            o->weeks_above = 0u;
+            R.weeks_above[i] = 0u;
         }
-        if (o->weeks_above >= WEEKS_ABOVE_MAX || (uint32_t)a->week_above * 100u > (uint32_t)a->week_n * WEEK_ABOVE_ONE)
-            o->status |= EMIS_ST_QAL2_REVIEW;               /* latched until the configuration changes (a new QAL2) */
+        if (R.weeks_above[i] >= WEEKS_ABOVE_MAX || (uint32_t)a->week_above * 100u > (uint32_t)a->week_n * WEEK_ABOVE_ONE)
+            R.status[i] |= EMIS_ST_QAL2_REVIEW;               /* latched until the configuration changes (a new QAL2) */
     }
     a->week_n = a->week_above = 0u;
 }
@@ -269,11 +280,11 @@ static void close_week(unsigned i) {
 static void tick_clock(uint32_t clock_s) {
     if (clock_s == 0u) {                                    /* no clock: no averages; the period in progress is dropped */
         if (cur_period != NO_PERIOD)
-            for (unsigned i = 0; i < EMIS_CH_MAX; ++i) { A[i].sum = 0.0; A[i].valid_ms = A[i].op_ms = 0u; }
+            { for (unsigned i = 0; i < EMIS_CH_MAX; ++i) { A[i].sum = 0.0; A[i].valid_ms = 0u; } op_ms = 0u; }
         cur_period = NO_PERIOD;
         return;
     }
-    uint32_t per = clock_s / G.period_s, day = clock_s / 86400u, week = (day + 3u) / 7u;   /* weeks start on Monday */
+    uint32_t per = clock_s / G->period_s, day = clock_s / 86400u, week = (day + 3u) / 7u;   /* weeks start on Monday */
     if (cur_period == NO_PERIOD) {                          /* first clock: start mid-period */
         cur_period = per; cur_day = day; cur_week = week; cur_year = year_of(day);
         return;
@@ -281,202 +292,207 @@ static void tick_clock(uint32_t clock_s) {
     if (per == cur_period) return;
     /* the period ended (normally, or the clock stepped: the period ends where it is) */
     bool new_day = day != cur_day, new_week = week != cur_week;
+    if (op_ms) day_op = true;
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        if (C[i].unit == EMIS_U_OFF) continue;
+        if (C->unit[i] == EMIS_U_OFF) continue;
         close_period(i);
         if (new_day) close_day(i);
         if (new_week) close_week(i);
     }
+    op_ms = 0u;
+    if (new_day) day_op = false;
     int32_t yr = year_of(day);
     if (new_day && yr != cur_year)
-        for (unsigned i = 0; i < EMIS_CH_MAX; ++i) O[i].days_invalid = 0u;
+        for (unsigned i = 0; i < EMIS_CH_MAX; ++i) R.days_invalid[i] = 0u;
     cur_period = per; cur_day = day; cur_week = week; cur_year = yr;
 }
 
 /* temperature (K) and pressure (kPa) of the stack, with their quality */
 static float stack_t(uint8_t *q) {
-    if (G.ch_t == EMIS_NONE) return G.t_fixed_c + 273.15f;
-    *q = emis_q_worst(*q, QY[G.ch_t]);
-    float t = Y[G.ch_t] + 273.15f;
-    if (!(t > 0.0f)) { *q = emis_q_worst(*q, PLAT_Q_RANGE); return G.t_ref_k; }
+    if (G->ch_t == EMIS_NONE) return G->t_fixed_c + 273.15f;
+    *q = emis_q_worst(*q, QY[G->ch_t]);
+    float t = Y[G->ch_t] + 273.15f;
+    if (!(t > 0.0f)) { *q = emis_q_worst(*q, PLAT_Q_RANGE); return G->t_ref_k; }
     return t;
 }
 static float stack_p(uint8_t *q) {
-    if (G.ch_p == EMIS_NONE) return G.p_fixed_kpa;
-    *q = emis_q_worst(*q, QY[G.ch_p]);
-    float p = Y[G.ch_p];
-    if (!(p > 0.0f)) { *q = emis_q_worst(*q, PLAT_Q_RANGE); return G.p_ref_kpa; }
+    if (G->ch_p == EMIS_NONE) return G->p_fixed_kpa;
+    *q = emis_q_worst(*q, QY[G->ch_p]);
+    float p = Y[G->ch_p];
+    if (!(p > 0.0f)) { *q = emis_q_worst(*q, PLAT_Q_RANGE); return G->p_ref_kpa; }
     return p;
 }
 /* water content, % of the wet gas; st gets FIXED_H2O or INPUT_MISSING */
 static float water(uint8_t *q, uint16_t *st) {
-    if (G.h2o_mode == EMIS_H2O_FIXED) { *st |= EMIS_ST_FIXED_H2O; return G.h2o_fixed; }
-    if (G.h2o_mode != EMIS_H2O_MEASURED || G.ch_h2o == EMIS_NONE) {
+    if (G->h2o_mode == EMIS_H2O_FIXED) { *st |= EMIS_ST_FIXED_H2O; return G->h2o_fixed; }
+    if (G->h2o_mode != EMIS_H2O_MEASURED || G->ch_h2o == EMIS_NONE) {
         *st |= EMIS_ST_INPUT_MISSING; *q = emis_q_worst(*q, PLAT_Q_UNAVAILABLE); return 0.0f;
     }
-    *q = emis_q_worst(*q, QY[G.ch_h2o]);
-    float h = Y[G.ch_h2o];
+    *q = emis_q_worst(*q, QY[G->ch_h2o]);
+    float h = Y[G->ch_h2o];
     if (!(h >= 0.0f && h <= H2O_MAX)) { *q = emis_q_worst(*q, PLAT_Q_RANGE); return h > 0.0f ? H2O_MAX : 0.0f; }
     return h;
 }
 
 /* B_STD of channel i from its calibrated reading */
 static float to_std(unsigned i, uint8_t *q, uint16_t *st) {
-    const emis_ch_cfg_t *c = &C[i];
     float y = Y[i], v = y;
-    if (i == G.ch_h2o && G.h2o_mode == EMIS_H2O_MEASURED) return y;    /* the water content itself */
-    switch (c->unit) {
+    if (i == G->ch_h2o && G->h2o_mode == EMIS_H2O_MEASURED) return y;    /* the water content itself */
+    switch (C->unit[i]) {
     case EMIS_U_PPM:
-        v = emis_ppm_to_mg(y * (c->factor > 0.0f ? c->factor : 1.0f), c->molar_mass, G.t_ref_k, G.p_ref_kpa);
+        v = emis_ppm_to_mg(y, C->molar_mass[i], G->t_ref_k, G->p_ref_kpa);
         break;
     case EMIS_U_MG_ACT: {
         float t = stack_t(q), p = stack_p(q);
-        v = emis_norm_conc(y, t, p, G.t_ref_k, G.p_ref_kpa);
+        v = emis_norm_conc(y, t, p, G->t_ref_k, G->p_ref_kpa);
         break; }
     case EMIS_U_FLOW_ACT: {
         float t = stack_t(q), p = stack_p(q);
-        v = emis_norm_flow(y, t, p, G.t_ref_k, G.p_ref_kpa);
+        v = emis_norm_flow(y, t, p, G->t_ref_k, G->p_ref_kpa);
         break; }
     default:                                                /* % vol, mg/m3 and flow at reference, plain */
         break;
     }
-    if (c->wet) {
+    if (C->wet[i]) {
         float h = water(q, st);
-        v = is_flow(c->unit) ? v * (100.0f - h) / 100.0f : emis_to_dry(v, h);
+        v = is_flow(C->unit[i]) ? v * (100.0f - h) / 100.0f : emis_to_dry(v, h);
     }
     return v;
 }
 
 void emis_step(const emis_in_t in[EMIS_CH_MAX], bool operating, uint32_t clock_s, uint32_t dt_ms) {
+    if (!G) return;
     tick_clock(clock_s);
 
     /* 1. raw reading and the calibration function (EN 14181 6.4: in the measuring conditions) */
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        const emis_ch_cfg_t *c = &C[i]; emis_out_t *o = &O[i];
-        o->status &= (uint16_t)(EMIS_ST_AVG_INCOMPLETE | EMIS_ST_DAY_INVALID | EMIS_ST_QAL2_REVIEW);
-        if (c->unit == EMIS_U_OFF) { Y[i] = 0.0f; QY[i] = PLAT_Q_UNAVAILABLE; continue; }
+        R.status[i] &= (uint16_t)(EMIS_ST_AVG_INCOMPLETE | EMIS_ST_DAY_INVALID | EMIS_ST_QAL2_REVIEW);
+        if (C->unit[i] == EMIS_U_OFF) { Y[i] = 0.0f; QY[i] = PLAT_Q_UNAVAILABLE; continue; }
         float x = in[i].x; uint8_t q = in[i].q < PLAT_Q_COUNT ? in[i].q : PLAT_Q_FAULT;
-        if (c->add != EMIS_NONE) {
-            x += in[c->add].x;
-            q = emis_q_worst(q, in[c->add].q);
+        if (C->add[i] != EMIS_NONE) {
+            x += in[C->add[i]].x;
+            q = emis_q_worst(q, in[C->add[i]].q);
         }
         if (!fin(x)) { x = 0.0f; q = emis_q_worst(q, PLAT_Q_RANGE); }
-        if (c->range_lo < c->range_hi) {
-            if (x >= c->range_hi) { o->status |= EMIS_ST_OVER_RANGE; q = emis_q_worst(q, PLAT_Q_RANGE); }
-            else if (x < c->range_lo) { o->status |= EMIS_ST_BELOW_RANGE; q = emis_q_worst(q, PLAT_Q_RANGE); }
-        }
+        uint8_t rg = in[i].range;
+        if (C->add[i] != EMIS_NONE) rg |= in[C->add[i]].range;
+        if (rg & EMIS_IN_OVER)  { R.status[i] |= EMIS_ST_OVER_RANGE;  q = emis_q_worst(q, PLAT_Q_RANGE); }
+        if (rg & EMIS_IN_BELOW) { R.status[i] |= EMIS_ST_BELOW_RANGE; q = emis_q_worst(q, PLAT_Q_RANGE); }
         float y = x;
-        if (c->qal2_b != 0.0f) y = c->qal2_a + c->qal2_b * x;
-        else o->status |= EMIS_ST_NO_QAL2;
-        if (!(G.ci_subtract && c->elv > 0.0f)) o->status |= EMIS_ST_CI_OFF;
-        o->v[EMIS_B_RAW] = x; o->q_in = q;
+        if (C->qal2_b[i] != 0.0f) y = C->qal2_a[i] + C->qal2_b[i] * x;
+        else R.status[i] |= EMIS_ST_NO_QAL2;
+        if (!(G->ci_subtract && C->elv[i] > 0.0f)) R.status[i] |= EMIS_ST_CI_OFF;
+        R.v[EMIS_B_RAW][i] = x; R.q[EMIS_Q_IN][i] = q;
         Y[i] = y; QY[i] = q;
     }
 
-    /* 2. standard conditions, dry: the water and diluent channels first (others depend on them) */
-    float std[EMIS_CH_MAX];
-    uint8_t qs[EMIS_CH_MAX];
+    /* 2. standard conditions, dry, in place. The temperature, pressure and water channels other
+     * channels read are plain readings: their B_STD is their y, so the order does not matter. */
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        if (C[i].unit == EMIS_U_OFF) { std[i] = 0.0f; qs[i] = PLAT_Q_UNAVAILABLE; continue; }
-        qs[i] = QY[i];
-        std[i] = to_std(i, &qs[i], &O[i].status);
-        if (!fin(std[i])) { std[i] = 0.0f; qs[i] = emis_q_worst(qs[i], PLAT_Q_RANGE); }
+        if (C->unit[i] == EMIS_U_OFF) continue;
+        uint8_t q = QY[i];
+        float v = to_std(i, &q, &R.status[i]);
+        if (!fin(v)) { v = 0.0f; q = emis_q_worst(q, PLAT_Q_RANGE); }
+        Y[i] = v; QY[i] = q;
     }
+    if (cur_period != NO_PERIOD && operating) op_ms += dt_ms;   /* IED: within the effective operating time */
 
     /* 3. reference diluent, mass emission, averages */
     float dil = 0.0f; uint8_t qd = PLAT_Q_UNAVAILABLE;
-    if (G.diluent != EMIS_DIL_NONE && G.ch_o2 != EMIS_NONE) { dil = std[G.ch_o2]; qd = qs[G.ch_o2]; }
+    if (G->diluent != EMIS_DIL_NONE && G->ch_o2 != EMIS_NONE) { dil = R.v[EMIS_B_STD][G->ch_o2]; qd = R.q[EMIS_Q_CALC][G->ch_o2]; }
     float flow = 0.0f; uint8_t qf = PLAT_Q_UNAVAILABLE;
-    if (G.ch_flow != EMIS_NONE) { flow = std[G.ch_flow]; qf = qs[G.ch_flow]; }
+    if (G->ch_flow != EMIS_NONE) { flow = R.v[EMIS_B_STD][G->ch_flow]; qf = R.q[EMIS_Q_CALC][G->ch_flow]; }
 
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        const emis_ch_cfg_t *c = &C[i]; emis_out_t *o = &O[i]; acc_t *a = &A[i];
-        if (c->unit == EMIS_U_OFF) { out_clear(o); continue; }
-        float v = std[i], r = v; uint8_t q = qs[i];
-        if (c->ref) {
+        acc_t *a = &A[i];
+        if (C->unit[i] == EMIS_U_OFF) { out_clear(i); continue; }
+        float v = R.v[EMIS_B_STD][i], r = v; uint8_t q_std = R.q[EMIS_Q_CALC][i], q = q_std;
+        if (C->ref[i]) {
             q = emis_q_worst(q, qd);
-            if (G.diluent == EMIS_DIL_O2) {
+            if (G->diluent == EMIS_DIL_O2) {
                 float om = dil;
-                if (om > G.o2_max) { om = G.o2_max; o->status |= EMIS_ST_O2_HIGH; q = emis_q_worst(q, PLAT_Q_RANGE); }
-                if (!(G.only_above && om <= G.ref_pct)) r = emis_o2_ref(v, om, G.ref_pct);
+                if (om > G->o2_max) { om = G->o2_max; R.status[i] |= EMIS_ST_O2_HIGH; q = emis_q_worst(q, PLAT_Q_RANGE); }
+                if (!(G->only_above && om <= G->ref_pct)) r = emis_o2_ref(v, om, G->ref_pct);
             } else {
                 float cm = dil;
                 if (!(cm >= CO2_MIN)) { cm = CO2_MIN; q = emis_q_worst(q, PLAT_Q_RANGE); }
-                r = emis_co2_ref(v, cm, G.ref_pct);
+                r = emis_co2_ref(v, cm, G->ref_pct);
             }
             if (!fin(r)) { r = 0.0f; q = emis_q_worst(q, PLAT_Q_RANGE); }
         }
-        o->v[EMIS_B_STD] = v; o->v[EMIS_B_REF] = r; o->q_calc = q;
-        float up = cal_upper(c);
-        if (up > 0.0f && q == PLAT_Q_VALID && r > up) o->status |= EMIS_ST_ABOVE_CAL;
+        R.v[EMIS_B_STD][i] = v; R.v[EMIS_B_REF][i] = r; R.q[EMIS_Q_CALC][i] = q;
+        float up = cal_upper(i);
+        if (up > 0.0f && q == PLAT_Q_VALID && r > up) R.status[i] |= EMIS_ST_ABOVE_CAL;
 
-        if (is_conc(c->unit) && G.ch_flow != EMIS_NONE) {
-            o->v[EMIS_B_MASS] = v * flow * 1e-6f;           /* mg/Nm3 x Nm3/h -> kg/h */
-            o->q_mass = emis_q_worst(qs[i], qf);
+        if (is_conc(C->unit[i]) && G->ch_flow != EMIS_NONE) {
+            R.v[EMIS_B_MASS][i] = v * flow * 1e-6f;           /* mg/Nm3 x Nm3/h -> kg/h */
+            R.q[EMIS_Q_MASS][i] = emis_q_worst(q_std, qf);
         } else {
-            o->v[EMIS_B_MASS] = 0.0f; o->q_mass = PLAT_Q_UNAVAILABLE;
+            R.v[EMIS_B_MASS][i] = 0.0f; R.q[EMIS_Q_MASS][i] = PLAT_Q_UNAVAILABLE;
         }
 
-        if (cur_period != NO_PERIOD && operating) {          /* IED: within the effective operating time */
-            a->op_ms += dt_ms;
+        if (cur_period != NO_PERIOD && operating) {
             if (q == PLAT_Q_VALID) { a->sum += (double)r * dt_ms; a->valid_ms += dt_ms; }
             else a->q_bad = emis_q_worst(a->q_bad, q);
         }
-        if (a->valid_ms) { o->v[EMIS_B_RUN] = (float)(a->sum / (double)a->valid_ms); o->q_run = PLAT_Q_VALID; }
-        else { o->v[EMIS_B_RUN] = 0.0f; o->q_run = a->q_bad != PLAT_Q_VALID ? a->q_bad : PLAT_Q_UNAVAILABLE; }
+        if (a->valid_ms) { R.v[EMIS_B_RUN][i] = (float)(a->sum / (double)a->valid_ms); R.q[EMIS_Q_RUN][i] = PLAT_Q_VALID; }
+        else { R.v[EMIS_B_RUN][i] = 0.0f; R.q[EMIS_Q_RUN][i] = a->q_bad != PLAT_Q_VALID ? a->q_bad : PLAT_Q_UNAVAILABLE; }
     }
 }
 
 /* ---------------- retained state ---------------- */
 
-#define SAVE_MAGIC 0x454D3101u         /* "EM1" + layout */
-typedef struct {
-    float    avg, val, day;
-    uint8_t  q_avg, q_day;
-    uint16_t status;
-    uint16_t discarded_today, days_invalid, weeks_above;
+#define SAVE_MAGIC 0x454D3103u         /* "EM1" + layout */
+typedef struct {                       /* 28 bytes a channel: what a restart must not lose */
+    float    mean;                     /* the period so far: mean of the valid time */
+    uint32_t valid_ms;
+    float    day_sum;
+    uint16_t day_n, day_disc, week_n, week_above, days_invalid, weeks_above, status;
+    uint8_t  q_bad, day_q_bad;
 } keep_t;
 typedef struct {
     uint32_t magic, cfg_crc;
-    uint32_t period, day, week;
+    uint32_t period, day, week, op_ms;
     int32_t  year;
-    acc_t    a[EMIS_CH_MAX];
+    uint32_t day_op;
     keep_t   k[EMIS_CH_MAX];
 } save_t;
+_Static_assert(sizeof(keep_t) == 28u, "keep_t layout");
 _Static_assert(sizeof(save_t) <= EMIS_SAVE_SIZE, "EMIS_SAVE_SIZE too small");
 
+#define KEPT_ST (EMIS_ST_AVG_INCOMPLETE | EMIS_ST_DAY_INVALID | EMIS_ST_QAL2_REVIEW)
+
 void emis_save(void *buf, uint32_t cfg_crc) {
-    save_t s;
-    memset(&s, 0, sizeof s);
-    s.magic = SAVE_MAGIC; s.cfg_crc = cfg_crc;
-    s.period = cur_period; s.day = cur_day; s.week = cur_week; s.year = cur_year;
-    memcpy(s.a, A, sizeof A);
+    save_t *s = buf;                   /* written in place: no copy on the scan task's stack */
+    s->magic = SAVE_MAGIC; s->cfg_crc = cfg_crc;
+    s->period = cur_period; s->day = cur_day; s->week = cur_week; s->year = cur_year;
+    s->op_ms = op_ms; s->day_op = day_op;
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        const emis_out_t *o = &O[i];
-        s.k[i] = (keep_t){ .avg = o->v[EMIS_B_AVG], .val = o->v[EMIS_B_VAL], .day = o->v[EMIS_B_DAY],
-                           .q_avg = o->q_avg, .q_day = o->q_day,
-                           .status = (uint16_t)(o->status & (EMIS_ST_AVG_INCOMPLETE | EMIS_ST_DAY_INVALID | EMIS_ST_QAL2_REVIEW)),
-                           .discarded_today = o->discarded_today, .days_invalid = o->days_invalid,
-                           .weeks_above = o->weeks_above };
+        const acc_t *a = &A[i];
+        s->k[i] = (keep_t){ .mean = a->valid_ms ? (float)(a->sum / (double)a->valid_ms) : 0.0f, .valid_ms = a->valid_ms,
+                            .day_sum = a->day_sum, .day_n = a->day_n, .day_disc = a->day_disc,
+                            .week_n = a->week_n, .week_above = a->week_above, .q_bad = a->q_bad, .day_q_bad = a->day_q_bad,
+                            .days_invalid = R.days_invalid[i], .weeks_above = R.weeks_above[i],
+                            .status = (uint16_t)(R.status[i] & KEPT_ST) };
     }
-    memset(buf, 0, EMIS_SAVE_SIZE);
-    memcpy(buf, &s, sizeof s);
 }
 
 bool emis_load(const void *buf, uint32_t cfg_crc) {
-    save_t s;
-    memcpy(&s, buf, sizeof s);
-    if (s.magic != SAVE_MAGIC || s.cfg_crc != cfg_crc) return false;
-    cur_period = s.period; cur_day = s.day; cur_week = s.week; cur_year = s.year;
-    memcpy(A, s.a, sizeof A);
+    const save_t *s = buf;
+    if (!C || s->magic != SAVE_MAGIC || s->cfg_crc != cfg_crc) return false;
+    cur_period = s->period; cur_day = s->day; cur_week = s->week; cur_year = s->year;
+    op_ms = s->op_ms; day_op = s->day_op != 0u;
     for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
-        emis_out_t *o = &O[i]; const keep_t *k = &s.k[i];
-        if (C[i].unit == EMIS_U_OFF) continue;
-        o->v[EMIS_B_AVG] = k->avg; o->v[EMIS_B_VAL] = k->val; o->v[EMIS_B_DAY] = k->day;
-        o->q_avg = k->q_avg < PLAT_Q_COUNT ? k->q_avg : PLAT_Q_UNAVAILABLE;
-        o->q_day = k->q_day < PLAT_Q_COUNT ? k->q_day : PLAT_Q_UNAVAILABLE;
-        o->status = k->status; o->discarded_today = k->discarded_today;
-        o->days_invalid = k->days_invalid; o->weeks_above = k->weeks_above;
+        const keep_t *k = &s->k[i]; acc_t *a = &A[i];
+        if (C->unit[i] == EMIS_U_OFF) continue;
+        a->sum = (double)k->mean * (double)k->valid_ms; a->valid_ms = k->valid_ms;
+        a->day_sum = k->day_sum; a->day_n = k->day_n; a->day_disc = k->day_disc;
+        a->week_n = k->week_n; a->week_above = k->week_above;
+        a->q_bad = k->q_bad < PLAT_Q_COUNT ? k->q_bad : PLAT_Q_FAULT;
+        a->day_q_bad = k->day_q_bad < PLAT_Q_COUNT ? k->day_q_bad : PLAT_Q_FAULT;
+        R.discarded[i] = k->day_disc;
+        R.days_invalid[i] = k->days_invalid; R.weeks_above[i] = k->weeks_above;
+        R.status[i] = (uint16_t)(k->status & KEPT_ST);
     }
     return true;
 }
