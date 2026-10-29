@@ -211,4 +211,4 @@ short-term averages (this design) or individual values.
 4.4 KB in all (docs/MEMORY.md): the settings 1.3 KB (the engine reads the channel settings in
 place, no copy), the results 1.5 KB (the parameter table points at the engine's own arrays), the
 accumulators 1 KB, the retained copy 0.9 KB. Measured with tools/check_target.sh: all eight
-configurations link; the tightest (no FRAM, settings in a RAM stand-in) has 136 bytes left.
+configurations link (RAM 81 % in the fullest build).
