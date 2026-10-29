@@ -44,3 +44,4 @@ outside the IDE.
 Third-party licences: `docs/THIRD_PARTY.md`. Schematic list and bring-up checks: `docs/HARDWARE.md`.
 Screen colours, states, quality marks and wording for every product: `docs/UI_CONVENTIONS.md`.
 First run of the touchscreen on hardware, step by step: `docs/HMI_BENCH_TEST.md` (System > Display test on the screen).
+Operator manual for the touchscreen: `docs/OPERATOR_MANUAL.md`.
