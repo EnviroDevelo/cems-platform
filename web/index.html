@@ -208,6 +208,12 @@ section.offtab{display:none!important}
     <div class="wrow" id="hltiles"></div>
     <table id="hlstacks" style="display:none;max-width:420px"><thead><tr><th>Task</th><th>Stack never used (lowest so far)</th></tr></thead><tbody></tbody></table>
     <p class="note" id="hlfault"></p>
+    <div id="mbbox" style="display:none">
+      <h2 style="margin-top:12px">Modbus TCP</h2>
+      <p class="note" id="mbwhy"></p>
+      <div class="wrow" id="mbtiles"></div>
+      <div class="row"><button class="ghost" id="mbset">Modbus settings</button></div>
+    </div>
   </section>
 
   <section id="iobsec" data-tab="iob" style="display:none">
@@ -963,6 +969,34 @@ function showHealth(i) {
     : "No fault recorded.");
 }
 
+/* Modbus TCP server: /api/info "modbus" (counts since start); its settings are modbus_* parameters */
+function showModbus(m) {
+  $("mbbox").style.display = m ? "" : "none";
+  if (!m) return;
+  const ago = s => s === null || s === undefined ? "none yet" : s < 120 ? `${s} s ago` : s < 7200 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+  const tiles = [["Control systems connected", m.max_clients ? `${m.clients} of ${m.max_clients}` : `${m.clients}`, false],
+                 ["Requests (last)", `${m.requests} (${ago(m.last_request_s)})`, false],
+                 ["Refused requests", `${m.exceptions}`, false]];
+  if (m.writes_queued !== undefined) tiles.push(["Writes accepted", `${m.writes_queued}`, false]);
+  tiles.push(["Writes from Modbus", m.read_only ? "off (read only)" : "allowed", false]);
+  if ("allow_ip" in m) tiles.push(["Allowed client", m.allow_ip || "any address", false]);
+  if (m.accepted !== undefined)
+    tiles.push(["Connections: accepted / refused / dropped", `${m.accepted} / ${m.refused_ip || 0} / ${m.evicted || 0}`, false]);
+  if (m.protocol_errors) tiles.push(["Malformed frames", `${m.protocol_errors}`, true]);
+  $("mbtiles").replaceChildren(...tiles.map(([k, v, bad]) => {
+    const d = document.createElement("div"); d.className = "tile";
+    d.innerHTML = '<div class="k"></div><div class="v" style="font-size:15px"></div>';
+    d.firstChild.textContent = k; d.lastChild.textContent = v; if (bad) d.lastChild.style.color = "var(--warn)";
+    return d;
+  }));
+  const down = m.listening === false;
+  $("mbwhy").textContent = (down ? "Not listening: the Modbus server is not running. " : `Listening on port ${m.port || 502}. `) +
+    "Refused requests got a Modbus exception (an unknown register, a value outside its range, or a write while writes are off). " +
+    "Refused connections came from an address that isn't allowed; dropped ones made room for a new client. Counts restart at each power-up.";
+  $("mbwhy").style.color = down ? "var(--bad)" : "";
+}
+$("mbset").onclick = () => { $("filter").value = "modbus"; showTab("settings"); build(); };
+
 /* start-up self-test (CIP-11.1): one badge per check, from /api/info */
 const ST_NAMES = { image: "Firmware image", ram: "RAM", rtc: "Clock", settings: "Settings memory", calibration: "Calibration",
                    log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display",
@@ -1041,7 +1075,7 @@ async function refreshInfo() {
     showAlarmBadge(i.alarms);
     showState(i.state);
     showSelftest(i.selftest);
-    showHealth(i);
+    showHealth(i); showModbus(i.modbus);
     const lk = $("link");                                 /* supervisory link (CIP-21.5): LINK OK / LINK LOST */
     const ct = defs.find(d => d.name === "comms_timeout"), off = ct && lastValues[ct.id] === 0;   /* no watchdog: NO LINK */
     if (typeof i.link_lost === "boolean") {

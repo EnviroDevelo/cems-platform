@@ -294,6 +294,15 @@ only once `running` or `done` is set.
 "Bootloader v1: image ok", with "banks swapped", "rolled back" and the other bank's state when the
 firmware reports them, or "No bootloader ran at this start" when the field is null.
 
+**Modbus TCP panel** (Service tab, no login needed): from `GET /api/info` "modbus" it shows
+whether the server is listening and on which port, control systems connected (of the maximum),
+requests with the time of the last one, refused requests (Modbus exceptions), writes accepted,
+whether Modbus writes are allowed, the allowed client address, and connections accepted, refused
+and dropped. Malformed frames show in amber when there are any. Modbus settings opens the
+Settings tab filtered to the modbus_* parameters. `tests/integration/modbus_web_test.py` sends a
+real Modbus request to netsim and checks the panel; firmware without the block gets it simulated.
+Screenshot: `docs/web_modbus.png`.
+
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
 512 bytes is red), logic scans with the longest scan, overruns and late starts, secure connections
