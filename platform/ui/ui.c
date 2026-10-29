@@ -24,6 +24,7 @@
 #include "plat_state.h"
 #include "plat_power.h"
 #include "plat_cal.h"
+#include "modbus.h"
 #include "plat_service.h"
 #include "plat_selftest.h"
 #include "plat_version.h"
@@ -72,11 +73,12 @@ enum {
     T_ROW0 = 200,           /* .. T_ROW0 + ROWS - 1 */
     T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
     T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
-    T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE   /* display test (bench bring-up) */
+    T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE,  /* display test (bench bring-up) */
+    T_FORCE = 240, T_FC_CLEAR_ALL       /* Modbus force (commissioning) */
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
-typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL } act_t;
+typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL, ACT_FORCE } act_t;
 
 static struct {
     const ui_cfg_t *cfg;
@@ -136,6 +138,12 @@ static struct {
     uint8_t  dt_tgt;               /* that target + 1 (0 = none yet) */
     uint32_t dt_t0, dt_frames0, dt_clock0;   /* REG_FRAMES and REG_CLOCK at dt_t0, for the rates */
     uint32_t dt_hz10, dt_mhz10;    /* refresh rate and system clock measured, x 10 (0 = not yet) */
+    /* Modbus force: the list's first row; the rows' value and element; the one being forced */
+    unsigned fc_first;
+    uint16_t fc_id[ROWS], fc_idx[ROWS];
+    bool     forcing;              /* UI_EDIT is entering a force value, not a setting */
+    uint16_t fc_index;             /* the element being forced (MB_FORCE_SCALAR for a scalar) */
+    double   fc_v;                 /* the value waiting for "Yes" */
     /* record editor */
     const ui_record_t *rec;
     uint8_t  rec_buf[PARAM_RECORD_MAX];
@@ -294,6 +302,17 @@ static void ask(act_t act, const char *msg) {
     U.dirty = true;
 }
 
+/* a refusal from mb_force_* in words */
+static const char *force_err(int r) {
+    switch (r) {
+    case PERR_ACCESS: return "Log in as admin to force values";
+    case PERR_NO_ID:  return "This value can't be forced";
+    case PERR_RANGE:  return "Modbus can't carry that value here";
+    case PERR_BUSY:   return "Too many values forced: clear one first";
+    default:          return perr_text((param_err_t)r);
+    }
+}
+
 static void do_action(uint32_t now) {
     param_err_t e = PERR_OK;
     if (U.act == ACT_POST) {
@@ -316,6 +335,14 @@ static void do_action(uint32_t now) {
         if (r != PERR_OK) toast(true, now, "%s", perr_text((param_err_t)r));
         else toast(false, now, "%s", done[U.cal_cmd <= PLAT_CAL_CMD_REVERT ? U.cal_cmd : 0]);
         U.act = ACT_NONE;
+        return;
+    } else if (U.act == ACT_FORCE) {
+        int r = mb_force_set(U.ed->id, U.fc_index, U.fc_v, PLAT_SRC_LOCAL, U.level, now);
+        U.act = ACT_NONE;
+        if (r != PERR_OK) { toast(true, now, "%s", force_err(r)); return; }
+        toast(false, now, "Modbus now reads the forced value for %u s", (unsigned)(PLAT_MB_FORCE_MS / 1000u));
+        U.forcing = false;
+        goto_scr(UI_FORCE);
         return;
     } else if (U.act == ACT_FW_LOCAL) {
         fw_local_answer(true, U.level);
@@ -353,6 +380,22 @@ static bool cell_submit(bool on, uint32_t now);
 static void edit_submit(bool on, uint32_t now) {
     if (U.cell_f) { if (cell_submit(on, now)) goto_scr(UI_REC); return; }
     const param_def_t *d = U.ed;
+    if (U.forcing) {                                  /* a Modbus force: the value only, then "Are you sure?" */
+        double x = on ? 1.0 : 0.0;
+        if (U.kb != KB_BOOL) {
+            char *end = NULL;
+            x = strtod(U.entry, &end);
+            if (!U.entry[0] || *end || !isfinite(x)) { toast(true, now, "Not a valid number"); return; }
+        }
+        U.fc_v = x;
+        char m[128], v[24];
+        if (U.kb == KB_BOOL) snprintf(v, sizeof v, "%s", on ? "ON" : "OFF");
+        else fmt_float(v, sizeof v, x);
+        snprintf(m, sizeof m, "Send %s to Modbus as %.24s for %u s? The PLC sees it instead of the real value.",
+                 v, d->name, (unsigned)(PLAT_MB_FORCE_MS / 1000u));
+        ask(ACT_FORCE, m);
+        return;
+    }
     plat_cmd_t c = { .id = d->id, .src = PLAT_SRC_LOCAL, .level = U.level, .kind = val_kind(d) };
     if (PARAM_IS_BLOB(d)) {
         memset(U.pend_blob, 0, sizeof U.pend_blob);
@@ -508,6 +551,7 @@ static void tap(uint8_t t, uint32_t now) {
         return;
     case T_MODE: mode_tap(now); return;
     case T_MAINT: maint_tap(now); return;
+    case T_FORCE: U.fc_first = 0; goto_scr(UI_FORCE); return;
     case T_ALARMS: U.al_first = 0; U.al_sel = 0; goto_scr(UI_ALARMS); return;
     case T_ACTIONS: U.cfg_first = 0; goto_scr(UI_ALARM_CFG); return;
     default: break;
@@ -518,10 +562,35 @@ static void tap(uint8_t t, uint32_t now) {
         else if (t == T_PGDN) { if (U.first + ROWS < n_params()) U.first += ROWS; U.dirty = true; }
         else if (t >= T_ROW0 && t < T_ROW0 + ROWS && U.first + (size_t)(t - T_ROW0) < n_params())
             edit_begin(param_at(U.first + (size_t)(t - T_ROW0)), now);
+        else if (t == T_FORCE) { U.fc_first = 0; goto_scr(UI_FORCE); }
+        break;
+    case UI_FORCE:
+        if (t == T_PGUP) { U.fc_first = U.fc_first >= ROWS ? U.fc_first - ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { U.fc_first += ROWS; U.dirty = true; }
+        else if (t == T_BACK) goto_scr(UI_PARAMS);
+        else if (t == T_FC_CLEAR_ALL) {
+            int r = mb_force_clear_all(PLAT_SRC_LOCAL, U.level);
+            if (r != PERR_OK) toast(true, now, "%s", force_err(r)); else toast(false, now, "All forces cleared: Modbus reads the real values");
+        } else if (t >= T_ROW0 && t < T_ROW0 + ROWS && U.fc_id[t - T_ROW0]) {
+            uint16_t id = U.fc_id[t - T_ROW0], ix = U.fc_idx[t - T_ROW0];
+            if (mb_force_active(id, ix)) {
+                int r = mb_force_clear(id, ix, PLAT_SRC_LOCAL, U.level);
+                if (r != PERR_OK) toast(true, now, "%s", force_err(r)); else toast(false, now, "Cleared: Modbus reads the real value");
+            } else if (U.level < PLAT_LVL_ADMIN) toast(true, now, "Log in as admin to force values");
+            else {
+                const param_def_t *d = param_find(id);
+                U.ed = d; U.shift = false; U.entry[0] = 0;
+                U.kb = d->ctype == CT_BOOL ? KB_BOOL : KB_NUM;
+                U.forcing = true; U.fc_index = ix;
+                U.back = UI_FORCE;
+                goto_scr(UI_EDIT);
+            }
+        }
+        U.dirty = true;
         break;
     case UI_REC: rec_tap(t, now); break;
     case UI_EDIT:
-        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else goto_scr(U.back); }
+        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else { U.forcing = false; goto_scr(U.back); } }
         else if (t == T_OK) edit_submit(true, now);
         else if (t == T_ON || t == T_OFF) { strcpy(U.entry, t == T_ON ? "1" : "0"); edit_submit(t == T_ON, now); }
         else if (t == T_BKSP) { size_t n = strlen(U.entry); if (n) U.entry[n - 1] = 0; }
@@ -731,7 +800,15 @@ static void qvalue(int16_t x, int16_t cy, int16_t f, uint16_t id, uint16_t idx, 
 static void header(uint32_t now) {
     box(0, 0, W, HEAD_H, C_HEAD, 1);
     color(0xFFFFFFu);
-    text(16, HEAD_H / 2, 29, OPT_CENTERY, U.cfg && U.cfg->product ? U.cfg->product : "CEMS Supervisor");
+    unsigned nf = mb_force_count();
+    if (nf) {                                         /* Modbus values forced: shown in place of the name, tap for the list */
+        char f[24];
+        snprintf(f, sizeof f, "FORCED %u", nf);
+        eve_tag(E, T_FORCE);
+        box(12, 10, 208, 44, U.pressed == T_FORCE ? C_PRESS : C_WARN, 22);
+        color(0xFFFFFFu); text(116, 32, F_SMALL, OPT_CENTER, f);
+        eve_tag(E, 0);
+    } else text(16, HEAD_H / 2, 29, OPT_CENTERY, U.cfg && U.cfg->product ? U.cfg->product : "CEMS Supervisor");
     uint8_t st = plat_state();
     int16_t x = 236;
     box(x, 14, 176, 36, state_color(st), 18);
@@ -771,7 +848,7 @@ static void nav(void) {
     static const int scr_of[] = { UI_HOME, UI_PARAMS, UI_EVENTS, UI_SYSTEM };
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
     for (int k = 0; k < 4; ++k) {
-        bool cur = U.scr == scr_of[k] || (k == 1 && U.scr == UI_EDIT && !U.cell_f) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
+        bool cur = U.scr == scr_of[k] || (k == 1 && ((U.scr == UI_EDIT && !U.cell_f) || U.scr == UI_FORCE)) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
                    (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL || U.scr == UI_DISPLAY));
         button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
@@ -832,9 +909,10 @@ static void draw_params(void) {
     }
     char pg[32];
     snprintf(pg, sizeof pg, "%u-%u of %u", (unsigned)(U.first + 1), (unsigned)(U.first + ROWS < n ? U.first + ROWS : n), (unsigned)n);
-    button(T_PGUP, 908, BODY_Y, 100, 170, "Up", C_ACCENT, U.first > 0);
-    color(C_MUTE); text(958, BODY_Y + 196, F_SMALL, OPT_CENTER, pg);
-    button(T_PGDN, 908, BODY_Y + 222, 100, 170, "Down", C_ACCENT, U.first + ROWS < n);
+    button(T_PGUP, 908, BODY_Y, 100, 130, "Up", C_ACCENT, U.first > 0);
+    color(C_MUTE); text(958, BODY_Y + 148, F_SMALL, OPT_CENTER, pg);
+    button(T_PGDN, 908, BODY_Y + 166, 100, 130, "Down", C_ACCENT, U.first + ROWS < n);
+    button(T_FORCE, 908, BODY_Y + 312, 100, 80, "Force", 0x5B6577u, true);   /* Modbus force (commissioning) */
 }
 
 static void draw_keyboard(int16_t y, bool full) {
@@ -859,6 +937,7 @@ static void draw_keyboard(int16_t y, bool full) {
 }
 
 static void draw_cell_edit(void);
+static void fmt_elem(const param_def_t *d, uint16_t idx, char *b, size_t cap);
 static void draw_edit(void) {
     if (U.cell_f) { draw_cell_edit(); return; }
     const param_def_t *d = U.ed;
@@ -867,9 +946,11 @@ static void draw_edit(void) {
     int16_t cw = U.kb == KB_TEXT ? 760 : 992;            /* the text keyboard's OK/Cancel stand beside it */
     box(16, BODY_Y, cw, 88, C_CARD, 8);
     color(C_INK);
-    snprintf(b, sizeof b, "%s  (%u)", d->name, d->id);
+    if (U.forcing && U.fc_index != MB_FORCE_SCALAR) snprintf(b, sizeof b, "Force %s[%u]", d->name, (unsigned)U.fc_index);
+    else snprintf(b, sizeof b, U.forcing ? "Force %s  (%u)" : "%s  (%u)", d->name, d->id);
     text(32, BODY_Y + 10, F_BIG, 0, b);
-    fmt_value(d, r, sizeof r);
+    if (U.forcing && U.fc_index != MB_FORCE_SCALAR) fmt_elem(d, U.fc_index, r, sizeof r);
+    else fmt_value(d, r, sizeof r);
     snprintf(b, sizeof b, "Now: %s", r);
     color(C_MUTE);
     text((int16_t)(cw), BODY_Y + 16, F_TEXT, OPT_RIGHTX, b);
@@ -879,6 +960,7 @@ static void draw_edit(void) {
     else if (PARAM_IS_BLOB(d)) snprintf(r, sizeof r, "Up to %u characters", (unsigned)(d->ptype == PT_TEXT16 ? d->size / 2u - 1u : d->size - 1u));
     else r[0] = 0;
     if (d->unit && r[0]) { strncat(r, " ", sizeof r - strlen(r) - 1); strncat(r, d->unit, sizeof r - strlen(r) - 1); }
+    if (U.forcing) snprintf(r, sizeof r, "Modbus reads this for %u s, then the real value again", (unsigned)(PLAT_MB_FORCE_MS / 1000u));
     text(32, BODY_Y + 56, F_TEXT, 0, r);
     if (U.kb == KB_BOOL) {
         button(T_ON, 120, BODY_Y + 120, 300, 120, "ON", C_OK, true);
@@ -1599,6 +1681,57 @@ static void fmt_elem(const param_def_t *d, uint16_t idx, char *b, size_t cap) {
     if (d->unit && strlen(b) + strlen(d->unit) + 2 < cap) { strcat(b, " "); strcat(b, d->unit); }
 }
 
+/* ---------------- Modbus force (commissioning, modbus.h mb_force_*) ----------------
+ * Every value the PLC reads that may be forced (mb_forceable), array elements one per row, the
+ * product's values before the platform block's. A force
+ * changes only what Modbus serves, for PLAT_MB_FORCE_MS; this screen shows the real value and,
+ * beside it, what Modbus is sending and for how long. Forcing needs admin; anyone sees the list. */
+static void draw_force(uint32_t now) {
+    unsigned total = 0, r = 0;
+    memset(U.fc_id, 0, sizeof U.fc_id);
+    box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
+    for (int pass = 0; pass < 2; ++pass)              /* the product's values first, then the platform's */
+    for (size_t i = 0; i < param_count(); ++i) {
+        const param_def_t *d = param_at(i);
+        if ((d->id >= PARAM_ID_APP_FIRST) != (pass == 0) || !mb_forceable(d->id)) continue;
+        unsigned ne = d->ptype == PT_ARRAY ? (unsigned)(d->size / param_ctype_size(d->ctype)) : 1u;
+        for (unsigned k = 0; k < ne; ++k, ++total) {
+            if (total < U.fc_first || r >= ROWS) continue;
+            uint16_t ix = d->ptype == PT_ARRAY ? (uint16_t)k : MB_FORCE_SCALAR;
+            int16_t y = (int16_t)(BODY_Y + 4 + (int)r * ROW_H);
+            if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+            char b[80], v[40];
+            if (ix == MB_FORCE_SCALAR) { snprintf(b, sizeof b, "%u  %.40s", d->id, d->name); fmt_value(d, v, sizeof v); }
+            else { snprintf(b, sizeof b, "%u  %.36s[%u]", d->id, d->name, k); fmt_elem(d, ix, v, sizeof v); }
+            color(C_INK); text(32, (int16_t)(y + 18), F_TEXT, OPT_CENTERY, b);
+            snprintf(b, sizeof b, "Real value: %s", v);
+            color(C_MUTE); text(32, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, b);
+            bool on = mb_force_active(d->id, ix);
+            if (on) {
+                mb_force_t f;
+                for (unsigned j = 0; j < mb_force_count(); ++j)
+                    if (mb_force_get(j, &f, now) && f.id == d->id && f.index == ix) {
+                        if (d->ctype == CT_BOOL) snprintf(v, sizeof v, "%s", f.v != 0 ? "ON" : "OFF");
+                        else fmt_float(v, sizeof v, f.v);
+                        snprintf(b, sizeof b, "Modbus: forced to %s, %u s", v, (unsigned)((f.left_ms + 999u) / 1000u));
+                        color(C_WARN); text(360, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, b);
+                        break;
+                    }
+            }
+            U.fc_id[r] = d->id; U.fc_idx[r] = ix;
+            button((uint8_t)(T_ROW0 + r), 724, (int16_t)(y + 4), 164, ROW_H - 8, on ? "Clear" : "Force", on ? C_WARN : C_ACCENT, true);
+            ++r;
+        }
+    }
+    if (!total) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No values on Modbus can be forced"); }
+    if (U.fc_first && U.fc_first >= total) { U.fc_first = 0; U.dirty = true; }
+    button(T_PGUP, 908, BODY_Y, 100, 96, "Up", C_ACCENT, U.fc_first > 0);
+    button(T_PGDN, 908, BODY_Y + 104, 100, 96, "Down", C_ACCENT, U.fc_first + ROWS < total);
+    button(T_FC_CLEAR_ALL, 908, BODY_Y + 208, 100, 96, "Clear all", C_WARN, mb_force_count() > 0);
+    button(T_BACK, 908, BODY_Y + 312, 100, 80, "Back", 0x5B6577u, true);
+    if (mb_force_count()) U.dirty = true;             /* the countdown */
+}
+
 /* a command from a button, grid item or dialog: through the table like any write */
 static void app_write(uint16_t id, int32_t value, const char *label, uint32_t now) {
     const param_def_t *d = param_find(id);
@@ -2129,6 +2262,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_IOB:   draw_iob(); break;
     case UI_CAL:   draw_cal(now); break;
     case UI_DISPLAY: draw_display(now); break;
+    case UI_FORCE: draw_force(now); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {

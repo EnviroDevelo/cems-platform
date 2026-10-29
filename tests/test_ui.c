@@ -10,6 +10,7 @@
 #include "tst.h"
 #include "eve.h"
 #include "eve_sim.h"
+#include "modbus.h"
 #include "ui.h"
 #include "param.h"
 #include "param_store.h"
@@ -718,6 +719,57 @@ static void t_display_screen(void) {
     CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
 }
 
+/* Modbus force for commissioning (modbus.h mb_force_*): the list of forceable values with the
+ * real value beside, admin to force, "Are you sure?", the countdown, the header pill, clear */
+static void t_force_screen(void) {
+    setup();
+    static const mb_map_t fmap[] = {
+        MB_ENTRY(MB_HOLDING, 0, 1001, MBF_U32),       /* a setting the PLC writes: not forceable */
+        MB_ENTRY(MB_INPUT, 0, 1008, MBF_F32),         /* a reading */
+        MB_ENTRY(MB_DISCRETE, 0, 1003, MBF_BIT),      /* a test bit */
+    };
+    CHECK_EQ(mb_init(fmap, sizeof fmap / sizeof fmap[0], NULL), 0);
+    CHECK(mb_force_clear_all(PLAT_SRC_LOCAL, PLAT_LVL_FACTORY) == PERR_OK);
+    CHECK(tap("Settings")); CHECK(tap("Force"));
+    CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(shows("1008  stack_temp")); CHECK(shows("1003  valve_out")); CHECK(!shows("1001  start_delay"));
+    CHECK(shows("Real value: 182.5"));
+    CHECK(!shows("FORCED 1"));
+    /* not logged in: refused in words */
+    int t = eve_sim_tag_of(&sim, "Force");
+    CHECK(t > 0); press((uint8_t)t);
+    CHECK(!strcmp(ui_toast(), "Log in as admin to force values"));
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    CHECK(tap("Settings")); CHECK(tap("Force"));
+    press(201);                                       /* the second row: stack_temp (1003 valve_out is first) */
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Force stack_temp  (1008)")); CHECK(shows("Modbus reads this for 30 s, then the real value again"));
+    type("250.5"); CHECK(tap("OK"));
+    CHECK(shows("Send 250.5 to Modbus as stack_temp for 30 s?"));
+    CHECK(tap("Yes"));
+    CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(mb_force_active(1008, MB_FORCE_SCALAR));
+    CHECK(shows("Modbus: forced to 250.5, 30 s"));
+    CHECK(shows("Real value: 182.5"));   /* the screens keep the real value */
+    CHECK(shows("FORCED 1"));
+    now += 10000; frame();
+    CHECK(shows("Modbus: forced to 250.5, 20 s"));
+    dump("force");
+    /* a test bit: ON/OFF */
+    press(200);                                       /* valve_out */
+    CHECK(shows("ON")); CHECK(tap("ON")); CHECK(tap("Yes"));
+    CHECK(mb_force_active(1003, MB_FORCE_SCALAR));
+    CHECK(shows("FORCED 2")); CHECK(shows("Modbus: forced to ON"));
+    /* the header pill opens the list from anywhere */
+    CHECK(tap("Home")); CHECK(tap("FORCED 2")); CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(tap("Clear"));                              /* the first forced row */
+    CHECK_EQ(mb_force_count(), 1u);
+    CHECK(tap("Clear all"));
+    CHECK_EQ(mb_force_count(), 0u);
+    CHECK(!shows("FORCED")); CHECK(shows("CEMS Supervisor"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_PARAMS);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
@@ -728,4 +780,5 @@ void test_ui_all(void) {
     RUN(t_state_quality);
     RUN(t_cal_screen);
     RUN(t_display_screen);
+    RUN(t_force_screen);
 }

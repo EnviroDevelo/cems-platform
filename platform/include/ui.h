@@ -38,7 +38,8 @@ enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARM
        UI_REC,      /* a record editor (sequence, schedule) */
        UI_IOB,      /* I/O boards on RS-485: state, channels, faults (iobus.h) */
        UI_CAL,      /* calibration: channels, record in force, history, start/accept/abort/revert (plat_cal.h) */
-       UI_DISPLAY };   /* display test for bench bring-up: controller status, colour patterns, touch test */
+       UI_DISPLAY,  /* display test for bench bring-up: controller status, colour patterns, touch test */
+       UI_FORCE };  /* Modbus force for commissioning: forceable values, force for 30 s, clear (modbus.h) */
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

@@ -29,6 +29,7 @@ From left to right:
 | **Link** | The supervisory system. LINK OK (green): the PLC or SCADA is polling. LINK LOST (red): polling has stopped for longer than the configured timeout. NO LINK: nothing has polled since start-up, or the timeout is off |
 | **Alarms** | Red: an alarm or fault is not acknowledged. Amber: a warning is not acknowledged. Grey: all alarms are acknowledged, and the pill still shows how many are active. Tap it to open the alarm list |
 | Time | Local standard time. "--:--:--" means the clock is not set (see 8) |
+| **FORCED n** (amber, in place of the name) | n values are being forced on Modbus for commissioning (see 8a). Tap it for the list |
 
 | State | Meaning | Colour |
 |---|---|---|
@@ -133,6 +134,22 @@ The full list of alarm and fault codes is in `docs/FAULT_CODES.md`.
   - **Display test** (see 9).
 
   The HTTPS fingerprint at the bottom lets a technician check that their browser has reached this unit.
+
+## 8a. Forcing Modbus values (Settings, then Force)
+
+This is used during commissioning, so the PLC or SCADA can be checked against known values,
+including test bits.
+
+- The list shows every value the PLC reads that can be forced, the instrument's own values first.
+- **Force** (admin login): enter the value, or ON/OFF for a bit, and confirm. For the next 30
+  seconds the PLC reads that value. After that it goes back to the real one by itself.
+  **Force** again restarts the 30 s.
+- A forced row shows "Modbus: forced to X, 23 s". The touchscreen and the web page keep showing
+  the **real** value, and alarms, logging and control keep using it. Only Modbus is affected.
+- **Clear** ends one force; **Clear all** ends every force.
+- Every force, clear and expiry goes into the event log, with who made it. The PLC can also see
+  how many values are forced, at input register 9090, and in common alarm bit 4. The details are
+  in `docs/MODBUS.md`.
 
 ## 9. Display test (System, then Display test)
 
