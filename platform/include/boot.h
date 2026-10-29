@@ -38,6 +38,11 @@
 /* where the counter lives on the STM32H5: the last TAMP backup register (kept over resets,
  * not used by anything else; cleared by a power cut unless VBAT is backed) */
 #define BOOT_TRIAL_REG   (TAMP->BKP31R)
+/* what the bootloader found at this start, for the application to show (/api/fw "bootloader"):
+ * the next backup register down, boot_report_word() */
+#define BOOT_REPORT_REG  (TAMP->BKP30R)
+#define BOOT_REPORT_MAGIC 0xB5000000u
+#define BOOT_VERSION     1u            /* bumped when the bootloader's behaviour changes */
 
 typedef struct boot_io {
     uint32_t bank_size;               /* bytes per bank */
@@ -66,10 +71,17 @@ typedef struct {
     boot_img_t mapped, other;         /* what was found (other: only if it was looked at) */
     bool       rollback;              /* the trial counter ran out */
     bool       vectors_ok;            /* the mapped bank starts with a plausible vector table */
+    bool       after_swap;            /* this start follows a swap the bootloader made itself */
 } boot_report_t;
 
 /* trial: the backup register, read and updated in place. */
 boot_action_t boot_decide(boot_io_t *io, uint32_t *trial, boot_report_t *rep);
 boot_img_t    boot_check(boot_io_t *io, bool mapped);
+
+/* the report register: magic | version << 16 | after_swap << 10 | vectors_ok << 9 | rollback << 8 |
+ * other << 5 | mapped << 2 | action. decode: false if w is not a report (no bootloader ran). */
+uint32_t boot_report_word(boot_action_t a, const boot_report_t *r);
+bool     boot_report_decode(uint32_t w, boot_action_t *a, boot_report_t *r, unsigned *version);
+const char *boot_img_name(boot_img_t i);    /* "ok", "none", "header", "hash", "signature" */
 
 #endif

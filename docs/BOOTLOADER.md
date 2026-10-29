@@ -71,6 +71,10 @@ Factory programming (STM32CubeProgrammer):
 then write protect the bootloader in both banks (below). The bank image carries the header, so
 the bootloader can check the factory image from the first start.
 
+The application shows what the bootloader found at this start in `/api/fw` as `"bootloader"`
+(`{"version","image","swapped","rollback","other"}`, or null when no bootloader ran), from
+backup register 30.
+
 ## 5. Write protection
 
 The H573's write protection works on groups of 4 sectors (32 KB): `WRPSGn` bit 0 covers sectors

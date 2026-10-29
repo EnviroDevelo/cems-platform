@@ -420,6 +420,12 @@ def main():
     check(st == 200 and sv["log"] and sv["log"][0]["tech"] == "Sam" and sv["log"][0]["level"] == "factory"
           and sv["test"]["passed"] is False and sv["test"]["results"] == [1, 1, 1, 2], f"service history ({sv})")
     st, info = web.json("/api/info")
+    for _ in range(3):      # the checksum is worked out once a second: a change just before may land between the reads
+        if info["config_crc"] == sv["config_crc"]:
+            break
+        time.sleep(1.1)
+        st, sv = web.json("/api/service")
+        st, info = web.json("/api/info")
     check(len(info["config_crc"]) == 8 and info["config_crc"] == sv["config_crc"] and info["board_rev"] == 0
           and info["build"], "config checksum, board revision, build on /api/info")
     for _ in range(120):                                # the start-up self-test closes 10 s after start

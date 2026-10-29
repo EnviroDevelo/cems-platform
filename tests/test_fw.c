@@ -7,6 +7,7 @@
 #include "tst.h"
 #include "fw_update.h"
 #include "fw_flash_sim.h"
+#include "boot.h"
 #include "plat_sha256.h"
 #include "plat_log.h"
 #include "http_api.h"
@@ -537,6 +538,16 @@ static void t_http(void) {
     CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
     CHECK(strstr(out, "\"running\":\"0.5.0\",\"state\":\"idle\"") != NULL);
     CHECK(strstr(out, "\"staged\":\"0.7.0\"") != NULL);
+    CHECK(strstr(out, "\"bootloader\":null") != NULL);                    /* none ran */
+    boot_report_t br = { .mapped = BOOT_IMG_OK, .after_swap = true };
+    fl.boot_report = boot_report_word(BOOT_JUMP, &br);
+    CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
+    CHECK(strstr(out, "\"bootloader\":{\"version\":1,\"image\":\"ok\",\"swapped\":true,\"rollback\":false}") != NULL);
+    br.mapped = BOOT_IMG_NONE; br.other = BOOT_IMG_NONE; br.after_swap = false;   /* a debugger image, other bank empty */
+    fl.boot_report = boot_report_word(BOOT_JUMP, &br);
+    CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
+    CHECK(strstr(out, "\"image\":\"none\",\"swapped\":false,\"rollback\":false,\"other\":\"none\"}") != NULL);
+    fl.boot_report = 0;
     file[FW_HDR_SIZE + 10] ^= 1;
     CHECK_EQ(req("POST", "/api/fw/upload", file, len, 0), 400);
     CHECK(strstr(out, "checksum mismatch") != NULL);

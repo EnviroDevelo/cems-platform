@@ -36,3 +36,11 @@ DK bring-up changes (28-29 Oct, before release):
   `fw_update` writes the image at `fw_flash_t.image_off` (from the link address) and sets and
   clears the trial mark. `mkfwimage.py --factory` writes a whole bank for factory programming.
   Products: none until the application is linked at 0x08008000 (BOOTLOADER.md 4).
+- A rollback made by the bootloader is no longer undone: the previous image used to read its
+  record as a failed trial and swap back to the image that had just failed.
+- `/api/fw` gains `"bootloader"` (null when none ran; otherwise version, what it found in the
+  running bank, whether it swapped or rolled back) from TAMP backup register 30.
+- Factory board test (CIP-23.3, `plat_boardtest.h`): 12 checks, started by
+  `POST /api/service/boardtest` at factory login and shown in `/api/service` `"boardtest"`. It
+  saves itself as the test record (station "board"; that record also gets `"names"`).
+- `docs/SERVICE_PROCEDURES.md`: the technician's update, recovery and factory provisioning.

@@ -10,6 +10,8 @@
 #include "param.h"
 #include "param_store.h"
 #include "plat_diag.h"
+#include "plat_boardtest.h"
+#include "boot.h"
 #include "bsp.h"
 #include "log_csv.h"
 #include "fw_update.h"
@@ -794,6 +796,20 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"not_safe\":"); json_str(o, st.not_safe);
     { plat_val_t v; out_str(o, ",\"min_version\":"); json_uint(o, param_read(PARAM_ID_FW_MIN_VERSION, &v) ? v.u : 0); }
     out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error));
+    /* the first-stage bootloader at this start (boot.h): null = none ran */
+    {   boot_action_t ba; boot_report_t br; unsigned bv;
+        out_str(o, ",\"bootloader\":");
+        if (boot_report_decode(st.boot_report, &ba, &br, &bv)) {
+            out_str(o, "{\"version\":"); json_uint(o, bv);
+            out_str(o, ",\"image\":"); json_str(o, boot_img_name(br.mapped));
+            out_str(o, ",\"swapped\":"); json_bool(o, br.after_swap);
+            out_str(o, ",\"rollback\":"); json_bool(o, br.rollback);
+            if (br.rollback || br.mapped != BOOT_IMG_OK) {   /* only then did it look at the other bank */
+                out_str(o, ",\"other\":"); json_str(o, boot_img_name(br.other));
+            }
+            out_str(o, "}");
+        } else out_str(o, "null");
+    }
     /* the update history (FRAM), newest first */
     fw_hist_t h[FW_HIST_MAX];
     size_t n = fw_history(h, FW_HIST_MAX);
@@ -989,9 +1005,30 @@ static void get_service(http_out_t *o) {
         out_str(o, ",\"passed\":"); json_bool(o, t.passed);
         out_str(o, ",\"results\":[");
         for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_uint(o, t.result[k]); }
-        out_str(o, "]}");
+        out_str(o, "]");
+        if (!strncmp(t.station, "board", sizeof t.station)) {   /* made by the board test: its names */
+            out_str(o, ",\"names\":[");
+            for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_str(o, plat_boardtest_name(k) ? plat_boardtest_name(k) : ""); }
+            out_str(o, "]");
+        }
+        out_str(o, "}");
     } else out_str(o, "null");
-    out_str(o, "}");
+    /* the factory board test (CIP-23.3): the last or running one */
+    static const char *const res[] = { "skipped", "pass", "fail" };
+    plat_bt_status_t bt;
+    plat_boardtest_status(&bt);
+    out_str(o, ",\"boardtest\":{\"running\":"); json_bool(o, bt.running);
+    out_str(o, ",\"done\":"); json_bool(o, bt.done);
+    out_str(o, ",\"saved\":"); json_bool(o, bt.done && bt.saved == 0);
+    out_str(o, ",\"tests\":[");
+    for (unsigned k = 0; k < PLAT_BT_N; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"name\":"); json_str(o, plat_boardtest_name(k));
+        out_str(o, ",\"result\":"); json_str(o, bt.done || bt.running ? res[bt.result[k] % 3u] : "skipped");
+        out_str(o, ",\"detail\":"); json_strn(o, bt.detail[k], blen(bt.detail[k], sizeof bt.detail[k]));
+        out_str(o, "}");
+    }
+    out_str(o, "]}}");
 }
 
 static void service_result(http_out_t *o, int r) {
@@ -1749,6 +1786,11 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/cal")) post_cal(r, o, lvl);
         else if (!strcmp(r->path, "/api/service/log")) post_service_log(r, o, lvl);
         else if (!strcmp(r->path, "/api/service/test")) post_service_test(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/boardtest")) {
+            int e = plat_boardtest_start(PLAT_SRC_WEB, lvl);
+            if (e == -1) json_error(o, 409, "running, or the start-up self-test not finished", -1);
+            else service_result(o, e);
+        }
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);

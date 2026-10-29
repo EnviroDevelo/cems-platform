@@ -305,7 +305,8 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/cal", NULL, false), 200);          /* calibration records (CIP-18): none declared */
     CHECK(has("{\"active\":null,\"due\":false,\"channels\":[],\"history\":[]}"));
     CHECK_EQ(call("GET", "/api/service", NULL, false), 200);      /* service history (CIP-22, 23.4, 05.4) */
-    CHECK(has("\"run_hours\":0,\"since_service_hours\":0,\"config_crc\":\"") && has("\"log\":[],\"test\":null}"));
+    CHECK(has("\"run_hours\":0,\"since_service_hours\":0,\"config_crc\":\"") && has("\"log\":[],\"test\":null,"));
+    CHECK(has("\"boardtest\":{\"running\":false,\"done\":false,\"saved\":false,\"tests\":[{\"name\":\"fram\",\"result\":\"skipped\",\"detail\":\"\"}"));
     CHECK_EQ(call("GET", "/api/nothing", NULL, false), 404);
     CHECK_EQ(call("PUT", "/api/values", NULL, false), 405);
 

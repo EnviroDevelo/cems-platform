@@ -536,6 +536,7 @@ void fw_status(fw_status_t *o) {
     o->staged = F.staged;
     if (F.staged) copy_ver(o->staged_version, sizeof o->staged_version, F.staged_hdr.version_str);
     o->staged_hw_min = 0; o->staged_hw_max = 255; o->staged_build[0] = 0;
+    o->boot_report = F.fl ? F.fl->boot_report : 0u;
     if (F.staged && F.staged_hdr.hdr_version >= 2u) {
         o->staged_hw_min = F.staged_hdr.hw_min; o->staged_hw_max = F.staged_hdr.hw_max;
         size_t k = 0;

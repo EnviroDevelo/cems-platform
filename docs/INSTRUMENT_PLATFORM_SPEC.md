@@ -108,7 +108,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-03.1 | Documented local update method | M | Partial | Web upload by factory login (`PLATFORM.md` 5b). **Gap:** no technician's procedure document |
+| CIP-03.1 | Documented local update method | M | Done | Web upload by factory login (`PLATFORM.md` 5b); technician's procedure `docs/SERVICE_PROCEDURES.md` 1 |
 | CIP-03.2 | Compatibility check before install | M | Done | Product, size, minimum version, and in header v2 the board revision range and settings layout (FW_E_HARDWARE at upload and activation) |
 | CIP-03.3 | Integrity verification | M | Done | SHA-256 while streaming and again after flash read-back |
 | CIP-03.4 | Authenticity verification | M | Done | ECDSA P-256 signature (D14). Production key still to be generated |
@@ -123,7 +123,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-04.1 | Protected bootloader that cannot be overwritten by an application update | M | Partial | Own first stage (`docs/BOOTLOADER.md`, Gary 29 Oct): 32 KB at the start of both banks, write protected, never written by an update; trial counter for images that never reach `fw_boot()`. Host-tested (`test_boot.c`). **Gap:** DK bench test; production lock level |
 | CIP-04.2 | Recovery of corrupted application firmware | M | Partial | Bank rollback covers a bad update; the bootloader swaps away from a damaged running image (`test_boot.c`). **Gap:** DK bench test |
 | CIP-04.3 | Physical service/programming interface | S | Done | SWD 10-pin, BOOT0 jumper, service UART (`CORE_PCB.md` J5, J6) |
-| CIP-04.4 | Recovery possible when normal communications fail | S | Partial | SWD and the ST ROM bootloader through BOOT0 work without Ethernet. **Gap:** a written recovery procedure, and the production debug lock (RDP / product state) chosen so this still works |
+| CIP-04.4 | Recovery possible when normal communications fail | S | Partial | SWD and the ST ROM bootloader through BOOT0 work without Ethernet; procedure `docs/SERVICE_PROCEDURES.md` 2. **Gap:** the production debug lock (RDP / product state) chosen so this still works |
 
 ### 4.5 Configuration management
 
@@ -320,8 +320,8 @@ The agreed state/action matrix is in section 7.
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-23.1 | Controlled assignment of identity | S | Done | Serial token tool (D25) |
-| CIP-23.2 | Loading of firmware and defaults | S | Partial | SWD for first programming. **Gap:** a written provisioning sequence (program, sign, set serial, set hw_rev, calibrate, test) |
-| CIP-23.3 | Hardware test procedures | S | Missing | **Gap:** a board test (FRAM, NOR, RTC, both PHYs, display, supply sense) runnable from the service UART or the web at factory level |
+| CIP-23.2 | Loading of firmware and defaults | S | Done | SWD for first programming (bank image with the bootloader, `mkfwimage.py --factory`); provisioning sequence `docs/SERVICE_PROCEDURES.md` 3 |
+| CIP-23.3 | Hardware test procedures | S | Partial | Board test at factory login (`plat_boardtest.h`, `POST /api/service/boardtest`): settings memory address/data per chip, RAM, RTC, image, log flash, both PHYs and links, display, supply, straps; saved as the test record (`test_selftest.c` t_boardtest). **Gap:** the web button (HTTPS thread), DK run |
 | CIP-23.4 | Retained manufacturing test results | S | Done | Manufacturing test record in the FACTORY region (`POST /api/service/test`) |
 | CIP-23.5 | Factory-only settings protected | S | Done | `PF_FACTORY`, factory level, never restored from a user-level backup |
 
