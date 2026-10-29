@@ -6,6 +6,7 @@
 #include "param.h"
 #include "param_store.h"
 #include "web_auth.h"
+#include "plat_service.h"
 
 static int16_t  s_i16;
 static float    s_f;
@@ -72,10 +73,24 @@ static void t_blank_fram(void) {
     save_cycle();
     CHECK_EQ(param_store_stats().saves_fac, 0);
     CHECK(!param_store_calibration_valid());
+    /* the unit's own history (service hours) lives in the factory region too, but
+     * counting hours is not a factory step: it must not write the defaults over it */
+    plat_service_reset_for_test();
+    plat_service_scan(0); plat_service_scan(3u * 360000u);
+    CHECK(plat_service_hours_x10() >= 3u);
+    save_cycle(); save_cycle();
+    CHECK_EQ(param_store_stats().saves_fac, 1);         /* the hours are kept ... */
+    CHECK(!param_store_calibration_valid());            /* ... in an image still marked uncalibrated */
+    boot();
+    CHECK(!param_store_calibration_valid());            /* and it stays so after a power cut */
+    CHECK(param_store_status() & PSTAT_FAC_VALID);
+    plat_service_reset_for_test();
     /* a deliberate factory change is saved and clears the alarm */
     plat_val_t v; v.u = 4242; apply(1003, PLAT_LVL_FACTORY, PLAT_VAL_U32, v);
     save_cycle();
     CHECK_EQ(param_store_stats().saves_fac, 1);
+    CHECK(param_store_calibration_valid());
+    boot();
     CHECK(param_store_calibration_valid());
 }
 
@@ -178,7 +193,10 @@ static void t_both_factory_copies_bad(void) {
     boot();
     CHECK(!param_store_calibration_valid());
     CHECK_EQ(s_cal, 100);                               /* default in RAM ... */
+    plat_service_reset_for_test();                      /* the hours counting on does not write either */
+    plat_service_scan(0); plat_service_scan(2u * 360000u);
     save_cycle(); save_cycle();
+    plat_service_reset_for_test();
     CHECK(memcmp(snap, fram + L->fac_a, sizeof snap) == 0);   /* ... but the damaged images are left alone */
     CHECK(!param_store_calibration_valid());
 }
