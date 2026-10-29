@@ -64,7 +64,13 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
 .pen{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:14px;padding:2px 4px 2px 10px;cursor:pointer;font-size:12px}
 .pen.cur{border-color:var(--ink)}.pen i{width:10px;height:10px;border-radius:5px;display:inline-block}
 .pen b{font-weight:600;font-variant-numeric:tabular-nums}.pen button{padding:0 6px;line-height:16px}
-@media (max-width:640px){td.lim,th.lim{display:none}
+nav#tabbar{position:sticky;top:0;z-index:5;display:flex;gap:2px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--line);padding:6px 16px;scrollbar-width:thin}
+nav#tabbar button{flex:none;background:transparent;color:var(--ink);border-color:transparent;padding:5px 12px}
+nav#tabbar button:hover{background:#e8ecf3}nav#tabbar button.cur{background:#14213d;border-color:#14213d;color:#fff}
+nav#tabbar button .n{margin-left:6px;padding:0 6px;border-radius:8px;background:var(--bad);color:#fff;font-size:11px}
+section.offtab{display:none!important}
+@media (max-width:640px){nav#tabbar{padding:6px 8px}
+  td.lim,th.lim{display:none}
   main{padding:8px 8px 32px}section{padding:10px 8px;overflow-x:auto}
   #partab thead{display:none}#rows tr{display:grid;grid-template-columns:auto 1fr auto;column-gap:8px;border-bottom:1px solid var(--line);padding:4px 0}
   #rows td{border:0;padding:2px 4px}#rows td.val{grid-column:1/-1;max-width:none;word-break:normal;overflow-wrap:anywhere}
@@ -86,9 +92,20 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
   <span class="badge" id="conn">connecting</span>
 </header>
 <div id="lost">Connection lost. Last update <span id="lasttime">-</span>. Retrying.</div>
+<nav id="tabbar" aria-label="Sections">
+  <button data-tab="overview">Overview</button>
+  <button data-tab="trends">Trends</button>
+  <button data-tab="settings">Settings</button>
+  <button data-tab="cal">Calibration</button>
+  <button data-tab="service">Service</button>
+  <button data-tab="iob">I/O boards</button>
+  <button data-tab="events">Event log</button>
+  <button data-tab="admin">Administration</button>
+  <button data-tab="alarmcfg">Alarm setup</button>
+</nav>
 <main>
   <section>
-    <div class="warnbox" id="defpw">Factory default passwords are in use. Change them under Administration.</div>
+    <div class="warnbox" id="defpw">Factory default passwords are in use. Change them under <a href="#admin">Administration</a>.</div>
     <div class="row" id="loginrow">
       <select id="lvl"><option value="operator">Operator</option><option value="admin">Admin</option><option value="factory">Factory</option></select>
       <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
@@ -108,14 +125,14 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     </div>
   </section>
 
-  <section id="appsec" style="display:none">
+  <section id="appsec" data-tab="overview" style="display:none">
     <div class="tabs" id="apptabs"></div>
     <div id="appbody"></div>
     <span class="err" id="apperr"></span>
     <div id="recbox" style="display:none;margin-top:10px"></div>
   </section>
 
-  <section id="alarms">
+  <section id="alarms" data-tab="overview">
     <div class="row" style="justify-content:space-between">
       <h2>Alarms</h2>
       <span class="row"><span class="err" id="alarmerr"></span><button id="ackall" style="display:none">Acknowledge all</button></span>
@@ -126,7 +143,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     </table>
   </section>
 
-  <section id="trendsec">
+  <section id="trendsec" data-tab="trends">
     <div class="row" style="justify-content:space-between">
       <h2>Trends</h2>
       <span class="row">
@@ -140,7 +157,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note" id="trnote">Up to 4 values, each on its own scale; click a value's name for its scale. Recorded in this browser while the page is open (last 60 min). The data CSV under Event log holds the instrument's own record.</p>
   </section>
 
-  <section id="calsec" style="display:none">
+  <section id="calsec" data-tab="cal" style="display:none">
     <div class="row" style="justify-content:space-between">
       <h2>Calibration</h2>
       <span class="row"><span class="err" id="calerr"></span></span>
@@ -157,7 +174,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note">Calibrating needs REMOTE mode and the calibration login level. A calibration at factory login replaces the factory record; field calibrations never change it. Revert puts the factory record back in force (factory login).</p>
   </section>
 
-  <section id="svcsec" style="display:none">
+  <section id="svcsec" data-tab="service" style="display:none">
     <h2>Service</h2>
     <div class="wrow">
       <div class="tile"><div class="k">Operating hours</div><div class="v" id="svchours">-</div></div>
@@ -184,25 +201,26 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note">Entries are kept in the instrument's factory memory: they survive firmware updates and restore defaults, and a backup restored into another unit never copies them. Adding to the log or recording a test needs the factory login.</p>
   </section>
 
-  <section id="iobsec" style="display:none">
+  <section id="iobsec" data-tab="iob" style="display:none">
     <h2>I/O boards</h2>
     <div class="iobgrid" id="iobcards"></div>
     <p class="note">Green: output on. Blue: input active. Red: fault. Settings are the iob parameters (filter "iob", admin level):
       sensor types per connector in iobN_temp_type, calibration in iobN_temp_offset and iobN_temp_span, or "Set to" against a reference thermometer.</p>
   </section>
 
-  <section>
+  <section id="parsec" data-tab="settings">
     <div class="row" style="justify-content:space-between">
       <h2>Parameters</h2>
       <input id="filter" placeholder="Filter by name or ID">
     </div>
+    <p class="note" id="localnote" style="display:none">The instrument is in LOCAL mode, so settings marked "remote mode" can only be changed here after someone at the instrument switches it to REMOTE on the touchscreen.</p>
     <table id="partab">
       <thead><tr><th>ID</th><th>Name</th><th>Value</th><th class="lim">Range</th><th>Access</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </section>
 
-  <section>
+  <section id="evsec" data-tab="events">
     <div class="row" style="justify-content:space-between">
       <h2>Event log</h2>
       <span class="row">
@@ -217,7 +235,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     </table>
     <p class="note" id="logstat"></p>
   </section>
-  <section id="admin" style="display:none">
+  <section id="admin" data-tab="admin" style="display:none">
     <h2>Administration</h2>
     <div class="row">
       <a id="backup" href="/api/backup"><button class="ghost" type="button">Download parameter backup</button></a>
@@ -231,7 +249,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
       <button id="pwbtn">Change password</button>
       <span class="err" id="pwerr"></span>
     </div>
-    <div id="dcsec">
+    <div id="dcsec" style="display:none">
     <h2 style="margin-top:14px">I/O boards on the network</h2>
     <p class="note">The I/O boards are on Ethernet. Find lists every board on the network, whatever its IP.
       Give a new board the board slot it is (Board 1, 2 or 3: its IP and Modbus address are the iob settings);
@@ -244,7 +262,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     </table>
     <span class="err" id="dcerr"></span>
     </div>
-    <div id="cmsec">
+    <div id="cmsec" style="display:none">
     <h2 style="margin-top:14px">I/O board addresses</h2>
     <p class="note">A new I/O board has no address and answers only at 246. Connect one new board at a time,
       find it, then give it the address of the board it is (Board 1, 2 or 3 below), or any free address.</p>
@@ -295,7 +313,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note" id="diag"></p>
   </section>
 
-  <section id="actions" style="display:none">
+  <section id="actions" data-tab="alarmcfg" style="display:none">
     <h2>Alarm actions</h2>
     <p class="note">What each alarm does when it is raised. <b>Email</b>: sends an email (set up below).
       <b>Modbus</b>: counts in the common-alarm register for the control system (every alarm's own state is
@@ -315,7 +333,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <span class="err" id="acterr"></span>
   </section>
 
-  <section id="clocksec" style="display:none">
+  <section id="clocksec" data-tab="admin" style="display:none">
     <h2>Clock</h2>
     <p class="note">The instrument keeps the site's local standard time (no daylight saving), so records never jump.
       Every change of the clock is in the event log.</p>
@@ -339,7 +357,7 @@ button:disabled{background:#c4cad4;border-color:#c4cad4;cursor:default}
     <p class="note" id="sntpstat"></p>
   </section>
 
-  <section id="mailsec" style="display:none">
+  <section id="mailsec" data-tab="alarmcfg" style="display:none">
     <h2>Alarm email</h2>
     <p class="note">Emails go to the site's mail server, addressed by IP. With email off the instrument makes no
       outbound connections.</p>
@@ -376,15 +394,92 @@ const $ = id => document.getElementById(id);
 const LV = ["view","operator","admin","factory"];
 let defs = [], byId = {}, level = 0, mode = "local", lastOk = 0, editing = null;
 
-async function api(path, body, raw) {
+/* One request at a time. The instrument keeps one connection alive, so parallel polls each
+   cost a new TLS handshake (0.24 s on the H5, against 24 ms for a request on the kept one) and
+   some ran past the timeout (DK bench, 28 Oct). Requests go in order, writes ahead of polls; a
+   GET already waiting for the same path is shared; each timeout runs from when it is sent. */
+const apiQ = [];
+let apiBusy = false;
+function apiEnqueue(job, first) {
+  job.p = new Promise((res, rej) => { job.res = res; job.rej = rej; });
+  const i = first ? apiQ.findIndex(j => j.get) : -1;      /* writes keep their own order */
+  apiQ.splice(i < 0 ? apiQ.length : i, 0, job);
+  apiPump();
+  return job.p;
+}
+async function apiPump() {
+  if (apiBusy || !apiQ.length) return;
+  apiBusy = true;
+  const job = apiQ.shift();
+  try { job.res(await job.run()); } catch (e) { job.rej(e); }
+  apiBusy = false;
+  apiPump();
+}
+function api(path, body, raw) {
+  const get = body === undefined;
+  if (get) { const w = apiQ.find(j => j.get && j.path === path); if (w) return w.p; }
+  return apiEnqueue({ path, get, run: () => apiSend(path, body, raw) }, !get);
+}
+/* a request made some other way (firmware upload, text download) holds the line until fn's promise settles */
+const apiExclusive = fn => apiEnqueue({ run: fn }, true);
+async function apiSend(path, body, raw) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "X-CEMS": "1" }, body };
   if (body !== undefined && !raw) opt.headers["Content-Type"] = "application/x-www-form-urlencoded";
-  if (body === undefined) opt.signal = AbortSignal.timeout(5000);   /* a hung poll counts as lost, not as live */
+  /* a hung poll counts as lost, not as live; a hung write must not hold the queue for ever */
+  opt.signal = AbortSignal.timeout(body === undefined ? 5000 : raw ? 120000 : 30000);
   const r = await fetch(path, opt);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status, info: j });
   return j;
 }
+/* ---- tabs: one group of sections at a time. A tab shows when any of its sections is shown (the
+   pollers and the login level decide that, as before); the open tab is kept in the address (#service). ---- */
+const TAB_ALIAS = { alarms: "overview" };
+let tab = "overview", wantTab = null;   /* wantTab: the tab in the address at load, until its sections show */
+const tabSecs = t => [...document.querySelectorAll(`main section[data-tab="${t}"]`)];
+const tabAvail = t => tabSecs(t).some(x => x.style.display !== "none");
+const TAB_KICK = {};                                  /* poll a tab's data at once when it opens */
+function showTab(t, push) {
+  t = TAB_ALIAS[t] || t;
+  if (!document.querySelector(`#tabbar [data-tab="${t}"]`)) t = "overview";
+  let keepHash = false;
+  if (!tabAvail(t)) { wantTab = t; t = "overview"; keepHash = true; }   /* opens when a login shows it */
+  tab = t;
+  for (const x of document.querySelectorAll("main section[data-tab]")) x.classList.toggle("offtab", x.dataset.tab !== t);
+  for (const b of document.querySelectorAll("#tabbar button")) {
+    b.classList.toggle("cur", b.dataset.tab === t);
+    if (b.dataset.tab === t && b.scrollIntoView) b.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  const want = "#" + t;
+  if (!keepHash && location.hash !== want && (push || location.hash)) history.replaceState(null, "", want);
+  if (TAB_KICK[t]) TAB_KICK[t]();
+}
+function updateTabs() {
+  for (const b of document.querySelectorAll("#tabbar button")) b.style.display = tabAvail(b.dataset.tab) ? "" : "none";
+  if (wantTab && wantTab !== tab && tabAvail(wantTab)) { showTab(wantTab); wantTab = null; }
+  else if (!tabAvail(tab)) { const keep = location.hash; showTab("overview"); if (wantTab) history.replaceState(null, "", keep); }   /* e.g. logged out */
+}
+/* a poller whose tab is not open asks at most every 30 s (enough to know whether its section exists) */
+const bgAt = {};
+function bgSkip(t) {
+  if (tab === t) return false;
+  const n = Date.now();
+  if (n - (bgAt[t] || 0) < 30000) return true;
+  bgAt[t] = n; return false;
+}
+$("tabbar").onclick = e => { const b = e.target.closest("button[data-tab]"); if (b) { wantTab = null; showTab(b.dataset.tab, true); window.scrollTo(0, 0); } };
+window.addEventListener("hashchange", () => {
+  const h = location.hash.slice(1);
+  wantTab = null;
+  if (h === "admin" && !level) $("pw").focus();       /* "Change them under Administration": log in first */
+  showTab(h);
+  if (h === "alarms") $("alarms").scrollIntoView();
+});
+new MutationObserver(updateTabs).observe(document.querySelector("main"), { attributes: true, attributeFilter: ["style"], subtree: true });
+wantTab = TAB_ALIAS[location.hash.slice(1)] || location.hash.slice(1) || null;
+showTab(location.hash.slice(1) || "overview");
+updateTabs();
+
 const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 
 function fmt(d, v) {
@@ -851,7 +946,7 @@ async function diagPackage() {
   const pkg = { kind: "cems-diagnostic-package", version: 1, generated: new Date().toISOString(), page_url: location.origin };
   const get = async (k, path, text) => {
     try {
-      if (text) { const r = await fetch(path, { signal: AbortSignal.timeout(20000) }); pkg[k] = r.ok ? await r.text() : { error: r.status }; }
+      if (text) pkg[k] = await apiExclusive(async () => { const r = await fetch(path, { signal: AbortSignal.timeout(20000) }); return r.ok ? await r.text() : { error: r.status }; });
       else pkg[k] = await api(path);
     } catch (e) { pkg[k] = { error: e.message }; }
   };
@@ -896,6 +991,7 @@ async function refreshInfo() {
     $("ident").textContent = `S/N ${i.serial}  ·  FW ${i.fw}${i.build && i.build !== "dev" ? " (" + i.build + ")" : ""}${i.core ? "  ·  core " + i.core : ""}` +
       `${i.board_rev !== undefined && i.board_rev !== null ? "  ·  board rev " + i.board_rev : ""}  ·  up ${Math.floor(i.uptime_s / 3600)} h ${Math.floor(i.uptime_s / 60) % 60} min`;
     const m = $("mode"); m.textContent = i.mode.toUpperCase(); m.className = "badge " + (i.mode === "remote" ? "b-ok" : "");
+    $("localnote").style.display = i.mode === "remote" || !LV.indexOf(i.session.level) ? "none" : "";
     showAlarmBadge(i.alarms);
     showState(i.state);
     showSelftest(i.selftest);
@@ -1292,7 +1388,8 @@ $("clocksync").onclick = async () => {
   try { await api("/api/time", form({ sync: 1 })); $("clockerr").textContent = "Asking..."; setTimeout(refreshClock, 2500); }
   catch (e) { $("clockerr").textContent = e.message; }
 };
-setInterval(() => { if ($("clocksec").style.display !== "none") refreshClock(); }, 5000);
+setInterval(() => { if (tab === "admin" && $("clocksec").style.display !== "none") refreshClock(); }, 5000);
+TAB_KICK.admin = () => { if ($("clocksec").style.display !== "none") refreshClock(); };
 
 /* I/O boards (RS-485): shown once any board is enabled */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1304,7 +1401,9 @@ function sqRow(n0, n, on, flt, cls, label) {
   }
   return h + (label ? `<span class="k">${label}</span>` : "") + "</div>";
 }
-async function pollIob() {
+TAB_KICK.iob = () => pollIob(true);
+async function pollIob(once) {
+  if (!once && bgSkip("iob")) { setTimeout(pollIob, 1000); return; }
   try {
     const j = await api("/api/iob");
     const any = j.boards.some(b => b.enabled);
@@ -1342,7 +1441,7 @@ async function pollIob() {
       }
     }
   } catch (e) { /* the value poll shows the connection state */ }
-  setTimeout(pollIob, 1000);
+  if (!once) setTimeout(pollIob, 1000);
 }
 pollIob();
 
@@ -1359,6 +1458,8 @@ async function calCmd(body, ask) {
   catch (e) { $("calerr").textContent = e.status === 401 ? "Please log in" : explain(e); }
   pollCal(true);
 }
+function pollCalTick() { if (bgSkip("cal")) setTimeout(pollCalTick, 1000); else pollCal(); }
+TAB_KICK.cal = () => pollCal(true);
 async function pollCal(once) {
   try {
     const j = await api("/api/cal");
@@ -1407,9 +1508,11 @@ async function pollCal(once) {
       if (!j.history.length) hb.innerHTML = '<tr><td colspan="7" class="note">No calibrations recorded yet</td></tr>';
     }
   } catch (e) { /* the value poll shows the connection state */ }
-  if (!once) setTimeout(pollCal, calLast && calLast.active !== null && calLast.active !== undefined ? 1000 : 3000);
+  if (!once) setTimeout(pollCalTick, calLast && calLast.active !== null && calLast.active !== undefined ? 1000 : 3000);
 }
 /* ---- service history (CIP-22.2, 22.4, 23.4, 05.4, /api/service) ---- */
+function pollSvcTick() { if (bgSkip("service")) setTimeout(pollSvcTick, 1000); else pollSvc(); }
+TAB_KICK.service = () => pollSvc(true);
 async function pollSvc(once) {
   try {
     const j = await api("/api/service");
@@ -1435,7 +1538,7 @@ async function pollSvc(once) {
     }
     $("svcform").style.display = $("svctestform").style.display = level >= 3 ? "flex" : "none";
   } catch (e) { if (e.status === 404) { $("svcsec").style.display = "none"; return; } }
-  if (!once) setTimeout(pollSvc, 10000);
+  if (!once) setTimeout(pollSvcTick, 10000);
 }
 async function svcPost(path, body) {
   $("svcerr").textContent = "";
@@ -1492,7 +1595,9 @@ function evDetail(e) {
   }
 }
 let lastSeq = -1;
-async function pollEvents() {
+TAB_KICK.events = () => pollEvents(true);
+async function pollEvents(once) {
+  if (!once && bgSkip("events")) { setTimeout(pollEvents, 1000); return; }
   try {
     const j = await api("/api/log/events?n=20");
     const top = j.events.length ? j.events[0].seq : 0;
@@ -1517,7 +1622,7 @@ async function pollEvents() {
   } catch (e) {
     if (e.status === 503) $("logstat").textContent = "Log not available on this unit.";
   }
-  setTimeout(pollEvents, 5000);
+  if (!once) setTimeout(pollEvents, 5000);
 }
 
 $("loginbtn").onclick = async () => {
@@ -1597,6 +1702,7 @@ async function refreshFw() {
 $("fwup").onclick = () => {
   const f = $("fwfile").files[0]; $("fwerr").textContent = "";
   if (!f) { $("fwerr").textContent = "Choose a .cfw file first"; return; }
+  apiExclusive(() => new Promise(done => {
   const x = new XMLHttpRequest(), p = $("fwprog");
   x.open("POST", "/api/fw/upload"); x.setRequestHeader("X-CEMS", "1");
   x.setRequestHeader("Content-Type", "application/octet-stream");
@@ -1606,10 +1712,12 @@ $("fwup").onclick = () => {
     p.style.display = "none";
     let j = {}; try { j = JSON.parse(x.responseText); } catch (e) { }
     $("fwerr").textContent = x.status === 200 ? `Uploaded ${j.staged}` : (j.error || "Upload failed");
-    refreshFw();
+    done(); refreshFw();
   };
-  x.onerror = () => { p.style.display = "none"; $("fwerr").textContent = "Upload failed (connection)"; };
+  x.onerror = () => { p.style.display = "none"; $("fwerr").textContent = "Upload failed (connection)"; done(); };
+  x.onloadend = () => done();                            /* also after an abort or timeout */
   x.send(f);
+  }));
 };
 $("fwact").onclick = async () => {
   if (!confirm("Restart the instrument on the new firmware now? Measurement stops for the restart.")) return;

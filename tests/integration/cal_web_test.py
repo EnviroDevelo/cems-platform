@@ -20,6 +20,9 @@ def check(cond, what):
     if cond: passed += 1
     else: failed += 1
 
+async def tab(pg, t):                       # the page shows one group of sections at a time
+    await pg.click(f'#tabbar button[data-tab="{t}"]')
+
 async def run(say):
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME)
@@ -28,6 +31,7 @@ async def run(say):
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
         await pg.goto(URL)
+        await tab(pg, "cal")
         await pg.wait_for_selector("#calsec", state="visible", timeout=8000)
         rows = await pg.inner_text("#calrows")
         check("Level" in rows and "none" in rows, "calibration section lists the Level channel, no record yet")
@@ -61,15 +65,18 @@ async def run(say):
         hist = await pg.inner_text("#calhist")
         check(hist.splitlines()[0].count("aborted") == 1 if hist else False, "an aborted calibration is recorded, newest first")
         await pg.locator("#calsec").screenshot(path=os.path.join(ROOT, "build", "web_cal.png"))
+        await tab(pg, "service")
         # start-up self-test (CIP-11.1): a blank unit has no factory calibration image at start
         await pg.wait_for_function("!['-', 'Running...'].includes(document.getElementById('stsum').textContent)", timeout=15000)
         stsum, stl = await pg.inner_text("#stsum"), await pg.inner_text("#stlist")
         check(stsum.startswith("FAILED: Calibration") and "RAM: pass" in stl and "Ethernet: not checked" in stl and "demo_counter: pass" in stl,
               f"self-test shown ({stsum!r})")
+        await tab(pg, "overview")
         al = await pg.inner_text("#alarmrows")
         check("What to check:" in al, f"alarms show what to check ({[l for l in al.splitlines() if 'What to check' in l][:1]})")
         check(" core " in await pg.inner_text("#ident"), "the core platform version is shown next to the firmware")
         # service history (CIP-22, 23.4)
+        await tab(pg, "service")
         crc = await pg.inner_text("#svccrc")
         check(len(crc) == 8 and (await pg.inner_text("#svchours")).endswith(" h"), f"service: hours and settings checksum shown ({crc})")
         await pg.fill("#svctech", "G. Brown"); await pg.fill("#svcwork", "Replaced sample pump")

@@ -71,6 +71,7 @@ async def run(dev, other, tmp):
         try:
             pg = await page(b)
             check(await login(pg, "admin", "2222"), "admin logs in with the default password")
+            await pg.click('#tabbar button[data-tab="admin"]')
             for lvl in ("admin", "factory"):
                 await pg.select_option("#pwlvl", lvl); await pg.fill("#newpw", "lost-it-9"); await pg.click("#pwbtn")
                 await pg.wait_for_function("document.getElementById('pwerr').textContent !== ''", timeout=5000)

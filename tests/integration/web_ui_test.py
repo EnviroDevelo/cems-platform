@@ -9,6 +9,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CHROME = os.environ.get("CHROME", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome")
 URL = "https://127.0.0.1:18095/"
 
+async def tab(pg, t):                       # the page shows one group of sections at a time
+    await pg.click(f'#tabbar button[data-tab="{t}"]')
+
 async def run(unit):
     ok = True
     async with async_playwright() as p:
@@ -19,10 +22,17 @@ async def run(unit):
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "401" not in m.text and "400" not in m.text else None)
         await pg.goto(URL)
-        await pg.wait_for_selector("#v1001")
+        await pg.wait_for_selector("#v1001", state="attached")
         await pg.wait_for_timeout(1200)
         await pg.screenshot(path=os.path.join(ROOT, "build", "web_view.png"), full_page=True)
+        tabs = await pg.eval_on_selector_all("#tabbar button", "bs => bs.filter(b => b.style.display !== 'none').map(b => b.dataset.tab)")
+        print("tabs for a viewer:", tabs); ok &= tabs == ["overview", "trends", "settings", "cal", "service", "events"]
+        await pg.click("#defpw a")                          # "Change them under Administration" before logging in
+        await pg.wait_for_timeout(300)
+        stay = await pg.evaluate("[tab, document.getElementById('alarms').offsetParent !== null]")
+        print("Administration link before login:", stay); ok &= stay == ["overview", True]
         # trends: pick a value, let it record, check the chart, the legend, the CSV and that the pick is remembered
+        await tab(pg, "trends")
         await pg.select_option("#tradd", label="1002 run_seconds")
         await pg.wait_for_timeout(3500)
         pens = await pg.inner_text("#trpens")
@@ -34,7 +44,7 @@ async def run(unit):
         csv = open(await (await dl.value).path()).read().splitlines()
         await pg.locator("#trendsec").screenshot(path=os.path.join(ROOT, "build", "web_trend.png"))
         await pg.reload()
-        await pg.wait_for_selector("#trv1002")
+        await pg.wait_for_selector("#trv1002")              # the reload stays on the Trends tab (#trends)
         print("trend legend:", repr(pens), "| line pixels:", inked, "| csv:", csv[0], len(csv) - 1, "rows")
         ok &= "run_seconds" in pens and inked > 20 and csv[0] == '"time","run_seconds (s)"' and len(csv) >= 5 \
               and all(len(r.split(",")) == 2 and r.split(",")[1].isdigit() for r in csv[1:])
@@ -43,7 +53,7 @@ async def run(unit):
         csp = []
         ph.on("console", lambda m: csp.append(m.text) if "Content Security Policy" in m.text else None)
         await ph.goto(URL)
-        await ph.wait_for_selector("#v1001")
+        await ph.wait_for_selector("#v1001", state="attached")
         await ph.wait_for_timeout(1500)
         sw = await ph.evaluate("[document.documentElement.scrollWidth, innerWidth]")
         await ph.screenshot(path=os.path.join(ROOT, "build", "web_phone.png"))
@@ -66,6 +76,7 @@ async def run(unit):
         print("quality on run_seconds:", qcls, "| state badge:", repr(stt))
         ok &= "q" in qcls[0].split() and qcls[1] == "calibration" and "q" not in qcls[2].split() and stt == "CALIBRATION"
         # diagnostic package (CIP-22.1): one JSON file, no secrets
+        await tab(pg, "events")
         async with pg.expect_download(timeout=30000) as dl:
             await pg.click("#diagbtn")
         import json as _json
@@ -77,6 +88,7 @@ async def run(unit):
         await pg.fill("#pw", "1111")
         await pg.click("#loginbtn")
         await pg.wait_for_selector("#userrow", state="visible")
+        await tab(pg, "settings")
         await pg.fill("#filter", "start_delay")
         btn = pg.locator('#rows button:has-text("Change")')
         await btn.first.click()
@@ -89,6 +101,7 @@ async def run(unit):
         await pg.wait_for_timeout(1000)
         shown = await pg.inner_text("#v1001")
         await pg.fill("#filter", "")
+        await tab(pg, "events")
         await pg.wait_for_timeout(5500)                    # the event list refreshes every 5 s
         events = await pg.inner_text("#events")
         print("event list:", events.replace("\n", " | ")[:300])
@@ -98,11 +111,13 @@ async def run(unit):
         print("refused value message:", repr(refused)); ok &= refused == "Outside the allowed range"
         print("value shown after change:", repr(shown)); ok &= shown == "1500 ms"
         # alarms: badge, list, acknowledge one row
+        await tab(pg, "settings")
         await pg.fill("#filter", "demo_fault")
         await pg.click('#rows button:has-text("Change")')
         await pg.fill("#rows td input", "1")
         await pg.click('#rows button:has-text("Set")')
         await pg.fill("#filter", "")
+        await tab(pg, "overview")
         await pg.wait_for_function("document.getElementById('alarmrows').innerText.includes('Demo fault')", timeout=5000)
         badge = await pg.inner_text("#alarmbadge")
         rows = await pg.inner_text("#alarmrows")
@@ -136,6 +151,7 @@ async def run(unit):
         await cells2.nth(1).fill("30")
         await pg.click('#recbox button:has-text("Save")')
         await pg.wait_for_function("document.getElementById('recerr').textContent === 'Saved'", timeout=4000)
+        await tab(pg, "settings")
         await pg.fill("#filter", "demo_steps")
         await pg.wait_for_timeout(1500)
         steps = await pg.inner_text("#v1012")
@@ -152,6 +168,7 @@ async def run(unit):
         await pg.select_option("#lvl", "factory")
         await pg.fill("#pw", "9999")
         await pg.click("#loginbtn")
+        await tab(pg, "admin")
         await pg.wait_for_selector("#admin", state="visible")
         await pg.set_input_files("#fwfile", cfw)
         await pg.click("#fwup")
@@ -164,6 +181,7 @@ async def run(unit):
         print("firmware:", repr(fwmsg), "|", repr(fwinfo), "| activate button:", act)
         ok &= fwmsg == "Uploaded 0.4.0" and "Ready in the spare bank: 0.4.0" in fwinfo and act
         # alarm actions and email set-up (factory login sees the admin sections)
+        await tab(pg, "alarmcfg")
         await pg.wait_for_function("document.getElementById('actrows').innerText.includes('Demo fault')", timeout=5000)
         row = pg.locator('#actrows tr:has-text("DEMO_FAULT")')
         await row.locator("input[type=checkbox]").nth(2).check()            # relay 1
@@ -182,6 +200,7 @@ async def run(unit):
         await pg.locator("#actions").screenshot(path=os.path.join(ROOT, "build", "web_alarm_actions.png"))
         await pg.locator("#mailsec").screenshot(path=os.path.join(ROOT, "build", "web_mail.png"))
         print("alarm actions:", relay_ok, "| mail form:", mail_ok); ok &= relay_ok and mail_ok
+        await tab(pg, "admin")
         await pg.wait_for_function("document.getElementById('clocknow').textContent.startsWith('Instrument clock: 2')", timeout=6000)
         await pg.click("#clockpc")
         await pg.wait_for_function("document.getElementById('clockerr').textContent === 'Set'", timeout=5000)
