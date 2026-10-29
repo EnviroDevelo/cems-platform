@@ -16,5 +16,5 @@ CIP-24.1   hardware: grounding and shielding design basis (CORE_PCB.md); EMC tes
 CIP-24.2   hardware: ESD and surge target levels; EMC test lab
 CIP-25.4   documentation: CHANGELOG.md and release notes start with the first core release
 CIP-25.5   documentation: the supported-combinations matrix starts with the first release
-CIP-26.6   needs hardware: the same tests on the DK, then the core board, and the 72-hour soak
+CIP-26.6   needs hardware: the same tests on the DK, then the core board, and the 72-hour soak (tools/dk_soak.py)
 CIP-26.7   documentation: operator manual, service manual, Modbus register map document

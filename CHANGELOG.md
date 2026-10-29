@@ -45,3 +45,5 @@ DK bring-up changes (28-29 Oct, before release):
   saves itself as the test record (station "board"; that record also gets `"names"`).
 - `docs/SERVICE_PROCEDURES.md`: the technician's update, recovery and factory provisioning.
 - `docs/INTERFACES.md`: how to add an interface (CIP-13.5) and the compatibility policy (CIP-14.5).
+- `tools/dk_soak.py`: read-only soak test against a real unit (HTTPS + Modbus load, heap/stack/
+  restart checks from `/api/info`, CSV), standard-library Python only (CIP-26.6).
