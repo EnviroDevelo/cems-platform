@@ -8,8 +8,8 @@ CIP-03.1   documentation: docs/SERVICE_PROCEDURES.md 1 (a procedure, no automati
 CIP-07.1   hardware: supply requirements are a CORE_PCB.md design figure
 CIP-08.3   checked by make rtos (the stuck-task run must end in a watchdog reset with outputs safe)
 CIP-11.3   checked by make test itself (fault-codes-check: docs/FAULT_CODES.md current, every platform alarm has help)
-CIP-13.5   documentation: the guide to adding an interface is still to be written
-CIP-14.5   policy: checked by the interface snapshots (make snapshots-check) and the version rules in plat_version.h
+CIP-13.5   documentation: docs/INTERFACES.md 1 (a guide, no automatic test)
+CIP-14.5   policy: docs/INTERFACES.md 2, checked by the interface snapshots (make snapshots-check) and the version rules in plat_version.h
 CIP-20.4   partial: production debug lock, with the PCB thread
 CIP-21.7   documentation: the UI convention page is still to be written
 CIP-24.1   hardware: grounding and shielding design basis (CORE_PCB.md); EMC test lab

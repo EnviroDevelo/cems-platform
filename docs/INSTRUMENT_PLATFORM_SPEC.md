@@ -215,7 +215,7 @@ The agreed state/action matrix is in section 7.
 | CIP-13.2 | Device addressing and connection settings | M | Done | IP/DHCP, Modbus allowed client, I/O network addresses |
 | CIP-13.3 | Timeouts and error handling | M | Done | Modbus exceptions, keepalive, client eviction, HTTPS limits, I/O bus retries |
 | CIP-13.4 | Physical interfaces chosen per product with common behaviour | O | Done | Client Ethernet, I/O Ethernet (W5500), RS-485 setting kept in firmware |
-| CIP-13.5 | Written framework for adding an interface | M | Missing | **Gap:** a short guide (where a new transport plugs in, which checks it must use) |
+| CIP-13.5 | Written framework for adding an interface | M | Done | `docs/INTERFACES.md` 1: where a transport plugs in, the rules it must follow, a PR checklist |
 
 ### 4.14 Common data model
 
@@ -225,7 +225,7 @@ The agreed state/action matrix is in section 7.
 | CIP-14.2 | Scaling and byte/word order defined per value | M | Done | `mb_map_t` flags and `dec` |
 | CIP-14.3 | Shared status definitions | M | Done | The state and quality enums are shared by every interface (CIP-09, CIP-10) |
 | CIP-14.4 | Versioned register map and API | M | Done | Map version (input register 9001), block layout version, `/api/info` `api`; interface snapshots in `docs/interface/` |
-| CIP-14.5 | Compatibility policy | M | Missing | Proposal: addresses never move within a major version; new values only added; removed values read as "unavailable" for one major version |
+| CIP-14.5 | Compatibility policy | M | Done | `docs/INTERFACES.md` 2: addresses and fields never move within a major version; only additions in a minor; removed values read as unavailable/null until the next major; enforced by the interface snapshots |
 | CIP-14.6 | Platform parameters 1-999 the same in every product; product parameters from 1000 | M | Done | Already the numbering rule |
 
 ### 4.15 Communications health
