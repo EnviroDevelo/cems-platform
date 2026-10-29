@@ -272,6 +272,21 @@ whether its section exists), and opening a tab asks for its data at once. Values
 the unit's information are polled on every tab (the header, trends and the connection check
 use them). Screenshots: `docs/web_ui.png`, `docs/web_phone_tabs.png`.
 
+**Closing the page logs out.** The login cookie lasts until the browser exits, and a browser
+can keep running after its window is closed (Edge does). So a page opened in a new tab or window,
+while no other page of this instrument is open in that browser, ends a login it finds left over
+(`BroadcastChannel` asks the other pages; `sessionStorage` marks a page that is already open). A
+reload, and a second tab next to an open one, keep the login. The instrument still ends a login 10
+minutes after the last change (`AUTH_IDLE_MS`). Decided by this thread on 29 Oct as the default,
+since Gary asked whether closing the browser logged out (`tests/integration/session_health_test.py`).
+
+**System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
+itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
+512 bytes is red), logic scans with the longest scan, overruns and late starts, secure connections
+(handshakes, resumed, failed) and the TLS memory peak, the FRAM size, an IP address conflict, and
+the last fault with its program counter, LR, CFSR, HFSR and fault address. "LOW" and its reason
+come from the firmware (`plat_health_low`). Screenshot `docs/web_health.png`.
+
 **One request at a time.** The page sends its requests through one queue, one at a time, with
 writes ahead of polls; a poll already waiting for the same path is shared, and each timeout
 (5 s for a poll, 30 s for a write, 120 s for an upload) runs from when the request is sent. The

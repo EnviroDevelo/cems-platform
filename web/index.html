@@ -199,6 +199,11 @@ section.offtab{display:none!important}
     </div>
     <span class="err" id="svcerr"></span>
     <p class="note">Entries are kept in the instrument's factory memory: they survive firmware updates and restore defaults, and a backup restored into another unit never copies them. Adding to the log or recording a test needs the factory login.</p>
+    <h2 style="margin-top:12px">System health</h2>
+    <p class="note" id="hlwhy"></p>
+    <div class="wrow" id="hltiles"></div>
+    <table id="hlstacks" style="display:none;max-width:420px"><thead><tr><th>Task</th><th>Stack never used (lowest so far)</th></tr></thead><tbody></tbody></table>
+    <p class="note" id="hlfault"></p>
   </section>
 
   <section id="iobsec" data-tab="iob" style="display:none">
@@ -918,6 +923,42 @@ function showState(st) {
                 ({ WARMING_UP: 1, MAINTENANCE: 1, CALIBRATION: 1 }[st] ? "b-warn" : ""));
 }
 
+/* system health (from /api/info): memory and stack headroom, scan timing, TLS, the last fault */
+const kB = n => (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+const hex8 = n => "0x" + (n >>> 0).toString(16).toUpperCase().padStart(8, "0");
+function showHealth(i) {
+  const h = i.health || {}, sc = i.scan || {}, t = i.tls || {}, f = i.last_fault || {};
+  const tiles = [];
+  if (h.known) tiles.push(["Memory free (lowest)", `${kB(h.heap_free)} (${kB(h.heap_min)}) of ${kB(h.heap_size)}`, h.heap_min < h.heap_size / 8]);
+  tiles.push(["Logic scans", `${sc.scans}, longest ${sc.max_exec_us} µs`, false]);
+  tiles.push(["Overruns / late starts", `${sc.overruns} / ${sc.late_starts}`, sc.overruns > 0]);
+  if (t.handshakes !== undefined) tiles.push(["Secure connections", `${t.handshakes} (${t.resumed} resumed, ${t.failed} failed)`, false]);
+  if (t.pool_peak) tiles.push(["TLS memory peak", kB(t.pool_peak), false]);
+  if (i.fram) tiles.push(["Settings memory", `${kB(i.fram.bytes)} FRAM${i.fram.chips > 1 ? ", " + i.fram.chips + " chips" : ""}`, false]);
+  $("hltiles").replaceChildren(...tiles.map(([k, v, bad]) => {
+    const d = document.createElement("div"); d.className = "tile";
+    d.innerHTML = '<div class="k"></div><div class="v" style="font-size:15px"></div>';
+    d.firstChild.textContent = k; d.lastChild.textContent = v; if (bad) d.lastChild.style.color = "var(--bad)";
+    return d;
+  }));
+  $("hlwhy").textContent = (h.low ? "LOW: " + (h.why || "memory or stack headroom") + ". " : "") +
+    (i.ip_conflict ? "Another device on the network uses this unit's IP address. " : "") +
+    (h.known ? "" : "Memory and stack figures are not reported by this build.");
+  $("hlwhy").style.color = h.low || i.ip_conflict ? "var(--bad)" : "";
+  const st = Object.entries(h.stacks || {});
+  $("hlstacks").style.display = st.length ? "" : "none";
+  $("hlstacks").tBodies[0].replaceChildren(...st.map(([n, w]) => {
+    const tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td>";
+    tr.cells[0].textContent = n; tr.cells[1].textContent = `${w * 4} bytes`;
+    if (w * 4 < 512) tr.cells[1].style.color = "var(--bad)";
+    return tr;
+  }));
+  $("hlfault").textContent = `Starts since the record was cleared: ${f.boots}. ` + (f.code
+    ? `Last fault: ${f.name || f.code} at ${hex8(f.arg)}` + (f.lr ? `, LR ${hex8(f.lr)}` : "") +
+      (f.cfsr ? `, CFSR ${hex8(f.cfsr)}` : "") + (f.hfsr ? `, HFSR ${hex8(f.hfsr)}` : "") + (f.addr ? `, address ${hex8(f.addr)}` : "") + "."
+    : "No fault recorded.");
+}
+
 /* start-up self-test (CIP-11.1): one badge per check, from /api/info */
 const ST_NAMES = { image: "Firmware image", ram: "RAM", rtc: "Clock", settings: "Settings memory", calibration: "Calibration",
                    log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display" };
@@ -995,6 +1036,7 @@ async function refreshInfo() {
     showAlarmBadge(i.alarms);
     showState(i.state);
     showSelftest(i.selftest);
+    showHealth(i);
     const lk = $("link");                                 /* supervisory link (CIP-21.5): LINK OK / LINK LOST */
     const ct = defs.find(d => d.name === "comms_timeout"), off = ct && lastValues[ct.id] === 0;   /* no watchdog: NO LINK */
     if (typeof i.link_lost === "boolean") {
@@ -1735,7 +1777,27 @@ $("restorebtn").onclick = async () => {
   catch (e) { $("restoreerr").textContent = e.message; }
 };
 
+/* Closing the page logs out: a page opened in a new tab or window, while no other page of this
+   instrument is open in the browser, ends a login it finds left over (the cookie can outlive the
+   window, e.g. Edge keeps running in the background). A reload, and a second tab next to one that
+   is open, keep it. The instrument still ends a login 10 minutes after the last change. */
+let tabCh = null;
+try { tabCh = new BroadcastChannel("cems-page"); tabCh.addEventListener("message", e => { if (e.data === "anyone") tabCh.postMessage("here"); }); } catch (e) { }
+async function leftOverLogin(i) {
+  let mine = false;
+  try { mine = sessionStorage.getItem("cems-open") === "1"; } catch (e) { return false; }   /* no storage: leave it */
+  if (mine || !i.session || i.session.level === "view") return false;
+  if (!tabCh) return true;
+  return new Promise(res => {
+    const h = e => { if (e.data === "here") { clearTimeout(t); tabCh.removeEventListener("message", h); res(false); } };
+    const t = setTimeout(() => { tabCh.removeEventListener("message", h); res(true); }, 300);
+    tabCh.addEventListener("message", h);
+    tabCh.postMessage("anyone");
+  });
+}
 (async function start() {
+  try { if (await leftOverLogin(await api("/api/info"))) await api("/api/logout", ""); } catch (e) { }
+  try { sessionStorage.setItem("cems-open", "1"); } catch (e) { }
   for (;;) {
     try { defs = await api("/api/params"); break; }
     catch (e) { document.body.classList.add("stale"); await new Promise(r => setTimeout(r, 2000)); }
