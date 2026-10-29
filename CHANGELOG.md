@@ -16,6 +16,15 @@ self-test, PBKDF2 passwords with token recovery.
 Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the interface
 snapshots (`make snapshots APP=<dir>`).
 
+Emissions calculation engine (29 Oct, before release; `docs/EMISSIONS_MATH.md`):
+- `emis.h` / `emis.c`: EN 14181 calibration function, ppm to mg/Nm3, wet to dry, T/p
+  normalisation, O2 or CO2 reference, mass emission, clock-aligned short-term and daily averages
+  with the IED validity rules and confidence interval subtraction, the EN 14181 valid calibration
+  range; quality from the eight PLAT_Q codes, worst of the inputs.
+- Parameters 400-443 (settings, admin, persisted, not from Modbus), 450-469 (results), retained
+  block 910. Off by default (400): a product that does not use it is unchanged.
+- `plat_meas_value()` in plat_state.h.
+
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
   in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds

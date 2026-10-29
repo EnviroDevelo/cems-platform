@@ -30,6 +30,7 @@ void test_service_all(void);
 void test_selftest_all(void);
 void test_contract_all(void);
 void test_boot_all(void);
+void test_emis_all(void);
 
 int main(void) {
     test_scan_all();
@@ -59,6 +60,7 @@ int main(void) {
     test_selftest_all();
     test_contract_all();
     test_boot_all();
+    test_emis_all();
     test_tls_all();
     printf("\n%d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;
