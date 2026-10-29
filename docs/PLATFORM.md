@@ -313,7 +313,22 @@ n s left)". On/off values without an index are test bits, one button each: force
 off, released. Release and Clear all end forces (`POST /api/modbus/force/clear`). While any value
 is forced the header shows an amber MODBUS FORCED n on every tab (`/api/info` "modbus"."forced").
 A refused force says why (16 already forced, not forceable, bad value). Test:
-`tests/integration/modbus_force_web_test.py` (the agreed API simulated until the firmware has it).
+`tests/integration/modbus_force_web_test.py` (against firmware PR #14 it also reads the forced
+register back over Modbus; the API is simulated in the browser for builds without it).
+Screenshot: `docs/web_modbus_force.png`.
+
+**Modbus handover file** (Service tab, any login): **Modbus handover file (Excel)** writes an
+`.xlsx` in the browser from `GET /api/modbus/map`, `/api/info` and `/api/alarms/config`, with no
+library: a stored (uncompressed) zip of SpreadsheetML with inline strings, a bold frozen header
+row and filters. Sheets, as agreed with the standard-map thread: Cover (product, serial,
+firmware, map version, IP, port, unit ID, addressing, word order, when and at which login it was
+made, integrator sign-off), Standard values (registers 7000-7999, once products have them),
+Project map (every entry: table, 0-based and Modicon address, function codes, format, word and
+byte order, name, description, unit, min/max, scaling, access, write login and mode, a "Checked
+by integrator" column), Platform block, Codes (the map's "codes" when it has them, alarm IDs,
+Modbus exceptions) and Commissioning (how forcing works, the forceable entries). **CSV** beside
+it gives the project map. `tests/integration/modbus_map_web_test.py` opens the file with
+openpyxl and checks it against the map (19 checks on the sim, 17 against the firmware's map).
 
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under

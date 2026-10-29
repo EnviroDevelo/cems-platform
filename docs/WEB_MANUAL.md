@@ -136,6 +136,10 @@ shows the record in force, the factory record and when the next calibration is d
   real value, and the table shows both. While anything is forced, the header shows an amber
   **MODBUS FORCED** on every tab, and the PLC can see it in register 9090 and the common alarm.
   Every force is in the event log.
+- **Modbus handover file (Excel)** (any login): downloads this unit's register map as an Excel
+  workbook for the control system integrator: a cover with the connection details and a
+  sign-off box, the full map with a "Checked by integrator" column, the platform block, the codes
+  (alarm IDs, exceptions) and the values that can be forced. **CSV** gives the map alone.
 
 ## 10. Event log and downloads
 

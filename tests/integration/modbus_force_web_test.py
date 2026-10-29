@@ -108,11 +108,22 @@ async def run(sim):
         first = (await pg.eval_on_selector_all("#fcid option", "o => o.map(x => x.value)"))[0]
         await pg.select_option("#fcid", first)
         if await pg.is_visible("#fcidx"): await pg.fill("#fcidx", "0")
-        await pg.fill("#fcv", "1")
+        await pg.fill("#fcv", "7")
         await pg.click("#fcgo")
         await pg.wait_for_selector("#fctab", state="visible", timeout=5000)
         row = await pg.inner_text("#fctab tbody tr")
         check(" s" in row and "web" in row, f"forced value in the table with its countdown ({row!r})")
+        if not sim:                                   # what a Modbus client reads is the forced value
+            _, mp = get("api/modbus/map")
+            e = next((x for x in mp["entries"] if str(x["id"]) == first), None)
+            if e and e["table"] in ("input", "holding") and e["format"] in ("u16", "i16", "u32", "i32", "array"):
+                from pymodbus.client import ModbusTcpClient
+                c = ModbusTcpClient("127.0.0.1", port=MB, timeout=3); c.connect()
+                r = (c.read_input_registers if e["table"] == "input" else c.read_holding_registers)(e["addr"], e["count"], slave=1)
+                c.close()
+                regs = getattr(r, "registers", None)
+                val = None if regs is None else regs[0] if e["format"] in ("u16", "i16", "array") else (regs[0] << 16 | regs[1]) if e["word_order"] != "low_first" else (regs[1] << 16 | regs[0])
+                check(val == 7, f"a Modbus client reads the forced value ({e['name']} at {e['table']} {e['addr']}: {val})")
         await pg.wait_for_selector("#forcebadge", state="visible", timeout=5000)
         check((await pg.inner_text("#forcebadge")).startswith("MODBUS FORCED 1"), "header shows MODBUS FORCED")
         l1 = await pg.inner_text("#fctab tbody tr td:nth-child(4)"); await pg.wait_for_timeout(2200)
@@ -126,22 +137,23 @@ async def run(sim):
         await pg.click('#tabbar [data-tab="overview"]')
         check(await pg.is_visible("#forcebadge"), "badge stays on other tabs")
         await pg.click('#tabbar [data-tab="service"]')
-        if sim:
+        if await pg.is_visible("#fcbits button"):
             await pg.click("#fcbits button")
-            await pg.wait_for_function("document.getElementById('fcbits').textContent.includes('forced on')", timeout=5000)
+            await pg.wait_for_function("document.querySelector('#fcbits button').textContent.endsWith('forced on')", timeout=5000)
             await pg.click("#fcbits button")
-            await pg.wait_for_function("document.getElementById('fcbits').textContent.includes('forced off')", timeout=5000)
+            await pg.wait_for_function("document.querySelector('#fcbits button').textContent.endsWith('forced off')", timeout=5000)
             await pg.click("#fcbits button")
-            await pg.wait_for_function("document.getElementById('fcbits').textContent.includes(': real')", timeout=5000)
+            await pg.wait_for_function("document.querySelector('#fcbits button').textContent.endsWith(': real')", timeout=5000)
             check(True, "test bit: forced on, forced off, released")
+        if sim:
             sim.full = True
             await pg.fill("#fcv", "2"); await pg.click("#fcgo")
             await pg.wait_for_function("document.getElementById('fcerr').textContent.includes('already forced')", timeout=5000)
             check(True, "409 explained (16 already forced)")
             sim.full = False
-            await pg.fill("#fcv", "abc"); await pg.click("#fcgo")
-            await pg.wait_for_function("document.getElementById('fcerr').textContent.length > 0", timeout=5000)
-            check("valid" in await pg.inner_text("#fcerr"), "a bad value is refused with a reason")
+        await pg.fill("#fcv", "abc"); await pg.click("#fcgo")
+        await pg.wait_for_function("document.getElementById('fcerr').textContent.length > 0", timeout=5000)
+        check("valid" in await pg.inner_text("#fcerr"), "a bad value is refused with a reason")
         await pg.click("#fctab tbody tr button")
         await pg.wait_for_selector("#fctab", state="hidden", timeout=5000)
         check(True, "Release ends the force")
