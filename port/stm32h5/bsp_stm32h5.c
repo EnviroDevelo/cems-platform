@@ -310,7 +310,14 @@ static void wdg_set_prescaler(uint32_t pr) {
 #endif
 
 /* ---------------- time ---------------- */
+extern const uint32_t g_pfnVectors[];          /* the startup file's vector table */
+
 void bsp_init(void) {
+    /* Behind the bootloader (boot.h) this image's vectors are at 0x08000000 + PLAT_BOOT_SIZE.
+     * SystemInit sets VTOR from VECT_TAB_OFFSET (docs/BOOTLOADER.md); if that was left at 0
+     * the interrupts would land in the bootloader, so set it from the link address too. */
+    SCB->VTOR = (uint32_t)(uintptr_t)g_pfnVectors;
+    __DSB();
     /* DWT cycle counter for scan execution-time statistics */
     (void)HAL_InitTick(0);                     /* starts it if the HAL has not (keeps the count) */
 #ifdef HAL_IWDG_MODULE_ENABLED

@@ -4,6 +4,7 @@
     tools/mkfwimage.py build/cems.bin cems-0.4.0.cfw --version 0.4.0 --key cems-fw-key.pem \
         [--hw 0-1] [--layout 3] [--build-id <git hash>]
     tools/mkfwimage.py --check cems-0.4.0.cfw [--pub <public key hex>]
+    tools/mkfwimage.py build/cems.bin bank.bin --version 0.4.0 --factory build/boot/cems_boot.bin [--key ...]
 
 Writes header version 2: --hw is the range of board revisions (the straps, CORE_PCB.md 12) the
 image runs on (default 0-255: any); a board outside it refuses the image (CIP-03.2). --layout is
@@ -14,8 +15,13 @@ hash of the working tree, CIP-25.1).
 SHA-256, followed by bytes 148..251 for version 2). A production build refuses unsigned images;
 see tools/fwkey.py (D14).
 
-The binary must be linked for the start of flash (0x08000000): the running image is
-always mapped there, whichever bank holds it. In STM32CubeIDE: Project > Properties >
+The binary must be linked for the start of flash (0x08000000), or, behind the bootloader
+(docs/BOOTLOADER.md), for 0x08000000 + the bootloader's size (--boot-size, default 0x8000 with
+--factory): the running image is always mapped there, whichever bank holds it.
+
+--factory writes a whole 1 MB bank instead of a .cfw: the bootloader, the application at
+--boot-size, and the header in the last sector, as an update leaves it. Program it at
+0x08000000 and the bootloader alone at 0x08100000 (docs/BOOTLOADER.md 4). In STM32CubeIDE: Project > Properties >
 C/C++ Build > Settings > MCU Post build outputs > "Convert to binary file".
 
 Header layout: platform/include/fw_update.h (fw_header_t, 256 bytes, little-endian)."""
@@ -24,7 +30,9 @@ import argparse, hashlib, struct, subprocess, sys, time, zlib
 MAGIC = 0x31574643          # "CFW1"
 PRODUCT = 0x434D5331        # PLAT_FW_PRODUCT
 HDR = 256
-MAX_IMAGE = 1024 * 1024 - 8192   # bank minus the trailer sector
+BANK = 1024 * 1024
+SECTOR = 8192
+MAX_IMAGE = BANK - SECTOR        # bank minus the trailer sector (and minus --boot-size)
 
 
 def version_word(v):
@@ -131,6 +139,8 @@ def main():
     ap.add_argument("--hw", default="0-255", help="board revisions it runs on, e.g. 0-1 (default any)")
     ap.add_argument("--layout", type=int, default=0, help="settings layout version of the build (0 = not stated)")
     ap.add_argument("--build-id", help="source revision (default: git rev-parse --short=10 HEAD)")
+    ap.add_argument("--boot-size", type=lambda s: int(s, 0), help="bytes before the image: the bootloader (default 0, 0x8000 with --factory)")
+    ap.add_argument("--factory", metavar="BOOT_BIN", help="write a whole bank: this bootloader, the image, the header")
     ap.add_argument("--pub", help="with --check: public key (hex, from tools/fwkey.py hex) to verify the signature")
     a = ap.parse_args()
     if a.check:
@@ -141,8 +151,11 @@ def main():
     if not a.output or not a.version:
         ap.error("input, output and --version are needed")
     payload = open(a.input, "rb").read()
-    if not payload or len(payload) > MAX_IMAGE:
-        print(f"image size {len(payload)} outside 1..{MAX_IMAGE}"); return 1
+    boot = a.boot_size if a.boot_size is not None else (0x8000 if a.factory else 0)
+    if boot % SECTOR or not 0 <= boot < MAX_IMAGE:
+        ap.error("--boot-size: whole 8 KB sectors")
+    if not payload or len(payload) > MAX_IMAGE - boot:
+        print(f"image size {len(payload)} outside 1..{MAX_IMAGE - boot}"); return 1
     lo, _, hi = a.hw.partition("-")
     hw = (int(lo), int(hi or lo))
     if not (0 <= hw[0] <= hw[1] <= 255):
@@ -153,7 +166,19 @@ def main():
             bid = subprocess.run(["git", "rev-parse", "--short=10", "HEAD"], capture_output=True, text=True).stdout.strip()
         except OSError:
             bid = ""
-    open(a.output, "wb").write(header(payload, a.version, a.product, int(time.time()), a.key, hw, a.layout, bid) + payload)
+    h = header(payload, a.version, a.product, int(time.time()), a.key, hw, a.layout, bid)
+    if a.factory:
+        bl = open(a.factory, "rb").read()
+        if not boot or len(bl) > boot:
+            print(f"bootloader {len(bl)} bytes does not fit --boot-size {boot}"); return 1
+        bank = bytearray(b"\xff" * BANK)
+        bank[:len(bl)] = bl
+        bank[boot:boot + len(payload)] = payload
+        bank[MAX_IMAGE:MAX_IMAGE + HDR] = h
+        open(a.output, "wb").write(bank)
+        print(f"{a.output}: bank image, bootloader {len(bl)} bytes, image {len(payload)} bytes at 0x{boot:x}, header at 0x{MAX_IMAGE:x}")
+        return 0
+    open(a.output, "wb").write(h + payload)
     return 1 if check(a.output) else 0
 
 

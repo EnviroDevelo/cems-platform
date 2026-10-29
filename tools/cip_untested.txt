@@ -5,8 +5,6 @@
 # ID       reason
 CIP-02.1   hardware: the RTC crystal and battery are on the core board (CORE_PCB.md); bench test
 CIP-03.1   documentation: the technician's update procedure is still to be written
-CIP-04.1   missing: first-stage bootloader, needs the DK (section 8, firmware item 11)
-CIP-04.2   partial: a corrupted running image needs the bootloader (CIP-04.1)
 CIP-07.1   hardware: supply requirements are a CORE_PCB.md design figure
 CIP-08.3   checked by make rtos (the stuck-task run must end in a watchdog reset with outputs safe)
 CIP-11.3   checked by make test itself (fault-codes-check: docs/FAULT_CODES.md current, every platform alarm has help)

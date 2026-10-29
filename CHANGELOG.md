@@ -30,3 +30,9 @@ DK bring-up changes (28-29 Oct, before release):
 - Ethernet receive no longer depends on the RX interrupt alone: the receive task drains the ring
   every 50 ms and restarts a DMA suspended for lack of buffers (RBU); transmit frees sent
   descriptors before each send. Meant to stop the port going deaf after a debugger halt.
+- First-stage bootloader (docs/BOOTLOADER.md, `make boot`, about 6 KB of 32 KB): checks the
+  mapped image (header, SHA-256, signature with the product key), swaps to the other bank if it
+  is bad, and rolls a new image back after 3 starts without confirmation (TAMP trial register).
+  `fw_update` writes the image at `fw_flash_t.image_off` (from the link address) and sets and
+  clears the trial mark. `mkfwimage.py --factory` writes a whole bank for factory programming.
+  Products: none until the application is linked at 0x08008000 (BOOTLOADER.md 4).

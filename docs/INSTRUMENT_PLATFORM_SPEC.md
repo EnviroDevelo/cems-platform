@@ -120,8 +120,8 @@ Each table lists the requirements for one item, its class, the CORE status and w
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-04.1 | Protected bootloader that cannot be overwritten by an application update | M | Missing | Today the image is started by the ROM and `fw_boot()` in the application. An image too broken to reach `fw_boot()` cannot roll back (`PLATFORM.md` 5b limits). **Gap:** immutable first stage (ST OEMiRoT or MCUboot) |
-| CIP-04.2 | Recovery of corrupted application firmware | M | Partial | Bank rollback covers a bad update. A corrupted running image needs the debugger |
+| CIP-04.1 | Protected bootloader that cannot be overwritten by an application update | M | Partial | Own first stage (`docs/BOOTLOADER.md`, Gary 29 Oct): 32 KB at the start of both banks, write protected, never written by an update; trial counter for images that never reach `fw_boot()`. Host-tested (`test_boot.c`). **Gap:** DK bench test; production lock level |
+| CIP-04.2 | Recovery of corrupted application firmware | M | Partial | Bank rollback covers a bad update; the bootloader swaps away from a damaged running image (`test_boot.c`). **Gap:** DK bench test |
 | CIP-04.3 | Physical service/programming interface | S | Done | SWD 10-pin, BOOT0 jumper, service UART (`CORE_PCB.md` J5, J6) |
 | CIP-04.4 | Recovery possible when normal communications fail | S | Partial | SWD and the ST ROM bootloader through BOOT0 work without Ethernet. **Gap:** a written recovery procedure, and the production debug lock (RDP / product state) chosen so this still works |
 
@@ -291,7 +291,7 @@ The agreed state/action matrix is in section 7.
 | CIP-20.4 | Unnecessary interfaces restricted | M | Partial | Separate I/O network; port 80 redirect can be closed; Modbus read-only and IP filter; no outbound connections by default. **Gap:** production debug lock (RDP / product state) |
 | CIP-20.5 | External inputs validated | M | Done | One check path; strict JSON and Modbus parsing; CSP (PR #6) |
 | CIP-20.6 | Secure network communications | M | Done | HTTPS only (D11); SMTP over TLS with pinning |
-| CIP-20.7 | Secure boot | O | Missing | Comes with CIP-04.1 on the H573 |
+| CIP-20.7 | Secure boot | O | Partial | The bootloader checks the ECDSA P-256 signature (PKA) when the build has the product key (`docs/BOOTLOADER.md`). **Gap:** bench test; the debug lock that makes it binding |
 
 ### 4.21 User interface conventions
 

@@ -380,9 +380,10 @@ Every step (asked, held, confirmed, refused, dropped, not safe) is in the event 
 
 Limits of this foundation, all planned:
 - an image too broken to reach `fw_boot()` (very early in start-up) can't roll itself
-  back. The watchdog keeps resetting it and the debugger or a bootloader is needed. An
-  immutable first-stage bootloader (ST's OEMiRoT, or MCUboot) closes this and comes with
-  secure boot;
+  back without the first-stage bootloader (docs/BOOTLOADER.md): it counts the starts of a new
+  image and swaps back after 3, and swaps away from a damaged running image. Written and
+  host-tested; the application has to be linked behind it (0x08008000) to use it, and the
+  DK bench test is still to do;
 - the minimum version is a setting in FRAM (factory level), not a hardware counter: it
   keeps withdrawn versions off units, but someone with the factory login can lower it;
 - the free bank's physical number for the sector-erase register under SWAP_BANK

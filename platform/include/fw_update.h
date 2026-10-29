@@ -89,6 +89,8 @@ typedef struct fw_flash {
     int  (*read)(struct fw_flash *f, bool active, uint32_t off, void *p, uint32_t n);
     void (*swap_and_reset)(struct fw_flash *f);   /* toggles the bank swap; on the target does not return */
     void *ctx;
+    uint32_t image_off;        /* where the image starts in a bank: PLAT_BOOT_SIZE (the bootloader before it, boot.h) */
+    void (*trial_mark)(struct fw_flash *f, bool on);   /* the bootloader's trial counter (boot.h); may be NULL */
 } fw_flash_t;
 
 typedef enum {

@@ -304,6 +304,9 @@ to sign" gives the command line; run it on the developer's PC
 (`python3 tools/serial_token.py --key ~/cems-dev/cems-dev-key.pem --uid <chip ID> --old <now> --new <serial>`)
 and paste the token back. The token only works on that chip, once.
 
+Behind the first-stage bootloader (docs/BOOTLOADER.md 4) the application is linked at
+0x08008000 with `VECT_TAB_OFFSET 0x00008000U`; nothing else changes here.
+
 The first update on the DK should be done with the debugger attached (see
 `docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to
 return to a plain setup, clear it in STM32CubeProgrammer (Option bytes → User
