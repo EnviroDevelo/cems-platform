@@ -1,4 +1,4 @@
-# Service procedures: update, recovery, factory provisioning
+# Service procedures: update, recovery, provisioning, fault finding
 
 For technicians and the factory. CIP-03.1 (documented update method), CIP-04.4 (recovery when
 normal communications fail), CIP-23.2 (loading firmware and defaults) and CIP-23.3 (board test).
@@ -81,3 +81,40 @@ test record.
 It writes to the settings memory for a few milliseconds. Do not run it on a unit in service: a
 power cut at that moment could damage a stored byte, which the settings' second copy would then
 have to cover.
+
+## 5. Fault finding
+
+Start with what the unit already says about itself, in this order:
+
+1. **The alarms** (touchscreen header, web Overview, Modbus 9005/9006). Each alarm's text says
+   what to check; the full list with causes is in [FAULT_CODES.md](FAULT_CODES.md).
+2. **The instrument state** (touchscreen header, `/api/info` `state`, Modbus 9003). FAULT and
+   SAFE MODE always come with an alarm that says why.
+3. **The last fault before a restart** (touchscreen System screen, `/api/info` `last_fault`).
+   Codes are in FAULT_CODES.md, "Fault record". The reset cause is on the `power_up` event.
+4. **The start-up self-test** (web Service section, `/api/info` `selftest`): one line per check.
+5. **The event log** (web Event log tab, CSV download): every change, login, alarm, restart and
+   update, with who did it (touchscreen, web, modbus).
+6. **The diagnostic package** (web Event log tab, **Diagnostic package**): information,
+   settings without passwords, alarms, firmware, I/O boards and the event log in one file.
+   Send that file with any report to the manufacturer.
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| Display blank, web page works | display cable, or the display's supply | Alarm 8 `DISPLAY_FAULT` confirms it. Reseat the ribbon cable with the power off. The unit keeps measuring |
+| Display and web both dead | no supply, or no firmware running (section 2) | Check 24 V at the terminals. Then section 2 |
+| SAFE MODE after power-up | it restarted repeatedly within a short time | Read the last fault (above), write it down, power-cycle. If it comes back, send the diagnostic package |
+| `UNEXPECTED_RESET` now and then | watchdog or supply dips | The last fault names the task. Compare the `power_up` reset cause: 6 brown-out points at the supply |
+| `PARAM_WRITE_FAIL` | settings memory (FRAM) not answering or failing writes | Changes may be lost at power-off. Run the board test (section 4) at a quiet time; replace the core board if the FRAM line fails |
+| `IP_CONFLICT`, network off | another device has the unit's static IP | Change one of the two addresses |
+| PLC reads nothing | wrong IP or port, a client filter, or more than 4 clients | [MODBUS.md](MODBUS.md) 1 and 8. The web Service tab lists the Modbus clients and refused connections |
+| PLC writes refused | LOCAL mode, Modbus writes off, or the value's level | The exception code says which: MODBUS.md 5 |
+| `REMOTE_LINK_LOST` | in REMOTE and the PLC stopped polling | Check the PLC and the network. The timeout is parameter 3 |
+| `IOB_LOST` | I/O board power, cable or address | Check the I/O board's power LED, the I/O network cable and its address switch; the web I/O boards tab shows each board's link |
+| Clock wrong or "not synchronised" | no time server reachable | Check the SNTP server setting and the gateway, or set the clock by hand on the touchscreen or web |
+| `RESOURCE_LOW` | free memory below its margin | Note the figures on the System screen or `/api/info` `health`, and send the diagnostic package. Not urgent, but don't ignore it |
+
+Keeping the settings: web Administration tab → **Download parameter backup** beforehand, and
+**Restore from file** on the same unit or its replacement. The calibration (factory data) is kept separately and isn't
+changed by a restore of the defaults.
+

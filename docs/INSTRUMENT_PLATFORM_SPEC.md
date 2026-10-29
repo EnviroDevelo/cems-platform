@@ -310,7 +310,7 @@ The agreed state/action matrix is in section 7.
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-22.1 | Exportable diagnostic package | S | Missing | **Gap:** one download (zip or JSON) with `/api/info`, settings (no secrets), event log, last fault, firmware history, I/O board status |
+| CIP-22.1 | Exportable diagnostic package | S | Done | Web Event log tab, **Diagnostic package**: one JSON file from `/api/info` (last fault, health, self-test), settings without passwords, alarms, `/api/fw`, `/api/iob` and the event log. Service manual: `SERVICE_PROCEDURES.md` 5 |
 | CIP-22.2 | Operating-hours counters | S | Done | Total and since-service hours (0.1 h), parameters 330/331, kept over updates and restore defaults |
 | CIP-22.3 | Fault history | S | Done | Event log; last fault; firmware history |
 | CIP-22.4 | Service records | S | Done | Service log (8 entries) at factory level, `/api/service` |
@@ -321,7 +321,7 @@ The agreed state/action matrix is in section 7.
 |---|---|---|---|---|
 | CIP-23.1 | Controlled assignment of identity | S | Done | Serial token tool (D25) |
 | CIP-23.2 | Loading of firmware and defaults | S | Done | SWD for first programming (bank image with the bootloader, `mkfwimage.py --factory`); provisioning sequence `docs/SERVICE_PROCEDURES.md` 3 |
-| CIP-23.3 | Hardware test procedures | S | Partial | Board test at factory login (`plat_boardtest.h`, `POST /api/service/boardtest`): settings memory address/data per chip, RAM, RTC, image, log flash, both PHYs and links, display, supply, straps; saved as the test record (`test_selftest.c` t_boardtest). **Gap:** the web button (HTTPS thread), DK run |
+| CIP-23.3 | Hardware test procedures | S | Partial | Board test at factory login (`plat_boardtest.h`, `POST /api/service/boardtest`): settings memory address/data per chip, RAM, RTC, image, log flash, both PHYs and links, display, supply, straps; saved as the test record (`test_selftest.c` t_boardtest). Web button and results: Service tab (PR #12); display part: touchscreen System > Display test with `HMI_BENCH_TEST.md` (PR #13). **Gap:** the DK run |
 | CIP-23.4 | Retained manufacturing test results | S | Done | Manufacturing test record in the FACTORY region (`POST /api/service/test`) |
 | CIP-23.5 | Factory-only settings protected | S | Done | `PF_FACTORY`, factory level, never restored from a user-level backup |
 
@@ -342,7 +342,7 @@ The agreed state/action matrix is in section 7.
 | CIP-25.1 | Traceable firmware revisions | M | Done | Version, build ID (git hash) in the image header and on `/api/info`; core version (`plat_version.h`) |
 | CIP-25.2 | Traceable hardware revisions | M | Done (host) | Board straps and the factory `hw_rev` (CIP-01.3); schematic in git |
 | CIP-25.3 | Traceable configuration and calibration revisions | M | Done | Configuration checksum (CIP-05.4) and calibration history (CIP-18.2) |
-| CIP-25.4 | Release notes | M | Missing | **Gap:** `CHANGELOG.md` and a release note per version |
+| CIP-25.4 | Release notes | M | Partial | `CHANGELOG.md` (per core version: added, changed, interfaces, tested on) with `SUPPORTED.md`. **Gap:** the first tagged release note (core-0.9.0 after the DK bench) |
 | CIP-25.5 | Supported combinations identified | M | Partial | `docs/SUPPORTED.md`: firmware × core hardware × I/O board map, with what each was tested on. **Gap:** kept up at each release (from the first one) |
 
 ### 4.26 Verification and documentation
@@ -354,8 +354,8 @@ The agreed state/action matrix is in section 7.
 | CIP-26.3 | Shared test: corrupted settings | M | Done (host) | `t_blank_fram`, `t_both_factory_copies_bad` |
 | CIP-26.4 | Shared test: communications loss | M | Done (host) | Remote-link watchdog, connection-lost banner, I/O board lost |
 | CIP-26.5 | Shared test: update failure and recovery | M | Done (host) | `fw_test.py` rollback |
-| CIP-26.6 | The same tests on hardware | M | Missing | DK bring-up, then the core board; 72-hour soak |
-| CIP-26.7 | Operator, service and communications documentation with each release | M | Missing | **Gap:** operator manual, service manual, Modbus register map document. `PLATFORM.md` is a developer document |
+| CIP-26.6 | The same tests on hardware | M | Partial | DK: start-up, scan, FRAM, Ethernet, HTTPS, Modbus TCP verified 28 Oct. Bench plan (`BENCH_TEST_PLAN_DK.md`) and `tools/dk_soak.py` (read-only load, 72 h). **Gap:** the network update, bootloader and soak runs on the DK, then the core board |
+| CIP-26.7 | Operator, service and communications documentation with each release | M | Done | Operator manual `OPERATOR_MANUAL.md` (touchscreen, HMI thread, PR #13); service manual `SERVICE_PROCEDURES.md` (update, recovery, provisioning, board test, fault finding) with `FAULT_CODES.md`; communications `MODBUS.md` (integrator's guide and platform block) with the generated per-product map `interface/<app>/MODBUS_MAP.md`. Updated with each release (CHANGELOG.md) |
 
 ## 5. What an update or reset keeps (principle P3)
 
@@ -445,7 +445,7 @@ after Gary's review.
 2. Core version tags and the core version shown beside the product version; `PROFILE.md` template.
 
 **Documentation (any thread)**
-1. Operator manual, service manual, Modbus register map document (CIP-26.7).
+1. Operator manual, service manual, Modbus register map document (CIP-26.7). Done.
 2. `CHANGELOG.md`, release notes, supported-combinations matrix (CIP-25.4, 25.5).
 3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5); UI convention page (CIP-21.7).
 
