@@ -51,6 +51,8 @@ DK bring-up changes (28-29 Oct, before release):
 - Modbus forced values for commissioning (`modbus.h` `mb_force_*`): an admin forces a value the
   PLC reads for 30 s from the touchscreen or web (`/api/modbus/force`); Modbus only, logged
   (event `force`), counted at input register 9090 (block layout 3) and common alarm bit 4.
+- `tools/iob_sim.py`: a pretend I/O board (register map 2, Modbus TCP and discovery) on a PC, for the
+  DK bench before a board exists; `tests/integration/iob_sim_test.py` runs it against netsim's real master.
 - `GET /api/modbus/map`: the register map in force as JSON, for the integrator's handover file.
 - `/api/info` `"modbus"`: server status for the web Service tab. `docs/MODBUS.md`: the
   integrator's guide (CIP-26.7).

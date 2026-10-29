@@ -116,7 +116,7 @@ mb_stats_t mb_stats(void);
  * the screens, alarms, logs and control keep the real value. Test bits are forced bools.
  *  - Forceable (mb_forceable): a numeric or bool parameter (or array element) on Modbus that is
  *    read-only to Modbus (input registers or discrete inputs only, or a PF_RO parameter); never a
- *    setting, a text, or the block's layout and map versions.
+ *    setting, a text, the block's versions, the identity (serial, revisions) or the clock.
  *  - Any LOCAL/REMOTE mode. Setting it again restarts the time. Not kept over a restart.
  *  - The master can tell: input register 9090 counts the forces, common alarm bit ACOM_FORCED.
  *  - Every set, clear and expiry is in the event log (LOG_EV_FORCE).

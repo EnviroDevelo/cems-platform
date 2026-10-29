@@ -162,7 +162,10 @@ static void force_log(const param_def_t *d, uint16_t index, uint8_t src, uint8_t
 }
 
 bool mb_forceable(uint16_t id) {
-    if (id == PARAM_ID_MB_BLOCK_VERSION || id == PARAM_ID_MB_MAP_VERSION || id == PARAM_ID_MB_FORCED) return false;
+    static const uint16_t never[] = { PARAM_ID_MB_BLOCK_VERSION, PARAM_ID_MB_MAP_VERSION, PARAM_ID_MB_FORCED,   /* identity and time */
+                                      PARAM_ID_SERIAL, PARAM_ID_HW_REV, PARAM_ID_FW_VERSION_NUM, PARAM_ID_API_VERSION,
+                                      PARAM_ID_CLOCK_UNIX, PARAM_ID_CLOCK_SYNC_TIME };
+    for (size_t k = 0; k < sizeof never / sizeof never[0]; ++k) if (id == never[k]) return false;
     const param_def_t *d = param_find(id);
     if (!d || d->ctype > CT_F32 || (PARAM_IS_BLOB(d) && d->ptype != PT_ARRAY)) return false;
     bool on = false;

@@ -1065,7 +1065,34 @@ static void get_mb_map(http_out_t *o) {
         out_str(o, ",\"forceable\":"); json_bool(o, mb_forceable(d->id));
         out_str(o, "}");
     }
-    out_str(o, "]}");
+    /* the codes the values use (MODBUS.md 6), for the handover file's Codes sheet */
+    out_str(o, "],\"codes\":{\"quality\":[");
+    for (uint8_t q = 0; q < PLAT_Q_COUNT; ++q) {
+        out_str(o, q ? ",{\"code\":" : "{\"code\":"); json_uint(o, q);
+        out_str(o, ",\"key\":"); json_str(o, plat_quality_code(q));
+        out_str(o, ",\"name\":"); json_str(o, q ? plat_quality_name(q) : "valid"); out_str(o, "}");
+    }
+    out_str(o, "],\"state\":[");
+    for (uint8_t s = 0; s < PLAT_ST_COUNT; ++s) {
+        out_str(o, s ? ",{\"code\":" : "{\"code\":"); json_uint(o, s);
+        out_str(o, ",\"key\":"); json_str(o, plat_state_key(s));
+        out_str(o, ",\"name\":"); json_str(o, plat_state_name(s)); out_str(o, "}");
+    }
+    out_str(o, "],\"common_bits\":[{\"bit\":0,\"name\":\"a Modbus-routed alarm is active\"},"
+               "{\"bit\":1,\"name\":\"a Modbus-routed alarm waits for an acknowledge\"},"
+               "{\"bit\":2,\"name\":\"any alarm is active\"},{\"bit\":3,\"name\":\"any alarm waits for an acknowledge\"},"
+               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"}");
+    for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
+        char b[64]; snprintf(b, sizeof b, ",{\"bit\":%u,\"name\":\"alarm relay %u in alarm\"}", 8u + k, k + 1u);
+        out_str(o, b);
+    }
+    out_str(o, "],\"clock_source\":[{\"code\":0,\"name\":\"none\"},{\"code\":1,\"name\":\"SNTP\"},"
+               "{\"code\":2,\"name\":\"touchscreen\"},{\"code\":3,\"name\":\"web\"},{\"code\":4,\"name\":\"Modbus\"}],"
+               "\"exceptions\":[{\"code\":1,\"name\":\"illegal function, writes disabled, or level too low\"},"
+               "{\"code\":2,\"name\":\"illegal address, read-only, or half a 32-bit value\"},"
+               "{\"code\":3,\"name\":\"illegal value: range, type or length\"},"
+               "{\"code\":4,\"name\":\"refused in this mode (LOCAL) or by an interlock\"},"
+               "{\"code\":6,\"name\":\"busy: write queue full, retry\"}]}}");
 }
 
 /* ---------------- calibration records (plat_cal.h) ---------------- */

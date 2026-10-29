@@ -336,6 +336,7 @@ static void t_force(void) {
     CHECK(!mb_forceable(P_FLOW)); CHECK(!mb_forceable(P_PRESET));    /* settings the PLC writes */
     CHECK(!mb_forceable(P_NAME)); CHECK(!mb_forceable(P_ACK));       /* text; writable coils */
     CHECK(!mb_forceable(PARAM_ID_MB_BLOCK_VERSION)); CHECK(!mb_forceable(PARAM_ID_MB_FORCED));
+    CHECK(!mb_forceable(PARAM_ID_SERIAL)); CHECK(!mb_forceable(PARAM_ID_CLOCK_UNIX));
     CHECK(mb_forceable(PARAM_ID_STATE));                             /* the block's state: the PLC's FAULT handling */
     CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_OPERATOR, 1000), PERR_ACCESS);
     CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_MODBUS, PLAT_LVL_FACTORY, 1000), PERR_ACCESS);
