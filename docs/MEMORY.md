@@ -8,7 +8,7 @@ module, and before choosing hardware. Last run: 2026-10-30.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 478.4 KB | 1016.0 KB | 47 % | 537.6 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 478.5 KB | 1016.0 KB | 47 % | 537.5 KB |
 | RAM (STM32H573/H563, 640 KB) | 515.8 KB | 640.0 KB | 81 % | 124.2 KB |
 
 ## By module (KB)

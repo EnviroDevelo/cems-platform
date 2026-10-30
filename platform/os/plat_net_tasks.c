@@ -12,6 +12,7 @@
 #include "param.h"
 #include "param_store.h"
 #include "plat_role.h"
+#include "tls.h"
 
 bool plat_net_ready(void);
 
@@ -58,6 +59,7 @@ void plat_http_task_body(void) {
     while (http_open(&s, PLAT_HTTPS_PORT, http_buf, sizeof http_buf) != 0) { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(1000)); }
     s.alive = http_alive;
     s.tls = true;
+    tls_alive_hook = http_alive;                       /* a long record over a lossy link checks in too */
     r.lfd = -1;
     for (;;) {
         plat_val_t v;
