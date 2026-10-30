@@ -1291,7 +1291,7 @@ async function mbHandoverData() {
     e.min ?? "", e.max ?? "", e.scale_dec ? `÷ ${10 ** e.scale_dec} (${e.scale_dec} decimals)` : "", e.access, e.write_level || "",
     e.fc_write ? (e.write_any_mode === false ? "REMOTE only" : "any mode") : "", e.id, ""];
   const W = [16, 9, 9, 7, 8, 22, 9, 15, 14, 24, 40, 9, 9, 9, 18, 11, 11, 12, 11, 14];
-  const all = m.entries || [], std = all.filter(e => (e.table === "input" || e.table === "holding") && e.addr >= 7000 && e.addr <= 7999);
+  const all = m.entries || [], std = all.filter(e => e.table !== "coil" && e.addr >= 7000 && e.addr <= 7999);   /* the core's fixed block, digital input alarms included */
   const blk = all.filter(e => e.block), frc = all.filter(e => e.forceable);
   const cover = [["CEMS instrument: Modbus TCP handover", ""], ["Product", m.product || i.product], ["Serial number", i.serial],
     ["Firmware", `${m.fw || i.fw}${i.build ? " (build " + i.build + ")" : ""}${i.core ? ", core " + i.core : ""}`],
@@ -1308,7 +1308,8 @@ async function mbHandoverData() {
   const exc = Object.fromEntries(MB_EXC.map(([c, , t]) => [c, t]));
   for (const [g, list] of Object.entries(m.codes || {})) for (const c of list)
     codes.push([GRP[g] || g, c.code ?? c.bit ?? "", c.name || c.key || "", c.text || c.meaning || (g === "exceptions" ? exc[c.code] || "" : c.key && c.key !== c.name ? c.key : "")]);
-  for (const a of al.alarms || []) codes.push(["Alarm ID", a.id, a.name, `${a.text} (${a.severity})`]);
+  /* the alarm's label as set now (a digital input alarm's label typed on the touchscreen or here), then its code name */
+  for (const a of al.alarms || []) codes.push(["Alarm ID", a.id, a.text || a.name, `${a.name}, ${a.severity}`]);
   if (!(m.codes && m.codes.exceptions)) for (const [c, n, t] of MB_EXC) codes.push(["Modbus exception", c, n, t]);
   const comm = [["Commissioning: forcing values", ""],
     ["What it does", "At admin login, the web page (Service tab) can force a value below for 30 s: the control system reads the forced value, then the real one again. Forcing again restarts the 30 s."],
@@ -1318,7 +1319,7 @@ async function mbHandoverData() {
     ["Forceable values", ""]];
   return { stamp, sn: String(i.serial ?? "unit").replace(/[^\w.-]/g, ""), HEAD, W, all, row, sheets: [
     { name: "Cover", cols: [26, 90], rows: cover },
-    { name: "Standard values", cols: W, rows: std.length ? [HEAD, ...std.map(row)] : [["Standard values (registers 7000-7999)"], ["None on this product yet: see the Project map."]] },
+    { name: "Standard values", cols: W, rows: std.length ? [HEAD, ...std.map(row)] : [["Standard values (addresses 7000-7999)"], ["None on this product yet: see the Project map."]] },
     { name: "Project map", cols: W, rows: [HEAD, ...all.map(row)] },
     { name: "Platform block", cols: W, rows: [HEAD.slice(0, -1), ...blk.map(e => row(e).slice(0, -1))] },
     { name: "Codes", cols: [18, 8, 26, 70], rows: codes },

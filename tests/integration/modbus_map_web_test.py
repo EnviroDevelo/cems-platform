@@ -105,6 +105,10 @@ async def run(mp, sim):
         codes = [r[0].value for r in wb["Codes"].iter_rows(min_row=2)]
         check("Alarm ID" in codes and codes.count("Modbus exception") == len((mp.get("codes") or {}).get("exceptions") or [1, 2, 3, 4, 6]),
               f"Codes sheet: {sorted(set(codes))}, exceptions once")
+        with urllib.request.urlopen(URL + "api/alarms/config", context=ssl._create_unverified_context(), timeout=5) as f:
+            al = json.loads(f.read())["alarms"]
+        arow = {r[1].value: r[2].value for r in wb["Codes"].iter_rows(min_row=2) if r[0].value == "Alarm ID"}
+        check(al and all(arow.get(a["id"]) == (a["text"] or a["name"]) for a in al), f"alarms listed by their current label ({arow.get(al[0]['id']) if al else ''!r})")
         if mp.get("codes"):
             check("Quality" in codes and "State" in codes and "Common alarm bit" in codes, "the map's codes (quality, state, common alarm bits)")
         nf = sum(1 for e in mp["entries"] if e.get("forceable"))
