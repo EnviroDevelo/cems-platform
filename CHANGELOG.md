@@ -16,6 +16,18 @@ self-test, PBKDF2 passwords with token recovery.
 Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the interface
 snapshots (`make snapshots APP=<dir>`).
 
+One source for the CORE and the I/O node (30 Oct, Gary):
+- The io-node repository (node core, chip drivers, its tests and tools, the G0 port) now lives here:
+  `node/`, `tests/node/`, `tools/node/`, `port/node_stm32g0/`, `docs/IO_NODE.md`. `make test` runs its
+  tests and the platform's host suite against the real node core (`make master-real`).
+- The role (`plat_role.h`): CORE, NODE or NONE, from the shared PCB's jumper J7 (ROLE_A PE5,
+  ROLE_B PE6) or fixed with `PLAT_ROLE_FIXED`. A board without the jumper's labels is a CORE, so
+  existing projects need nothing new except the four source files and the `node` include path.
+- The NODE role (`plat_node.h`): the node core over the platform's sockets in the iobus task;
+  no display, web, plant Modbus or application. `build/nodesim` runs it on a PC;
+  `tests/integration/node_role_test.py` runs a CORE against it.
+- The NUCLEO-H563ZI as a node: `docs/CUBEMX_NUCLEO_NODE.md`; `tools/check_target.sh` links it (CHIP=h563).
+
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
   in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds

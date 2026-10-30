@@ -32,6 +32,8 @@
 #include "plat_log.h"
 #include "tls.h"
 #include "plat_boardtest.h"
+#include "plat_role.h"
+#include "plat_node.h"
 
 static struct netif nif;
 
@@ -56,6 +58,11 @@ typedef struct { bool dhcp; uint32_t ip, mask, gw; } net_cfg_t;
 
 static net_cfg_t read_cfg(void) {
     plat_val_t v; net_cfg_t c = { 0 };
+    node_ipcfg_t n;
+    if (plat_role() == PLAT_ROLE_NODE) {          /* an I/O board: the IP the CORE gave it (plat_node.h) */
+        if (plat_node_ipcfg(&n)) { c.ip = n.ip; c.mask = n.mask; c.gw = n.gw; }
+        return c;
+    }
     if (param_read(PARAM_ID_NET_DHCP, &v)) c.dhcp = v.b;
     if (param_read(PARAM_ID_NET_IP, &v))   c.ip = v.u;
     if (param_read(PARAM_ID_NET_MASK, &v)) c.mask = v.u;
@@ -94,6 +101,16 @@ static void probe_start(void *arg) {         /* tcpip thread */
     if (acd_start(&nif, &acd, want_ip) != ERR_OK) probing = false;
 }
 
+static void probe_start_none(void *arg) {     /* tcpip thread: no address at all */
+    (void)arg;
+    ip4_addr_t any;
+    ip4_addr_set_zero(&any);
+    acd_stop(&acd);
+    netif_set_addr(&nif, &any, &any, &any);
+    probing = false;
+    bound = false;
+}
+
 static void acd_setup(void *arg) { (void)arg; acd_add(&nif, &acd, acd_cb); }
 
 static void apply_cfg(const net_cfg_t *c) {
@@ -101,6 +118,11 @@ static void apply_cfg(const net_cfg_t *c) {
     IP4_ADDR(&want_mask, c->mask >> 24, (c->mask >> 16) & 255, (c->mask >> 8) & 255, c->mask & 255);
     IP4_ADDR(&want_gw, c->gw >> 24, (c->gw >> 16) & 255, (c->gw >> 8) & 255, c->gw & 255);
     conflict = false;
+    if (!c->dhcp && c->ip == 0) {               /* a new I/O board: no address until the CORE sets one */
+        netifapi_dhcp_release_and_stop(&nif);
+        tcpip_callback(probe_start_none, NULL);
+        return;
+    }
     if (c->dhcp) {
         tcpip_callback(acd_setup, NULL);     /* (harmless if already added) */
         probing = false;
@@ -152,7 +174,7 @@ void plat_net_task_body(void) {
     netifapi_netif_set_default(&nif);
     tcpip_callback(acd_setup, NULL);
 #if LWIP_NETIF_HOSTNAME
-    nif.hostname = "cems-supervisor";
+    nif.hostname = plat_role() == PLAT_ROLE_NODE ? "cems-io-node" : "cems-supervisor";
 #endif
     apply_cfg(&cfg);
     ready = true;
@@ -169,7 +191,7 @@ void plat_net_task_body(void) {
         }
         bool link = netif_is_link_up(&nif);
         t += 250u;
-        if (!cfg.dhcp && link && ((link && !link_was) || (conflict && !bound && !probing && t - retry >= 30000u))) {
+        if (!cfg.dhcp && cfg.ip && link && ((link && !link_was) || (conflict && !bound && !probing && t - retry >= 30000u))) {
             retry = t;                             /* cable plugged in, or 30 s after a refused address: check again */
             tcpip_callback(probe_start, NULL);
         }

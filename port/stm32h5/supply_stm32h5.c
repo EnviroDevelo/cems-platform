@@ -1,5 +1,10 @@
 /* supply_stm32h5.c - what the firmware reads from the board (CORE_PCB.md 12): the 24 V supply
- * (bsp_supply_mv, plat_power.h) and the revision straps (bsp_hw_straps, fw_update.h).
+ * (bsp_supply_mv, plat_power.h), the revision straps (bsp_hw_straps, fw_update.h) and the role
+ * jumper J7 (bsp_role_read, plat_role.h).
+ *
+ * Role jumper: CubeMX PE5 and PE6 as GPIO inputs, no pull (10k pull-ups on the board), labelled
+ * ROLE_A (PE5) and ROLE_B (PE6). Without the labels the board has no jumper (a CORE, or the role
+ * fixed by PLAT_ROLE_FIXED).
  *
  * Straps: CubeMX PE7 and PE8 as GPIO inputs, no pull (the board has the resistors), labelled
  * HW_REV0 (PE7) and HW_REV1 (PE8). Without the labels the board has no straps.
@@ -19,6 +24,7 @@
  * task; the platform averages 16. The reading is about 0.4 V low (after the reverse diode). */
 #include "main.h"
 #include "bsp.h"
+#include "plat_role.h"
 
 #ifndef SUPPLY_ADC_HANDLE
 #define SUPPLY_ADC_HANDLE hadc1
@@ -35,6 +41,16 @@ bool bsp_hw_straps(uint8_t *rev) {
 }
 #else
 bool bsp_hw_straps(uint8_t *rev) { (void)rev; return false; }
+#endif
+
+#if defined(ROLE_A_Pin) && defined(ROLE_B_Pin)
+bool bsp_role_read(bool *a, bool *b) {
+    *a = HAL_GPIO_ReadPin(ROLE_A_GPIO_Port, ROLE_A_Pin) == GPIO_PIN_SET;
+    *b = HAL_GPIO_ReadPin(ROLE_B_GPIO_Port, ROLE_B_Pin) == GPIO_PIN_SET;
+    return true;
+}
+#else
+bool bsp_role_read(bool *a, bool *b) { (void)a; (void)b; return false; }
 #endif
 
 #if defined(HAL_ADC_MODULE_ENABLED) && defined(SUPPLY_SENSE_Pin)

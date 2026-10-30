@@ -11,8 +11,14 @@
 #include "mail.h"
 #include "param.h"
 #include "param_store.h"
+#include "plat_role.h"
 
 bool plat_net_ready(void);
+
+/* the NODE role (plat_role.h) serves no plant Modbus (502 is the I/O board's) and no web */
+static void node_idle(plat_task_id_t id) {
+    for (;;) { plat_checkin(id); vTaskDelay(pdMS_TO_TICKS(100)); }
+}
 
 static void wait_net(plat_task_id_t id) {
     while (!plat_net_ready()) { plat_checkin(id); vTaskDelay(pdMS_TO_TICKS(100)); }
@@ -20,6 +26,7 @@ static void wait_net(plat_task_id_t id) {
 
 void plat_modbus_task_body(void) {
     static mbtcp_server_t s;
+    if (plat_role() == PLAT_ROLE_NODE) node_idle(PLAT_TASK_MODBUS);
     wait_net(PLAT_TASK_MODBUS);
     while (mbtcp_open(&s, PLAT_MODBUS_PORT) != 0) { plat_checkin(PLAT_TASK_MODBUS); vTaskDelay(pdMS_TO_TICKS(1000)); }
     for (;;) {
@@ -39,6 +46,7 @@ static http_server_t s, r;
 static void release_web(void) { http_drop_kept(&s); }
 
 void plat_http_task_body(void) {
+    if (plat_role() == PLAT_ROLE_NODE) node_idle(PLAT_TASK_HTTP);
     static uint8_t rbuf[2048];
     const plat_app_t *app = plat_app();
     http_cfg_t cfg = { .product = app->ident.product, .fw_version = app->ident.revision, .scan = &plat_scan,
