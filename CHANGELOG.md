@@ -17,6 +17,14 @@ Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the in
 snapshots (`make snapshots APP=<dir>`).
 
 One source for the CORE and the I/O node (30 Oct, Gary):
+- The standard CEMS Modbus block (VDI 4201-3, `docs/MODBUS_STANDARD_BLOCK.md`): input registers
+  7000-7999 mirrored read-only in the holding registers: BasisM value and NE 107 status per slot,
+  BasisS showing the force in effect, BasisR, calculated banks 1-7, qualities, counters, globals,
+  word order setting (param 335). Built from the emissions engine's parameters; without them
+  every slot reads NaN / not fitted. 43/14 now answers conformity 0x83 with the VDI 4201-3
+  extended objects (serial, ComponentNumber 30, BasisM/S/R addresses, name/range/unit per
+  component) and streams codes 1-3 with "more follows". A product map entry in 7000-7999 of the
+  input or holding registers stops start-up (none of the current maps uses it).
 - Ethernet on any switch: the MAC follows the PHY when a switch renegotiates without the link
   looking down; parameter 15 `net_link_mode` (admin) limits what the port offers (0 auto, 1 100 Mbit
   only, 2 10 Mbit only for long or poor cable) with autonegotiation always on; `/api/info` "eth"

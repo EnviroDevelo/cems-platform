@@ -89,6 +89,11 @@ typedef struct {
  *   layout 3 (added): 9090 values forced on Modbus now (mb_force_*; 0 = none)
  * 32-bit values high word first; text two bytes per register, first byte high, NUL padded. */
 #define MB_BLOCK_REGS 91u
+/* The standard CEMS block (VDI 4201-3, docs/MODBUS_STANDARD_BLOCK.md): input registers 7000-7999
+ * (PLAT_MB_STD_ADDR), the same in the holding registers, read-only (writes: exception 02), built
+ * from the emissions engine's parameters on each read; slots without one read NaN. Word order:
+ * param 335 mb_std_words. Its forceable values are the engine's banks (450-457). 43/14 gives
+ * its self-description (conformity 0x83). A product's map may not use 7000-7999. */
 void mb_block_scan(uint32_t now_ms);     /* scan task: heartbeat, link age, uptime */
 
 /* Build the map index: the platform's block plus the application's map. Checks that every ID
