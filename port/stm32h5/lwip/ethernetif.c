@@ -63,6 +63,10 @@ LWIP_MEMPOOL_DECLARE(RX_POOL, ETH_RX_BUFFER_CNT, sizeof(RxBuff_t), "Zero-copy RX
 static volatile rx_alloc_t RxAllocStatus;
 static volatile uint32_t   rx_pool_empty, rx_missed, rx_overflow;   /* plat_eth_diag */
 static volatile uint16_t   phy_scsr, phy_secr;                      /* read by the link poll only */
+static volatile uint16_t   phy_anar, phy_anlpar, phy_aner;
+static volatile uint32_t   link_drops, resyncs;
+static int32_t             applied = LAN8742_STATUS_LINK_DOWN;      /* the PHY state the MAC is set to */
+static uint8_t             link_mode = 0xFFu;                        /* none written yet */
 static SemaphoreHandle_t   RxPktSemaphore, TxPktSemaphore;
 static StaticSemaphore_t   rx_sem_mem, tx_sem_mem;
 static StaticTask_t        rx_tcb;
@@ -105,6 +109,7 @@ static bool apply_phy_state(int32_t st) {
     MACConf.Speed = speed;
     HAL_ETH_SetMACConfig(&EthHandle, &MACConf);
     HAL_ETH_Start_IT(&EthHandle);
+    applied = st;
     return true;
 }
 
@@ -116,18 +121,56 @@ void ethernetif_link_poll(struct netif *netif) {
     uint32_t v;
     if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_PHYSCSR, &v) == HAL_OK) phy_scsr = (uint16_t)v;
     if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_SECR, &v) == HAL_OK) phy_secr = (uint16_t)v;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_ANAR, &v) == HAL_OK) phy_anar = (uint16_t)v;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_ANLPAR, &v) == HAL_OK) phy_anlpar = (uint16_t)v;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_ANER, &v) == HAL_OK) phy_aner = (uint16_t)v;
     rx_missed += EthHandle.Instance->DMACMFCR & ETH_DMACMFCR_MFC;
     rx_overflow += EthHandle.Instance->MTLRQMPOCR & ETH_MTLRQMPOCR_OVFPKTCNT;
     if (netif_is_link_up(netif) && st <= LAN8742_STATUS_LINK_DOWN) {
         HAL_ETH_Stop_IT(&EthHandle);
         netifapi_netif_set_down(netif);
         netifapi_netif_set_link_down(netif);
+        applied = LAN8742_STATUS_LINK_DOWN;
+        link_drops++;
     } else if (!netif_is_link_up(netif) && st > LAN8742_STATUS_LINK_DOWN) {
         if (apply_phy_state(st)) {
             netifapi_netif_set_up(netif);
             netifapi_netif_set_link_up(netif);
         }
+    } else if (netif_is_link_up(netif) && st != applied
+               && st >= LAN8742_STATUS_100MBITS_FULLDUPLEX && st <= LAN8742_STATUS_10MBITS_HALFDUPLEX) {
+        /* The switch renegotiated between two polls without the link looking down: a MAC left on
+         * the old speed or duplex loses frames silently, so set it again. */
+        HAL_ETH_Stop_IT(&EthHandle);
+        if (apply_phy_state(st)) resyncs++;
     }
+}
+
+/* What the port offers the switch (net_link_mode). Autonegotiation stays on in every mode, only
+ * the offer shrinks: forcing a mode would make an autonegotiating switch fall back to half duplex
+ * against our full duplex, which loses frames without an error on either side. Written at the
+ * first call (the PHY's straps may offer less than everything) and on a change; when the offer
+ * really changes, the PHY renegotiates and the link drops for a moment. */
+void ethernetif_set_link_mode(unsigned mode) {
+    static const uint16_t offer[] = {
+        LAN8742_ANAR_100BASE_TX_FD | LAN8742_ANAR_100BASE_TX | LAN8742_ANAR_10BASE_T_FD | LAN8742_ANAR_10BASE_T,
+        LAN8742_ANAR_100BASE_TX_FD | LAN8742_ANAR_100BASE_TX,
+        LAN8742_ANAR_10BASE_T_FD | LAN8742_ANAR_10BASE_T,
+    };
+    const uint32_t all = offer[0];
+    uint32_t anar, bcr;
+    if (mode >= sizeof offer / sizeof offer[0]) mode = 0;
+    if (mode == link_mode) return;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_ANAR, &anar) != HAL_OK) return;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_BCR, &bcr) != HAL_OK) return;
+    uint32_t want = (anar & ~all) | offer[mode];
+    if (want != anar || !(bcr & LAN8742_BCR_AUTONEGO_EN)) {
+        if (HAL_ETH_WritePHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_ANAR, want) != HAL_OK) return;
+        bcr &= ~(uint32_t)(LAN8742_BCR_POWER_DOWN | LAN8742_BCR_ISOLATE | LAN8742_BCR_LOOPBACK | LAN8742_BCR_SOFT_RESET);
+        if (HAL_ETH_WritePHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_BCR,
+                                     bcr | LAN8742_BCR_AUTONEGO_EN | LAN8742_BCR_RESTART_AUTONEGO) != HAL_OK) return;
+    }
+    link_mode = (uint8_t)mode;
 }
 
 /* ---------------- receive task ---------------- */
@@ -308,6 +351,12 @@ bool plat_eth_diag(plat_eth_diag_t *d) {
     d->rx_overflow = rx_overflow;
     d->rx_pool_empty = rx_pool_empty;
     d->rx_kicks = ethernetif_rx_kicks;
+    d->link_mode = link_mode == 0xFFu ? 0u : link_mode;
+    d->phy_anar = phy_anar;
+    d->phy_anlpar = phy_anlpar;
+    d->phy_aner = phy_aner;
+    d->link_drops = link_drops;
+    d->resyncs = resyncs;
     return true;
 }
 

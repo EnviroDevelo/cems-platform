@@ -108,6 +108,7 @@ enum {
     PARAM_ID_NET_MASK         = 12,
     PARAM_ID_NET_GW           = 13,
     PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
+    PARAM_ID_NET_LINK_MODE    = 15,  /* what the port offers the switch: 0 auto (10/100, half/full), 1 100 Mbit only, 2 10 Mbit only (long or poor cable) */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */

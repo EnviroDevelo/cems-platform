@@ -34,6 +34,7 @@ static bool     p_http_redirect = true;
 static uint32_t p_ip   = 0xC0A80132u;   /* 192.168.1.50  - DECISION D5 */
 static uint32_t p_mask = 0xFFFFFF00u;   /* 255.255.255.0 */
 static uint32_t p_gw   = 0xC0A80101u;   /* 192.168.1.1   */
+static uint8_t  p_link_mode;            /* 0 auto */
 static bool     p_restore;              /* momentary */
 static uint32_t p_serial, p_hw_rev;
 uint32_t        param_store_status_word; /* written by param_store */
@@ -120,6 +121,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_NET_IP,   "net_ip",   p_ip,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80132u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_MASK, "net_mask", p_mask, CT_U32, 0, 0xFFFFFFFFu, 0xFFFFFF00u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_GW,   "net_gw",   p_gw,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80101u, PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_UINT(PARAM_ID_NET_LINK_MODE, "net_link_mode", p_link_mode, CT_U8, 0, 2, 0, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_STATUS, "net_status", plat_net_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_BIT (PARAM_ID_RESTORE_DEFAULTS, "restore_defaults", p_restore, PLAT_LVL_ADMIN, PF_ANY_MODE | PF_NO_MODBUS),

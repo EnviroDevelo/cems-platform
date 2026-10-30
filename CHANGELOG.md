@@ -17,6 +17,12 @@ Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the in
 snapshots (`make snapshots APP=<dir>`).
 
 One source for the CORE and the I/O node (30 Oct, Gary):
+- Ethernet on any switch: the MAC follows the PHY when a switch renegotiates without the link
+  looking down; parameter 15 `net_link_mode` (admin) limits what the port offers (0 auto, 1 100 Mbit
+  only, 2 10 Mbit only for long or poor cable) with autonegotiation always on; `/api/info` "eth"
+  shows the negotiated mode, the switch's offer (anar/anlpar/aner), link drops and error counters;
+  first TCP retransmit after 1 s instead of 3 s. Found on the DK bench (30 Oct): a cheap switch
+  lost 10-20 % of the DK's frames silently while a direct cable lost none.
 - The io-node repository (node core, chip drivers, its tests and tools, the G0 port) now lives here:
   `node/`, `tests/node/`, `tools/node/`, `port/node_stm32g0/`, `docs/IO_NODE.md`. `make test` runs its
   tests and the platform's host suite against the real node core (`make master-real`).

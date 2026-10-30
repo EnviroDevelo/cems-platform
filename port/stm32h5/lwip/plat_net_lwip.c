@@ -71,6 +71,12 @@ static net_cfg_t read_cfg(void) {
     return c;
 }
 
+static unsigned link_mode(void) {               /* an I/O board offers everything */
+    plat_val_t v;
+    if (plat_role() == PLAT_ROLE_NODE || !param_read(PARAM_ID_NET_LINK_MODE, &v)) return 0;
+    return v.u;
+}
+
 /* ---- duplicate-address check (runs in the tcpip thread) ---- */
 static struct acd acd;
 static ip4_addr_t want_ip, want_mask, want_gw;
@@ -184,6 +190,7 @@ void plat_net_task_body(void) {
     bool link_was = false;
     for (;;) {
         plat_checkin(PLAT_TASK_NET);
+        ethernetif_set_link_mode(link_mode());
         ethernetif_link_poll(&nif);
         net_cfg_t now = read_cfg();
         if (now.dhcp != cfg.dhcp || now.ip != cfg.ip || now.mask != cfg.mask || now.gw != cfg.gw) {

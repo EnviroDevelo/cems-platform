@@ -41,6 +41,10 @@ typedef struct {
     uint32_t rx_overflow;               /* MAC receive FIFO overflow */
     uint32_t rx_pool_empty;             /* receive buffer pool empty */
     uint32_t rx_kicks;                  /* receive DMA restarted by the poll */
+    uint8_t  link_mode;                 /* net_link_mode in force: 0 auto, 1 100 only, 2 10 only */
+    uint16_t phy_anar, phy_anlpar, phy_aner;   /* what we offered, what the switch offered, how it went */
+    uint32_t link_drops;                /* link lost since power-up */
+    uint32_t resyncs;                   /* the switch renegotiated without a drop: MAC set again */
 } plat_eth_diag_t;
 bool plat_eth_diag(plat_eth_diag_t *d);
 
