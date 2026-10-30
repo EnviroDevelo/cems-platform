@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "cems_io_breakout")(type "KiCad")(uri "${KIPRJMOD}/cems_io_breakout.kicad_sym")(options "")(descr "CEMS I/O breakout parts"))
+)
