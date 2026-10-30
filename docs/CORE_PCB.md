@@ -202,7 +202,25 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 - 4 layers: signal / solid ground / power / signal. RMII at 50 MHz and two 100 Ω Ethernet
   pairs need the unbroken ground under them.
 - RMII traces short and length-matched (± 5 mm is plenty at 50 MHz), the REF_CLK
-  point-to-point with a series resistor at the PHY. Keep RMII away from the SPI buses.
+  point-to-point with a series resistor at the PHY (R31 22 Ω), and 33 Ω source series
+  resistors on the other lines: TX_EN/TXD0/TXD1 at the MCU (R41-R43), CRS_DV/RXD0/RXD1 at
+  the PHY (R44-R46). Keep RMII away from the SPI buses.
+- **Any switch, 100 m of cable (Gary, 30 Oct).** Both ports are standard 100BASE-TX, which is
+  specified to 100 m of Cat5e. What makes that hold:
+  - The client PHY has its own 25 MHz crystal (Y3) and supplies the 50 MHz REF_CLK, the same
+    scheme as the Nucleo-H563ZI that works on every switch tried.
+  - The straps leave the LAN8742A in MODE 111: all modes advertised, auto-negotiation on,
+    HP auto-MDIX on. The firmware must never force speed or duplex. A forced port meets an
+    auto-negotiating switch at half duplex (parallel detection) and silently loses
+    transmitted frames.
+  - The PHY reset (PD11) is under firmware control, so the firmware can renegotiate and
+    re-sync the MAC to the result.
+  - The line side follows the Microchip reference: 49.9 Ω 1 % to the centre tap, MagJack
+    1500 Vrms.
+  - Each pair is routed as a 100 Ω differential pair, matched within 1 mm, with no vias,
+    under 25 mm from the PHY to the MagJack, over unbroken ground.
+  - The W5500 port has the same line rules. It has no auto-MDIX, but its peer (the I/O
+    node's LAN8742A) does.
 - Under each MagJack: no copper on the line side except chassis; the two ports' chassis
   areas don't touch.
 - The W5500's SPI and the display's SPI are on opposite sides of the MCU (PE and PC/PD pins),

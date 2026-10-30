@@ -138,7 +138,7 @@ mcu = {
     8: "LSE_IN", 9: "LSE_OUT", 12: "HSE_IN", 13: "HSE_OUT", 14: "NRST", 94: "BOOT0",
     # RMII
     24: "ETH_REF_CLK", 25: "ETH_MDIO", 16: "ETH_MDC", 32: "ETH_CRS_DV", 33: "ETH_RXD0",
-    34: "ETH_RXD1", 30: "ETH_TX_EN", 51: "ETH_TXD0", 54: "ETH_TXD1", 58: "ETH_PHY_RST",
+    34: "ETH_RXD1", 30: "ETH_TX_EN_MCU", 51: "ETH_TXD0_MCU", 54: "ETH_TXD1_MCU", 58: "ETH_PHY_RST",
     # display, SPI3
     78: "EVE_SCK_MCU", 79: "EVE_MISO", 80: "EVE_MOSI_MCU", 77: "EVE_CS", 83: "EVE_PD", 81: "EVE_INT",
     # W5500, SPI4
@@ -206,7 +206,7 @@ S = "eth_client"
 part("U4", "Interface_Ethernet:LAN8742A", "LAN8742A-CZ",
      "Package_DFN_QFN:VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias", S,
      {1: "+3V3_PHYA", 2: "PHY_LED2", 3: "PHY_LED1", 4: "PHY_XTAL2", 5: "PHY_XTAL1", 6: "PHY_VDDCR",
-      7: "ETH_RXD1", 8: "ETH_RXD0", 9: "+3V3", 11: "ETH_CRS_DV", 12: "ETH_MDIO",
+      7: "PHY_RXD1", 8: "PHY_RXD0", 9: "+3V3", 11: "PHY_CRS_DV", 12: "ETH_MDIO",
       13: "ETH_MDC", 14: "PHY_REFCLKO", 15: "ETH_PHY_RST", 16: "ETH_TX_EN", 17: "ETH_TXD0",
       18: "ETH_TXD1", 19: "+3V3_PHYA", 20: "ETH1_TXN", 21: "ETH1_TXP", 22: "ETH1_RXN",
       23: "ETH1_RXP", 24: "PHY_RBIAS", 25: "GND"},
@@ -226,6 +226,14 @@ part("Y3", "Device:Crystal_GND24", "25MHz", "Crystal:Crystal_SMD_3225-4Pin_3.2x2
 c("C46", "33p", S, "PHY_XTAL1", "GND", note="for CL 20 pF with about 4 pF stray")
 c("C47", "33p", S, "PHY_XTAL2", "GND")
 r("R31", "22R", S, "PHY_REFCLKO", "ETH_REF_CLK", note="series, at the PHY")
+# 33R source series terminations on the other RMII lines (as on ST's DK): TX at the MCU,
+# RX at the PHY. They tame the 50 MHz edges (reflections, EMC); the RX ones sit between the
+# PHY's MODE/strap pins and the MCU and do not change the straps (internal pull-ups,
+# MODE[2:0] = 111 = all capable with auto-negotiation).
+for ref, a_, b_, where in (("R41", "ETH_TX_EN_MCU", "ETH_TX_EN", "MCU"), ("R42", "ETH_TXD0_MCU", "ETH_TXD0", "MCU"),
+                           ("R43", "ETH_TXD1_MCU", "ETH_TXD1", "MCU"), ("R44", "PHY_CRS_DV", "ETH_CRS_DV", "PHY"),
+                           ("R45", "PHY_RXD0", "ETH_RXD0", "PHY"), ("R46", "PHY_RXD1", "ETH_RXD1", "PHY")):
+    r(ref, "33R", S, a_, b_, note=f"series, at the {where}")
 r("R32", "1k5", S, "+3V3", "ETH_MDIO")
 r("R33", "10k", S, "PHY_LED2", "GND", note="strap nINTSEL = 0 (REFCLKO mode)")
 r("R34", "10k", S, "+3V3", "ETH_PHY_RST", note="PHY runs if the firmware leaves PD11 as input")
