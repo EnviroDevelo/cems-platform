@@ -262,7 +262,10 @@ What happens: `bsp_init` maps the chip (`psram_stm32h5.c`), reads its ID, tests 
 data line, and zeroes the `.extram` section. The TLS pool (80 KB) and the settings store's
 staging block (45 KB) are placed there (`PLAT_EXTRAM`), so the MCU keeps about 300 KB free. If the
 check fails, the unit stops at start-up with outputs safe and fault "psram" in the fault record.
-Bench checks on the first board: an HTTPS handshake time against the DK's (the TLS pool is in the
+**Before the PCB:** the same chip on a SOIC-8 breakout wired to a NUCLEO-H563ZI on the same pins
+(the DK's OCTOSPI1 belongs to its own flash) runs this code unchanged (H563 and H573 share the
+OCTOSPI). On flying leads add `PSRAM_CLK_PRESCALER=24u` (10 MHz) to the defines, and open the
+Nucleo's solder bridge to the LED on PB0. Bench checks on the first board: an HTTPS handshake time against the DK's (the TLS pool is in the
 PSRAM; `TLS_POOL_PLACE=` empty puts it back on chip), and a backup/restore.
 
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)

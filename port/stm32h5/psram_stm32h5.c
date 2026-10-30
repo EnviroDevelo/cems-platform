@@ -29,6 +29,10 @@ extern XSPI_HandleTypeDef PSRAM_XSPI_HANDLE;
 extern DCACHE_HandleTypeDef hdcache1;
 #endif
 
+#ifndef PSRAM_CLK_PRESCALER
+#define PSRAM_CLK_PRESCALER 3u      /* kernel clock / (n + 1): 62.5 MHz at 250 MHz. A breakout on flying
+                                       leads (NUCLEO-H563ZI bring-up) wants a slower clock, e.g. 24 = 10 MHz */
+#endif
 #define PSRAM_BASE   0x90000000u
 #define PSRAM_SIZE   (8u * 1024u * 1024u)
 #define CMD_RST_EN   0x66u
@@ -115,12 +119,12 @@ static bool psram_start(void) {
     h->Init.FreeRunningClock = HAL_XSPI_FREERUNCLK_DISABLE;
     h->Init.ClockMode = HAL_XSPI_CLOCK_MODE_0;
     h->Init.WrapSize = HAL_XSPI_WRAP_NOT_SUPPORTED;
-    h->Init.ClockPrescaler = 3;                             /* 250 MHz / 4 */
+    h->Init.ClockPrescaler = PSRAM_CLK_PRESCALER;
     h->Init.SampleShifting = HAL_XSPI_SAMPLE_SHIFT_NONE;
     h->Init.DelayHoldQuarterCycle = HAL_XSPI_DHQC_DISABLE;
     h->Init.ChipSelectBoundary = HAL_XSPI_BONDARYOF_8KB;    /* 8 Kbit = the 1 KB page */
     h->Init.DelayBlockBypass = HAL_XSPI_DELAY_BLOCK_BYPASS;
-    h->Init.Refresh = 400;                                  /* CE# low under 6.4 us (tCEM 8 us) */
+    h->Init.Refresh = 400u / (PSRAM_CLK_PRESCALER + 1u) * 4u;   /* CE# low under 6.4 us (tCEM 8 us) at any prescaler */
     if (HAL_XSPI_Init(h) != HAL_OK) return false;
     if (cmd(CMD_RST_EN, false, 0, NULL) != HAL_OK || cmd(CMD_RST, false, 0, NULL) != HAL_OK) return false;
     for (volatile uint32_t d = 0; d < 1000u; ++d) { }      /* tRST 50 ns, generously */
