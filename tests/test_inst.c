@@ -222,6 +222,18 @@ static void t_quality(void) {
     run_ms(100);
     CHECK_EQ(inst_tags.state[0], INST_S_OFF);
     CHECK_EQ(inst_pt.q[0], PLAT_Q_UNAVAILABLE); CHECK(isnan(inst_pt.value[0]));
+    /* flag points, as analysers that report each warning as a discrete input */
+    inst_tags.enable[0] = true; inst_tags.status_pt[0] = 0;
+    point(3, 1, INST_FC_DISCRETE, 0, INST_T_U16, 0); inst_pt.qrole[3] = INST_QR_FAULT;    /* "system fault" */
+    point(4, 1, INST_FC_DISCRETE, 1, INST_T_U16, 0); inst_pt.qrole[4] = INST_QR_CAL;      /* "in calibration" */
+    run_ms(1500);
+    CHECK_EQ(inst_pt.q[0], PLAT_Q_VALID); CHECK_EQ(inst_pt.q[3], PLAT_Q_VALID);
+    a->discrete[0] = 0x02; run_ms(1000); CHECK_EQ(inst_pt.q[0], PLAT_Q_CAL);
+    CHECK_EQ(inst_pt.q[4], PLAT_Q_VALID);                                 /* the flag point itself */
+    a->discrete[0] = 0x03; run_ms(1000); CHECK_EQ(inst_pt.q[0], PLAT_Q_FAULT);
+    a->discrete[0] = 0x00; run_ms(1000); CHECK_EQ(inst_pt.q[0], PLAT_Q_VALID);
+    inst_pt.inst[3] = 0; inst_pt.inst[4] = 0; inst_pt.qrole[3] = 0; inst_pt.qrole[4] = 0;
+    inst_tags.status_pt[0] = 2;
     /* a status point that is not this instrument's: a settings fault */
     inst_tags.enable[0] = true; inst_pt.inst[1] = 0;
     run_ms(100);

@@ -23,7 +23,7 @@ typedef struct {
     uint16_t period_ms[INST_MAX], timeout_ms[INST_MAX];
     uint8_t  max_regs[INST_MAX], gap[INST_MAX], status_pt[INST_MAX];
     uint16_t fault_mask[INST_MAX], maint_mask[INST_MAX], cal_mask[INST_MAX];
-    uint8_t  p_inst[INST_POINTS], p_fc[INST_POINTS], p_type[INST_POINTS], p_order[INST_POINTS], p_bit[INST_POINTS];
+    uint8_t  p_inst[INST_POINTS], p_fc[INST_POINTS], p_type[INST_POINTS], p_order[INST_POINTS], p_bit[INST_POINTS], p_qrole[INST_POINTS];
     uint16_t p_addr[INST_POINTS];
     float    p_gain[INST_POINTS], p_offset[INST_POINTS], p_lo[INST_POINTS], p_hi[INST_POINTS];
 } cfg_t;
@@ -482,6 +482,19 @@ static uint8_t point_q(unsigned p) {
         if (bits & C.cal_mask[k])   return PLAT_Q_CAL;
         if (bits & C.maint_mask[k]) return PLAT_Q_MAINT;
     }
+    bool fault = false, cal = false, maint = false;
+    for (unsigned s = 0; s < INST_POINTS; ++s) {          /* flag points */
+        if (s == p || C.p_inst[s] != k1 || C.p_qrole[s] == INST_QR_NONE || pt_req[s] < 0) continue;
+        uint8_t sq = comm_q(s);
+        if (sq != PLAT_Q_VALID) return sq;
+        if (res.raw[s] == 0u) continue;
+        fault = fault || C.p_qrole[s] == INST_QR_FAULT;
+        cal   = cal   || C.p_qrole[s] == INST_QR_CAL;
+        maint = maint || C.p_qrole[s] == INST_QR_MAINT;
+    }
+    if (fault) return PLAT_Q_FAULT;
+    if (cal)   return PLAT_Q_CAL;
+    if (maint) return PLAT_Q_MAINT;
     float v = res.value[p];
     if (!isfinite(v)) return PLAT_Q_RANGE;
     if (C.p_lo[p] < C.p_hi[p] && (v < C.p_lo[p] || v > C.p_hi[p])) return PLAT_Q_RANGE;
@@ -570,6 +583,7 @@ void inst_scan(uint32_t now_ms) {
         c.p_type[p] = pt->type[p] < INST_T_COUNT ? pt->type[p] : INST_T_U16;
         c.p_order[p] = pt->order[p] < INST_O_COUNT ? pt->order[p] : INST_O_ABCD;
         c.p_bit[p] = pt->bit[p] & 15u;
+        c.p_qrole[p] = pt->qrole[p] < INST_QR_COUNT ? pt->qrole[p] : INST_QR_NONE;
         c.p_gain[p] = isfinite(pt->gain[p]) ? pt->gain[p] : 1.0f;
         c.p_offset[p] = isfinite(pt->offset[p]) ? pt->offset[p] : 0.0f;
         c.p_lo[p] = pt->lo[p]; c.p_hi[p] = pt->hi[p];

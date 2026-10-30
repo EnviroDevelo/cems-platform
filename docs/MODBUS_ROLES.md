@@ -117,6 +117,7 @@ Up to **32 points** (values) in all, each:
 | type: u16, i16, u32, i32, f32, bit of a register | 533 `pt_type[p]` | u16 |
 | byte order: ABCD (standard), CDAB (word swap), BADC (byte swap), DCBA (little-endian) | 534 `pt_order[p]` | ABCD |
 | bit (for type bit) | 535 `pt_bit[p]` | 0 |
+| flag role: 0 none, 1 fault, 2 calibration, 3 maintenance (a flag point reading non-zero sets that quality on the instrument's other points) | 543 `pt_qrole[p]` | 0 |
 | scaling: value = raw x gain + offset | 536-537 | 1, 0 |
 | valid range lo..hi | 538-539 | none |
 | name (ASCII), unit (UTF-16 text, up to 7 characters: "°C", "mg/Nm³") | 550-581, 590-621 | "" |
@@ -149,6 +150,10 @@ Each point carries one of the platform's eight quality codes:
 | the instrument's status point has a fault / calibration / maintenance bit set | fault / cal / maint |
 | NaN, infinite, or outside lo..hi | out of range |
 | otherwise | valid |
+
+Analysers that report each warning as its own discrete input (Teledyne API, for one) use flag
+points instead of a status word: each flag is a point with a role (fault, calibration,
+maintenance), and any flag that reads 1 sets that quality on the instrument's measured values.
 
 The status point is how an analyser's own state (in calibration, maintenance, fault: NAMUR NE 107
 on most current analysers) reaches the CORE without any analyser-specific code.

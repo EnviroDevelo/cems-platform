@@ -149,6 +149,7 @@ static const float    pt_d_gain[INST_POINTS] = PT_ALL(1.0f);
     PARAM_ARRAY_REAL(PARAM_ID_PT_VALUE, "pt_value", inst_pt.value, -3.4e38f, 3.4e38f, PLAT_LVL_VIEW, PF_RO), \
     ARR_RO(PARAM_ID_PT_Q, "pt_q", inst_pt.q, CT_U8), \
     ARR_RO(PARAM_ID_PT_RAW, "pt_raw", inst_pt.raw, CT_U32), \
+    ARR(PARAM_ID_PT_QROLE, "pt_qrole", inst_pt.qrole, CT_U8, 0, INST_QR_COUNT - 1), \
     PT_TEXT(0, "1"), PT_TEXT(1, "2"), PT_TEXT(2, "3"), PT_TEXT(3, "4"), PT_TEXT(4, "5"), PT_TEXT(5, "6"), \
     PT_TEXT(6, "7"), PT_TEXT(7, "8"), PT_TEXT(8, "9"), PT_TEXT(9, "10"), PT_TEXT(10, "11"), PT_TEXT(11, "12"), \
     PT_TEXT(12, "13"), PT_TEXT(13, "14"), PT_TEXT(14, "15"), PT_TEXT(15, "16"), PT_TEXT(16, "17"), PT_TEXT(17, "18"), \

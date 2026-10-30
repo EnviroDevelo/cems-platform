@@ -31,7 +31,8 @@
  *   the last read failed           STALE (the last value kept), then UNAVAILABLE once the
  *                                  instrument is lost (INST_LOST_FAILS polls in a row failed)
  *   exception 01-04 for its read   FAULT (a setting is wrong: function, address or count)
- *   its instrument's status point  FAULT, CAL or MAINT when a masked bit is set (in that order)
+ *   its instrument's status point  FAULT, CAL or MAINT when a masked bit is set (in that order),
+ *   or a flag point (pt_qrole)     and the same when a flag point of the instrument reads non-zero
  *   NaN, infinite or outside lo..hi RANGE
  *   otherwise                      VALID
  * Exceptions 0A and 0B (the gateway has no path, or the instrument behind it did not answer)
@@ -78,6 +79,9 @@ enum {
     INST_O_DCBA,       /* little-endian throughout */
     INST_O_COUNT
 };
+/* a flag point's effect on its instrument's other points (pt_qrole): for analysers that report
+ * their state as separate bits (discrete inputs) rather than one status word */
+enum { INST_QR_NONE = 0, INST_QR_FAULT, INST_QR_CAL, INST_QR_MAINT, INST_QR_COUNT };
 /* function codes a point (or the explorer) reads with */
 enum { INST_FC_COILS = 1, INST_FC_DISCRETE = 2, INST_FC_HOLDING = 3, INST_FC_INPUT = 4 };
 
@@ -143,6 +147,8 @@ typedef struct {
     uint8_t  type[INST_POINTS];         /* INST_T_* */
     uint8_t  order[INST_POINTS];        /* INST_O_* */
     uint8_t  bit[INST_POINTS];          /* INST_T_BIT: 0..15 */
+    uint8_t  qrole[INST_POINTS];        /* INST_QR_*: a flag point whose non-zero raw value sets the
+                                           quality of every other point of its instrument */
     float    gain[INST_POINTS], offset[INST_POINTS];   /* value = raw x gain + offset (1, 0) */
     float    lo[INST_POINTS], hi[INST_POINTS];         /* valid range (lo >= hi: none) */
     char     name[INST_POINTS][INST_NAME_LEN];
@@ -166,7 +172,7 @@ enum {
     PARAM_ID_INST_NAME_FIRST = 521,       /* 521..528: instrument k's name */
     PARAM_ID_PT_INST = 530, PARAM_ID_PT_FC, PARAM_ID_PT_ADDR, PARAM_ID_PT_TYPE, PARAM_ID_PT_ORDER,
     PARAM_ID_PT_BIT, PARAM_ID_PT_GAIN, PARAM_ID_PT_OFFSET, PARAM_ID_PT_LO, PARAM_ID_PT_HI,
-    PARAM_ID_PT_VALUE = 540, PARAM_ID_PT_Q, PARAM_ID_PT_RAW,
+    PARAM_ID_PT_VALUE = 540, PARAM_ID_PT_Q, PARAM_ID_PT_RAW, PARAM_ID_PT_QROLE,
     PARAM_ID_PT_NAME_FIRST = 550,         /* 550..581: point p's name */
     PARAM_ID_PT_UNIT_FIRST = 590          /* 590..621: point p's unit */
 };
