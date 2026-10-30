@@ -69,6 +69,9 @@ NODE role its logic never runs.
 - Nothing is lit until the CORE talks to it: the node core keeps every output off until the CORE's
   first valid output write, and turns them all off again if the CORE goes quiet for the hold time
   (5 minutes by default, the CORE sets it).
+- The DK as master needs REMOTE mode for web settings, and only the touchscreen switches to REMOTE.
+  A DK without its display: build it with the symbol `PLAT_CTRL_MODE_DEFAULT=1` (starts in REMOTE;
+  bench boards only, never a product build), plus the four new sources and the `node` include path.
 - On the DK (CORE, admin): iob_link (102) = 1, iob1_ip (146) = 192.168.1.61 (the default),
   iob1_enable (110) = 1 → I/O boards tab: board 1 online, firmware 0.1, hardware 90 (a bench board).
 - The blue button is node input 1 (the DK's demo start input with the default channel mapping);

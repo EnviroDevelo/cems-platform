@@ -8,7 +8,7 @@ module, and before choosing hardware. Last run: 2026-10-30.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 478.2 KB | 1016.0 KB | 47 % | 537.8 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 478.4 KB | 1016.0 KB | 47 % | 537.6 KB |
 | RAM (STM32H573/H563, 640 KB) | 515.8 KB | 640.0 KB | 81 % | 124.2 KB |
 
 ## By module (KB)
@@ -35,7 +35,7 @@ module, and before choosing hardware. Last run: 2026-10-30.
 | ST HAL + startup | 19.3 | 0.0 |
 | Application | 2.5 | 0.2 |
 | C library | 27.7 | 0.8 |
-| Other | 14.4 | 4.4 |
+| Other | 14.6 | 4.4 |
 | Main stack (interrupts, start-up) + C heap | 0.0 | 12.0 |
 
 

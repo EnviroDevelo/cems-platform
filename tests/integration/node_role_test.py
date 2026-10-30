@@ -125,7 +125,8 @@ def main():
         check(post("/api/login", {"level": "admin", "password": "2222"}) == 200, "admin login")
         check(post("/api/iob/net/find", {}) in (200, 202), "Find boards")
         found = wait(lambda: get("/api/iob/net")["ok"] and get("/api/iob/net")["boards"], 6)
-        check(found and found[0]["ip"] == "192.168.1.61" and found[0]["hw"] == 90 and found[0]["controlled"],
+        check(found and found[0]["ip"] == "192.168.1.61" and found[0]["hw"] == 90 and found[0]["controlled"]
+              and found[0]["serial"] == "",
               f"discovery: the NODE answers FIND (bench board, 192.168.1.61, under control) {found}")
         node.say("show")
         check(wait(lambda: node.saw("address 1, ip 192.168.1.61")), "NODE reports address 1 at 192.168.1.61")

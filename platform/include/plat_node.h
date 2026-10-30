@@ -58,5 +58,8 @@ void plat_node_close(plat_node_t *p);
 /* The IP settings the board should have now (ip 0: none, a new board). */
 bool plat_node_ipcfg(node_ipcfg_t *c);
 const node_hw_t *plat_node_hw(void);   /* the board's pins as node_hw_t */
+/* The board's MAC (iob_mac_from_uid of the chip ID): discovery reports it, and in the NODE role the
+ * Ethernet interface uses it too (plat_net_mac), so "Find boards" matches the switch and ARP. */
+void plat_node_mac(uint8_t mac[6]);
 
 #endif

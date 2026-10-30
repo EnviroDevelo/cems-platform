@@ -45,6 +45,7 @@ bool plat_net_ready(void) { return ready; }
 uint32_t plat_lwip_rand(void) { uint32_t r; bsp_random(&r, sizeof r); return r; }
 
 void plat_net_mac(uint8_t m[6]) {
+    if (plat_role() == PLAT_ROLE_NODE) { plat_node_mac(m); return; }   /* the one discovery reports */
     uint8_t uid[12];
     bsp_chip_uid(uid);                             /* word reads: see bsp_chip_uid */
     uint32_t a = plat_crc32(0, uid, sizeof uid);

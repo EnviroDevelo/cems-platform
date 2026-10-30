@@ -8,10 +8,11 @@
 #include "bsp.h"
 
 /* ---------------- the backup words: address, serial number, reset count, IP settings ---------------- */
-enum { BK_ADDR = 0, BK_SERIAL = 1, BK_COUNT = 5, BK_IP = 6, BK_IPSUM = 10 };
+enum { BK_ADDR = 0, BK_SERIAL = 1, BK_COUNT = 5, BK_IP = 6, BK_IPSUM = 10, BK_SERSUM = 11 };
 #define ADDR_MAGIC 0xA0D50000u           /* BK_ADDR = magic | ~address << 8 | address */
 #define CNT_MAGIC  0x52530000u           /* BK_COUNT = magic | resets since power-on */
 #define IP_MAGIC   0x1B0E0000u           /* BK_IPSUM = magic | 16-bit sum of the four IP words */
+#define SER_MAGIC  0x5E120000u           /* BK_SERSUM = magic | 16-bit sum of the serial words: else not set */
 
 static uint32_t sum16(const node_ipcfg_t *c) {
     uint32_t w[4] = { c->ip, c->mask, c->gw, c->master_ip }, s = 0;
@@ -40,13 +41,44 @@ static int addr_store(void *ctx, uint8_t a) {
     return bsp_backup_write(BK_ADDR, ADDR_MAGIC | (uint32_t)(uint8_t)~a << 8 | a) ? NODE_HW_OK : NODE_HW_READBACK;
 }
 
+static uint32_t ser_sum(const uint32_t w[4]) {
+    uint32_t s = 0;
+    for (unsigned k = 0; k < 4; ++k) s += (w[k] >> 16) + (w[k] & 0xFFFFu);
+    return SER_MAGIC | (s & 0xFFFFu);
+}
+
 static int serial_store(void *ctx, const uint8_t s[16]) {
     (void)ctx;
     bool ok = true;
-    for (unsigned w = 0; w < 4; ++w)
-        ok = bsp_backup_write(BK_SERIAL + w, (uint32_t)s[4 * w] | (uint32_t)s[4 * w + 1] << 8 |
-                                             (uint32_t)s[4 * w + 2] << 16 | (uint32_t)s[4 * w + 3] << 24) && ok;
+    uint32_t w[4];
+    for (unsigned k = 0; k < 4; ++k) {
+        w[k] = (uint32_t)s[4 * k] | (uint32_t)s[4 * k + 1] << 8 | (uint32_t)s[4 * k + 2] << 16 | (uint32_t)s[4 * k + 3] << 24;
+        ok = bsp_backup_write(BK_SERIAL + k, w[k]) && ok;
+    }
+    ok = bsp_backup_write(BK_SERSUM, ser_sum(w)) && ok;
     return ok ? NODE_HW_OK : NODE_HW_READBACK;
+}
+
+/* the serial number as saved; all zero (not set) unless its check word matches (whatever the
+ * backup registers held before, e.g. another firmware's data) */
+static void serial_load(uint8_t s[16]) {
+    uint32_t w[4];
+    for (unsigned k = 0; k < 4; ++k) w[k] = bsp_backup_read(BK_SERIAL + k);
+    bool set = bsp_backup_read(BK_SERSUM) == ser_sum(w);
+    for (unsigned i = 0; i < 16; ++i) s[i] = (uint8_t)(set ? w[i / 4u] >> (8u * (i % 4u)) : 0u);
+}
+
+/* the chip's unique ID as the node core's six words */
+static void uid_words(uint16_t u[6]) {
+    uint8_t uid[12];
+    bsp_chip_uid(uid);
+    for (unsigned i = 0; i < 6; ++i) u[i] = (uint16_t)(uid[2 * i] | uid[2 * i + 1] << 8);
+}
+
+void plat_node_mac(uint8_t mac[6]) {
+    uint16_t u[6];
+    uid_words(u);
+    iob_mac_from_uid(u, mac);
 }
 
 /* ---------------- the board's pins (bsp_io_read / bsp_io_write) ---------------- */
@@ -128,18 +160,16 @@ void plat_node_init(plat_node_t *p, uint32_t now) {
     bool set = (a & 0xFFFF0000u) == ADDR_MAGIC && (uint8_t)(a >> 8) == (uint8_t)~a;
     b.address = set ? (uint8_t)a : (uint8_t)PLAT_NODE_ADDRESS;
     b.nv_ok = true;
-    for (unsigned i = 0; i < 16; ++i) b.serial[i] = (uint8_t)(bsp_backup_read(BK_SERIAL + i / 4u) >> (8u * (i % 4u)));
+    serial_load(b.serial);
     uint8_t rev;
     b.hw_rev = bsp_hw_straps(&rev) ? rev : (uint8_t)PLAT_NODE_HW_REV;
-    uint8_t uid[12];
-    bsp_chip_uid(uid);
-    for (unsigned i = 0; i < 6; ++i) b.uid[i] = (uint16_t)(uid[2 * i] | uid[2 * i + 1] << 8);
+    uid_words(b.uid);
     node_init(&p->node, &hw, &b, now);
 
     node_ipcfg_t ipc;
     ip_load(&ipc);
     uint8_t mac[6];
-    iob_mac_from_uid(b.uid, mac);
+    plat_node_mac(mac);
     node_net_init(&p->net, &p->node, &ipc, mac, ip_store, NULL);
 #ifdef PLAT_NODE_DEFAULT_IP
     if (p->net.cfg.ip == 0) {            /* nothing saved: the bench board's IP, any supervisor */

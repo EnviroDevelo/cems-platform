@@ -18,7 +18,13 @@
 #endif
 
 /* ---------------- platform parameter storage ---------------- */
-static uint8_t  p_mode = PARAM_MODE_LOCAL;
+/* The mode at power-up is always LOCAL (spec: only the touchscreen hands control to REMOTE).
+ * PLAT_CTRL_MODE_DEFAULT=1 starts REMOTE: development boards without a touchscreen only (the
+ * STM32H573I-DK on the bench), never a product build. */
+#ifndef PLAT_CTRL_MODE_DEFAULT
+#define PLAT_CTRL_MODE_DEFAULT PARAM_MODE_LOCAL
+#endif
+static uint8_t  p_mode = PLAT_CTRL_MODE_DEFAULT;
 static bool     p_link_lost;
 static uint16_t p_comms_timeout_s = 10;
 static bool     p_modbus_write_en = true;
@@ -101,7 +107,7 @@ extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
     PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL)
 
 static const param_def_t plat_defs[] = {
-    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
+    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PLAT_CTRL_MODE_DEFAULT,
                PLAT_LVL_OPERATOR, PF_LOCAL_ONLY | PF_ANY_MODE, NULL),
     PARAM_BIT (PARAM_ID_REMOTE_LINK_LOST, "remote_link_lost", p_link_lost, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_COMMS_TIMEOUT_S, "comms_timeout", p_comms_timeout_s, CT_U16, 0, 3600, 10,
