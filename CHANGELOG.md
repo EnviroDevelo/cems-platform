@@ -16,6 +16,32 @@ self-test, PBKDF2 passwords with token recovery.
 Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the interface
 snapshots (`make snapshots APP=<dir>`).
 
+One source for the CORE and the I/O node (30 Oct, Gary):
+- The standard CEMS Modbus block (VDI 4201-3, `docs/MODBUS_STANDARD_BLOCK.md`): input registers
+  7000-7999 mirrored read-only in the holding registers: BasisM value and NE 107 status per slot,
+  BasisS showing the force in effect, BasisR, calculated banks 1-7, qualities, counters, globals,
+  word order setting (param 335). Built from the emissions engine's parameters; without them
+  every slot reads NaN / not fitted. 43/14 now answers conformity 0x83 with the VDI 4201-3
+  extended objects (serial, ComponentNumber 30, BasisM/S/R addresses, name/range/unit per
+  component) and streams codes 1-3 with "more follows". A product map entry in 7000-7999 of the
+  input or holding registers stops start-up (none of the current maps uses it).
+- Ethernet on any switch: the MAC follows the PHY when a switch renegotiates without the link
+  looking down; parameter 15 `net_link_mode` (admin) limits what the port offers (0 auto, 1 100 Mbit
+  only, 2 10 Mbit only for long or poor cable) with autonegotiation always on; `/api/info` "eth"
+  shows the negotiated mode, the switch's offer (anar/anlpar/aner), link drops and error counters;
+  first TCP retransmit after 1 s instead of 3 s. Found on the DK bench (30 Oct): a cheap switch
+  lost 10-20 % of the DK's frames silently while a direct cable lost none.
+- The io-node repository (node core, chip drivers, its tests and tools, the G0 port) now lives here:
+  `node/`, `tests/node/`, `tools/node/`, `port/node_stm32g0/`, `docs/IO_NODE.md`. `make test` runs its
+  tests and the platform's host suite against the real node core (`make master-real`).
+- The role (`plat_role.h`): CORE, NODE or NONE, from the shared PCB's jumper J7 (ROLE_A PE5,
+  ROLE_B PE6) or fixed with `PLAT_ROLE_FIXED`. A board without the jumper's labels is a CORE, so
+  existing projects need nothing new except the four source files and the `node` include path.
+- The NODE role (`plat_node.h`): the node core over the platform's sockets in the iobus task;
+  no display, web, plant Modbus or application. `build/nodesim` runs it on a PC;
+  `tests/integration/node_role_test.py` runs a CORE against it.
+- The NUCLEO-H563ZI as a node: `docs/CUBEMX_NUCLEO_NODE.md`; `tools/check_target.sh` links it (CHIP=h563).
+
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
   in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds

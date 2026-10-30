@@ -108,6 +108,7 @@ enum {
     PARAM_ID_NET_MASK         = 12,
     PARAM_ID_NET_GW           = 13,
     PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
+    PARAM_ID_NET_LINK_MODE    = 15,  /* what the port offers the switch: 0 auto (10/100, half/full), 1 100 Mbit only, 2 10 Mbit only (long or poor cable) */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */
@@ -187,6 +188,7 @@ enum {
     PARAM_ID_CONFIG_CRC       = 332, /* RO: checksum of the user settings (CIP-05.4) */
     PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
     PARAM_ID_MB_FORCED        = 334, /* RO: values forced on Modbus now (modbus.h mb_force_*) */
+    PARAM_ID_MB_STD_WORDS     = 335, /* standard block 7000-7999: 0 floats/u32 high word first, 1 low word first */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

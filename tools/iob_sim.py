@@ -442,7 +442,7 @@ def console(nodes):
         if not w:
             continue
         if w[0] in ("quit", "exit"):
-            break
+            return True
         n = nodes[0]
         if w[0].isdigit():
             n = by.get(int(w[0]))
@@ -477,6 +477,7 @@ def console(nodes):
             print(f"board {n.address}: {cmd} {' '.join(arg)}", flush=True)
         except (ValueError, IndexError) as e:
             print("bad value:", e)
+    return False
 
 
 def main():
@@ -492,8 +493,7 @@ def main():
     if not a.no_discovery:
         threading.Thread(target=serve_disc, args=(nodes, a.disc_port), daemon=True).start()
     try:
-        console(nodes)
-        if not sys.stdin.isatty():                    # stdin closed (run in the background): keep serving
+        if not console(nodes) and not sys.stdin.isatty():   # end of input (run in the background): keep serving
             while True:
                 time.sleep(3600)
     except KeyboardInterrupt:

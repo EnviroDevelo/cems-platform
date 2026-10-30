@@ -17,6 +17,7 @@
 #include "eve.h"
 #include "bsp.h"
 #include "plat_power.h"
+#include "plat_role.h"
 
 static eve_t eve;
 static volatile bool disp_up, disp_fitted;
@@ -31,6 +32,8 @@ bool plat_ui_healthy(void) { return !disp_fitted || disp_up; }
 bool plat_ui_fitted(void) { return disp_fitted; }
 
 void plat_ui_task_body(void) {
+    if (plat_role() == PLAT_ROLE_NODE)               /* an I/O board has no display */
+        for (;;) { plat_checkin(PLAT_TASK_UI); vTaskDelay(pdMS_TO_TICKS(100)); }
     eve_bus_t *bus = bsp_eve_bus();
     const plat_app_t *app = plat_app();
     static ui_cfg_t cfg;

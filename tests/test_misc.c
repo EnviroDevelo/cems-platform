@@ -162,3 +162,19 @@ static void t_diag(void) {
 }
 
 void test_diag_all(void) { RUN(t_diag); }
+
+/* ---- the role (plat_role.h): the J7 table, and a board without the jumper is a CORE ---- */
+#include "plat_role.h"
+#include "bsp_host.h"
+static void t_role(void) {
+    CHECK(plat_role_decode(false, true, true) == PLAT_ROLE_CORE);    /* no jumper: as before the shared PCB */
+    CHECK(plat_role_decode(true, false, true) == PLAT_ROLE_CORE);    /* shunt 1-2: PE5 low */
+    CHECK(plat_role_decode(true, true, false) == PLAT_ROLE_NODE);    /* shunt 2-3: PE6 low */
+    CHECK(plat_role_decode(true, true, true) == PLAT_ROLE_NONE);     /* no shunt */
+    CHECK(plat_role_decode(true, false, false) == PLAT_ROLE_NONE);   /* both low: a fault */
+    bsp_host.role_fitted = true; bsp_host.role_a = true; bsp_host.role_b = false;
+    CHECK(plat_role_init() == PLAT_ROLE_NODE && plat_role() == PLAT_ROLE_NODE && !strcmp(plat_role_name(plat_role()), "node"));
+    bsp_host.role_fitted = false;
+    CHECK(plat_role_init() == PLAT_ROLE_CORE && !strcmp(plat_role_name(PLAT_ROLE_NONE), "none"));
+}
+void test_role_all(void) { RUN(t_role); }

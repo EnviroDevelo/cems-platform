@@ -29,6 +29,7 @@
 #include "plat_service.h"
 #include "plat_selftest.h"
 #include "plat_version.h"
+#include "plat_net.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -206,6 +207,36 @@ static void level_name_json(http_out_t *o, uint8_t l) {
 
 static void json_ip(http_out_t *o, uint32_t ip);
 
+extern bool plat_eth_diag(plat_eth_diag_t *d) __attribute__((weak));   /* the H5 port only */
+
+static void get_eth(http_out_t *o) {
+    plat_eth_diag_t d;
+    if (!plat_eth_diag || !plat_eth_diag(&d)) return;
+    out_str(o, ",\"eth\":{\"link\":"); json_bool(o, d.link_up);
+    out_str(o, ",\"phy_mbps\":"); json_uint(o, d.phy_mbps);
+    out_str(o, ",\"phy_full\":"); json_bool(o, d.phy_full);
+    out_str(o, ",\"mac_mbps\":"); json_uint(o, d.mac_mbps);
+    out_str(o, ",\"mac_full\":"); json_bool(o, d.mac_full);
+    out_str(o, ",\"phy_symbol_errors\":"); json_uint(o, d.phy_symbol_errors);
+    out_str(o, ",\"rx_good_unicast\":"); json_uint(o, d.rx_good_unicast);
+    out_str(o, ",\"tx_good\":"); json_uint(o, d.tx_good);
+    out_str(o, ",\"rx_crc_errors\":"); json_uint(o, d.rx_crc_errors);
+    out_str(o, ",\"rx_align_errors\":"); json_uint(o, d.rx_align_errors);
+    out_str(o, ",\"rx_missed\":"); json_uint(o, d.rx_missed);
+    out_str(o, ",\"rx_overflow\":"); json_uint(o, d.rx_overflow);
+    out_str(o, ",\"rx_pool_empty\":"); json_uint(o, d.rx_pool_empty);
+    out_str(o, ",\"rx_kicks\":"); json_uint(o, d.rx_kicks);
+    out_str(o, ",\"link_mode\":"); json_uint(o, d.link_mode);
+    out_str(o, ",\"link_drops\":"); json_uint(o, d.link_drops);
+    out_str(o, ",\"resyncs\":"); json_uint(o, d.resyncs);
+    out_str(o, ",\"anar\":"); json_uint(o, d.phy_anar);       /* PHY registers 4-6, raw */
+    out_str(o, ",\"anlpar\":"); json_uint(o, d.phy_anlpar);
+    out_str(o, ",\"aner\":"); json_uint(o, d.phy_aner);
+    out_str(o, ",\"partner_autoneg\":"); json_bool(o, (d.phy_aner & 0x0001u) != 0);   /* 0: the switch didn't negotiate (we guessed its mode) */
+    out_str(o, ",\"parallel_fault\":"); json_bool(o, (d.phy_aner & 0x0010u) != 0);
+    out_str(o, "}");
+}
+
 static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     plat_val_t v;
     uint32_t left = 0;
@@ -264,6 +295,7 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
         out_str(o, ",\"last_request_s\":");
         if (m && m->frames) json_uint(o, (uint32_t)(bsp_ms() - m->last_frame_ms) / 1000u); else out_str(o, "null");
         out_str(o, "}"); }
+    get_eth(o);
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     { alarm_summary_t s; alarm_summary(&s);

@@ -18,7 +18,13 @@
 #endif
 
 /* ---------------- platform parameter storage ---------------- */
-static uint8_t  p_mode = PARAM_MODE_LOCAL;
+/* The mode at power-up is always LOCAL (spec: only the touchscreen hands control to REMOTE).
+ * PLAT_CTRL_MODE_DEFAULT=1 starts REMOTE: development boards without a touchscreen only (the
+ * STM32H573I-DK on the bench), never a product build. */
+#ifndef PLAT_CTRL_MODE_DEFAULT
+#define PLAT_CTRL_MODE_DEFAULT PARAM_MODE_LOCAL
+#endif
+static uint8_t  p_mode = PLAT_CTRL_MODE_DEFAULT;
 static bool     p_link_lost;
 static uint16_t p_comms_timeout_s = 10;
 static bool     p_modbus_write_en = true;
@@ -28,6 +34,12 @@ static bool     p_http_redirect = true;
 static uint32_t p_ip   = 0xC0A80132u;   /* 192.168.1.50  - DECISION D5 */
 static uint32_t p_mask = 0xFFFFFF00u;   /* 255.255.255.0 */
 static uint32_t p_gw   = 0xC0A80101u;   /* 192.168.1.1   */
+/* PLAT_LINK_MODE_DEFAULT: a bench build's starting net_link_mode (1 100 Mbit only, 2 10 Mbit only),
+ * for link tests without a login; product builds start on auto. */
+#ifndef PLAT_LINK_MODE_DEFAULT
+#define PLAT_LINK_MODE_DEFAULT 0
+#endif
+static uint8_t  p_link_mode = PLAT_LINK_MODE_DEFAULT;
 static bool     p_restore;              /* momentary */
 static uint32_t p_serial, p_hw_rev;
 uint32_t        param_store_status_word; /* written by param_store */
@@ -65,6 +77,7 @@ extern uint16_t plat_board_rev_tag;                                         /* f
 extern uint32_t plat_svc_hours_tag, plat_svc_since_tag, plat_config_crc_tag;   /* plat_service.c */
 extern uint32_t plat_selftest_tag;                                         /* plat_selftest.c */
 extern uint16_t plat_mb_forced;                                            /* modbus.c */
+extern uint8_t  plat_mb_std_words;                                         /* modbus.c */
 extern uint32_t plat_cal_cmd_tag;                                          /* plat_cal.c */
 extern uint8_t  plat_cal_level_tag;
 extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
@@ -101,7 +114,7 @@ extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
     PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL)
 
 static const param_def_t plat_defs[] = {
-    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
+    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PLAT_CTRL_MODE_DEFAULT,
                PLAT_LVL_OPERATOR, PF_LOCAL_ONLY | PF_ANY_MODE, NULL),
     PARAM_BIT (PARAM_ID_REMOTE_LINK_LOST, "remote_link_lost", p_link_lost, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_COMMS_TIMEOUT_S, "comms_timeout", p_comms_timeout_s, CT_U16, 0, 3600, 10,
@@ -114,6 +127,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_NET_IP,   "net_ip",   p_ip,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80132u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_MASK, "net_mask", p_mask, CT_U32, 0, 0xFFFFFFFFu, 0xFFFFFF00u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_GW,   "net_gw",   p_gw,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80101u, PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_UINT(PARAM_ID_NET_LINK_MODE, "net_link_mode", p_link_mode, CT_U8, 0, 2, PLAT_LINK_MODE_DEFAULT, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_STATUS, "net_status", plat_net_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_BIT (PARAM_ID_RESTORE_DEFAULTS, "restore_defaults", p_restore, PLAT_LVL_ADMIN, PF_ANY_MODE | PF_NO_MODBUS),
@@ -187,6 +201,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CONFIG_CRC, "config_crc", plat_config_crc_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_SELFTEST, "selftest_fail", plat_selftest_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_MB_FORCED, "mb_forced", plat_mb_forced, CT_U16, 0, MB_FORCE_MAX, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_STD_WORDS, "mb_std_words", plat_mb_std_words, CT_U8, 0, 1, 0, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_BOARD_REV, "board_rev", plat_board_rev_tag, CT_U16, 0, 65535, 65535, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,

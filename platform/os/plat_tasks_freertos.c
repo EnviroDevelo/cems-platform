@@ -20,6 +20,7 @@
 #include "iob_tcp.h"
 #include "iob_w5500.h"
 #include "plat_power.h"
+#include "plat_role.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -48,6 +49,14 @@ __attribute__((weak)) void plat_http_task_body(void)   { idle_body(PLAT_TASK_HTT
 __attribute__((weak)) void plat_ui_task_body(void)     { idle_body(PLAT_TASK_UI); }
 __attribute__((weak)) void plat_net_task_body(void)    { idle_body(PLAT_TASK_NET); }
 __attribute__((weak)) void plat_iobus_task_body(void)  { idle_body(PLAT_TASK_IOBUS); }
+
+/* the NODE role's scan: time and clock as usual, no pins */
+static void no_io_read(plat_io_in_t *in) { (void)in; }
+static void no_io_write(const plat_io_out_t *out) { (void)out; }
+static const scan_hw_t scan_hw_none = {
+    .ms = bsp_ms, .cycles = bsp_cycles, .cycles_per_us = bsp_cycles_per_us, .rtc_read = bsp_rtc_read,
+    .io_read = no_io_read, .io_write = no_io_write,
+};
 
 /* ---------------- fixed platform tasks ---------------- */
 static void ctrl_task(void *arg) {
@@ -169,6 +178,7 @@ void plat_start(const plat_app_t *app) {
     plat_diag_boot(bsp_reset_cause());
     bsp_init();
     bsp_io_safe_state();
+    plat_role_t role = plat_role_init();          /* CORE, NODE or NONE (plat_role.h), once */
 
     uint32_t now = bsp_ms();
     tm_init(&plat_monitor, now, PLAT_STARTUP_GRACE_MS);
@@ -186,8 +196,10 @@ void plat_start(const plat_app_t *app) {
     /* CIP-08.5: after a reboot loop, no application code at all (not even its init); outputs stay
      * off, and the network, the touchscreen and firmware update run so it can be serviced */
     static const scan_app_t safe_scan = { 0 };
-    bool safe = plat_diag_reboot_loop();
-    scan_init(&plat_scan, safe ? &safe_scan : app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
+    bool safe = plat_diag_reboot_loop() || role == PLAT_ROLE_NONE;   /* NONE: no jumper, so nothing switches */
+    /* NODE: no application and no pins for the scan; the node core owns the outputs (plat_node.h) */
+    scan_init(&plat_scan, safe || role == PLAT_ROLE_NODE ? &safe_scan : app->scan,
+              role == PLAT_ROLE_NODE ? &scan_hw_none : &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
 
     /* A table error is a programming error: stop here with outputs safe, the
      * watchdog fed, and the offending ID in the fault record (debugger or next boot). */
