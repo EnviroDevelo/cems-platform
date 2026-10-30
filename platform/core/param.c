@@ -9,6 +9,7 @@
 #include "iobus.h"
 #include "plat_state.h"
 #include "plat_cal.h"
+#include "plat_alarm.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -68,6 +69,13 @@ extern uint16_t plat_alarm_active_count, plat_alarm_unack_count;            /* p
 extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alarm_common;
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
 extern bool     plat_alarm_relay_inv[4];
+extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS], plat_dia_status[PLAT_DIA_SLOTS];   /* plat_alarm.c */
+extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+extern uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+extern char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static const uint16_t dia_delay_dflt[PLAT_DIA_SLOTS] = { 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 };
+static const uint8_t  dia_sev_dflt[PLAT_DIA_SLOTS] = { 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 };
+#define DIA_LABEL(S, N) PARAM_TEXT(PARAM_ID_DIA_LABEL_FIRST + (S), "dia" N "_label", plat_dia_label[S], NULL, PLAT_LVL_ADMIN, NET)
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);
 extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
@@ -142,6 +150,19 @@ static const param_def_t plat_defs[] = {
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_ALARM_COMMON, "alarm_common", plat_alarm_common, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_ROUTE, "alarm_route", plat_alarm_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
+    /* digital input alarms (plat_alarm.h) */
+    PARAM_ARRAY_UINT(PARAM_ID_DIA_INPUT, "dia_input", plat_dia_input, CT_U8, 0, PLAT_DI_MAX, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_BOOL(PARAM_ID_DIA_WHEN, "dia_when", plat_dia_when, PLAT_LVL_ADMIN, NET),
+    { .id = PARAM_ID_DIA_DELAY, .ctype = CT_U16, .ptype = PT_ARRAY, .flags = NET, .level = PLAT_LVL_ADMIN, .ptr = plat_dia_delay,
+      .vmin.u = 0, .vmax.u = 3600, .size = (uint16_t)sizeof plat_dia_delay, .dflt = dia_delay_dflt, .name = "dia_delay", .unit = "s" },
+    PARAM_ARRAY_BOOL(PARAM_ID_DIA_LATCH, "dia_latch", plat_dia_latch, PLAT_LVL_ADMIN, NET),
+    { .id = PARAM_ID_DIA_SEV, .ctype = CT_U8, .ptype = PT_ARRAY, .flags = NET, .level = PLAT_LVL_ADMIN, .ptr = plat_dia_sev,
+      .vmin.u = AL_SEV_WARNING, .vmax.u = AL_SEV_FAULT, .size = (uint16_t)sizeof plat_dia_sev, .dflt = dia_sev_dflt, .name = "dia_sev" },
+    PARAM_ARRAY_UINT(PARAM_ID_DIA_STATUS, "dia_status", plat_dia_status, CT_U8, 0, DIA_ST_UNRELIABLE, PLAT_LVL_VIEW, PF_RO),
+    DIA_LABEL(0, "1"), DIA_LABEL(1, "2"), DIA_LABEL(2, "3"), DIA_LABEL(3, "4"), DIA_LABEL(4, "5"), DIA_LABEL(5, "6"),
+    DIA_LABEL(6, "7"), DIA_LABEL(7, "8"), DIA_LABEL(8, "9"), DIA_LABEL(9, "10"), DIA_LABEL(10, "11"), DIA_LABEL(11, "12"),
+    DIA_LABEL(12, "13"), DIA_LABEL(13, "14"), DIA_LABEL(14, "15"), DIA_LABEL(15, "16"), DIA_LABEL(16, "17"), DIA_LABEL(17, "18"),
+    DIA_LABEL(18, "19"), DIA_LABEL(19, "20"), DIA_LABEL(20, "21"), DIA_LABEL(21, "22"), DIA_LABEL(22, "23"), DIA_LABEL(23, "24"),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, PLAT_DO_MAX, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_MODE, "alarm_relay_mode", plat_alarm_relay_mode, CT_U8, 0, 2, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_BOOL(PARAM_ID_ALARM_RELAY_INV, "alarm_relay_inv", plat_alarm_relay_inv, PLAT_LVL_ADMIN, NET),

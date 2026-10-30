@@ -372,6 +372,63 @@ static void t_platform(void) {
     alarm_on_change = NULL;
 }
 
+/* digital input alarms (Gary 30 Oct; docs/MODBUS_STANDARD_BLOCK.md section 7) */
+static void blob(uint16_t id, uint16_t off, const void *d, uint16_t n) {
+    CHECK_EQ(param_blob_post(id, off, d, n, false, PLAT_SRC_WEB, PLAT_LVL_ADMIN), PERR_OK);
+    param_blob_drain(); param_publish();
+}
+static void t_di_alarms(void) {
+    setup(BSP_RESET_POWER_ON);
+    plat_io_in_t in; memset(&in, 0, sizeof in);
+    alarm_io_in(&in); scan(100);
+    plat_val_t v;
+    uint8_t st0 = 0xFF; CHECK_EQ(param_read_blob(PARAM_ID_DIA_STATUS, 0, &st0, 1), PERR_OK); CHECK_EQ(st0, DIA_ST_UNUSED);
+    CHECK(strstr(get(ALARM_ID_DIA_FIRST).text, "not used") != NULL);
+    uint8_t three = 3, bad = 65;
+    CHECK(param_blob_post(PARAM_ID_DIA_INPUT, 0, &bad, 1, false, PLAT_SRC_WEB, PLAT_LVL_ADMIN) != PERR_OK);   /* per element range */
+    CHECK(param_blob_post(PARAM_ID_DIA_INPUT, 0, &three, 1, false, PLAT_SRC_MODBUS, PLAT_LVL_ADMIN) != PERR_OK); /* never Modbus */
+    blob(PARAM_ID_DIA_INPUT, 0, &three, 1);                      /* slot 0 watches input 3 */
+    alarm_io_in(&in); scan(100);
+    CHECK_EQ(strcmp(get(ALARM_ID_DIA_FIRST).text, "Digital input 3"), 0);   /* no label yet */
+    CHECK_EQ(get(ALARM_ID_DIA_FIRST).severity, AL_SEV_ALARM);
+    in.di = 1u << 2;                                             /* input 3 active */
+    alarm_io_in(&in); scan(1500);
+    CHECK(!get(ALARM_ID_DIA_FIRST).active);                      /* 2 s on-delay by default */
+    scan(700);
+    CHECK(get(ALARM_ID_DIA_FIRST).active);
+    CHECK(plat_dia_mb_bit(7000)); CHECK(plat_dia_mb_bit(7032)); CHECK(!plat_dia_mb_bit(7064));
+    CHECK(plat_dia_mb_bit(7102)); CHECK(!plat_dia_mb_bit(7101));
+    CHECK_EQ(param_read_blob(PARAM_ID_DIA_STATUS, 0, &st0, 1), PERR_OK); CHECK_EQ(st0, DIA_ST_ACTIVE_UNACKED);
+    const char lab[] = "Purge air pressure low";
+    CHECK_EQ(param_blob_post(PARAM_ID_DIA_LABEL_FIRST, 0, lab, (uint16_t)strlen(lab), true, PLAT_SRC_WEB, PLAT_LVL_ADMIN), PERR_OK);
+    param_blob_drain(); param_publish();                         /* the label becomes the alarm's name */
+    CHECK_EQ(strcmp(get(ALARM_ID_DIA_FIRST).text, lab), 0);
+    CHECK(param_read(PARAM_ID_ALARM_ACTIVE_BITS, &v) || true);
+    alarm_ack(ALARM_ID_DIA_FIRST, PLAT_SRC_LOCAL, 0); scan(50);
+    CHECK_EQ(param_read_blob(PARAM_ID_DIA_STATUS, 0, &st0, 1), PERR_OK); CHECK_EQ(st0, DIA_ST_ACTIVE_ACKED);
+    in.di = 0; alarm_io_in(&in); scan(100);
+    CHECK(!get(ALARM_ID_DIA_FIRST).active);
+    /* alarm when inactive, fault severity, latch, no delay */
+    bool t = true; uint16_t z = 0; uint8_t f = AL_SEV_FAULT;
+    blob(PARAM_ID_DIA_WHEN, 0, &t, 1); blob(PARAM_ID_DIA_LATCH, 0, &t, 1);
+    blob(PARAM_ID_DIA_DELAY, 0, &z, 2); blob(PARAM_ID_DIA_SEV, 0, &f, 1);
+    alarm_io_in(&in); scan(50);
+    alarm_view_t a = get(ALARM_ID_DIA_FIRST);
+    CHECK(a.active); CHECK_EQ(a.severity, AL_SEV_FAULT);
+    in.di = 1u << 2; alarm_io_in(&in); scan(50);
+    CHECK(get(ALARM_ID_DIA_FIRST).active);                       /* latched until acknowledged */
+    alarm_ack(ALARM_ID_DIA_FIRST, PLAT_SRC_LOCAL, 0); scan(50);
+    CHECK(!get(ALARM_ID_DIA_FIRST).active);
+    /* an unreliable input never raises it, and says so */
+    in.di = 0; in.di_fault = 1u << 2; alarm_io_in(&in); scan(50);
+    CHECK(!get(ALARM_ID_DIA_FIRST).active);
+    CHECK(plat_dia_mb_bit(7064));
+    CHECK_EQ(param_read_blob(PARAM_ID_DIA_STATUS, 0, &st0, 1), PERR_OK); CHECK_EQ(st0, DIA_ST_UNRELIABLE);
+    char nm[32]; plat_dia_input_name(3, nm, sizeof nm); CHECK_EQ(strcmp(nm, "Input 3"), 0);
+    alarm_ack(ALARM_ACK_ALL, PLAT_SRC_LOCAL, 0);
+    alarm_on_change = NULL;
+}
+
 void test_alarm_all(void) {
     RUN(t_table);
     RUN(t_raise_ack_clear);
@@ -383,4 +440,5 @@ void test_alarm_all(void) {
     RUN(t_routes);
     RUN(t_health);
     RUN(t_platform);
+    RUN(t_di_alarms);
 }

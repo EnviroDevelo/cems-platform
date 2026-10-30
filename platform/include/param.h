@@ -189,6 +189,13 @@ enum {
     PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
     PARAM_ID_MB_FORCED        = 334, /* RO: values forced on Modbus now (modbus.h mb_force_*) */
     PARAM_ID_MB_STD_WORDS     = 335, /* standard block 7000-7999: 0 floats/u32 high word first, 1 low word first */
+    PARAM_ID_DIA_INPUT        = 340, /* digital input alarms (plat_alarm.h), [24] per slot: 0 unused, 1..64 the input */
+    PARAM_ID_DIA_WHEN         = 341, /* [24] bool: 0 alarm when the input is active, 1 when it is inactive */
+    PARAM_ID_DIA_DELAY        = 342, /* [24] on-delay, s (default 2) */
+    PARAM_ID_DIA_LATCH        = 343, /* [24] bool: stays active until acknowledged */
+    PARAM_ID_DIA_SEV          = 344, /* [24] AL_SEV_WARNING..AL_SEV_FAULT (default alarm) */
+    PARAM_ID_DIA_STATUS       = 345, /* RO [24] DIA_ST_* */
+    PARAM_ID_DIA_LABEL_FIRST  = 350, /* 350 + s: slot s's label (32 characters), the alarm's description */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

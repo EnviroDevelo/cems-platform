@@ -468,6 +468,8 @@ int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
         if ((map[k].table == MB_INPUT || map[k].table == MB_HOLDING) && map[k].addr <= PLAT_MB_STD_END &&
             (uint32_t)map[k].addr + sp > PLAT_MB_STD_ADDR)
             return (int)k + 1;                         /* the standard CEMS block */
+        if (map[k].table == MB_DISCRETE && map[k].addr <= PLAT_DIA_MB_END && (uint32_t)map[k].addr + sp > PLAT_DIA_MB_ADDR)
+            return (int)k + 1;                         /* the digital input alarms (plat_alarm.h) */
         idx[n_idx++] = (ent_t){ &map[k], d, sp };
     }
     for (size_t i = 1; i < n_idx; ++i) {          /* sort by (table, addr) */
@@ -648,7 +650,9 @@ static uint16_t rd_bits(uint8_t fc, uint8_t table, uint16_t a, uint16_t q, uint8
     if (cap < 2u + nb) return exc(fc, EX_FAIL, resp);
     uint8_t bits[MB_MAX_READ_BITS];
     for (uint16_t k = 0; k < q;) {
-        const ent_t *e = find(table, (uint16_t)(a + k));
+        uint16_t ak = (uint16_t)(a + k);
+        if (table == MB_DISCRETE && ak >= PLAT_DIA_MB_ADDR && ak <= PLAT_DIA_MB_END) { bits[k++] = plat_dia_mb_bit(ak); continue; }
+        const ent_t *e = find(table, ak);
         if (!e) return exc(fc, EX_ADDR, resp);
         uint16_t b0 = (uint16_t)(a + k - e->m->addr), n = (uint16_t)(e->span - b0);
         if (n > q - k) n = (uint16_t)(q - k);
