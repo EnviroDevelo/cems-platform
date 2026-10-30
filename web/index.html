@@ -88,6 +88,7 @@ section.offtab{display:none!important}
   <span class="badge" id="state" style="display:none"></span>
   <span class="badge" id="mode">-</span>
   <span class="badge" id="link" style="display:none"></span>
+  <span class="badge" id="ethb" style="display:none" title="The Ethernet port: speed and duplex the switch agreed"></span>
   <a href="#alarms" class="badge" id="alarmbadge" style="display:none;text-decoration:none"></a>
   <span class="badge" id="conn">connecting</span>
 </header>
@@ -181,6 +182,8 @@ section.offtab{display:none!important}
       <div class="tile"><div class="k">Since last service</div><div class="v" id="svcsince">-</div></div>
       <div class="tile" title="Two units with the same checksum have the same settings"><div class="k">Settings checksum</div><div class="v" id="svccrc">-</div></div>
     </div>
+    <h2 style="margin-top:12px">Network port</h2>
+    <p class="note" id="svceth">-</p>
     <table><thead><tr><th>Date</th><th>Technician</th><th>Work done</th><th>Login</th></tr></thead><tbody id="svclog"></tbody></table>
     <div class="row" id="svcform" style="display:none;margin-top:8px">
       <input id="svctech" maxlength="15" placeholder="Technician" style="width:140px">
@@ -1003,6 +1006,7 @@ async function refreshInfo() {
       lk.style.display = ""; lk.textContent = off ? "NO LINK" : i.link_lost ? "LINK LOST" : "LINK OK";
       lk.className = "badge " + (off ? "" : i.link_lost ? "b-bad" : "b-ok");
     }
+    showEth(i.eth);
     if (i.tls_fingerprint) $("tlsfp").textContent = i.tls_fingerprint;
     $("defpw").style.display = i.default_passwords ? "block" : "none";
     const newLevel = LV.indexOf(i.session.level);
@@ -1573,6 +1577,27 @@ $("iobcards").onclick = async ev => {
     alert(`Calibration offset set to ${j.offset} \u00b0C`);
   } catch (e) { alert("Not set: " + e.message); }
 };
+
+/* the Ethernet port (/api/info "eth"): a header badge, details on the Service tab */
+const LINK_MODES = ["auto", "100 Mbit only", "10 Mbit only"];
+let ethLast = null;
+function showEth(e) {
+  const b = $("ethb");
+  if (!e) { b.style.display = "none"; return; }
+  const dup = f => f ? "full duplex" : "half duplex";
+  const errs = e.rx_crc_errors + e.rx_align_errors + e.rx_missed + e.rx_overflow + e.rx_pool_empty;
+  const grew = ethLast && (errs > ethLast.errs || e.link_drops > ethLast.drops);
+  ethLast = { errs, drops: e.link_drops };
+  b.style.display = "";
+  b.textContent = e.link ? `ETH ${e.phy_mbps} ${e.phy_full ? "FD" : "HD"}` : "ETH DOWN";
+  b.className = "badge " + (!e.link ? "b-bad" : (e.phy_mbps < 100 || !e.phy_full || grew) ? "b-warn" : "b-ok");
+  $("svceth").textContent = !e.link ? "No link: check the cable and the switch." :
+    `Link ${e.phy_mbps} Mbit ${dup(e.phy_full)} (setting: ${LINK_MODES[e.link_mode] || e.link_mode}` +
+    `${e.partner_autoneg ? "" : "; the switch did not negotiate, its mode was guessed"}). ` +
+    `Since power-up: ${e.link_drops} link drops, ${e.resyncs} renegotiations, receive errors ${e.rx_crc_errors} CRC, ` +
+    `${e.rx_align_errors} alignment, ${e.phy_symbol_errors} line symbol, ${e.rx_missed + e.rx_overflow + e.rx_pool_empty} dropped by the unit. ` +
+    `Frames: ${e.rx_good_unicast} received, ${e.tx_good} sent.`;
+}
 
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 
