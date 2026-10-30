@@ -168,6 +168,10 @@ as the unit ID.
   04 input, 01 coils, 02 discrete inputs), address (0-based, as on the wire: Modicon 40001 is
   holding 0), type, byte order, bit, gain and offset (value = raw × gain + offset), and the valid
   range. **Save** writes them; the device is read again at once.
+- **Flags** (a point's column): for analysers that report each warning as its own bit (a discrete
+  input) instead of one status word, set the bit's point to **fault**, **calibration** or
+  **maintenance**. While that point reads non-zero, every other value of the instrument carries
+  that word.
 - **Register explorer** (admin): reads registers from any address on the I/O network without
   writing anything. Each row shows the words decoded every way: unsigned and signed 16-bit (and
   byte-swapped), and 32-bit float, unsigned and signed in all four byte orders (ABCD is the Modbus

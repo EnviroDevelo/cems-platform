@@ -267,7 +267,7 @@ section.offtab{display:none!important}
       </div>
       <h2 style="margin-top:8px">Points</h2>
       <table class="ptab" id="ptab"><thead><tr><th>#</th><th>Name</th><th>Unit</th><th>Read with</th><th>Address</th><th>Type</th><th>Order</th><th>Bit</th>
-        <th>Gain</th><th>Offset</th><th>Low</th><th>High</th><th>Now</th><th></th></tr></thead><tbody></tbody></table>
+        <th>Gain</th><th>Offset</th><th>Low</th><th>High</th><th class="qrolecol" title="A flag point: when it reads non-zero, every other point of this instrument carries this quality">Flags</th><th>Now</th><th></th></tr></thead><tbody></tbody></table>
       <div class="row" style="flex-wrap:wrap;margin-top:6px">
         <button class="ghost" id="ieadd">Add point</button>
         <button id="iesave">Save</button>
@@ -1315,7 +1315,8 @@ async function mbHandoverData() {
     ["Integrator guide", "docs/MODBUS.md: connection, function codes, exceptions, supervising the link, commissioning checklist"],
     ["", ""], ["Integrator sign-off", ""], ["Company", ""], ["Name", ""], ["Signature", ""], ["Date", ""]];
   const codes = [["Group", "Code", "Name", "Meaning"]];
-  const GRP = { quality: "Quality", state: "State", common_bits: "Common alarm bit", clock_source: "Clock source", exceptions: "Modbus exception" };
+  const GRP = { quality: "Quality", state: "State", common_bits: "Common alarm bit", clock_source: "Clock source", exceptions: "Modbus exception",
+                std_status_bits: "Standard status bit", input_alarm_status: "Digital input alarm state" };
   const exc = Object.fromEntries(MB_EXC.map(([c, , t]) => [c, t]));
   for (const [g, list] of Object.entries(m.codes || {})) for (const c of list)
     codes.push([GRP[g] || g, c.code ?? c.bit ?? "", c.name || c.key || "", c.text || c.meaning || (g === "exceptions" ? exc[c.code] || "" : c.key && c.key !== c.name ? c.key : "")]);
@@ -1846,8 +1847,10 @@ pollIob();
 /* ---- third-party instruments (Modbus TCP master on the I/O port; firmware inst.h, docs/MODBUS_ROLES.md role 2) ----
    Settings are parameters 500-621 (arrays indexed by instrument 0-7 or point 0-31) written with /api/write. */
 const IP_ = { en: 500, ip: 501, port: 502, unit: 503, period: 504, timeout: 505, max: 506, gap: 507, stpt: 508, fm: 509, mm: 510, cm: 511, name: 521,
-              pinst: 530, fc: 531, addr: 532, type: 533, order: 534, bit: 535, gain: 536, offset: 537, lo: 538, hi: 539, pname: 550, punit: 590 };
+              pinst: 530, fc: 531, addr: 532, type: 533, order: 534, bit: 535, gain: 536, offset: 537, lo: 538, hi: 539, qrole: 543, pname: 550, punit: 590 };
 const PT_TYPES = ["u16", "i16", "u32", "i32", "f32", "bit"], PT_ORDERS = ["ABCD", "CDAB", "BADC", "DCBA"];
+const PT_QROLES = ["none", "fault", "calibration", "maintenance"];   /* a flag point: when it reads non-zero, its instrument's other points carry that quality */
+const hasQrole = () => !!byId[IP_.qrole];             /* firmware before PR #16 dcc9c0f has no pt_qrole */
 const PT_FC = { 1: "01 coils", 2: "02 discrete inputs", 3: "03 holding", 4: "04 input" };
 const INST_N = 8, PT_N = 32;
 let inst = null, instEdit = 0, instCfg = null, instRows = [];
@@ -1908,7 +1911,7 @@ function showInst() {
 }
 function firstFreeInst() { const f = inst && inst.instruments.find(i => !i.enabled && !i.name && i.ip === "0.0.0.0"); return f ? f.n : 0; }
 async function instLoad() {                           /* every instrument and point setting, as the parameter table holds it */
-  const ids = [...Object.values(IP_).filter(x => x < 521 || (x >= 530 && x < 550))];
+  const ids = [...Object.values(IP_).filter(x => (x < 521 || (x >= 530 && x < 550)) && (x !== IP_.qrole || hasQrole()))];
   for (let k = 0; k < INST_N; k++) ids.push(IP_.name + k);
   for (let p = 0; p < PT_N; p++) ids.push(IP_.pname + p, IP_.punit + p);
   return paramsGet(ids);
@@ -1939,7 +1942,7 @@ async function openInst(n, prefill, cfg) {        /* cfg: values already read ba
   instRows = [];
   for (let p = 0; p < PT_N; p++) if (A(IP_.pinst)[p] === n)
     instRows.push({ n: p + 1, name: c[IP_.pname + p] || "", unit: c[IP_.punit + p] || "", fc: A(IP_.fc)[p], addr: A(IP_.addr)[p], type: A(IP_.type)[p], order: A(IP_.order)[p],
-                    bit: A(IP_.bit)[p], gain: A(IP_.gain)[p], offset: A(IP_.offset)[p], lo: A(IP_.lo)[p], hi: A(IP_.hi)[p] });
+                    bit: A(IP_.bit)[p], gain: A(IP_.gain)[p], offset: A(IP_.offset)[p], lo: A(IP_.lo)[p], hi: A(IP_.hi)[p], qrole: A(IP_.qrole)[p] || 0 });
   instRows.stpt = A(IP_.stpt)[k] || 0;
   if (prefill) instRows.push({ n: 0, name: "", unit: "", gain: 1, offset: 0, lo: 0, hi: 0, bit: 0, ...prefill });
   drawPts();
@@ -1956,13 +1959,14 @@ function drawPts() {
       `<td><select data-f="fc">${opt(Object.entries(PT_FC), r.fc ?? 3)}</select></td><td><input data-f="addr" size="5"></td>` +
       `<td><select data-f="type">${opt(PT_TYPES.map((t, k) => [k, t]), r.type ?? 0)}</select></td><td><select data-f="order">${opt(PT_ORDERS.map((t, k) => [k, t]), r.order ?? 0)}</select></td>` +
       `<td><input data-f="bit" size="2"></td><td><input data-f="gain" size="6"></td><td><input data-f="offset" size="6"></td><td><input data-f="lo" size="6"></td><td><input data-f="hi" size="6"></td>` +
-      `<td class="val"></td><td><button class="ghost">Remove</button></td>`;
+      `<td class="qrolecol"><select data-f="qrole">${opt(PT_QROLES.map((t, k) => [k, t]), r.qrole ?? 0)}</select></td><td class="val"></td><td><button class="ghost">Remove</button></td>`;
     for (const el of tr.querySelectorAll("input")) { el.value = r[el.dataset.f] ?? ""; el.disabled = !can; el.oninput = () => { r[el.dataset.f] = el.value; }; }
     for (const el of tr.querySelectorAll("select")) { el.disabled = !can; el.onchange = () => { r[el.dataset.f] = +el.value; }; }
-    r.now = tr.cells[12];
+    r.now = tr.cells[13];
     const b = tr.querySelector("button"); b.disabled = !can; b.onclick = () => { r.removed = true; tr.style.display = "none"; };
     return tr;
   }));
+  for (const el of document.querySelectorAll("#ptab .qrolecol")) el.style.display = hasQrole() ? "" : "none";
   $("ie_stpt").replaceChildren(...[[0, "none"], ...instRows.filter(r => r.n).map(r => [r.n, `point ${r.n}` + (r.name ? " " + r.name : "")])].map(([v, t]) => {
     const o = document.createElement("option"); o.value = v; o.textContent = t; if (v === instRows.stpt) o.selected = true; return o;
   }));
@@ -2006,7 +2010,7 @@ function instItems(n, rows, stpt) {                   /* the editor's contents a
            { id: IP_.fc, o: p, v: num(r.fc ?? 3, "function") }, { id: IP_.addr, o: p, v: num(r.addr, "address") }, { id: IP_.type, o: p, v: num(r.type ?? 0, "type") },
            { id: IP_.order, o: p, v: num(r.order ?? 0, "order") }, { id: IP_.bit, o: p, v: num(r.bit || 0, "bit") }, { id: IP_.gain, o: p, v: num(r.gain ?? 1, "gain") },
            { id: IP_.offset, o: p, v: num(r.offset || 0, "offset") }, { id: IP_.lo, o: p, v: num(r.lo || 0, "low") }, { id: IP_.hi, o: p, v: num(r.hi || 0, "high") },
-           { id: IP_.pinst, o: p, v: n });
+           ...(hasQrole() ? [{ id: IP_.qrole, o: p, v: num(r.qrole || 0, "flags") }] : []), { id: IP_.pinst, o: p, v: n });   /* assigned last */
   }
   w.push({ id: IP_.stpt, o: k, v: stpt }, { id: IP_.en, o: k, v: $("ie_en").checked ? 1 : 0 });   /* enable last, once its points exist */
   return w;
@@ -2022,7 +2026,7 @@ $("iesave").onclick = async () => {
       e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e);
   }
 };
-$("ieadd").onclick = () => { instRows.push({ n: 0, name: "", unit: "", fc: 3, addr: 0, type: 0, order: 0, bit: 0, gain: 1, offset: 0, lo: 0, hi: 0 }); drawPts(); };
+$("ieadd").onclick = () => { instRows.push({ n: 0, name: "", unit: "", fc: 3, addr: 0, type: 0, order: 0, bit: 0, gain: 1, offset: 0, lo: 0, hi: 0, qrole: 0 }); drawPts(); };
 $("iecancel").onclick = () => { instEdit = 0; $("instedit").style.display = "none"; };
 /* a profile: one device model's settings and points, without its IP (kind "cems-instrument-profile") */
 $("ieexp").onclick = () => {
@@ -2032,7 +2036,7 @@ $("ieexp").onclick = () => {
               max_regs: +$("ie_max").value, gap: +$("ie_gap").value },
     status: { point: sp >= 0 ? sp : null, fault_bits: hexIn($("ie_fm").value) || 0, maint_bits: hexIn($("ie_mm").value) || 0, cal_bits: hexIn($("ie_cm").value) || 0 },
     points: live.map(r => ({ name: r.name, unit: r.unit, fc: +r.fc || 3, addr: +r.addr || 0, type: PT_TYPES[+r.type || 0], order: PT_ORDERS[+r.order || 0],
-                             bit: +r.bit || 0, gain: r.gain === "" ? 1 : +r.gain, offset: +r.offset || 0, lo: +r.lo || 0, hi: +r.hi || 0 })) };
+                             bit: +r.bit || 0, gain: r.gain === "" ? 1 : +r.gain, offset: +r.offset || 0, lo: +r.lo || 0, hi: +r.hi || 0, qrole: PT_QROLES[+r.qrole || 0] })) };
   const nm = (prof.name || "instrument").replace(/[^\w.-]+/g, "-");
   saveBlob(new Blob([JSON.stringify(prof, null, 1)], { type: "application/json" }), `profile-${nm}.json`);
 };
@@ -2051,7 +2055,7 @@ $("ieimp").onchange = async ev => {
     const hx = v => v ? "0x" + Number(v).toString(16).toUpperCase().padStart(4, "0") : "";
     $("ie_fm").value = hx(st.fault_bits); $("ie_mm").value = hx(st.maint_bits); $("ie_cm").value = hx(st.cal_bits);
     const fresh = prof.points.map(p => ({ n: 0, name: p.name || "", unit: p.unit || "", fc: +p.fc || 3, addr: +p.addr || 0, type: Math.max(0, PT_TYPES.indexOf(p.type)),
-      order: Math.max(0, PT_ORDERS.indexOf(p.order)), bit: +p.bit || 0, gain: p.gain ?? 1, offset: p.offset || 0, lo: p.lo || 0, hi: p.hi || 0 }));
+      order: Math.max(0, PT_ORDERS.indexOf(p.order)), bit: +p.bit || 0, gain: p.gain ?? 1, offset: p.offset || 0, lo: p.lo || 0, hi: p.hi || 0, qrole: Math.max(0, PT_QROLES.indexOf(p.qrole)) }));
     const rows = [...instRows, ...fresh];
     const w = instItems(instEdit, rows, 0);                          /* numbers the new points, then the status point by its place in the profile */
     if (Number.isInteger(st.point) && fresh[st.point]) w.find(x => x.id === IP_.stpt).v = fresh[st.point].n;

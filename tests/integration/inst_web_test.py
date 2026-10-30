@@ -141,12 +141,23 @@ async def run(say, real):
         await pg.wait_for_function("[...document.querySelectorAll('#insttab .tile .v')].some(v => v.dataset.q === 'maintenance')", timeout=10000)
         check(True, "status word bit 1: the values read maintenance")
         say("analyser status 0")
+        qrole = await pg.is_visible("#ptab th.qrolecol")
+        if qrole:                                    # a flag point (pt_qrole): the status word's bits off, the Status point flags maintenance itself
+            await pg.wait_for_function("![...document.querySelectorAll('#insttab .tile .v')].some(v => v.dataset.q === 'maintenance')", timeout=10000)
+            await pg.fill("#ie_mm", ""); await pg.select_option(f"{r2} [data-f=qrole]", "3")
+            await save(pg)
+            say("analyser status 4")
+            await pg.wait_for_function("[...document.querySelectorAll('#insttab .tile .v')].some(v => v.dataset.q === 'maintenance')", timeout=10000)
+            check(True, "flag point: Status non-zero puts O2 in maintenance with no status bits set")
+            say("analyser status 0")
+            await pg.fill("#ie_mm", "0x0002"); await save(pg)
         # profile out, then into instrument 2
         async with pg.expect_download(timeout=10000) as dl:
             await pg.click("#ieexp")
         prof = json.loads(open(await (await dl.value).path()).read())
         check(prof["kind"] == "cems-instrument-profile" and len(prof["points"]) == 2 and prof["points"][0]["type"] == "f32" and prof["points"][0]["order"] == "CDAB"
               and prof["status"]["point"] == 1 and prof["status"]["maint_bits"] == 2 and "ip" not in json.dumps(prof["device"]), "profile exported (no IP)" + ("" if passed_last(prof) else " " + json.dumps(prof)[:400]))
+        if qrole: check([p.get("qrole") for p in prof["points"]] == ["none", "maintenance"], f"profile carries the flag roles ({[p.get('qrole') for p in prof['points']]})")
         tmp = os.path.join(tempfile.mkdtemp(), "p.json"); open(tmp, "w").write(json.dumps(prof))
         await pg.click("#iecancel")
         await pg.wait_for_function("[...document.querySelectorAll('#insttab button')].some(b => b.textContent === 'Set up')", timeout=5000)
@@ -161,6 +172,7 @@ async def run(say, real):
             ctx2 = ssl._create_unverified_context()
             with urllib.request.urlopen(URL + "api/values?ids=522,530,510,508", context=ctx2, timeout=5) as f: print("   DBG after 2 s:", f.read()[:300])
         check(n2 == 2 and await pg.input_value("#ie_name") == "Stack analyser" and await pg.input_value("#ie_mm") == "0x0002", f"profile imported into instrument 2 ({n2} points, {await pg.input_value('#ie_name')!r}, {await pg.input_value('#ie_mm')!r}, {await pg.inner_text('#ieerr')!r})")
+        if qrole: check(await pg.eval_on_selector("#ptab tbody tr:nth-child(2) [data-f=qrole]", "e => e.selectedOptions[0].text") == "maintenance", "imported point keeps its flag role")
         stp = await pg.eval_on_selector("#ie_stpt", "e => e.selectedOptions[0].text")
         check(stp.startswith("point 4"), f"status point mapped to the new point number ({stp})")
         await pg.wait_for_function("document.querySelectorAll('#insttab .tile').length === 4", timeout=10000)

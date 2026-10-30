@@ -84,7 +84,7 @@ async def run(say, real):
         try:
             mp = get("api/modbus/map")
             e = next((x for x in mp["entries"] if x["table"] == "discrete" and x["addr"] == 7002), None)
-            check(e is not None and e.get("description") == "Door open", f"Modbus map: discrete input 7002 is 'Door open' ({e and e.get('description')!r})")
+            check(e is not None and (e.get("description") or "").startswith("Door open"), f"Modbus map: discrete input 7002 is named by the label ({e and e.get('description')!r})")
         except urllib.error.HTTPError:
             check(False, "Modbus map available")
         # the handover file: Codes lists alarm 32 by its label, Standard values carries 7002's description
@@ -96,7 +96,7 @@ async def run(say, real):
         codes = {r[1].value: r[2].value for r in wb["Codes"].iter_rows(min_row=2) if r[0].value == "Alarm ID"}
         check(codes.get(32) == "Door open", f"Excel Codes: alarm 32 is {codes.get(32)!r}")
         std = [[c.value for c in r] for r in wb["Standard values"].iter_rows()]
-        check(any(r[1] == 7002 and r[10] == "Door open" for r in std[1:]), "Excel Standard values: discrete input 7002 described 'Door open'")
+        check(any(r[1] == 7002 and str(r[10] or "").startswith("Door open") for r in std[1:]), "Excel Standard values: discrete input 7002 named by the label")
         # the slot's live state: input 5 is off, so the alarm stays normal
         await pg.click('#tabbar [data-tab="alarmcfg"]')
         await pg.wait_for_function("document.querySelector('#diatab tbody tr:nth-child(3) .badge').textContent.length > 0", timeout=8000)

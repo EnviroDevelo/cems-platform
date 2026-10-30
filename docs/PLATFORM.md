@@ -342,8 +342,11 @@ for again, never taken as empty: an empty `pt_inst` would make used points look 
 explorer posts `/api/inst/explore`, polls it until `busy` is false, and decodes the words 16
 ways (u16, i16 and their byte swap; f32, u32, i32 in ABCD, CDAB, BADC, DCBA); **Find value**
 marks the readings within 0.5 % of what the device displays, and a click fills a new point.
+The Flags column writes `pt_qrole` (543: none, fault, calibration, maintenance; hidden when the
+firmware has no parameter 543), for analysers that report each state as its own discrete input.
 Profiles are JSON (`"kind": "cems-instrument-profile"`, version 1): device settings, status
-point (by its place in the list) and bits, and the points, never the IP. Import replaces the
+point (by its place in the list) and bits, and the points, never the IP. Each point carries
+`qrole` by name. Import replaces the
 instrument's points after a confirmation. Test: `tests/integration/inst_web_test.py` against
 netsim's simulated analyser (22 checks: explorer, find, pick, save, live value, status word to
 maintenance, export, import into a second instrument, viewer view); without the firmware it only
