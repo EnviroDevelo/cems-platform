@@ -482,12 +482,14 @@ updateTabs();
 
 const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 
+/* IPv4 parameters show as dotted quads (net_link_mode, net_status are plain numbers) */
+const isIp = d => d.type === "uint" && (["net_ip", "net_mask", "net_gw"].includes(d.name) || d.name.endsWith("_ip"));
 function fmt(d, v) {
   if (d.flags.includes("secret")) return "(hidden)";
   if (v === null || v === undefined) return "-";
   if (Array.isArray(v)) return v.map(x => typeof x === "boolean" ? (x ? 1 : 0) : x).join(", ");
   if (typeof v === "boolean") return v ? "on" : "off";
-  if ((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint" && d.name !== "net_dhcp")
+  if (isIp(d))
     return [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".");
   return String(v) + (d.unit ? " " + d.unit : "");
 }
@@ -760,7 +762,7 @@ async function recSave() {
 const TR_MAX_S = 3600, TR_COL = ["#1f5fae", "#b42318", "#16794a", "#a15c00"];
 let trPens = [], trT = [], trV = {}, trQ = {}, trFocus = 0, trHoldAt = 0, trHover = null;
 const trendable = d => ["bool", "int", "uint", "float"].includes(d.type) && !d.flags.includes("secret") &&
-  !((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint");
+  !isIp(d);
 function trSave() { try { localStorage.setItem("cems.trend", JSON.stringify(trPens)); } catch (e) {} }
 function trSetup() {
   const sel = $("tradd");
