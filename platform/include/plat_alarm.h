@@ -42,7 +42,7 @@
 #include "plat_io.h"
 
 #ifndef PLAT_ALARM_MAX
-#define PLAT_ALARM_MAX 96u           /* platform + application definitions */
+#define PLAT_ALARM_MAX 128u          /* platform (incl. the 24 digital input alarms) + application definitions */
 #endif
 #define ALARM_ID_MAX      255u
 #define ALARM_ID_APP_FIRST 100u
@@ -117,7 +117,29 @@ enum {
     ALARM_ID_CAL_DUE           = 21,  /* a channel's calibration is overdue (plat_cal.h, CIP-18) */
     ALARM_ID_HW_REV            = 22,  /* the board's revision straps disagree with the factory hw_rev (CIP-01.3) */
     ALARM_ID_SELFTEST          = 23,  /* a start-up self-test failed (plat_selftest.h, CIP-11.1) */
+    ALARM_ID_DIA_FIRST         = 30,  /* 30..53: digital input alarm slot s = ID - 30 (below) */
 };
+
+/* ---------------- digital input alarms (Gary 30 Oct; docs/MODBUS_STANDARD_BLOCK.md section 7) ----
+ * Any digital input can raise an alarm that goes out on Modbus, named by the label typed on the
+ * touchscreen's or the web page's alarm setup. PLAT_DIA_SLOTS slots, alarm ALARM_ID_DIA_FIRST + s,
+ * each with parameters 340-344 (input, alarm when active or inactive, on-delay, latch, severity)
+ * and a label (350 + s, the alarm's description; empty: "Digital input n"). Routing is the usual
+ * per-alarm actions (default Modbus). An unused slot never raises; an unreliable input (wire
+ * break, I/O board lost) does not raise it either (alarms 12 and 15 cover that) and shows in its
+ * status. Modbus discrete inputs, read-only:
+ *   7000 + s slot s active, 7032 + s slot s waiting for an acknowledge,
+ *   7064 + s slot s input unreliable, 7100 + i digital input i+1 after the filter. */
+#define PLAT_DIA_SLOTS   24u
+#define PLAT_DIA_LABEL   33u          /* label bytes: 32 characters and the end */
+enum { DIA_ST_UNUSED = 0, DIA_ST_NORMAL, DIA_ST_ACTIVE_ACKED, DIA_ST_ACTIVE_UNACKED, DIA_ST_CLEARED_UNACKED,
+       DIA_ST_UNRELIABLE };
+#define PLAT_DIA_MB_ADDR 7000u        /* discrete inputs 7000-7999: the core's */
+#define PLAT_DIA_MB_END  7999u
+void alarm_io_in(const plat_io_in_t *in);       /* scan task, after the inputs are read: the slots' conditions */
+bool plat_dia_mb_bit(uint16_t addr);             /* discrete input addr (7000-7999) as Modbus serves it */
+/* Input n (1..PLAT_DI_MAX) by where it is: "I/O board k input j" or "Input n". */
+void plat_dia_input_name(unsigned n, char *buf, size_t cap);
 
 /* A copy of one alarm, for lists. */
 typedef struct {

@@ -1097,6 +1097,38 @@ static void get_mb_map(http_out_t *o) {
         out_str(o, ",\"forceable\":"); json_bool(o, mb_forceable(d->id));
         out_str(o, "}");
     }
+    /* the digital input alarms' discrete inputs (plat_alarm.h), named live by their labels */
+    {
+        static const char *const what[3] = { "active", "waiting for an acknowledge", "input unreliable" };
+        static const char *const key[3] = { "active", "unacked", "unreliable" };
+        alarm_view_t av;
+        char nm[24], desc[96];
+        bool first = mb_entry_count() == 0;
+        for (unsigned g = 0; g < 4u; ++g)
+            for (unsigned i = 0; i < (g < 3u ? PLAT_DIA_SLOTS : (unsigned)PLAT_DI_MAX); ++i) {
+                uint16_t addr = (uint16_t)(g < 3u ? PLAT_DIA_MB_ADDR + 32u * g + i : PLAT_DIA_MB_ADDR + 100u + i);
+                if (g < 3u) {
+                    snprintf(nm, sizeof nm, "dia%u_%s", i + 1u, key[g]);
+                    const char *t = alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + i), &av) ? av.text : "";
+                    snprintf(desc, sizeof desc, "%s: %s", t, what[g]);
+                } else {
+                    snprintf(nm, sizeof nm, "di%u", i + 1u);
+                    snprintf(desc, sizeof desc, "Digital input %u", i + 1u);
+                    for (unsigned s2 = 0; s2 < PLAT_DIA_SLOTS; ++s2) {   /* the first slot bound to it names it */
+                        uint8_t b = 0;
+                        if (param_read_blob(PARAM_ID_DIA_INPUT, (uint16_t)s2, &b, 1) != PERR_OK || b != i + 1u) continue;
+                        if (alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + s2), &av)) snprintf(desc, sizeof desc, "%s", av.text);
+                        break;
+                    }
+                }
+                out_str(o, first ? "{\"table\":\"discrete\"" : ",{\"table\":\"discrete\"");
+                first = false;
+                out_str(o, ",\"fc_read\":2,\"fc_write\":null,\"addr\":"); json_uint(o, addr);
+                out_str(o, ",\"count\":1,\"format\":\"bit\",\"id\":null,\"name\":"); json_str(o, nm);
+                out_str(o, ",\"description\":"); json_str(o, desc);
+                out_str(o, ",\"unit\":null,\"access\":\"read\",\"block\":false,\"core\":\"input_alarms\",\"forceable\":false}");
+            }
+    }
     /* the codes the values use (MODBUS.md 6), for the handover file's Codes sheet */
     out_str(o, "],\"codes\":{\"quality\":[");
     for (uint8_t q = 0; q < PLAT_Q_COUNT; ++q) {
@@ -1118,6 +1150,19 @@ static void get_mb_map(http_out_t *o) {
         char b[64]; snprintf(b, sizeof b, ",{\"bit\":%u,\"name\":\"alarm relay %u in alarm\"}", 8u + k, k + 1u);
         out_str(o, b);
     }
+    /* the standard block's status word (docs/MODBUS_STANDARD_BLOCK.md section 3) and input alarm states */
+    out_str(o, "],\"std_status_bits\":[{\"bit\":0,\"name\":\"failure\"},{\"bit\":1,\"name\":\"maintenance (function check)\"},"
+               "{\"bit\":2,\"name\":\"maintenance request\"},{\"bit\":3,\"name\":\"out of specification\"},"
+               "{\"bit\":4,\"name\":\"test / simulation value transmitted\"},{\"bit\":16,\"name\":\"forced from the web page or touchscreen\"},"
+               "{\"bit\":17,\"name\":\"no QAL2 calibration function\"},{\"bit\":18,\"name\":\"above the valid calibration range\"},"
+               "{\"bit\":19,\"name\":\"analyser over-range\"},{\"bit\":20,\"name\":\"O2 too high to correct\"},"
+               "{\"bit\":21,\"name\":\"calculation input missing\"},{\"bit\":22,\"name\":\"average incomplete\"},"
+               "{\"bit\":23,\"name\":\"day invalid\"},{\"bit\":24,\"name\":\"confidence interval not applied\"},"
+               "{\"bit\":25,\"name\":\"fixed H2O used\"},{\"bit\":26,\"name\":\"below range\"},"
+               "{\"bit\":27,\"name\":\"QAL2 review due\"}],"
+               "\"input_alarm_status\":[{\"code\":0,\"name\":\"not used\"},{\"code\":1,\"name\":\"normal\"},"
+               "{\"code\":2,\"name\":\"active, acknowledged\"},{\"code\":3,\"name\":\"active, not acknowledged\"},"
+               "{\"code\":4,\"name\":\"cleared, not acknowledged\"},{\"code\":5,\"name\":\"input unreliable\"}");
     out_str(o, "],\"clock_source\":[{\"code\":0,\"name\":\"none\"},{\"code\":1,\"name\":\"SNTP\"},"
                "{\"code\":2,\"name\":\"touchscreen\"},{\"code\":3,\"name\":\"web\"},{\"code\":4,\"name\":\"Modbus\"}],"
                "\"exceptions\":[{\"code\":1,\"name\":\"illegal function, writes disabled, or level too low\"},"
