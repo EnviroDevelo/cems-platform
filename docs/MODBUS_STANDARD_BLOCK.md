@@ -33,8 +33,7 @@ as for the platform block.
 
 **Holding mirror rule.** Function 03 on holding registers 7000-7999 returns exactly what function
 04 returns on the same input registers. A write (06, 16) anywhere in holding 7000-7999 answers
-exception 02 (read-only), with one possible exception: BasisS (section 4), which waits for Gary's
-decision and is read-only until then.
+exception 02 (read-only), with no exceptions (BasisS included, section 4).
 
 **Formats.** 0-based addresses. Floats IEEE 754, u32 and floats high word first (the lower
 address holds the high word), unless the admin word-order setting (7944) says otherwise; the
@@ -50,8 +49,8 @@ unavailable; no address in the block ever gives exception 02 for a read.
 | --- | --- | --- | --- |
 | 7000 + 4n | BasisM: slot n value as measured (bank 0) | float | param 450[n] |
 | 7002 + 4n | BasisM: slot n status (section 3) | u32 | built from 460[n], 466[n], forcing |
-| 7128 + 4n | BasisS: slot n simulation value | float | section 4 |
-| 7130 + 4n | BasisS: slot n simulation request | u32 | section 4 |
+| 7128 + 4n | BasisS: slot n simulation value | float | force in effect (section 4) |
+| 7130 + 4n | BasisS: slot n simulation request | u32 | force in effect (section 4) |
 | 7256 | BasisR: reference material status | u32 | 0 until defined |
 | 7258 | BasisR: reference material initiate | u32 | reads 0; write = exception 02 until defined |
 | 7260-7299 | reserved | | |
@@ -95,7 +94,7 @@ Bits 0-15 per VDI 4201-3 (NAMUR NE 107); bits 16-31 are left to the maker by VDI
 | 1 | Maintenance (function check) | quality maintenance, calibration or warming up; reference material applied |
 | 2 | Maintenance request | platform alarm 21 CAL_DUE, or bit 27 |
 | 3 | Out of specification | quality out of range or stale; bit 18 or 19 |
-| 4 | Test / simulation value transmitted | the slot is forced (web/touchscreen) or simulated through BasisS |
+| 4 | Test / simulation value transmitted | the slot is forced from the web page or touchscreen |
 | 5-15 | reserved (0) | |
 | 16 | Forced from the web page or touchscreen | `mb_force_active(id, index)` |
 | 17-27 | Emissions engine status bits 5-15 (466[n] >> 5 << 17): 17 no QAL2, 18 above valid calibration range, 19 analyser over-range, 20 O2 too high to correct, 21 calculation input missing, 22 average incomplete, 23 day invalid, 24 confidence interval not applied, 25 fixed H2O used, 26 below range, 27 QAL2 review due | |
@@ -103,14 +102,14 @@ Bits 0-15 per VDI 4201-3 (NAMUR NE 107); bits 16-31 are left to the maker by VDI
 
 ## 4. Simulation (BasisS)
 
-Read side now: each slot reads its active simulation value and request (0 and 0 when none).
+**Read-only (Gary, 30 Oct: forcing from the web page and touchscreen only).** The DAHS cannot
+write simulation values: a write anywhere in BasisS answers exception 02, like the rest of the
+block. This is a known deviation from VDI 4201-3 and is listed as such in the PROFILE.md and the
+Excel handover file.
 
-DAHS writes (function 16, whole 4-register slot entries) **wait for Gary's decision**. The
-recommended rule: accepted only while an admin has opened a commissioning window on the web
-page or touchscreen; otherwise exception 01. A write with request bit 4 set makes BasisM serve
-the simulation value with the request's status bits 0-4 (bit 4 always set); request 0 ends it.
-Each simulation ends 30 s after its last write (same as forcing), is counted in 9090/7943 and
-logged like a force.
+Each slot reads the force in effect: 7128 + 4n the forced value (0 when none), 7130 + 4n the
+request, bit 4 set while the slot is forced (and bits 0-3 as the forced status, normally 0).
+So a VDI-capable DAHS sees the same thing it would after its own simulation write.
 
 ## 5. Device identification (function 43/14)
 
