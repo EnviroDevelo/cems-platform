@@ -103,9 +103,10 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | 24 V supply sense | PC0 (ADC1_INP10) | divider 100 k / 10 k; early power-fail warning, supply shown on the System screen |
 | Status LEDs | PD12 (run), PD13 (fault) | `DO_01`, `DO_02` (labelled outputs, active high) |
 | Hardware revision straps | PE7, PE8 | read once at boot |
+| Board role jumper (J7) | PE5, PE6 (inputs, 10 kΩ pull-ups) | read once at boot; section 12 |
 
 Free for later: PA0, PA3, PA4, PA8, PA11, PA12, PB4, PB5, PB8, PB9, PB11,
-PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
+PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE4, PE15.
 
 ## 5. Power
 
@@ -313,6 +314,20 @@ footprint (R25, R26), and a revision fits one or the other.
 `hw_rev = (PE8 << 1) | PE7`. The firmware reports it with the firmware version (`/api/info`,
 System screen) and can refuse an image built for another revision. A fifth revision needs a
 third strap (PE15 is free and next to them).
+
+**Board role jumper, J7 on PE5 (ROLE_A) and PE6 (ROLE_B).** One board serves as the CORE
+or as an I/O node (Gary, 30 Oct), and the role comes from a removable shunt (with a pull
+tab) on a 3-pin 2.54 mm header with GND in the centre. Each pin has a 10 kΩ pull-up (R27,
+R28) and 100 nF to ground (C36, C37). Read at boot as inputs with the internal pulls off,
+beside `hw_rev`. Place J7 where it can only be reached with the housing open; silkscreen
+"1-2 CORE / 2-3 I/O NODE / none = OFF".
+
+| Shunt | PE5 | PE6 | Role |
+|---|---|---|---|
+| 1-2 | 0 | 1 | CORE |
+| 2-3 | 1 | 0 | I/O node |
+| none | 1 | 1 | invalid: outputs held off, alarm |
+| (both shorted) | 0 | 0 | invalid: outputs held off, alarm |
 
 **24 V supply sense, PC0 (ADC1_INP10).** R9 100 kΩ over R10 8.2 kΩ, both 1 %, with C13 100 nF:
 

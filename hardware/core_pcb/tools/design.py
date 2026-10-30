@@ -154,6 +154,7 @@ mcu = {
     68: "UART_TX", 69: "UART_RX", 72: "SWDIO", 76: "SWCLK", 89: "SWO",
     # misc
     15: "V24_SENSE", 59: "LED_RUN", 60: "LED_FAULT", 38: "HWREV0", 39: "HWREV1",
+    4: "ROLE_A", 5: "ROLE_B",
 }
 part("U3", "MCU_ST_STM32H5:STM32H573VITx", "STM32H573VIT6", "Package_QFP:LQFP-100_14x14mm_P0.5mm",
      S, mcu, mpn="STM32H573VIT6", note="STM32H563VIT6 is pin-compatible")
@@ -191,6 +192,14 @@ r("R23", "10k", S, "HWREV0", "GND", note="hardware revision 0: both pulled down"
 r("R24", "10k", S, "HWREV1", "GND")
 r("R25", "10k", S, "+3V3", "HWREV0", dnp=True)
 r("R26", "10k", S, "+3V3", "HWREV1", dnp=True)
+# Board role (CORE or I/O node), read at boot beside hw_rev: CORE_PCB.md 12
+part("J7", "Connector_Generic:Conn_01x03", "ROLE", "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+     S, {1: "ROLE_A", 2: "GND", 3: "ROLE_B"},
+     note="shunt with pull tab; silkscreen 1-2 CORE / 2-3 I/O NODE / none = OFF; reachable only with the housing open")
+r("R27", "10k", S, "+3V3", "ROLE_A")
+r("R28", "10k", S, "+3V3", "ROLE_B")
+c("C36", "100n", S, "ROLE_A", "GND", note="ESD, at J7")
+c("C37", "100n", S, "ROLE_B", "GND")
 
 # ---------------------------------------------------------------- client Ethernet (LAN8742A)
 S = "eth_client"
