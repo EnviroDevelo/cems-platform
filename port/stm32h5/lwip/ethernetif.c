@@ -40,6 +40,7 @@
 #include "lan8742.h"
 #include "plat_config.h"
 #include "plat_selftest.h"
+#include "plat_net.h"
 
 #define ETHIF_TX_TIMEOUT_MS   2000U
 #define ETHIF_RX_POLL_MS      50U     /* receive also checked this often without an interrupt */
@@ -60,6 +61,8 @@ static ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT];   /* contiguous Tx desc
 LWIP_MEMPOOL_DECLARE(RX_POOL, ETH_RX_BUFFER_CNT, sizeof(RxBuff_t), "Zero-copy RX PBUF pool");
 
 static volatile rx_alloc_t RxAllocStatus;
+static volatile uint32_t   rx_pool_empty, rx_missed, rx_overflow;   /* plat_eth_diag */
+static volatile uint16_t   phy_scsr, phy_secr;                      /* read by the link poll only */
 static SemaphoreHandle_t   RxPktSemaphore, TxPktSemaphore;
 static StaticSemaphore_t   rx_sem_mem, tx_sem_mem;
 static StaticTask_t        rx_tcb;
@@ -105,9 +108,16 @@ static bool apply_phy_state(int32_t st) {
     return true;
 }
 
-/* Called every few hundred ms by the net task (outside the tcpip thread). */
+/* Called every few hundred ms by the net task (outside the tcpip thread). It is the only MDIO
+ * user after start-up, so it also reads the PHY's state and error counter for plat_eth_diag, and
+ * collects the MAC's clear-on-read drop counters. */
 void ethernetif_link_poll(struct netif *netif) {
     int32_t st = LAN8742_GetLinkState(&LAN8742);
+    uint32_t v;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_PHYSCSR, &v) == HAL_OK) phy_scsr = (uint16_t)v;
+    if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_SECR, &v) == HAL_OK) phy_secr = (uint16_t)v;
+    rx_missed += EthHandle.Instance->DMACMFCR & ETH_DMACMFCR_MFC;
+    rx_overflow += EthHandle.Instance->MTLRQMPOCR & ETH_MTLRQMPOCR_OVFPKTCNT;
     if (netif_is_link_up(netif) && st <= LAN8742_STATUS_LINK_DOWN) {
         HAL_ETH_Stop_IT(&EthHandle);
         netifapi_netif_set_down(netif);
@@ -261,6 +271,7 @@ void HAL_ETH_RxAllocateCallback(uint8_t **buff) {
         p->custom_free_function = pbuf_free_custom;
         pbuf_alloced_custom(PBUF_RAW, 0, PBUF_REF, p, *buff, ETH_RX_BUFFER_SIZE);
     } else {
+        rx_pool_empty++;
         RxAllocStatus = RX_ALLOC_ERROR;
         *buff = NULL;
     }
@@ -275,6 +286,29 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t 
     if (!*ppStart) *ppStart = p; else (*ppEnd)->next = p;
     *ppEnd = p;
     for (p = *ppStart; p != NULL; p = p->next) p->tot_len = (u16_t)(p->tot_len + Length);
+}
+
+bool plat_eth_diag(plat_eth_diag_t *d) {
+    ETH_TypeDef *e = EthHandle.Instance;
+    if (e == NULL) return false;
+    uint16_t hcd = phy_scsr & LAN8742_PHYSCSR_HCDSPEEDMASK;
+    memset(d, 0, sizeof *d);
+    d->link_up = netif_is_link_up(netif_default) != 0;
+    d->phy_mbps = (phy_scsr & LAN8742_PHYSCSR_AUTONEGO_DONE) == 0 ? 0u
+                : (hcd == LAN8742_PHYSCSR_100BTX_FD || hcd == LAN8742_PHYSCSR_100BTX_HD) ? 100u : 10u;
+    d->phy_full = hcd == LAN8742_PHYSCSR_100BTX_FD || hcd == LAN8742_PHYSCSR_10BT_FD;
+    d->mac_mbps = (e->MACCR & ETH_MACCR_FES) ? 100u : 10u;
+    d->mac_full = (e->MACCR & ETH_MACCR_DM) != 0;
+    d->phy_symbol_errors = phy_secr;
+    d->rx_good_unicast = e->MMCRUPGR;
+    d->tx_good = e->MMCTPCGR;
+    d->rx_crc_errors = e->MMCRCRCEPR;
+    d->rx_align_errors = e->MMCRAEPR;
+    d->rx_missed = rx_missed;
+    d->rx_overflow = rx_overflow;
+    d->rx_pool_empty = rx_pool_empty;
+    d->rx_kicks = ethernetif_rx_kicks;
+    return true;
 }
 
 void HAL_ETH_TxFreeCallback(uint32_t *buff) { pbuf_free((struct pbuf *)buff); }
