@@ -198,6 +198,13 @@ For each alarm, tick what it does: **Email** sends a message, **Modbus** counts 
 common-alarm register, **Relay 1-4** switches a relay output. No tick: the alarm is only shown.
 **Default** puts the row back. The relay mode (fail-safe or not) is set here too.
 
+**Digital input alarms** (24 slots, alarms 30 to 53): tie a digital input to an alarm. For each
+slot pick the input, whether the alarm is raised when the input is **on** or **off**, the delay in
+seconds before it is raised (0 to 3600), whether it latches until acknowledged, its severity, and
+a label such as "Door open". **Save** writes only what you changed. The label names the alarm
+everywhere: the alarm list, the touchscreen, the Modbus map (discrete input 7000 + slot) and the
+Modbus handover file. The **Now** column shows each slot's state.
+
 ## 14. If something is wrong
 
 | What you see | What to do |

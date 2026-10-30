@@ -349,6 +349,17 @@ netsim's simulated analyser (22 checks: explorer, find, pick, save, live value, 
 maintenance, export, import into a second instrument, viewer view); without the firmware it only
 checks the tab stays hidden. Screenshot: `docs/web_instruments.png`.
 
+**Digital input alarms** (Alarm setup tab, admin; firmware parameters 340-345 and labels
+350-373): 24 slots, alarm IDs 30-53. Each row picks a digital input (1-64 or unused), whether the
+alarm is raised when it is on or off, the delay (0-3600 s), latch, severity (warning, alarm,
+fault) and a label, and shows the slot's live state from `dia_status` (polled every 2 s while the
+tab is open). Save writes only the elements that changed, six per request, and waits until they
+read back. The label is the one place the alarm is named: the firmware uses it as the alarm text
+in `/api/alarms`, the HMI alarm page and the Modbus map's description for discrete input 7000 +
+slot, so the Excel handover file (Codes and Standard values sheets) carries it with no extra step.
+Labels are ASCII, up to 32 characters. Firmware without parameter 340 keeps the panel hidden.
+Test: `tests/integration/dia_web_test.py`.
+
 **System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
 itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
 512 bytes is red), logic scans with the longest scan, overruns and late starts, secure connections

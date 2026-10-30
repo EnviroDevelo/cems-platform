@@ -414,6 +414,17 @@ section.offtab{display:none!important}
     <p class="note" id="diag"></p>
   </section>
 
+  <section id="diasec" data-tab="alarmcfg" style="display:none">
+    <h2>Digital input alarms</h2>
+    <p class="note">Tie any digital input to an alarm. The label becomes the alarm's name everywhere: the alarm list, the touchscreen, the
+      event log, the Modbus map (discrete inputs 7000 + slot) and the Excel handover file. What each one does (email, Modbus common alarm,
+      relays) is set in Alarm actions below, like any alarm. An input with a wire break or on a lost I/O board does not raise its alarm:
+      the slot shows "input unreliable" and the input-fault alarm covers it.</p>
+    <p class="note" id="diamode" style="display:none;color:var(--warn)"></p>
+    <div style="overflow-x:auto"><table class="ptab" id="diatab"><thead><tr><th>Alarm</th><th>Input</th><th>Alarm when the input is</th><th>Delay (s)</th>
+      <th>Latch</th><th>Severity</th><th>Label</th><th>Now</th></tr></thead><tbody></tbody></table></div>
+    <div class="row"><button id="diasave">Save</button><button class="ghost" id="diareload">Undo changes</button><span class="err" id="diaerr"></span></div>
+  </section>
   <section id="actions" data-tab="alarmcfg" style="display:none">
     <h2>Alarm actions</h2>
     <p class="note">What each alarm does when it is raised. <b>Email</b>: sends an email (set up below).
@@ -1401,6 +1412,7 @@ async function refreshInfo() {
     if (adm && $("actions").style.display === "none") { loadActions(); loadMail(); loadClock(); }
     $("clocksec").style.display = adm ? "block" : "none";
     $("actions").style.display = adm ? "block" : "none";
+    if (!adm) $("diasec").style.display = "none"; else if (changed && tab === "alarmcfg") diaLoad();
     $("mailsec").style.display = adm ? "block" : "none";
     if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); refreshDc(); } }
     if (changed) pollInst(true);                       /* the Instruments tab shows for admin even with none set up */
@@ -1899,6 +1911,9 @@ async function instLoad() {                           /* every instrument and po
   const ids = [...Object.values(IP_).filter(x => x < 521 || (x >= 530 && x < 550))];
   for (let k = 0; k < INST_N; k++) ids.push(IP_.name + k);
   for (let p = 0; p < PT_N; p++) ids.push(IP_.pname + p, IP_.punit + p);
+  return paramsGet(ids);
+}
+async function paramsGet(ids) {                      /* settings by ID, 40 to a request */
   const v = {};
   for (let i = 0; i < ids.length; i += 40) {
     const part = ids.slice(i, i + 40);
@@ -1962,10 +1977,10 @@ async function instWrite(items) {                     /* [{id, o?, v}] a few per
     }
   }
 }
-async function instSettled(items) {                  /* writes are queued and saved by the settings task: wait until they read back */
+async function instSettled(items, load = instLoad) {  /* writes are queued and saved by the settings task: wait until they read back */
   const same = (a, b) => typeof a === "number" || typeof b === "number" ? Math.abs(Number(a) - Number(b)) <= 1e-4 * Math.max(1, Math.abs(Number(b))) : String(a ?? "") === String(b ?? "");
   for (let t = 0; t < 20; t++) {
-    const v = await instLoad();
+    const v = await load();
     if (items.every(x => { const c = v[x.id]; const got = x.o === undefined ? c : Array.isArray(c) ? c[x.o] : undefined;
                            return same(typeof got === "boolean" ? +got : got, x.v); })) return v;
     await new Promise(ok => setTimeout(ok, 200));
@@ -2048,6 +2063,76 @@ $("ieimp").onchange = async ev => {
       e.message === "full" ? `Not enough free points (${PT_N} in all)` : e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e);
   }
 };
+
+/* ---- digital input alarms (MODBUS_STANDARD_BLOCK.md 7): 24 slots, alarm 30 + s; settings 340-345 (arrays) and labels 350-373 ---- */
+const DIA = { input: 340, when: 341, delay: 342, latch: 343, sev: 344, status: 345, label: 350 }, DIA_N = 24, DI_MAX = 64;
+const DIA_ST = ["unused", "normal", "active, acknowledged", "active, not acknowledged", "cleared, not acknowledged", "input unreliable"];
+const DIA_STC = ["", "b-ok", "b-warn", "b-bad", "b-warn", "b-bad"];
+let diaRows = null, diaKey = "";
+const diaIds = () => [DIA.input, DIA.when, DIA.delay, DIA.latch, DIA.sev, ...Array.from({ length: DIA_N }, (_, s) => DIA.label + s)];
+async function diaLoad() {
+  if (!byId[DIA.input] || level < 2) { $("diasec").style.display = "none"; return; }
+  $("diasec").style.display = "block"; $("diaerr").textContent = "";
+  try { diaDraw(await paramsGet(diaIds())); } catch (e) { $("diaerr").textContent = explain(e); }
+}
+function diaDraw(v) {
+  const A = id => v[id] || [], can = writable(byId[DIA.input]);
+  $("diamode").style.display = can ? "none" : "";
+  $("diamode").textContent = level < byId[DIA.input].level ? "Log in as admin to change these." : "These change in REMOTE only (set at the touchscreen), or on the touchscreen itself.";
+  $("diasave").disabled = $("diareload").disabled = !can;
+  diaRows = Array.from({ length: DIA_N }, (_, s) => ({ input: +A(DIA.input)[s] || 0, when: +!!A(DIA.when)[s], delay: A(DIA.delay)[s] ?? 2, latch: +!!A(DIA.latch)[s],
+                                                     sev: A(DIA.sev)[s] || 2, label: v[DIA.label + s] || "" }));
+  diaRows.orig = diaRows.map(r => ({ ...r }));
+  const opt = (list, cur) => list.map(([val, t]) => `<option value="${val}"${+val === +cur ? " selected" : ""}>${esc(t)}</option>`).join("");
+  const inputs = [[0, "not used"], ...Array.from({ length: DI_MAX }, (_, i) => [i + 1, `DI ${i + 1}`])];
+  $("diatab").tBodies[0].replaceChildren(...diaRows.map((r, s) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${30 + s}</td><td><select data-f="input">${opt(inputs, r.input)}</select></td>` +
+      `<td><select data-f="when">${opt([[0, "active (closed)"], [1, "inactive (open)"]], r.when)}</select></td>` +
+      `<td><input data-f="delay" size="4"></td><td><input type="checkbox" data-f="latch"></td>` +
+      `<td><select data-f="sev">${opt([[1, "warning"], [2, "alarm"], [3, "fault"]], r.sev)}</select></td>` +
+      `<td><input data-f="label" maxlength="32" size="24"></td><td><span class="badge"></span></td>`;
+    const d = tr.querySelector("[data-f=delay]"), l = tr.querySelector("[data-f=label]"), c = tr.querySelector("[data-f=latch]");
+    d.value = r.delay; l.value = r.label; l.placeholder = r.input ? `Digital input ${r.input}` : ""; c.checked = !!r.latch;
+    d.oninput = () => { r.delay = d.value; }; l.oninput = () => { r.label = l.value; }; c.onchange = () => { r.latch = +c.checked; };
+    for (const el of tr.querySelectorAll("select")) el.onchange = () => {
+      r[el.dataset.f] = +el.value;
+      if (el.dataset.f === "input") l.placeholder = r.input ? `Digital input ${r.input}` : "";
+    };
+    for (const el of tr.querySelectorAll("input,select")) el.disabled = !can;
+    r.badge = tr.querySelector(".badge");
+    return tr;
+  }));
+  diaKey = ""; diaStatus();
+}
+async function diaStatus() {                          /* the slots' live state, while the tab is open */
+  if (!diaRows || tab !== "alarmcfg" || $("diasec").style.display === "none") return;
+  try {
+    const st = (await paramsGet([DIA.status]))[DIA.status] || [], k = st.join();
+    if (k !== diaKey) { diaKey = k; diaRows.forEach((r, s) => { r.badge.className = "badge " + (DIA_STC[st[s]] || ""); r.badge.textContent = DIA_ST[st[s]] ?? st[s]; }); }
+  } catch (e) { }
+}
+setInterval(diaStatus, 2000);
+$("diareload").onclick = diaLoad;
+$("diasave").onclick = async () => {
+  $("diaerr").textContent = "";
+  const w = [];
+  try {
+    diaRows.forEach((r, s) => {
+      const o = diaRows.orig[s], delay = Number(r.delay);
+      if (!Number.isInteger(delay) || delay < 0 || delay > 3600) throw new Error(`value:delay of alarm ${30 + s} (0 to 3600 s)`);
+      if (/[^\x20-\x7e]/.test(r.label)) throw new Error(`value:label of alarm ${30 + s} (letters, digits and common signs only)`);
+      for (const f of ["input", "when", "latch", "sev"]) if (+r[f] !== +o[f]) w.push({ id: DIA[f], o: s, v: +r[f] });
+      if (delay !== +o.delay) w.push({ id: DIA.delay, o: s, v: delay });
+      if (r.label.trim() !== o.label) w.push({ id: DIA.label + s, v: r.label.trim() });
+    });
+    if (!w.length) { $("diaerr").textContent = "No changes"; return; }
+    await instWrite(w);
+    diaDraw(await instSettled(w, () => paramsGet(diaIds())));
+    $("diaerr").textContent = `Saved (${w.length} change${w.length > 1 ? "s" : ""})`;
+  } catch (e) { $("diaerr").textContent = e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e); }
+};
+TAB_KICK.alarmcfg = () => diaLoad();
 
 /* register explorer: POST /api/inst/explore, then GET it until busy is false */
 let exData = null, exPick = null;
