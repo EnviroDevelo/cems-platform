@@ -162,3 +162,46 @@ quantity.
 
 Modicon addresses: input 30001 + address, holding 40001 + address. O2 dry value: 37001 (input)
 or 47001 (holding).
+
+## 7. Digital input alarms (Gary, 30 Oct)
+
+Any digital input can be tied to an alarm that goes out on Modbus, and the label typed on the
+touchscreen's Alarms page (or the web page) becomes that alarm's name on the Modbus map and in
+the Excel handover file, with no other step.
+
+**Alarms.** 24 platform alarms, IDs 30-53, one per "DI alarm" slot s (0-23, alarm ID 30 + s).
+Each slot has settings (admin, persisted, never written from Modbus):
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| input | 0 = slot unused, 1..64 = digital input number (`PLAT_DI_MAX`; I/O board k's inputs as `first_di`) | 0 |
+| alarm when | 0 = input active (contact closed / current flowing), 1 = input inactive | 0 |
+| delay | 0..3600 s on-delay (the alarm's `delay_param`) | 2 |
+| latch | 0/1 (`AL_LATCH`) | 0 |
+| severity | warning / alarm / fault (`AL_SEV_*`) | alarm |
+| label | text, up to 32 characters (the alarm's `text_param`); empty shows "Digital input n" | empty |
+
+Routing (email, Modbus common alarm, relays) is the existing per-alarm actions setting, default
+Modbus. An unused slot never raises. A wire-break or a lost I/O board on the bound input does
+not raise the DI alarm; the existing input-fault alarms (12, 15) cover that, and the slot's
+status shows the input as unreliable.
+
+**Fixed Modbus addresses (discrete inputs, function 02; read-only).**
+
+| Discrete inputs | Content |
+| --- | --- |
+| 7000 + s (7000-7023) | DI alarm slot s active |
+| 7032 + s (7032-7055) | DI alarm slot s waiting for an acknowledge |
+| 7064 + s (7064-7087) | DI alarm slot s input unreliable (wire break, board lost) |
+| 7100 + i (7100-7163) | digital input i+1, raw state after the filter |
+
+The same alarms also appear in the platform alarm bit arrays (parameters 43/44) at their IDs,
+and acknowledge works as for any alarm (parameter 40). The discrete-input range 7000-7999 is
+core-owned like the register block.
+
+**Labels on the map.** `GET /api/modbus/map` gives each of these entries a `description` taken
+live from the alarm's label at the time of the request: slot s entries get the slot's label;
+input i's raw state gets the label of the first slot bound to it, else "Digital input i+1". The
+web page builds the Excel file from that JSON at download time, so a label edited on the
+touchscreen is in the next download. The Excel Codes sheet lists alarms with their current
+labels (`/api/alarms` text), not the built-in names.
