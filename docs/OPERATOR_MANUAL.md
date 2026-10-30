@@ -115,7 +115,29 @@ A coloured bar on the left gives the severity.
 - **Tap an alarm** to see "What to check" for it. Tap it again to close that.
 - **Actions** (admin) sets what each alarm does: email, Modbus, and relays 1 to 4.
 
+- **Inputs** (admin) sets up the input alarms (see 7a).
+
 The full list of alarm and fault codes is in `docs/FAULT_CODES.md`.
+
+## 7a. Input alarms (Alarms, then Inputs)
+
+There are 24 input alarm slots. Each turns a digital input on an I/O board into an alarm, which
+shows in the alarm list and is sent to Modbus. The list shows each slot's label, its settings and
+its state: not used, normal, "ACTIVE, not acknowledged", active (acknowledged), "cleared, not acknowledged", or input
+unreliable. Tap a slot to set it up (admin login). Tap a row to change it:
+
+| Row | What it sets |
+|---|---|
+| Input | Which digital input (1 to 64) the slot watches. 0 means the slot is not used |
+| Alarm when | Whether the alarm is raised when the input is active (closed) or inactive (open) |
+| On-delay | How many seconds the input must stay in the alarm state before the alarm is raised |
+| Latch | On: the alarm stays active until it is acknowledged, even after the input returns |
+| Severity | Warning, alarm or fault. Each tap moves to the next |
+| Label | The name of the alarm, up to 32 characters. It is shown in the alarm list, on the web page, in the Modbus map and in the Excel file for the PLC integrator. Empty means "Digital input n" |
+
+The line under the title gives the slot's Modbus discrete inputs: active, not acknowledged, and
+input unreliable. If the I/O board with that input is lost, the slot shows "input unreliable"
+instead of guessing. **Previous** and **Next** move between slots.
 
 ## 8. Settings, Events and System
 

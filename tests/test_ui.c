@@ -770,6 +770,62 @@ static void t_force_screen(void) {
     CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_PARAMS);
 }
 
+/* input alarms (plat_alarm.h, Gary 30 Oct): Alarms > Inputs lists the 24 slots; a slot's page
+ * sets the input, when, delay, latch, severity and label (admin), writing one array element */
+extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS];
+extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+extern uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+extern char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static void t_dia_screen(void) {
+    enum { TG_ALARMS = 152, TG_INPUT = 243, TG_WHEN, TG_DELAY, TG_LATCH, TG_SEV, TG_LABEL, TG_PREV, TG_NEXT, TG_SPACE = 151 };
+    setup();
+    frame();
+    press(TG_ALARMS);
+    CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(tap("Inputs"));
+    CHECK_EQ(ui_screen(), UI_DIA);
+    CHECK(shows("1  Not used")); CHECK(shows("No input chosen")); CHECK(shows("not used"));
+    CHECK(tap("1  Not used"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK(shows("Input alarm 1: Not used")); CHECK(shows("Modbus discrete inputs: 7000 active, 7032 not acknowledged, 7064 input unreliable"));
+    press(TG_INPUT);                                  /* not logged in */
+    CHECK(!strcmp(ui_toast(), "Log in as admin to set up input alarms"));
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    frame(); press(TG_ALARMS); CHECK(tap("Inputs")); CHECK(tap("1  Not used"));
+    /* the input, on the number keypad */
+    press(TG_INPUT);
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Input alarm 1: input")); CHECK(shows("Range 0 .. 64 (0 = not used)"));
+    type("99"); CHECK(tap("OK"));
+    CHECK(!strcmp(ui_toast(), "Allowed 0 .. 64")); CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(tap("Clear")); type("12"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK_EQ(plat_dia_input[0], 12);
+    CHECK(shows("Input alarm 1: Digital input 12"));
+    /* toggles and the severity cycle write at once */
+    press(TG_WHEN);  CHECK(plat_dia_when[0]);  CHECK(shows("the input is inactive (open)"));
+    press(TG_LATCH); CHECK(plat_dia_latch[0]); CHECK(shows("on: stays active until acknowledged"));
+    press(TG_SEV);   CHECK_EQ(plat_dia_sev[0], AL_SEV_FAULT); CHECK(shows("fault"));
+    press(TG_SEV);   CHECK_EQ(plat_dia_sev[0], AL_SEV_WARNING);
+    press(TG_DELAY); CHECK(shows("Input alarm 1: on-delay")); type("5"); CHECK(tap("OK"));
+    CHECK_EQ(plat_dia_delay[0], 5);
+    CHECK_EQ(plat_dia_input[1], 0);                   /* only slot 1's element was written */
+    /* the label: the alarm's name everywhere */
+    press(TG_LABEL);
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    type("door"); press(TG_SPACE); type("open"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK(!strcmp(plat_dia_label[0], "door open"));
+    CHECK(shows("Input alarm 1: door open"));
+    dump("input_alarm_slot");
+    press(TG_NEXT); CHECK(shows("Input alarm 2: Not used"));
+    press(TG_PREV); CHECK(shows("Input alarm 1: door open"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_DIA);
+    CHECK(shows("1  door open")); CHECK(shows("when inactive, 5 s, latched, warning"));
+    dump("input_alarms");
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
@@ -781,4 +837,5 @@ void test_ui_all(void) {
     RUN(t_cal_screen);
     RUN(t_display_screen);
     RUN(t_force_screen);
+    RUN(t_dia_screen);
 }

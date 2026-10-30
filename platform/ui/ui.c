@@ -74,7 +74,8 @@ enum {
     T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
     T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
     T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE,  /* display test (bench bring-up) */
-    T_FORCE = 240, T_FC_CLEAR_ALL       /* Modbus force (commissioning) */
+    T_FORCE = 240, T_FC_CLEAR_ALL,      /* Modbus force (commissioning) */
+    T_DIA = 242, T_DIA_INPUT, T_DIA_WHEN, T_DIA_DELAY, T_DIA_LATCH, T_DIA_SEV, T_DIA_LABEL, T_DIA_PREV, T_DIA_NEXT   /* input alarms */
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
@@ -144,6 +145,11 @@ static struct {
     bool     forcing;              /* UI_EDIT is entering a force value, not a setting */
     uint16_t fc_index;             /* the element being forced (MB_FORCE_SCALAR for a scalar) */
     double   fc_v;                 /* the value waiting for "Yes" */
+    /* input alarms: the list's first slot; the slot open; UI_EDIT changing one array element */
+    unsigned dia_first, dia_s;
+    bool     elem;                 /* UI_EDIT is entering element el_idx of the array U.ed */
+    uint16_t el_idx;
+    char     el_title[48];
     /* record editor */
     const ui_record_t *rec;
     uint8_t  rec_buf[PARAM_RECORD_MAX];
@@ -302,6 +308,24 @@ static void ask(act_t act, const char *msg) {
     U.dirty = true;
 }
 
+/* write one element of an array parameter (a whole-array write is never needed for one cell) */
+static bool elem_post(uint16_t id, uint16_t idx, uint32_t v, uint32_t now) {
+    const param_def_t *d = param_find(id);
+    if (!d || d->ptype != PT_ARRAY) return false;
+    size_t es = param_ctype_size(d->ctype);
+    uint8_t b[4];
+    if (es == 1) b[0] = (uint8_t)v;
+    else if (es == 2) { uint16_t x = (uint16_t)v; memcpy(b, &x, 2); }
+    else memcpy(b, &v, 4);
+    uint16_t off = (uint16_t)(idx * es);
+    param_err_t e = param_blob_check(id, off, b, (uint16_t)es, false, PLAT_SRC_LOCAL, U.level);
+    if (e == PERR_OK) e = param_blob_post(id, off, b, (uint16_t)es, false, PLAT_SRC_LOCAL, U.level);
+    if (e == PERR_ACCESS) { toast(true, now, "Log in as %s to change this", lvl_name(d->level)); return false; }
+    if (e != PERR_OK) { toast(true, now, "%s", perr_text(e)); return false; }
+    toast(false, now, "Saved");
+    return true;
+}
+
 /* a refusal from mb_force_* in words */
 static const char *force_err(int r) {
     switch (r) {
@@ -380,6 +404,14 @@ static bool cell_submit(bool on, uint32_t now);
 static void edit_submit(bool on, uint32_t now) {
     if (U.cell_f) { if (cell_submit(on, now)) goto_scr(UI_REC); return; }
     const param_def_t *d = U.ed;
+    if (U.elem) {                                     /* one element of an array (input alarm settings) */
+        char *end = NULL;
+        unsigned long x = strtoul(U.entry, &end, 10);
+        if (!U.entry[0] || *end || U.entry[0] == '-') { toast(true, now, "Not a valid number"); return; }
+        if (x < d->vmin.u || x > d->vmax.u) { toast(true, now, "Allowed %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u); return; }
+        if (elem_post(d->id, U.el_idx, (uint32_t)x, now)) { U.elem = false; goto_scr(U.back); }
+        return;
+    }
     if (U.forcing) {                                  /* a Modbus force: the value only, then "Are you sure?" */
         double x = on ? 1.0 : 0.0;
         if (U.kb != KB_BOOL) {
@@ -527,6 +559,37 @@ static size_t n_params(void) { return param_count(); }
 
 static bool app_tap(uint8_t t, uint32_t now);
 static void rec_tap(uint8_t t, uint32_t now);
+/* input alarm slot U.dia_s: toggles and the cycle write at once; numbers and the label open the editor */
+static void dia_number(uint16_t id, const char *what) {
+    U.ed = param_find(id);
+    U.elem = true; U.el_idx = (uint16_t)U.dia_s;
+    snprintf(U.el_title, sizeof U.el_title, "Input alarm %u: %s", U.dia_s + 1u, what);
+    U.shift = false; U.entry[0] = 0; U.kb = KB_NUM;
+    U.back = UI_DIA_SLOT;
+    goto_scr(UI_EDIT);
+}
+
+static void dia_tap(uint8_t t, uint32_t now) {
+    unsigned s = U.dia_s;
+    int64_t v = 0;
+    if (t == T_BACK) { U.dia_first = s / ROWS * ROWS; goto_scr(UI_DIA); return; }
+    if (t == T_DIA_PREV) { U.dia_s = s ? s - 1u : PLAT_DIA_SLOTS - 1u; U.dirty = true; return; }
+    if (t == T_DIA_NEXT) { U.dia_s = (s + 1u) % PLAT_DIA_SLOTS; U.dirty = true; return; }
+    if (t < T_DIA_INPUT || t > T_DIA_LABEL) return;
+    if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to set up input alarms"); return; }
+    switch (t) {
+    case T_DIA_INPUT: dia_number(PARAM_ID_DIA_INPUT, "input"); break;
+    case T_DIA_DELAY: dia_number(PARAM_ID_DIA_DELAY, "on-delay"); break;
+    case T_DIA_WHEN:  ui_param_value(PARAM_ID_DIA_WHEN, (uint16_t)s, &v); (void)elem_post(PARAM_ID_DIA_WHEN, (uint16_t)s, v ? 0u : 1u, now); break;
+    case T_DIA_LATCH: ui_param_value(PARAM_ID_DIA_LATCH, (uint16_t)s, &v); (void)elem_post(PARAM_ID_DIA_LATCH, (uint16_t)s, v ? 0u : 1u, now); break;
+    case T_DIA_SEV:   ui_param_value(PARAM_ID_DIA_SEV, (uint16_t)s, &v);
+                      (void)elem_post(PARAM_ID_DIA_SEV, (uint16_t)s, v >= AL_SEV_FAULT || v < AL_SEV_WARNING ? AL_SEV_WARNING : (uint32_t)v + 1u, now); break;
+    case T_DIA_LABEL: { const param_def_t *d = param_find((uint16_t)(PARAM_ID_DIA_LABEL_FIRST + s)); if (d) edit_begin(d, now); break; }
+    default: break;
+    }
+    U.dirty = true;
+}
+
 static void tap(uint8_t t, uint32_t now) {
     if (U.scr == UI_APP && !U.confirm && app_tap(t, now)) return;     /* its dialog comes first */
     if (U.confirm) {
@@ -590,7 +653,7 @@ static void tap(uint8_t t, uint32_t now) {
         break;
     case UI_REC: rec_tap(t, now); break;
     case UI_EDIT:
-        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else { U.forcing = false; goto_scr(U.back); } }
+        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else { U.forcing = false; U.elem = false; goto_scr(U.back); } }
         else if (t == T_OK) edit_submit(true, now);
         else if (t == T_ON || t == T_OFF) { strcpy(U.entry, t == T_ON ? "1" : "0"); edit_submit(t == T_ON, now); }
         else if (t == T_BKSP) { size_t n = strlen(U.entry); if (n) U.entry[n - 1] = 0; }
@@ -626,6 +689,7 @@ static void tap(uint8_t t, uint32_t now) {
             uint16_t id = U.al_rows[t - T_AL_ROW0];
             U.al_sel = U.al_sel == id ? 0 : id; U.dirty = true;
         }
+        else if (t == T_DIA) { U.dia_first = 0; goto_scr(UI_DIA); }
         else if (t == T_ACK_ALL || (t >= T_ROW0 && t < T_ROW0 + ROWS && U.al_ids[t - T_ROW0])) {
             uint16_t id = t == T_ACK_ALL ? ALARM_ACK_ALL : U.al_ids[t - T_ROW0];
             param_err_t e = param_post(PARAM_ID_ALARM_ACK, PLAT_VAL_U32, (plat_val_t){ .u = id }, PLAT_SRC_LOCAL, U.level);
@@ -653,6 +717,16 @@ static void tap(uint8_t t, uint32_t now) {
         }
         U.dirty = true;
         break;
+    case UI_DIA:
+        if (t == T_PGUP) { U.dia_first = U.dia_first >= ROWS ? U.dia_first - ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { if (U.dia_first + ROWS < PLAT_DIA_SLOTS) U.dia_first += ROWS; U.dirty = true; }
+        else if (t == T_BACK) goto_scr(UI_ALARMS);
+        else if (t >= T_ROW0 && t < T_ROW0 + ROWS && U.dia_first + (unsigned)(t - T_ROW0) < PLAT_DIA_SLOTS) {
+            U.dia_s = U.dia_first + (unsigned)(t - T_ROW0);
+            goto_scr(UI_DIA_SLOT);
+        }
+        break;
+    case UI_DIA_SLOT: dia_tap(t, now); break;
     case UI_ALARM_CFG:
         if (t == T_BACK) goto_scr(UI_ALARMS);
         else if (t == T_PGUP) { U.cfg_first = U.cfg_first >= ROWS ? U.cfg_first - ROWS : 0; U.dirty = true; }
@@ -946,10 +1020,12 @@ static void draw_edit(void) {
     int16_t cw = U.kb == KB_TEXT ? 760 : 992;            /* the text keyboard's OK/Cancel stand beside it */
     box(16, BODY_Y, cw, 88, C_CARD, 8);
     color(C_INK);
-    if (U.forcing && U.fc_index != MB_FORCE_SCALAR) snprintf(b, sizeof b, "Force %s[%u]", d->name, (unsigned)U.fc_index);
+    if (U.elem) snprintf(b, sizeof b, "%s", U.el_title);
+    else if (U.forcing && U.fc_index != MB_FORCE_SCALAR) snprintf(b, sizeof b, "Force %s[%u]", d->name, (unsigned)U.fc_index);
     else snprintf(b, sizeof b, U.forcing ? "Force %s  (%u)" : "%s  (%u)", d->name, d->id);
     text(32, BODY_Y + 10, F_BIG, 0, b);
-    if (U.forcing && U.fc_index != MB_FORCE_SCALAR) fmt_elem(d, U.fc_index, r, sizeof r);
+    if (U.elem) fmt_elem(d, U.el_idx, r, sizeof r);
+    else if (U.forcing && U.fc_index != MB_FORCE_SCALAR) fmt_elem(d, U.fc_index, r, sizeof r);
     else fmt_value(d, r, sizeof r);
     snprintf(b, sizeof b, "Now: %s", r);
     color(C_MUTE);
@@ -961,6 +1037,11 @@ static void draw_edit(void) {
     else r[0] = 0;
     if (d->unit && r[0]) { strncat(r, " ", sizeof r - strlen(r) - 1); strncat(r, d->unit, sizeof r - strlen(r) - 1); }
     if (U.forcing) snprintf(r, sizeof r, "Modbus reads this for %u s, then the real value again", (unsigned)(PLAT_MB_FORCE_MS / 1000u));
+    if (U.elem) {
+        snprintf(r, sizeof r, "Range %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u);
+        if (d->id == PARAM_ID_DIA_INPUT) strncat(r, " (0 = not used)", sizeof r - strlen(r) - 1);
+        else if (d->unit) { strncat(r, " ", sizeof r - strlen(r) - 1); strncat(r, d->unit, sizeof r - strlen(r) - 1); }
+    }
     text(32, BODY_Y + 56, F_TEXT, 0, r);
     if (U.kb == KB_BOOL) {
         button(T_ON, 120, BODY_Y + 120, 300, 120, "ON", C_OK, true);
@@ -1582,10 +1663,11 @@ static void draw_alarms(void) {
         }
         break;
     }
-    button(T_PGUP, 908, BODY_Y, 100, 96, "Up", C_ACCENT, U.al_first > 0);
-    button(T_ACK_ALL, 908, BODY_Y + 104, 100, 96, "Ack all", C_WARN, as.unacked > 0);
-    button(T_PGDN, 908, BODY_Y + 208, 100, 96, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
-    button(T_ACTIONS, 908, BODY_Y + 312, 100, 80, "Actions", 0x5B6577u, true);
+    button(T_PGUP, 908, BODY_Y, 100, 76, "Up", C_ACCENT, U.al_first > 0);
+    button(T_ACK_ALL, 908, BODY_Y + 82, 100, 76, "Ack all", C_WARN, as.unacked > 0);
+    button(T_PGDN, 908, BODY_Y + 164, 100, 76, "Down", C_ACCENT, U.al_first + ROWS < as.shown);
+    button(T_ACTIONS, 908, BODY_Y + 246, 100, 70, "Actions", 0x5B6577u, true);
+    button(T_DIA, 908, BODY_Y + 322, 100, 70, "Inputs", 0x5B6577u, true);   /* digital input alarms */
 }
 
 /* what each alarm does: email, Modbus, relays 1-4 (admin) */
@@ -1730,6 +1812,112 @@ static void draw_force(uint32_t now) {
     button(T_FC_CLEAR_ALL, 908, BODY_Y + 208, 100, 96, "Clear all", C_WARN, mb_force_count() > 0);
     button(T_BACK, 908, BODY_Y + 312, 100, 80, "Back", 0x5B6577u, true);
     if (mb_force_count()) U.dirty = true;             /* the countdown */
+}
+
+/* ---------------- input alarms (plat_alarm.h, parameters 340-345 and 350-373) ----------------
+ * PLAT_DIA_SLOTS slots, each tying a digital input to alarm 30 + s. The label typed here is the
+ * alarm's name everywhere: the alarm list, the web page, the Modbus map and its Excel file. */
+static const char *dia_sev_name(int64_t v) { return v == AL_SEV_WARNING ? "warning" : v == AL_SEV_FAULT ? "fault" : "alarm"; }
+static void dia_status(unsigned s, const char **w, uint32_t *c) {
+    switch (pv(PARAM_ID_DIA_STATUS, (uint16_t)s, DIA_ST_UNUSED)) {
+    case DIA_ST_NORMAL:          *w = "normal"; *c = C_OK; break;
+    case DIA_ST_ACTIVE_ACKED:    *w = "active"; *c = C_BAD; break;
+    case DIA_ST_ACTIVE_UNACKED:  *w = "ACTIVE, not acknowledged"; *c = C_BAD; break;
+    case DIA_ST_CLEARED_UNACKED: *w = "cleared, not acknowledged"; *c = C_WARN; break;
+    case DIA_ST_UNRELIABLE:      *w = "input unreliable"; *c = C_WARN; break;
+    default:                     *w = "not used"; *c = C_GREY; break;
+    }
+}
+/* the slot's name as the alarm list shows it */
+static void dia_label(unsigned s, char *b, size_t cap) {
+    const param_def_t *d = param_find((uint16_t)(PARAM_ID_DIA_LABEL_FIRST + s));
+    b[0] = 0;
+    if (d) fmt_value(d, b, cap);
+    if (!b[0]) {
+        int64_t in = pv(PARAM_ID_DIA_INPUT, (uint16_t)s, 0);
+        if (in) snprintf(b, cap, "Digital input %u", (unsigned)in); else snprintf(b, cap, "Not used");
+    }
+}
+static void dia_detail(unsigned s, char *b, size_t cap) {
+    int64_t in = pv(PARAM_ID_DIA_INPUT, (uint16_t)s, 0);
+    if (!in) { snprintf(b, cap, "No input chosen"); return; }
+    char n[32];
+    plat_dia_input_name((unsigned)in, n, sizeof n);
+    snprintf(b, cap, "%.28s, when %s, %u s%s, %.7s", n, pv(PARAM_ID_DIA_WHEN, (uint16_t)s, 0) ? "inactive" : "active",
+             (unsigned)pv(PARAM_ID_DIA_DELAY, (uint16_t)s, 0), pv(PARAM_ID_DIA_LATCH, (uint16_t)s, 0) ? ", latched" : "",
+             dia_sev_name(pv(PARAM_ID_DIA_SEV, (uint16_t)s, AL_SEV_ALARM)));
+}
+
+static void draw_dia(void) {
+    box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
+    for (unsigned r = 0; r < ROWS && U.dia_first + r < PLAT_DIA_SLOTS; ++r) {
+        unsigned s = U.dia_first + r;
+        int16_t y = (int16_t)(BODY_Y + 4 + (int)r * ROW_H);
+        eve_tag(E, (uint8_t)(T_ROW0 + r));
+        box(20, y, 872, ROW_H - 2, U.pressed == T_ROW0 + r ? 0xDCE6F5u : C_CARD, 4);
+        char b[112], l[40];
+        dia_label(s, l, sizeof l);
+        snprintf(b, sizeof b, "%u  %s", s + 1u, l);
+        color(C_INK); text(32, (int16_t)(y + 18), F_TEXT, OPT_CENTERY, b);
+        dia_detail(s, b, sizeof b);
+        color(C_MUTE); text(32, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, b);
+        const char *w; uint32_t c;
+        dia_status(s, &w, &c);
+        color(c); text(880, (int16_t)(y + 18), F_SMALL, OPT_CENTERY | OPT_RIGHTX, w);
+        color(C_ACCENT); text(880, (int16_t)(y + 44), F_SMALL, OPT_CENTERY | OPT_RIGHTX, "Set up >");
+        eve_tag(E, 0);
+        if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+    }
+    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.dia_first > 0);
+    button(T_PGDN, 908, BODY_Y + 136, 100, 120, "Down", C_ACCENT, U.dia_first + ROWS < PLAT_DIA_SLOTS);
+    button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
+}
+
+static void draw_dia_slot(void) {
+    unsigned s = U.dia_s;
+    char b[112], l[40];
+    box(16, BODY_Y, 880, 392, C_CARD, 8);
+    dia_label(s, l, sizeof l);
+    snprintf(b, sizeof b, "Input alarm %u: %s", s + 1u, l);
+    color(C_INK); text(32, BODY_Y + 20, F_BIG, OPT_CENTERY, b);
+    const char *w; uint32_t c;
+    dia_status(s, &w, &c);
+    color(c); text(880, BODY_Y + 20, F_TEXT, OPT_CENTERY | OPT_RIGHTX, w);
+    snprintf(b, sizeof b, "Modbus discrete inputs: %u active, %u not acknowledged, %u input unreliable",
+             PLAT_DIA_MB_ADDR + s, PLAT_DIA_MB_ADDR + 32u + s, PLAT_DIA_MB_ADDR + 64u + s);
+    color(C_MUTE); text(32, BODY_Y + 42, F_SMALL, OPT_CENTERY, b);
+    int64_t in = pv(PARAM_ID_DIA_INPUT, (uint16_t)s, 0);
+    struct { uint8_t tag; const char *k; const char *btn; } rows[6] = {
+        { T_DIA_INPUT, "Input", "Change" }, { T_DIA_WHEN, "Alarm when", "Switch" }, { T_DIA_DELAY, "On-delay", "Change" },
+        { T_DIA_LATCH, "Latch", "Switch" }, { T_DIA_SEV, "Severity", "Next" }, { T_DIA_LABEL, "Label", "Change" } };
+    for (int r = 0; r < 6; ++r) {
+        int16_t y = (int16_t)(BODY_Y + 54 + r * 56);    /* the whole row is the 872 x 56 touch target */
+        eve_tag(E, rows[r].tag);
+        box(20, y, 872, 56, U.pressed == rows[r].tag ? 0xDCE6F5u : C_CARD, 4);
+        if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+        switch (rows[r].tag) {
+        case T_DIA_INPUT:
+            if (in) { char n[32]; plat_dia_input_name((unsigned)in, n, sizeof n); snprintf(b, sizeof b, "%u: %.30s", (unsigned)in, n); }
+            else snprintf(b, sizeof b, "not used (0)");
+            break;
+        case T_DIA_WHEN:  snprintf(b, sizeof b, pv(PARAM_ID_DIA_WHEN, (uint16_t)s, 0) ? "the input is inactive (open)" : "the input is active (closed)"); break;
+        case T_DIA_DELAY: snprintf(b, sizeof b, "%u s", (unsigned)pv(PARAM_ID_DIA_DELAY, (uint16_t)s, 0)); break;
+        case T_DIA_LATCH: snprintf(b, sizeof b, pv(PARAM_ID_DIA_LATCH, (uint16_t)s, 0) ? "on: stays active until acknowledged" : "off"); break;
+        case T_DIA_SEV:   snprintf(b, sizeof b, "%s", dia_sev_name(pv(PARAM_ID_DIA_SEV, (uint16_t)s, AL_SEV_ALARM))); break;
+        default: {
+            const param_def_t *d = param_find((uint16_t)(PARAM_ID_DIA_LABEL_FIRST + s));
+            b[0] = 0; if (d) fmt_value(d, b, sizeof b);
+            if (!b[0]) snprintf(b, sizeof b, "(empty: shown as \"Digital input %u\")", (unsigned)in);
+        } }
+        color(C_MUTE); text(32, (int16_t)(y + 28), F_TEXT, OPT_CENTERY, rows[r].k);
+        color(C_INK);  text(220, (int16_t)(y + 28), F_TEXT, OPT_CENTERY, b);
+        snprintf(b, sizeof b, "%s >", rows[r].btn);
+        color(C_ACCENT); text(880, (int16_t)(y + 28), F_TEXT, OPT_CENTERY | OPT_RIGHTX, b);
+        eve_tag(E, 0);
+    }
+    button(T_DIA_PREV, 908, BODY_Y, 100, 120, "Previous", C_ACCENT, true);
+    button(T_DIA_NEXT, 908, BODY_Y + 136, 100, 120, "Next", C_ACCENT, true);
+    button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
 }
 
 /* a command from a button, grid item or dialog: through the table like any write */
@@ -2263,6 +2451,8 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_CAL:   draw_cal(now); break;
     case UI_DISPLAY: draw_display(now); break;
     case UI_FORCE: draw_force(now); break;
+    case UI_DIA: draw_dia(); break;
+    case UI_DIA_SLOT: draw_dia_slot(); break;
     default:        draw_home(); break;
     }
     if (now < U.toast_until) {
