@@ -86,4 +86,4 @@ for n, ch in enumerate(CH, start=1):
          mpn="1SMB5934BT3 (24 V, 1.5 W)", dnp=True,
          note="fast-release option. CHECK Vz + 0.7 V stays below the ISO2H823V2.5's own demagnetisation clamp" if n == 1 else "")
     r(f"RW{n}", "DNF", S, "+24V", ch, dnp=True,
-      note="IN build, dry contacts: wire-break bias across the contact. CHECK value against the ISO1I813T" if n == 1 else "")
+      note="normally not fitted: field wire-break needs the bias R at the sensor end; RW here only detects a ribbon break" if n == 1 else "")

@@ -270,7 +270,7 @@
     )
   )
 
-  (text "Notes\nR1: 2.2 mA at 24 V, 48 mW\nD1: flyback, OUT build only\nRZ1: fitted = plain diode clamp; remove and fit Z for fast release\nZ1: NOT FITTED. fast-release option. CHECK Vz + 0.7 V stays below the ISO2H823V2.5's own demagnetisation clamp\nRW1: NOT FITTED. IN build, dry contacts: wire-break bias across the contact. CHECK value against the ISO1I813T\nZ2: NOT FITTED.\nRW2: NOT FITTED.\nZ3: NOT FITTED.\nRW3: NOT FITTED.\nZ4: NOT FITTED."
+  (text "Notes\nR1: 2.2 mA at 24 V, 48 mW\nD1: flyback, OUT build only\nRZ1: fitted = plain diode clamp; remove and fit Z for fast release\nZ1: NOT FITTED. fast-release option. CHECK Vz + 0.7 V stays below the ISO2H823V2.5's own demagnetisation clamp\nRW1: NOT FITTED. normally not fitted: field wire-break needs the bias R at the sensor end; RW here only detects a ribbon break\nZ2: NOT FITTED.\nRW2: NOT FITTED.\nZ3: NOT FITTED.\nRW3: NOT FITTED.\nZ4: NOT FITTED."
     (at 15.24 226.06 0)
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid e46dec54-c51a-5299-a93a-74c48a0e0870)

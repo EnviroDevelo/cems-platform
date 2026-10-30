@@ -12,7 +12,7 @@ for review. The board-level decisions are in the doc
 |---|---|---|---|
 | **OUT** | Valve bank A: 8 × 0.6 A high-side outputs (ISO2H823V2.5 on the main board) | LED, R, DS, flyback diode D, RZ (0 Ω) | Z, RW |
 | **OUT, fast release** | Valves whose closing time matters | As OUT, but Z instead of RZ | RZ, RW |
-| **IN** | 8 digital inputs (ISO1I813T on the main board) | LED, R, DS | D, RZ, Z; RW only for wire-break on dry contacts |
+| **IN** | 8 digital inputs (ISO1I813T on the main board) | LED, R, DS | D, RZ, Z, RW (wire-break bias goes at the sensor) |
 
 The schematic's fitted/not-fitted flags are the OUT build. Mark the build on the
 silkscreen box at assembly.
@@ -59,9 +59,11 @@ valve or signal name.
   about Vz + 0.7 V below 0 V, so the coil's energy is dumped faster. The diode is
   reverse-biased while the output is on, so the main board's open-load check still
   works.
-- **Wire-break bias (IN, option):** RW from +24V to CHn, fitted across a dry contact so
-  the ISO1I813T can tell an open contact from a broken wire. Its value is set from the
-  ISO1I813T datasheet.
+- **Wire-break bias (IN):** for the ISO1I813T to detect a cut **field** wire, the bias
+  resistor (about 10-47 kΩ, set from its wire-break threshold) must sit across the
+  contact **at the sensor**, at the far end of the cable. RW on this board, from +24V to
+  CHn, bypasses the field wire, so it only detects a ribbon break. Leave RW unfitted
+  unless that is all that is wanted. The silkscreen says "wire-break R at sensor".
 
 Also on the board: a power LED on +24V, and four M3 holes for a DIN-rail PCB carrier or
 clips.
@@ -81,7 +83,7 @@ clips.
   its footprint against the Phoenix MKDS 5.08 mm one used here.
 - **Fast-release Zener:** Vz + 0.7 V must stay below the ISO2H823V2.5's own
   demagnetisation clamp, so the external clamp takes the energy.
-- **RW value:** from the ISO1I813T wire-break threshold.
+- **Sensor-end bias resistor value:** from the ISO1I813T wire-break threshold (installation note).
 - **DIN carrier:** the carrier or clip part, which sets the hole positions.
 - **SMC valves:** whether they come with a built-in surge suppressor. If they do, D is
   not needed.
