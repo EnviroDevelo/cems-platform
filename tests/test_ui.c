@@ -10,6 +10,7 @@
 #include "tst.h"
 #include "eve.h"
 #include "eve_sim.h"
+#include "modbus.h"
 #include "ui.h"
 #include "param.h"
 #include "param_store.h"
@@ -128,7 +129,20 @@ static void t_fonts(void) {
     CHECK(!strcmp(eve_font_encode("tab\there", b, sizeof b, true), "tabhere"));
 }
 
+static uint32_t sim_rd32(uint32_t reg) {
+    uint32_t v = 0;
+    for (int k = 0; k < 4; ++k) v |= (uint32_t)sim.regs[reg - EVE_RAM_REG + k] << (8 * k);
+    return v;
+}
+
 static void t_eve_driver(void) {
+    /* the system clock check: a BT817 left on 60 MHz gets REG_FREQUENCY 60 MHz; 72 MHz stays */
+    eve_sim_init(&sim); sim.sysclk_hz = 60000000u;
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(sim_rd32(REG_FREQUENCY), 60000000u);
+    eve_sim_init(&sim); sim.sysclk_hz = 72000000u;
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(sim_rd32(REG_FREQUENCY), 72000000u);
     eve_sim_init(&sim);
     CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
     CHECK(eve.ok);
@@ -646,7 +660,7 @@ static void t_iob_screen(void) {
     iob_run(1100);
     frame();
     CHECK(shows("not responding"));
-    CHECK(shows("No reply: outputs off after the hold"));
+    CHECK(shows("No reply: board switches off after hold"));
     dump("iob_lost");
     CHECK(tap("Home"));
     CHECK_EQ(ui_screen(), UI_HOME);
@@ -654,6 +668,162 @@ static void t_iob_screen(void) {
     iob_reset();
     iob_init(NULL);
     iob_link = IOB_LINK_ETH;
+}
+
+/* the display test page for bench bring-up (HMI_BENCH_TEST.md): controller status and measured
+ * rates, the colour patterns (a tap anywhere steps on, the last goes back), and the touch test
+ * (points from REG_TOUCH_SCREEN_XY, the offset from the nearest cross) */
+static void t_display_screen(void) {
+    setup();
+    CHECK(tap("System"));
+    CHECK(tap("Display test"));
+    CHECK_EQ(ui_screen(), UI_DISPLAY);
+    CHECK(shows("Colour test")); CHECK(shows("Touch test"));
+    CHECK(shows("(answering)")); CHECK(shows("chip 0817"));
+    CHECK(shows("1024 x 600"));
+    CHECK(shows("measuring..."));
+    /* rates over a second: 60 frames and 72 M clocks */
+    for (int k = 0; k < 4; ++k) sim.regs[REG_FRAMES - EVE_RAM_REG + k] = 0;
+    sim.regs[0x302008u - EVE_RAM_REG] = 0; sim.regs[0x302009u - EVE_RAM_REG] = 0; sim.regs[0x30200Au - EVE_RAM_REG] = 0; sim.regs[0x30200Bu - EVE_RAM_REG] = 0;
+    frame();
+    now += 980;                                        /* frame() adds 20 */
+    sim.regs[REG_FRAMES - EVE_RAM_REG] = 60;
+    { uint32_t c = 72000000u; for (int k = 0; k < 4; ++k) sim.regs[0x302008u - EVE_RAM_REG + k] = (uint8_t)(c >> (8 * k)); }
+    frame();
+    CHECK(shows("Hz")); CHECK(shows("MHz measured"));
+    dump("display");
+    /* patterns: full screen, no navigation; seven taps go through them and back */
+    CHECK(tap("Colour test"));
+    CHECK(!shows("Home"));
+    for (int k = 0; k < 6; ++k) { press(233); CHECK_EQ(ui_screen(), UI_DISPLAY); }   /* T_DT_NEXT */
+    CHECK(shows("Grid, 50 px"));
+    dump("display_grid");
+    press(233);
+    CHECK(shows("Colour test")); CHECK(shows("Home"));
+    /* touch test: a touch 6 px right and 4 px below the top-left cross */
+    CHECK(tap("Touch test"));
+    CHECK(shows("Touch each cross"));
+    CHECK(shows("No finger on the glass"));
+    eve_sim_touch_xy(&sim, 46, 44); eve_sim_touch(&sim, 255);
+    ui_input(255, now); frame();
+    CHECK(shows("Finger at 46, 44"));
+    CHECK(shows("Last touch: 6 px right, 4 px below of the cross"));
+    eve_sim_touch_xy(&sim, 60, 44); frame();
+    eve_sim_touch_xy(&sim, -32768, -32768); eve_sim_touch(&sim, 0);
+    ui_input(0, now); frame();
+    CHECK(shows("No finger on the glass"));
+    CHECK(shows("Last touch: 6 px right"));           /* only a touch-down moves it */
+    dump("display_touch");
+    CHECK(tap("Clear")); CHECK(!shows("Last touch"));
+    CHECK(tap("Done")); CHECK(shows("Colour test"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+}
+
+/* Modbus force for commissioning (modbus.h mb_force_*): the list of forceable values with the
+ * real value beside, admin to force, "Are you sure?", the countdown, the header pill, clear */
+static void t_force_screen(void) {
+    setup();
+    static const mb_map_t fmap[] = {
+        MB_ENTRY(MB_HOLDING, 0, 1001, MBF_U32),       /* a setting the PLC writes: not forceable */
+        MB_ENTRY(MB_INPUT, 0, 1008, MBF_F32),         /* a reading */
+        MB_ENTRY(MB_DISCRETE, 0, 1003, MBF_BIT),      /* a test bit */
+    };
+    CHECK_EQ(mb_init(fmap, sizeof fmap / sizeof fmap[0], NULL), 0);
+    CHECK(mb_force_clear_all(PLAT_SRC_LOCAL, PLAT_LVL_FACTORY) == PERR_OK);
+    CHECK(tap("Settings")); CHECK(tap("Force"));
+    CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(shows("1008  stack_temp")); CHECK(shows("1003  valve_out")); CHECK(!shows("1001  start_delay"));
+    CHECK(shows("Real value: 182.5"));
+    CHECK(!shows("FORCED 1"));
+    /* not logged in: refused in words */
+    int t = eve_sim_tag_of(&sim, "Force");
+    CHECK(t > 0); press((uint8_t)t);
+    CHECK(!strcmp(ui_toast(), "Log in as admin to force values"));
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    CHECK(tap("Settings")); CHECK(tap("Force"));
+    press(201);                                       /* the second row: stack_temp (1003 valve_out is first) */
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Force stack_temp  (1008)")); CHECK(shows("Modbus reads this for 30 s, then the real value again"));
+    type("250.5"); CHECK(tap("OK"));
+    CHECK(shows("Send 250.5 to Modbus as stack_temp for 30 s?"));
+    CHECK(tap("Yes"));
+    CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(mb_force_active(1008, MB_FORCE_SCALAR));
+    CHECK(shows("Modbus: forced to 250.5, 30 s"));
+    CHECK(shows("Real value: 182.5"));   /* the screens keep the real value */
+    CHECK(shows("FORCED 1"));
+    now += 10000; frame();
+    CHECK(shows("Modbus: forced to 250.5, 20 s"));
+    dump("force");
+    /* a test bit: ON/OFF */
+    press(200);                                       /* valve_out */
+    CHECK(shows("ON")); CHECK(tap("ON")); CHECK(tap("Yes"));
+    CHECK(mb_force_active(1003, MB_FORCE_SCALAR));
+    CHECK(shows("FORCED 2")); CHECK(shows("Modbus: forced to ON"));
+    /* the header pill opens the list from anywhere */
+    CHECK(tap("Home")); CHECK(tap("FORCED 2")); CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(tap("Clear"));                              /* the first forced row */
+    CHECK_EQ(mb_force_count(), 1u);
+    CHECK(tap("Clear all"));
+    CHECK_EQ(mb_force_count(), 0u);
+    CHECK(!shows("FORCED")); CHECK(shows("CEMS Supervisor"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_PARAMS);
+}
+
+/* input alarms (plat_alarm.h, Gary 30 Oct): Alarms > Inputs lists the 24 slots; a slot's page
+ * sets the input, when, delay, latch, severity and label (admin), writing one array element */
+extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS];
+extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+extern uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+extern char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static void t_dia_screen(void) {
+    enum { TG_ALARMS = 152, TG_INPUT = 243, TG_WHEN, TG_DELAY, TG_LATCH, TG_SEV, TG_LABEL, TG_PREV, TG_NEXT, TG_SPACE = 151 };
+    setup();
+    frame();
+    press(TG_ALARMS);
+    CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(tap("Inputs"));
+    CHECK_EQ(ui_screen(), UI_DIA);
+    CHECK(shows("1  Not used")); CHECK(shows("No input chosen")); CHECK(shows("not used"));
+    CHECK(tap("1  Not used"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK(shows("Input alarm 1: Not used")); CHECK(shows("Modbus discrete inputs: 7000 active, 7032 not acknowledged, 7064 input unreliable"));
+    press(TG_INPUT);                                  /* not logged in */
+    CHECK(!strcmp(ui_toast(), "Log in as admin to set up input alarms"));
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    frame(); press(TG_ALARMS); CHECK(tap("Inputs")); CHECK(tap("1  Not used"));
+    /* the input, on the number keypad */
+    press(TG_INPUT);
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Input alarm 1: input")); CHECK(shows("Range 0 .. 64 (0 = not used)"));
+    type("99"); CHECK(tap("OK"));
+    CHECK(!strcmp(ui_toast(), "Allowed 0 .. 64")); CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(tap("Clear")); type("12"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK_EQ(plat_dia_input[0], 12);
+    CHECK(shows("Input alarm 1: Digital input 12"));
+    /* toggles and the severity cycle write at once */
+    press(TG_WHEN);  CHECK(plat_dia_when[0]);  CHECK(shows("the input is inactive (open)"));
+    press(TG_LATCH); CHECK(plat_dia_latch[0]); CHECK(shows("on: stays active until acknowledged"));
+    press(TG_SEV);   CHECK_EQ(plat_dia_sev[0], AL_SEV_FAULT); CHECK(shows("fault"));
+    press(TG_SEV);   CHECK_EQ(plat_dia_sev[0], AL_SEV_WARNING);
+    press(TG_DELAY); CHECK(shows("Input alarm 1: on-delay")); type("5"); CHECK(tap("OK"));
+    CHECK_EQ(plat_dia_delay[0], 5);
+    CHECK_EQ(plat_dia_input[1], 0);                   /* only slot 1's element was written */
+    /* the label: the alarm's name everywhere */
+    press(TG_LABEL);
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    type("door"); press(TG_SPACE); type("open"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK(!strcmp(plat_dia_label[0], "door open"));
+    CHECK(shows("Input alarm 1: door open"));
+    dump("input_alarm_slot");
+    press(TG_NEXT); CHECK(shows("Input alarm 2: Not used"));
+    press(TG_PREV); CHECK(shows("Input alarm 1: door open"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_DIA);
+    CHECK(shows("1  door open")); CHECK(shows("when inactive, 5 s, latched, warning"));
+    dump("input_alarms");
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
 }
 
 void test_ui_all(void) {
@@ -665,4 +835,7 @@ void test_ui_all(void) {
     RUN(t_iob_screen);
     RUN(t_state_quality);
     RUN(t_cal_screen);
+    RUN(t_display_screen);
+    RUN(t_force_screen);
+    RUN(t_dia_screen);
 }

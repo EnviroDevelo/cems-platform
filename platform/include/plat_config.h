@@ -151,6 +151,8 @@
 #define PLAT_MB_BLOCK_VERSION     3u     /* the layout of the platform's Modbus block (2: clock quality, 26 Oct; 3: forced count, 29 Oct) */
 #define PLAT_MB_BLOCK_ADDR        9000u  /* input registers 9000-9199 belong to the platform in every product */
 #define PLAT_MB_BLOCK_END         9199u
+#define PLAT_MB_STD_ADDR          7000u  /* input and holding 7000-7999: the standard CEMS block (VDI 4201-3) */
+#define PLAT_MB_STD_END           7999u
 
 #ifndef PLAT_MEAS_MAX
 #define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
@@ -162,6 +164,7 @@
 #define PLAT_IOB_REPLY_MS         15u    /* wait this long for a node's reply (about 3 frames' time) */
 #define PLAT_IOB_RETRY_MS         1000u  /* a board that is not answering is tried this often */
 #define PLAT_IOB_LOST_MS          1000u  /* no valid reply this long: the board is "not responding" */
+#define PLAT_IOB_START_MS        20000u  /* the same before its first reply since power-up */
 #define PLAT_IOB_STALE_MS         250u   /* outputs not refreshed by the scan this long: send all-off */
 #define PLAT_IOB_BAUD             115200u
 #define PLAT_IOB_TEMP_MS          500u   /* map 2: a board's temperatures are read this often (one board per cycle) */

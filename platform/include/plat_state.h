@@ -99,6 +99,7 @@ const char *plat_quality_code(uint8_t q);         /* "range": for JSON */
 size_t      plat_meas_count(void);
 const plat_meas_def_t *plat_meas_at(size_t i);
 uint8_t     plat_meas_quality(size_t i);
+float       plat_meas_value(size_t i);            /* scan task: measurement i's value now (NAN: no such) */
 
 /* Supervisory link (CIP-15.2): ms since the last Modbus or web request; UINT32_MAX if none
  * since start (param.c keeps it). */

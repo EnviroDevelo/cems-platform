@@ -17,9 +17,14 @@
 #include "eve.h"
 #include "bsp.h"
 #include "plat_power.h"
+#include "plat_role.h"
 
 static eve_t eve;
 static volatile bool disp_up, disp_fitted;
+/* bring-up record, for the debugger's watch window (HMI_BENCH_TEST.md step 2): the last
+ * eve_init() result (0 ok, -1 no chip ID, -2 engines not ready or first frame failed, 1 not
+ * tried yet), how many times it was tried, and how many times a working display was lost */
+volatile struct { int last_init; uint32_t inits, lost; uint8_t reg_id; } plat_ui_bringup = { 1, 0, 0, 0 };
 static volatile uint32_t disp_frames_at;
 
 /* healthy for the firmware trial: the display works, or none is fitted */
@@ -27,6 +32,8 @@ bool plat_ui_healthy(void) { return !disp_fitted || disp_up; }
 bool plat_ui_fitted(void) { return disp_fitted; }
 
 void plat_ui_task_body(void) {
+    if (plat_role() == PLAT_ROLE_NODE)               /* an I/O board has no display */
+        for (;;) { plat_checkin(PLAT_TASK_UI); vTaskDelay(pdMS_TO_TICKS(100)); }
     eve_bus_t *bus = bsp_eve_bus();
     const plat_app_t *app = plat_app();
     static ui_cfg_t cfg;
@@ -54,7 +61,10 @@ void plat_ui_task_body(void) {
             if (first || now - retry >= 5000u) {
                 first = false;
                 retry = now;
-                disp_up = eve_init(&eve, bus, &eve_panel_rvt70h) == 0;
+                plat_ui_bringup.last_init = eve_init(&eve, bus, &eve_panel_rvt70h);
+                plat_ui_bringup.inits++;
+                plat_ui_bringup.reg_id = eve_rd8(&eve, REG_ID);
+                disp_up = plat_ui_bringup.last_init == 0;
                 if (disp_up) { plat_checkin(PLAT_TASK_UI); (void)eve_fonts_load(&eve, EVE_FONT_BASE); }   /* own fonts; ROM fonts if this fails */
                 bl = 255;
                 plat_checkin(PLAT_TASK_UI);
@@ -67,7 +77,7 @@ void plat_ui_task_body(void) {
         if (b != bl) { eve_backlight(&eve, b); bl = b; }
         if (now - check >= 2000u) {
             check = now;
-            if (eve_rd8(&eve, REG_ID) != EVE_CHIP_ID || eve.timeouts > 10u) disp_up = false;   /* gone: start again */
+            if (eve_rd8(&eve, REG_ID) != EVE_CHIP_ID || eve.timeouts > 10u) { disp_up = false; plat_ui_bringup.lost++; }   /* gone: start again */
             disp_frames_at = eve.frames;
         }
         for (int k = 0; k < 10 && !plat_power_failing(); ++k) vTaskDelay(pdMS_TO_TICKS(2));   /* 20 ms, watching the supply */

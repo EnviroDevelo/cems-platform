@@ -16,6 +16,65 @@ self-test, PBKDF2 passwords with token recovery.
 Products: build with `make conformance APP=<dir>`; write `PROFILE.md` and the interface
 snapshots (`make snapshots APP=<dir>`).
 
+One source for the CORE and the I/O node (30 Oct, Gary):
+- The standard CEMS Modbus block (VDI 4201-3, `docs/MODBUS_STANDARD_BLOCK.md`): input registers
+  7000-7999 mirrored read-only in the holding registers: BasisM value and NE 107 status per slot,
+  BasisS showing the force in effect, BasisR, calculated banks 1-7, qualities, counters, globals,
+  word order setting (param 335). Built from the emissions engine's parameters; without them
+  every slot reads NaN / not fitted. 43/14 now answers conformity 0x83 with the VDI 4201-3
+  extended objects (serial, ComponentNumber 30, BasisM/S/R addresses, name/range/unit per
+  component) and streams codes 1-3 with "more follows". A product map entry in 7000-7999 of the
+  input or holding registers stops start-up (none of the current maps uses it).
+- Alarm priority tiers (Gary 31 Oct, `plat_alarm.h`): every alarm has a tier, Critical, High,
+  Medium, Low or Info, or Off (param 52, one byte per alarm ID; 0 = the definition's default
+  from its severity; AL_STOPS alarms and CAL_INVALID, SAFE_MODE, PARAM_WRITE_FAIL (AL_NO_OFF)
+  can't be switched off). The tier sets the list order and
+  colour, per-tier counts (54, 55), ACOM_CRIT_ACTIVE / ACOM_CRIT_UNACKED in the common word, and
+  per-tier actions (53) for alarms without their own. Tier names are editable (90-94).
+  `/api/alarms` gains `priority`, `tier`, `worst_priority`; `/api/alarms/config` gains
+  `priority`, `default_priority`, `can_switch_off` and `tiers`.
+- I/O boards: a board that has never answered since power-up gets PLAT_IOB_START_MS (20 s)
+  before it counts as "not responding", so a restart no longer raises IOB_LOST while the network
+  comes up (outputs stay off until it is online, as before). Fault text "No reply: board switches
+  off after hold". Bench builds: `PLAT_BENCH_SETTINGS` writes are logged as param events.
+- Automatic 10 Mbit (net_link_mode 0): the port counts TCP data segments and retransmissions
+  (lwIP hook, `lwip_hooks.h`); two 10 s windows in a row with 40+ segments and 3 % or more sent
+  again at 100 Mbit drop the offer to 10 Mbit until a restart or a setting change. Event
+  `eth_speed`, `/api/info` eth gains `fallback`, `fallbacks`, `tcp_segs`, `tcp_rexmits`, and the
+  header badge reads "ETH 10 FD (auto)". Bench: the DK lost 14-45 % at 100 Mbit through Gary's
+  switch and none at 10 Mbit (its board's 100BASE-TX transmit signal; the Nucleo was clean).
+- Digital-input alarms (`docs/MODBUS_STANDARD_BLOCK.md` section 7): 24 slots (params 340-345,
+  labels 350-373 `diaN_label`, alarm IDs 30-53, PLAT_ALARM_MAX 128). Each ties a digital input to
+  an alarm with trigger level, delay, latch and severity; the label becomes the alarm text, the
+  Modbus map description and the Excel label. Discrete inputs 7000+s active, 7032+s unacked,
+  7064+s unreliable, 7100+i raw input. `/api/modbus/map` lists them and gains the codes
+  `std_status_bits` and `input_alarm_status`. Labels are written whole (no NUL).
+- Ethernet on any switch: the MAC follows the PHY when a switch renegotiates without the link
+  looking down; parameter 15 `net_link_mode` (admin) limits what the port offers (0 auto, 1 100 Mbit
+  only, 2 10 Mbit only for long or poor cable) with autonegotiation always on; `/api/info` "eth"
+  shows the negotiated mode, the switch's offer (anar/anlpar/aner), link drops and error counters;
+  first TCP retransmit after 1 s instead of 3 s. Found on the DK bench (30 Oct): a cheap switch
+  lost 10-20 % of the DK's frames silently while a direct cable lost none.
+- The io-node repository (node core, chip drivers, its tests and tools, the G0 port) now lives here:
+  `node/`, `tests/node/`, `tools/node/`, `port/node_stm32g0/`, `docs/IO_NODE.md`. `make test` runs its
+  tests and the platform's host suite against the real node core (`make master-real`).
+- The role (`plat_role.h`): CORE, NODE or NONE, from the shared PCB's jumper J7 (ROLE_A PE5,
+  ROLE_B PE6) or fixed with `PLAT_ROLE_FIXED`. A board without the jumper's labels is a CORE, so
+  existing projects need nothing new except the four source files and the `node` include path.
+- The NODE role (`plat_node.h`): the node core over the platform's sockets in the iobus task;
+  no display, web, plant Modbus or application. `build/nodesim` runs it on a PC;
+  `tests/integration/node_role_test.py` runs a CORE against it.
+- The NUCLEO-H563ZI as a node: `docs/CUBEMX_NUCLEO_NODE.md`; `tools/check_target.sh` links it (CHIP=h563).
+
+Emissions calculation engine (29 Oct, before release; `docs/EMISSIONS_MATH.md`):
+- `emis.h` / `emis.c`: EN 14181 calibration function, ppm to mg/Nm3, wet to dry, T/p
+  normalisation, O2 or CO2 reference, mass emission, clock-aligned short-term and daily averages
+  with the IED validity rules and confidence interval subtraction, the EN 14181 valid calibration
+  range; quality from the eight PLAT_Q codes, worst of the inputs.
+- Parameters 400-441 (settings, admin, persisted, not from Modbus), 450-469 (results), retained
+  block 910. Off by default (400): a product that does not use it is unchanged. 4.4 KB RAM.
+- `plat_meas_value()` in plat_state.h.
+
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
   in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds

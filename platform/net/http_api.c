@@ -29,6 +29,7 @@
 #include "plat_service.h"
 #include "plat_selftest.h"
 #include "plat_version.h"
+#include "plat_net.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -206,6 +207,40 @@ static void level_name_json(http_out_t *o, uint8_t l) {
 
 static void json_ip(http_out_t *o, uint32_t ip);
 
+extern bool plat_eth_diag(plat_eth_diag_t *d) __attribute__((weak));   /* the H5 port only */
+
+static void get_eth(http_out_t *o) {
+    plat_eth_diag_t d;
+    if (!plat_eth_diag || !plat_eth_diag(&d)) return;
+    out_str(o, ",\"eth\":{\"link\":"); json_bool(o, d.link_up);
+    out_str(o, ",\"phy_mbps\":"); json_uint(o, d.phy_mbps);
+    out_str(o, ",\"phy_full\":"); json_bool(o, d.phy_full);
+    out_str(o, ",\"mac_mbps\":"); json_uint(o, d.mac_mbps);
+    out_str(o, ",\"mac_full\":"); json_bool(o, d.mac_full);
+    out_str(o, ",\"phy_symbol_errors\":"); json_uint(o, d.phy_symbol_errors);
+    out_str(o, ",\"rx_good_unicast\":"); json_uint(o, d.rx_good_unicast);
+    out_str(o, ",\"tx_good\":"); json_uint(o, d.tx_good);
+    out_str(o, ",\"rx_crc_errors\":"); json_uint(o, d.rx_crc_errors);
+    out_str(o, ",\"rx_align_errors\":"); json_uint(o, d.rx_align_errors);
+    out_str(o, ",\"rx_missed\":"); json_uint(o, d.rx_missed);
+    out_str(o, ",\"rx_overflow\":"); json_uint(o, d.rx_overflow);
+    out_str(o, ",\"rx_pool_empty\":"); json_uint(o, d.rx_pool_empty);
+    out_str(o, ",\"rx_kicks\":"); json_uint(o, d.rx_kicks);
+    out_str(o, ",\"link_mode\":"); json_uint(o, d.link_mode);
+    out_str(o, ",\"fallback\":"); json_bool(o, d.fallback);       /* auto mode dropped to 10 Mbit: 100 lost data */
+    out_str(o, ",\"fallbacks\":"); json_uint(o, d.fallbacks);
+    out_str(o, ",\"tcp_segs\":"); json_uint(o, d.tcp_segs);
+    out_str(o, ",\"tcp_rexmits\":"); json_uint(o, d.tcp_rexmits);
+    out_str(o, ",\"link_drops\":"); json_uint(o, d.link_drops);
+    out_str(o, ",\"resyncs\":"); json_uint(o, d.resyncs);
+    out_str(o, ",\"anar\":"); json_uint(o, d.phy_anar);       /* PHY registers 4-6, raw */
+    out_str(o, ",\"anlpar\":"); json_uint(o, d.phy_anlpar);
+    out_str(o, ",\"aner\":"); json_uint(o, d.phy_aner);
+    out_str(o, ",\"partner_autoneg\":"); json_bool(o, (d.phy_aner & 0x0001u) != 0);   /* 0: the switch didn't negotiate (we guessed its mode) */
+    out_str(o, ",\"parallel_fault\":"); json_bool(o, (d.phy_aner & 0x0010u) != 0);
+    out_str(o, "}");
+}
+
 static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     plat_val_t v;
     uint32_t left = 0;
@@ -264,12 +299,14 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
         out_str(o, ",\"last_request_s\":");
         if (m && m->frames) json_uint(o, (uint32_t)(bsp_ms() - m->last_frame_ms) / 1000u); else out_str(o, "null");
         out_str(o, "}"); }
+    get_eth(o);
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     { alarm_summary_t s; alarm_summary(&s);
       out_str(o, ",\"alarms\":{\"active\":"); json_uint(o, s.active);
       out_str(o, ",\"unacked\":"); json_uint(o, s.unacked);
       out_str(o, ",\"worst\":"); if (s.worst >= 0) json_str(o, alarm_sev_name((uint8_t)s.worst)); else out_str(o, "null");
+    out_str(o, ",\"worst_priority\":"); if (s.worst_prio) json_uint(o, s.worst_prio); else out_str(o, "null");
       out_str(o, "}"); }
     {   plat_health_t h = plat_health;
         char why[64] = "";
@@ -931,6 +968,8 @@ static void get_alarms(http_out_t *o) {
         out_str(o, ",\"text\":"); json_str(o, v.text);
         out_str(o, ",\"help\":"); json_str(o, v.help ? v.help : "");    /* what to check (docs/FAULT_CODES.md) */
         out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"priority\":"); json_uint(o, v.priority);
+        out_str(o, ",\"tier\":"); json_str(o, alarm_prio_name(v.priority));
         out_str(o, ",\"active\":"); json_bool(o, v.active);
         out_str(o, ",\"unacked\":"); json_bool(o, v.unacked);
         out_str(o, ",\"latch\":"); json_bool(o, (v.flags & AL_LATCH) != 0);
@@ -960,7 +999,10 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, "{\"id\":"); json_uint(o, d->id);
         out_str(o, ",\"name\":"); json_str(o, d->name);
         out_str(o, ",\"text\":"); json_str(o, v.text);
-        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(d->severity));
+        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"priority\":"); json_uint(o, v.priority);                     /* in force: 1..5, 6 off */
+        out_str(o, ",\"default_priority\":"); json_uint(o, alarm_prio_default(d));
+        out_str(o, ",\"can_switch_off\":"); json_bool(o, alarm_can_switch_off(d));
         out_str(o, ",\"route\":"); json_uint(o, alarm_route(d->id));
         out_str(o, ",\"default\":"); json_uint(o, d->route);
         out_str(o, ",\"configured\":"); json_bool(o, (route[d->id] & AR_SET) != 0);
@@ -974,6 +1016,22 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, ",\"mode\":"); json_uint(o, rmode[k]);
         out_str(o, ",\"failsafe\":"); json_bool(o, rinv[k] != 0);
         out_str(o, ",\"in_alarm\":"); json_bool(o, (on >> k) & 1u);
+        out_str(o, "}");
+    }
+    out_str(o, "],\"tiers\":[");                     /* the priority tiers (plat_alarm.h) */
+    uint8_t tr[AL_TIERS];
+    uint16_t ta[AL_TIERS], tu[AL_TIERS];
+    if (param_read_blob(PARAM_ID_ALARM_TIER_ROUTE, 0, tr, sizeof tr) != PERR_OK) memset(tr, 0, sizeof tr);
+    if (param_read_blob(PARAM_ID_ALARM_TIER_ACTIVE, 0, ta, sizeof ta) != PERR_OK) memset(ta, 0, sizeof ta);
+    if (param_read_blob(PARAM_ID_ALARM_TIER_UNACKED, 0, tu, sizeof tu) != PERR_OK) memset(tu, 0, sizeof tu);
+    for (unsigned k = 0; k < AL_TIERS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"priority\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"name\":"); json_str(o, alarm_prio_name((uint8_t)(k + 1u)));
+        out_str(o, ",\"route\":"); json_uint(o, tr[k] & (uint8_t)~AR_SET);
+        out_str(o, ",\"configured\":"); json_bool(o, (tr[k] & AR_SET) != 0);
+        out_str(o, ",\"active\":"); json_uint(o, ta[k]);
+        out_str(o, ",\"unacked\":"); json_uint(o, tu[k]);
         out_str(o, "}");
     }
     out_str(o, "]}");
@@ -1123,6 +1181,38 @@ static void get_mb_map(http_out_t *o) {
         out_str(o, ",\"forceable\":"); json_bool(o, mb_forceable(d->id));
         out_str(o, "}");
     }
+    /* the digital input alarms' discrete inputs (plat_alarm.h), named live by their labels */
+    {
+        static const char *const what[3] = { "active", "waiting for an acknowledge", "input unreliable" };
+        static const char *const key[3] = { "active", "unacked", "unreliable" };
+        alarm_view_t av;
+        char nm[24], desc[96];
+        bool first = mb_entry_count() == 0;
+        for (unsigned g = 0; g < 4u; ++g)
+            for (unsigned i = 0; i < (g < 3u ? PLAT_DIA_SLOTS : (unsigned)PLAT_DI_MAX); ++i) {
+                uint16_t addr = (uint16_t)(g < 3u ? PLAT_DIA_MB_ADDR + 32u * g + i : PLAT_DIA_MB_ADDR + 100u + i);
+                if (g < 3u) {
+                    snprintf(nm, sizeof nm, "dia%u_%s", i + 1u, key[g]);
+                    const char *t = alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + i), &av) ? av.text : "";
+                    snprintf(desc, sizeof desc, "%s: %s", t, what[g]);
+                } else {
+                    snprintf(nm, sizeof nm, "di%u", i + 1u);
+                    snprintf(desc, sizeof desc, "Digital input %u", i + 1u);
+                    for (unsigned s2 = 0; s2 < PLAT_DIA_SLOTS; ++s2) {   /* the first slot bound to it names it */
+                        uint8_t b = 0;
+                        if (param_read_blob(PARAM_ID_DIA_INPUT, (uint16_t)s2, &b, 1) != PERR_OK || b != i + 1u) continue;
+                        if (alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + s2), &av)) snprintf(desc, sizeof desc, "%s", av.text);
+                        break;
+                    }
+                }
+                out_str(o, first ? "{\"table\":\"discrete\"" : ",{\"table\":\"discrete\"");
+                first = false;
+                out_str(o, ",\"fc_read\":2,\"fc_write\":null,\"addr\":"); json_uint(o, addr);
+                out_str(o, ",\"count\":1,\"format\":\"bit\",\"id\":null,\"name\":"); json_str(o, nm);
+                out_str(o, ",\"description\":"); json_str(o, desc);
+                out_str(o, ",\"unit\":null,\"access\":\"read\",\"block\":false,\"core\":\"input_alarms\",\"forceable\":false}");
+            }
+    }
     /* the codes the values use (MODBUS.md 6), for the handover file's Codes sheet */
     out_str(o, "],\"codes\":{\"quality\":[");
     for (uint8_t q = 0; q < PLAT_Q_COUNT; ++q) {
@@ -1139,11 +1229,26 @@ static void get_mb_map(http_out_t *o) {
     out_str(o, "],\"common_bits\":[{\"bit\":0,\"name\":\"a Modbus-routed alarm is active\"},"
                "{\"bit\":1,\"name\":\"a Modbus-routed alarm waits for an acknowledge\"},"
                "{\"bit\":2,\"name\":\"any alarm is active\"},{\"bit\":3,\"name\":\"any alarm waits for an acknowledge\"},"
-               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"}");
+               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"},"
+               "{\"bit\":5,\"name\":\"a Critical-tier alarm is active\"},"
+               "{\"bit\":6,\"name\":\"a Critical-tier alarm waits for an acknowledge\"}");
     for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
         char b[64]; snprintf(b, sizeof b, ",{\"bit\":%u,\"name\":\"alarm relay %u in alarm\"}", 8u + k, k + 1u);
         out_str(o, b);
     }
+    /* the standard block's status word (docs/MODBUS_STANDARD_BLOCK.md section 3) and input alarm states */
+    out_str(o, "],\"std_status_bits\":[{\"bit\":0,\"name\":\"failure\"},{\"bit\":1,\"name\":\"maintenance (function check)\"},"
+               "{\"bit\":2,\"name\":\"maintenance request\"},{\"bit\":3,\"name\":\"out of specification\"},"
+               "{\"bit\":4,\"name\":\"test / simulation value transmitted\"},{\"bit\":16,\"name\":\"forced from the web page or touchscreen\"},"
+               "{\"bit\":17,\"name\":\"no QAL2 calibration function\"},{\"bit\":18,\"name\":\"above the valid calibration range\"},"
+               "{\"bit\":19,\"name\":\"analyser over-range\"},{\"bit\":20,\"name\":\"O2 too high to correct\"},"
+               "{\"bit\":21,\"name\":\"calculation input missing\"},{\"bit\":22,\"name\":\"average incomplete\"},"
+               "{\"bit\":23,\"name\":\"day invalid\"},{\"bit\":24,\"name\":\"confidence interval not applied\"},"
+               "{\"bit\":25,\"name\":\"fixed H2O used\"},{\"bit\":26,\"name\":\"below range\"},"
+               "{\"bit\":27,\"name\":\"QAL2 review due\"}],"
+               "\"input_alarm_status\":[{\"code\":0,\"name\":\"not used\"},{\"code\":1,\"name\":\"normal\"},"
+               "{\"code\":2,\"name\":\"active, acknowledged\"},{\"code\":3,\"name\":\"active, not acknowledged\"},"
+               "{\"code\":4,\"name\":\"cleared, not acknowledged\"},{\"code\":5,\"name\":\"input unreliable\"}");
     out_str(o, "],\"clock_source\":[{\"code\":0,\"name\":\"none\"},{\"code\":1,\"name\":\"SNTP\"},"
                "{\"code\":2,\"name\":\"touchscreen\"},{\"code\":3,\"name\":\"web\"},{\"code\":4,\"name\":\"Modbus\"}],"
                "\"exceptions\":[{\"code\":1,\"name\":\"illegal function, writes disabled, or level too low\"},"

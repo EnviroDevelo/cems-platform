@@ -42,6 +42,9 @@ td.c{text-align:center}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .tabs button{background:#5b6577;border-color:#5b6577}.tabs button.cur{background:#14213d;border-color:#14213d}
 .wrow{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.extab td,.extab th{white-space:nowrap;font-variant-numeric:tabular-nums}.extab td.d{cursor:pointer}.extab td.d:hover{background:#e8ecf3}
+.extab td.hit{background:#e5f4e4;font-weight:600}.extab td.pick{outline:2px solid var(--accent)}
+.ptab input,.ptab select{width:100%;min-width:56px;box-sizing:border-box}.ptab td{padding:2px 3px}
 .tile{border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-width:150px;cursor:default}
 .tile .k{font-size:12px;color:var(--mute)}.tile .v{font-size:18px;font-variant-numeric:tabular-nums}
 .tile.can{cursor:pointer;border-color:var(--accent)}
@@ -88,7 +91,9 @@ section.offtab{display:none!important}
   <span class="badge" id="state" style="display:none"></span>
   <span class="badge" id="mode">-</span>
   <span class="badge" id="link" style="display:none"></span>
+  <span class="badge" id="ethb" style="display:none" title="The Ethernet port: speed and duplex the switch agreed"></span>
   <a href="#alarms" class="badge" id="alarmbadge" style="display:none;text-decoration:none"></a>
+  <a href="#service" class="badge b-warn" id="forcebadge" style="display:none;text-decoration:none" title="Modbus is serving forced values"></a>
   <span class="badge" id="conn">connecting</span>
 </header>
 <div id="lost">Connection lost. Last update <span id="lasttime">-</span>. Retrying.</div>
@@ -99,6 +104,7 @@ section.offtab{display:none!important}
   <button data-tab="cal">Calibration</button>
   <button data-tab="service">Service</button>
   <button data-tab="iob">I/O boards</button>
+  <button data-tab="inst">Instruments</button>
   <button data-tab="events">Event log</button>
   <button data-tab="admin">Administration</button>
   <button data-tab="alarmcfg">Alarm setup</button>
@@ -112,6 +118,7 @@ section.offtab{display:none!important}
       <button id="loginbtn">Log in</button>
       <span class="note">Viewing needs no login. Changes need one.</span>
       <span class="err" id="loginerr"></span>
+      <span class="err" id="loginconn">Not connected, the password can't be checked yet</span>
     </div>
     <details id="rstbox"><summary class="note">Lost passwords?</summary>
       <p class="note" id="rstnote">If every password is lost, the developer can send a one-time token that puts all of them back to the factory defaults. Send the developer the line below.</p>
@@ -181,6 +188,8 @@ section.offtab{display:none!important}
       <div class="tile"><div class="k">Since last service</div><div class="v" id="svcsince">-</div></div>
       <div class="tile" title="Two units with the same checksum have the same settings"><div class="k">Settings checksum</div><div class="v" id="svccrc">-</div></div>
     </div>
+    <h2 style="margin-top:12px">Network port</h2>
+    <p class="note" id="svceth">-</p>
     <table><thead><tr><th>Date</th><th>Technician</th><th>Work done</th><th>Login</th></tr></thead><tbody id="svclog"></tbody></table>
     <div class="row" id="svcform" style="display:none;margin-top:8px">
       <input id="svctech" maxlength="15" placeholder="Technician" style="width:140px">
@@ -197,10 +206,106 @@ section.offtab{display:none!important}
       <input id="svcres" placeholder="Results in test order: 1 pass, 2 fail, 0 not run (e.g. 1,1,2)" style="flex:1;min-width:260px">
       <button class="ghost" id="svcrec">Record test</button>
     </div>
+    <div id="btbox" style="display:none;margin-top:8px">
+      <div class="row"><button id="btrun" style="display:none">Run board test</button><span class="note" id="btstate"></span></div>
+      <table id="bttab" style="display:none;max-width:640px;margin-top:6px"><thead><tr><th>Board test</th><th>Result</th><th>Detail</th></tr></thead><tbody></tbody></table>
+    </div>
     <span class="err" id="svcerr"></span>
     <p class="note">Entries are kept in the instrument's factory memory: they survive firmware updates and restore defaults, and a backup restored into another unit never copies them. Adding to the log or recording a test needs the factory login.</p>
+    <h2 style="margin-top:12px">System health</h2>
+    <p class="note" id="hlwhy"></p>
+    <div class="wrow" id="hltiles"></div>
+    <table id="hlstacks" style="display:none;max-width:420px"><thead><tr><th>Task</th><th>Stack never used (lowest so far)</th></tr></thead><tbody></tbody></table>
+    <p class="note" id="hlfault"></p>
+    <div id="mbbox" style="display:none">
+      <h2 style="margin-top:12px">Modbus TCP</h2>
+      <p class="note" id="mbwhy"></p>
+      <div class="wrow" id="mbtiles"></div>
+      <div class="row"><button class="ghost" id="mbset">Modbus settings</button>
+        <button class="ghost" id="mbxlsx" style="display:none" title="The register map of this unit as an Excel file, for the control system integrator">Modbus handover file (Excel)</button>
+        <button class="ghost" id="mbcsv" style="display:none" title="The project map as CSV">CSV</button>
+        <span class="err" id="mbxerr"></span></div>
+      <div id="fcbox" style="display:none;margin-top:8px">
+        <h2 style="margin-top:8px">Force Modbus values</h2>
+        <p class="note">For commissioning: the control system reads the forced value instead of the real one for 30 s, then the
+          real value comes back. Forcing again restarts the 30 s. Only what Modbus serves changes: this page, the touchscreen, alarms
+          and logging keep the real value. Every force is in the event log.</p>
+        <div class="row">
+          <select id="fcid"></select>
+          <input id="fcidx" size="4" placeholder="index" style="display:none">
+          <input id="fcv" size="10" placeholder="value">
+          <button id="fcgo">Force for 30 s</button>
+          <button class="ghost" id="fcall" style="display:none">Clear all</button>
+          <span class="err" id="fcerr"></span>
+        </div>
+        <div class="row" id="fcbits" style="flex-wrap:wrap"></div>
+        <table id="fctab" style="display:none;max-width:640px;margin-top:6px"><thead><tr><th>Value</th><th>Modbus serves</th><th>Real value</th><th>Left</th><th>By</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
   </section>
 
+  <section id="instsec" data-tab="inst" style="display:none">
+    <h2>Instruments</h2>
+    <p class="note">Analysers and other devices the instrument reads over Modbus TCP on the I/O network (it is the master; they answer).
+      RS-485 devices go through a Modbus TCP gateway: the gateway's IP, and the device's address as the unit ID.</p>
+    <p class="note" id="instmode" style="display:none;color:var(--warn)">Changing instrument settings needs REMOTE (set at the touchscreen) and an admin login.</p>
+    <table id="insttab"><thead><tr><th>#</th><th>Name</th><th>Address</th><th>State</th><th>Polls (failed)</th><th>Last error</th><th>Reply</th><th></th></tr></thead><tbody></tbody></table>
+    <div id="instedit" style="display:none;margin-top:8px" class="card">
+      <h2 id="iehead">Instrument</h2>
+      <div class="row" style="flex-wrap:wrap">
+        <label><input type="checkbox" id="ie_en"> Enabled</label>
+        <label>Name <input id="ie_name" size="18" maxlength="23"></label>
+        <label>IP <input id="ie_ip" size="14" placeholder="192.168.1.70"></label>
+        <label>Port <input id="ie_port" size="5"></label>
+        <label>Unit ID <input id="ie_unit" size="3"></label>
+        <label>Poll every <input id="ie_period" size="5"> ms</label>
+        <label>Timeout <input id="ie_timeout" size="5"> ms</label>
+        <label>Registers per read <input id="ie_max" size="3"></label>
+        <label>Gap allowed <input id="ie_gap" size="2"></label>
+      </div>
+      <div class="row" style="flex-wrap:wrap">
+        <label>Status point <select id="ie_stpt"></select></label>
+        <label>Fault bits <input id="ie_fm" size="6" placeholder="0x0001"></label>
+        <label>Maintenance bits <input id="ie_mm" size="6"></label>
+        <label>Calibration bits <input id="ie_cm" size="6"></label>
+      </div>
+      <h2 style="margin-top:8px">Points</h2>
+      <table class="ptab" id="ptab"><thead><tr><th>#</th><th>Name</th><th>Unit</th><th>Read with</th><th>Address</th><th>Type</th><th>Order</th><th>Bit</th>
+        <th>Gain</th><th>Offset</th><th>Low</th><th>High</th><th class="qrolecol" title="A flag point: when it reads non-zero, every other point of this instrument carries this quality">Flags</th><th>Now</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="row" style="flex-wrap:wrap;margin-top:6px">
+        <button class="ghost" id="ieadd">Add point</button>
+        <button id="iesave">Save</button>
+        <button class="ghost" id="iecancel">Close</button>
+        <button class="ghost" id="ieexp">Export profile</button>
+        <label class="ghost" style="cursor:pointer">Import profile <input type="file" id="ieimp" accept=".json,application/json" style="display:none"></label>
+        <span class="err" id="ieerr"></span>
+      </div>
+      <p class="note">value = raw × gain + offset. Outside Low..High the value reads "out of range" (leave both 0 for no check). The status point's bits,
+        when set, mark every point of this instrument fault, maintenance or calibration. A profile file holds the device's settings and points
+        but not its IP, so it can be used for the same model on another site.</p>
+    </div>
+    <div id="exbox" style="display:none;margin-top:12px">
+      <h2>Register explorer</h2>
+      <p class="note">Reads registers from any device on the I/O network (admin; reads only, nothing is written to the device). Every row shows the
+        words decoded every way: find the one that matches the device's own display, then click it to fill a point.</p>
+      <div class="row" style="flex-wrap:wrap">
+        <label>IP <input id="ex_ip" size="14"></label><label>Port <input id="ex_port" size="5" value="502"></label>
+        <label>Unit ID <input id="ex_unit" size="3" value="1"></label>
+        <label><select id="ex_fc"><option value="3">03 holding registers</option><option value="4">04 input registers</option>
+          <option value="1">01 coils</option><option value="2">02 discrete inputs</option></select></label>
+        <label>From <input id="ex_addr" size="6" value="0"></label><label>Count <input id="ex_count" size="4" value="20"></label>
+        <button id="exgo">Read</button>
+        <label>Find value <input id="ex_find" size="9" placeholder="as displayed"></label>
+        <span class="note" id="exstate"></span>
+      </div>
+      <div style="overflow-x:auto"><table class="extab" id="extab" style="display:none"><thead></thead><tbody></tbody></table></div>
+      <div class="row" id="expick" style="display:none;flex-wrap:wrap">
+        <span id="expicktxt"></span>
+        <label>for <select id="expinst"></select></label>
+        <button id="exuse">Use this for a new point</button>
+      </div>
+    </div>
+  </section>
   <section id="iobsec" data-tab="iob" style="display:none">
     <h2>I/O boards</h2>
     <div class="iobgrid" id="iobcards"></div>
@@ -313,6 +418,17 @@ section.offtab{display:none!important}
     <p class="note" id="diag"></p>
   </section>
 
+  <section id="diasec" data-tab="alarmcfg" style="display:none">
+    <h2>Digital input alarms</h2>
+    <p class="note">Tie any digital input to an alarm. The label becomes the alarm's name everywhere: the alarm list, the touchscreen, the
+      event log, the Modbus map (discrete inputs 7000 + slot) and the Excel handover file. What each one does (email, Modbus common alarm,
+      relays) is set in Alarm actions below, like any alarm. An input with a wire break or on a lost I/O board does not raise its alarm:
+      the slot shows "input unreliable" and the input-fault alarm covers it.</p>
+    <p class="note" id="diamode" style="display:none;color:var(--warn)"></p>
+    <div style="overflow-x:auto"><table class="ptab" id="diatab"><thead><tr><th>Alarm</th><th>Input</th><th>Alarm when the input is</th><th>Delay (s)</th>
+      <th>Latch</th><th>Severity</th><th>Label</th><th>Now</th></tr></thead><tbody></tbody></table></div>
+    <div class="row"><button id="diasave">Save</button><button class="ghost" id="diareload">Undo changes</button><span class="err" id="diaerr"></span></div>
+  </section>
   <section id="actions" data-tab="alarmcfg" style="display:none">
     <h2>Alarm actions</h2>
     <p class="note">What each alarm does when it is raised. <b>Email</b>: sends an email (set up below).
@@ -422,11 +538,18 @@ function api(path, body, raw) {
 }
 /* a request made some other way (firmware upload, text download) holds the line until fn's promise settles */
 const apiExclusive = fn => apiEnqueue({ run: fn }, true);
-async function apiSend(path, body, raw) {
+/* a request that must answer within ms in all, queue wait included (a login says "no answer" rather than wait 30 s) */
+function apiTimed(path, body, ms) {
+  const end = Date.now() + ms, late = () => Object.assign(new Error("timeout"), { name: "TimeoutError" });
+  let t;
+  const job = apiEnqueue({ path, get: false, run: () => { const left = end - Date.now(); if (left < 500) throw late(); return apiSend(path, body, false, left); } }, true);
+  return Promise.race([job, new Promise((_, rej) => { t = setTimeout(() => rej(late()), ms); })]).finally(() => clearTimeout(t));
+}
+async function apiSend(path, body, raw, ms) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "X-CEMS": "1" }, body };
   if (body !== undefined && !raw) opt.headers["Content-Type"] = "application/x-www-form-urlencoded";
   /* a hung poll counts as lost, not as live; a hung write must not hold the queue for ever */
-  opt.signal = AbortSignal.timeout(body === undefined ? 5000 : raw ? 120000 : 30000);
+  opt.signal = AbortSignal.timeout(ms || (body === undefined ? 5000 : raw ? 120000 : 30000));
   const r = await fetch(path, opt);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status, info: j });
@@ -482,12 +605,14 @@ updateTabs();
 
 const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 
+/* IPv4 parameters show as dotted quads (net_link_mode, net_status are plain numbers) */
+const isIp = d => d.type === "uint" && (["net_ip", "net_mask", "net_gw"].includes(d.name) || d.name.endsWith("_ip"));
 function fmt(d, v) {
   if (d.flags.includes("secret")) return "(hidden)";
   if (v === null || v === undefined) return "-";
   if (Array.isArray(v)) return v.map(x => typeof x === "boolean" ? (x ? 1 : 0) : x).join(", ");
   if (typeof v === "boolean") return v ? "on" : "off";
-  if ((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint" && d.name !== "net_dhcp")
+  if (isIp(d))
     return [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".");
   return String(v) + (d.unit ? " " + d.unit : "");
 }
@@ -760,7 +885,7 @@ async function recSave() {
 const TR_MAX_S = 3600, TR_COL = ["#1f5fae", "#b42318", "#16794a", "#a15c00"];
 let trPens = [], trT = [], trV = {}, trQ = {}, trFocus = 0, trHoldAt = 0, trHover = null;
 const trendable = d => ["bool", "int", "uint", "float"].includes(d.type) && !d.flags.includes("secret") &&
-  !((d.name.startsWith("net_") || d.name.endsWith("_ip")) && d.type === "uint");
+  !isIp(d);
 function trSave() { try { localStorage.setItem("cems.trend", JSON.stringify(trPens)); } catch (e) {} }
 function trSetup() {
   const sel = $("tradd");
@@ -918,9 +1043,163 @@ function showState(st) {
                 ({ WARMING_UP: 1, MAINTENANCE: 1, CALIBRATION: 1 }[st] ? "b-warn" : ""));
 }
 
+/* system health (from /api/info): memory and stack headroom, scan timing, TLS, the last fault */
+const kB = n => (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+const hex8 = n => "0x" + (n >>> 0).toString(16).toUpperCase().padStart(8, "0");
+function showHealth(i) {
+  const h = i.health || {}, sc = i.scan || {}, t = i.tls || {}, f = i.last_fault || {};
+  const tiles = [];
+  if (h.known) tiles.push(["Memory free (lowest)", `${kB(h.heap_free)} (${kB(h.heap_min)}) of ${kB(h.heap_size)}`, h.heap_min < h.heap_size / 8]);
+  tiles.push(["Logic scans", `${sc.scans}, longest ${sc.max_exec_us} µs`, false]);
+  tiles.push(["Overruns / late starts", `${sc.overruns} / ${sc.late_starts}`, sc.overruns > 0]);
+  if (t.handshakes !== undefined) tiles.push(["Secure connections", `${t.handshakes} (${t.resumed} resumed, ${t.failed} failed)`, false]);
+  if (t.pool_peak) tiles.push(["TLS memory peak", kB(t.pool_peak), false]);
+  if (i.fram) tiles.push(["Settings memory", `${kB(i.fram.bytes)} FRAM${i.fram.chips > 1 ? ", " + i.fram.chips + " chips" : ""}`, false]);
+  $("hltiles").replaceChildren(...tiles.map(([k, v, bad]) => {
+    const d = document.createElement("div"); d.className = "tile";
+    d.innerHTML = '<div class="k"></div><div class="v" style="font-size:15px"></div>';
+    d.firstChild.textContent = k; d.lastChild.textContent = v; if (bad) d.lastChild.style.color = "var(--bad)";
+    return d;
+  }));
+  $("hlwhy").textContent = (h.low ? "LOW: " + (h.why || "memory or stack headroom") + ". " : "") +
+    (i.ip_conflict ? "Another device on the network uses this unit's IP address. " : "") +
+    (h.known ? "" : "Memory and stack figures are not reported by this build.");
+  $("hlwhy").style.color = h.low || i.ip_conflict ? "var(--bad)" : "";
+  const st = Object.entries(h.stacks || {});
+  $("hlstacks").style.display = st.length ? "" : "none";
+  $("hlstacks").tBodies[0].replaceChildren(...st.map(([n, w]) => {
+    const tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td>";
+    tr.cells[0].textContent = n; tr.cells[1].textContent = `${w * 4} bytes`;
+    if (w * 4 < 512) tr.cells[1].style.color = "var(--bad)";
+    return tr;
+  }));
+  $("hlfault").textContent = `Starts since the record was cleared: ${f.boots}. ` + (f.code
+    ? `Last fault: ${f.name || f.code} at ${hex8(f.arg)}` + (f.lr ? `, LR ${hex8(f.lr)}` : "") +
+      (f.cfsr ? `, CFSR ${hex8(f.cfsr)}` : "") + (f.hfsr ? `, HFSR ${hex8(f.hfsr)}` : "") + (f.addr ? `, address ${hex8(f.addr)}` : "") + "."
+    : "No fault recorded.");
+}
+
+/* Modbus TCP server: /api/info "modbus" (counts since start); its settings are modbus_* parameters */
+function showModbus(m) {
+  const nf = m && m.forced || 0;                       /* on every tab: the control system is reading forced values */
+  $("forcebadge").style.display = nf ? "" : "none"; $("forcebadge").textContent = `MODBUS FORCED ${nf}`;
+  $("mbbox").style.display = m ? "" : "none";
+  $("mbxlsx").style.display = $("mbcsv").style.display = level >= 1 ? "" : "none";   /* the handover file needs a login */
+  if (!m) return;
+  const ago = s => s === null || s === undefined ? "none yet" : s < 120 ? `${s} s ago` : s < 7200 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+  const tiles = [["Control systems connected", m.max_clients ? `${m.clients} of ${m.max_clients}` : `${m.clients}`, false],
+                 ["Requests (last)", `${m.requests} (${ago(m.last_request_s)})`, false],
+                 ["Refused requests", `${m.exceptions}`, false]];
+  if (m.writes_queued !== undefined) tiles.push(["Writes accepted", `${m.writes_queued}`, false]);
+  tiles.push(["Writes from Modbus", m.read_only ? "off (read only)" : "allowed", false]);
+  if ("allow_ip" in m) tiles.push(["Allowed client", m.allow_ip || "any address", false]);
+  if (m.accepted !== undefined)
+    tiles.push(["Connections: accepted / refused / dropped", `${m.accepted} / ${m.refused_ip || 0} / ${m.evicted || 0}`, false]);
+  if (nf) tiles.push(["Forced values", `${nf}`, true]);
+  if (m.protocol_errors) tiles.push(["Malformed frames", `${m.protocol_errors}`, true]);
+  $("mbtiles").replaceChildren(...tiles.map(([k, v, bad]) => {
+    const d = document.createElement("div"); d.className = "tile";
+    d.innerHTML = '<div class="k"></div><div class="v" style="font-size:15px"></div>';
+    d.firstChild.textContent = k; d.lastChild.textContent = v; if (bad) d.lastChild.style.color = "var(--warn)";
+    return d;
+  }));
+  const down = m.listening === false;
+  $("mbwhy").textContent = (down ? "Not listening: the Modbus server is not running. " : `Listening on port ${m.port || 502}. `) +
+    "Refused requests got a Modbus exception (an unknown register, a value outside its range, or a write while writes are off). " +
+    "Refused connections came from an address that isn't allowed; dropped ones made room for a new client. Counts restart at each power-up.";
+  $("mbwhy").style.color = down ? "var(--bad)" : "";
+  forceKick();
+}
+/* Modbus forcing (admin): /api/modbus/force. A force changes only what Modbus serves, for max_s seconds */
+let fc = null, fcAt = 0, fcPolling = false;
+const fcName = f => f.name + (f.index !== null && f.index !== undefined ? `[${f.index}]` : "");
+const fcVal = (f, v) => typeof v === "boolean" ? (v ? "on" : "off") : v + (f && f.unit ? " " + f.unit : "");
+async function pollForce(once) {
+  if (level < 2 || !$("mbbox").offsetParent) { fcPolling = false; showForce(); return; }
+  try { fc = await api("/api/modbus/force"); fcAt = Date.now(); }
+  catch (e) { if (e.status === 404) { fc = null; fcPolling = false; showForce(); return; } }
+  showForce();
+  if (once) return;
+  setTimeout(pollForce, fc && fc.forces && fc.forces.length ? 1000 : 5000);
+}
+setInterval(() => { if (fc && fc.forces && fc.forces.length && level >= 2) showForce(); }, 1000);   /* the countdown between polls */
+function forceKick() { if (!fcPolling && level >= 2) { fcPolling = true; pollForce(); } else if (level < 2) showForce(); }
+function showForce() {
+  const on = !!fc && level >= 2;
+  $("fcbox").style.display = on ? "" : "none";
+  if (!on) return;
+  const list = fc.forceable || [], byF = Object.fromEntries(list.map(f => [f.id, f]));
+  const sel = $("fcid"), key = list.map(f => f.id).join(",");
+  if (sel.dataset.key !== key) {
+    const cur = sel.value; sel.dataset.key = key;
+    sel.replaceChildren(...list.filter(f => f.type !== "bool" || f.count).map(f => {
+      const o = document.createElement("option"); o.value = f.id;
+      o.textContent = `${f.name} (${f.id})` + (f.unit ? `, ${f.unit}` : "") + (f.count ? `, ${f.count} values` : "") + (f.type === "bool" ? ", on/off" : "");
+      return o;
+    }));
+    if (cur) sel.value = cur;
+    fcSel();
+  }
+  const active = fc.forces || [], isOn = f => active.some(a => a.id === f.id && (a.index === null || a.index === undefined));
+  $("fcbits").replaceChildren(...list.filter(f => f.type === "bool" && !f.count).map(f => {
+    const a = active.find(x => x.id === f.id && (x.index === null || x.index === undefined));
+    const b = document.createElement("button"); b.className = a ? "" : "ghost";
+    b.textContent = `Test bit ${f.name}: ` + (a ? (a.v ? "forced on" : "forced off") : "real");
+    b.title = "Click to force on, again to force off, again to release";
+    b.onclick = () => a ? (a.v ? fcPost({ id: f.id, v: "false" }) : fcClear({ id: f.id })) : fcPost({ id: f.id, v: "true" });
+    return b;
+  }));
+  const gone = Math.floor((Date.now() - fcAt) / 1000);
+  $("fctab").style.display = active.length ? "" : "none";
+  $("fcall").style.display = active.length ? "" : "none";
+  $("fctab").tBodies[0].replaceChildren(...active.map(a => {
+    const f = byF[a.id], tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td></td>";
+    const real = lastValues[a.id], rv = Array.isArray(real) && a.index !== null && a.index !== undefined ? real[a.index] : real;
+    tr.cells[0].textContent = fcName(a); tr.cells[1].textContent = fcVal(f, a.v); tr.cells[1].style.color = "var(--warn)";
+    tr.cells[2].textContent = rv === undefined ? "-" : fcVal(f, rv);
+    tr.cells[3].textContent = `${Math.max(0, a.left_s - gone)} s`; tr.cells[4].textContent = a.by || "";
+    const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Release";
+    b.onclick = () => fcClear(a.index === null || a.index === undefined ? { id: a.id } : { id: a.id, index: a.index });
+    tr.cells[5].appendChild(b);
+    return tr;
+  }));
+}
+function fcSel() {
+  const f = (fc && fc.forceable || []).find(x => String(x.id) === $("fcid").value);
+  $("fcidx").style.display = f && f.count ? "" : "none";
+  $("fcv").placeholder = f && f.type === "bool" ? "on / off" : "value" + (f && f.unit ? " in " + f.unit : "");
+}
+$("fcid").onchange = fcSel;
+async function fcPost(o) {
+  $("fcerr").textContent = "";
+  try { await api("/api/modbus/force", form(o)); }
+  catch (e) {
+    $("fcerr").textContent = { access: "Log in as admin to force values", "409": "16 values are already forced: release one first",
+      "404": "This value can't be forced", "400": "Not a valid value or index" }[e.status === 403 ? "access" : String(e.status)] || explain(e);
+  }
+  pollForce(true);
+}
+async function fcClear(o) {
+  $("fcerr").textContent = "";
+  try { await api("/api/modbus/force/clear", form(o)); } catch (e) { $("fcerr").textContent = explain(e); }
+  pollForce(true);
+}
+$("fcgo").onclick = () => {
+  const f = (fc && fc.forceable || []).find(x => String(x.id) === $("fcid").value);
+  if (!f) return;
+  let v = $("fcv").value.trim();
+  if (f.type === "bool") v = /^(on|1|true)$/i.test(v) ? "true" : /^(off|0|false)$/i.test(v) ? "false" : v;
+  const o = { id: f.id, v };
+  if (f.count) o.index = $("fcidx").value.trim();
+  fcPost(o);
+};
+$("fcall").onclick = () => fcClear({ all: "true" });
+$("mbset").onclick = () => { $("filter").value = "modbus"; showTab("settings"); build(); };
+
 /* start-up self-test (CIP-11.1): one badge per check, from /api/info */
 const ST_NAMES = { image: "Firmware image", ram: "RAM", rtc: "Clock", settings: "Settings memory", calibration: "Calibration",
-                   log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display" };
+                   log_flash: "Log memory", net_phy: "Ethernet", io_port: "I/O port", display: "Display",
+                   fram: "Settings memory (FRAM)", net_link: "Ethernet link", io_link: "I/O port link", supply: "Supply", hw_rev: "Board revision" };
 let stKey = "";
 function showSelftest(st) {
   if (!st || !Array.isArray(st.tests)) { $("stsum").textContent = "Not reported by this firmware."; $("stlist").replaceChildren(); return; }
@@ -966,6 +1245,130 @@ async function diagPackage() {
   btn.disabled = false; btn.textContent = "Diagnostic package";
 }
 
+/* ---- Modbus handover file: GET /api/modbus/map written as an .xlsx here (a stored zip of SpreadsheetML, no library) ---- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = b => { let c = 0xFFFFFFFF; for (const x of b) c = CRC_T[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+function zipStored(files) {                          /* [[name, string]] -> a zip Blob; every entry stored, UTF-8 */
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  const u16 = v => [v & 255, v >>> 8 & 255], u32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
+  for (const [name, text] of files) {
+    const nb = enc.encode(name), db = enc.encode(text), crc = crc32(db);
+    const common = [...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(db.length), ...u32(db.length), ...u16(nb.length), ...u16(0)];
+    const lh = new Uint8Array([...u32(0x04034b50), ...common]);
+    parts.push(lh, nb, db);
+    cen.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...common, ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), nb);
+    off += lh.length + nb.length + db.length;
+  }
+  const clen = cen.reduce((a, b) => a + b.length, 0);
+  const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(clen), ...u32(off), ...u16(0)]);
+  return new Blob([...parts, ...cen, end]);
+}
+function xlsx(sheets) {                              /* [{name, cols:[width], rows:[[cell]]}]: row 0 bold; numbers stay numbers */
+  const esc = v => String(v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+  const col = n => { let s = ""; for (n++; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
+  const sheet = sh => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    "<cols>" + sh.cols.map((w, k) => `<col min="${k + 1}" max="${k + 1}" width="${w}" customWidth="1"/>`).join("") + "</cols><sheetData>" +
+    sh.rows.map((r, y) => `<row r="${y + 1}">` + r.map((v, x) => v === null || v === undefined || v === "" ? "" : typeof v === "number"
+      ? `<c r="${col(x)}${y + 1}"${y ? "" : ' s="1"'}><v>${v}</v></c>`
+      : `<c r="${col(x)}${y + 1}" t="inlineStr"${y ? "" : ' s="1"'}><is><t xml:space="preserve">${esc(v)}</t></is></c>`).join("") + "</row>").join("") +
+    "</sheetData>" + (sh.rows.length > 1 ? `<autoFilter ref="A1:${col(sh.cols.length - 1)}${sh.rows.length}"/>` : "") + "</worksheet>";
+  const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  return zipStored([
+    ["[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      sheets.map((_, k) => `<Override PartName="/xl/worksheets/sheet${k + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") + "</Types>"],
+    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheets>` +
+      sheets.map((sh, k) => `<sheet name="${esc(sh.name)}" sheetId="${k + 1}" r:id="rId${k + 1}"/>`).join("") + "</sheets>" +
+      (sheets.map((sh, k) => sh.rows.length > 1 ? `<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="${k}" hidden="1">'${esc(sh.name)}'!$A$1:$${col(sh.cols.length - 1)}$${sh.rows.length}</definedName></definedNames>` : "").find(Boolean) || "") + "</workbook>"],
+    ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      sheets.map((_, k) => `<Relationship Id="rId${k + 1}" Type="${R}/worksheet" Target="worksheets/sheet${k + 1}.xml"/>`).join("") +
+      `<Relationship Id="rId${sheets.length + 1}" Type="${R}/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+      '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs>' +
+      '<cellXfs count="2"><xf/><xf fontId="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
+    ...sheets.map((sh, k) => [`xl/worksheets/sheet${k + 1}.xml`, sheet(sh)])]);
+}
+const MB_TABLE = { coil: ["Coil", 0], discrete: ["Discrete input", 100000], input: ["Input register", 300000], holding: ["Holding register", 400000] };
+const mbRef = (t, a) => { const [, base] = MB_TABLE[t] || ["", 0]; return a < 9999 ? String(base / 10 + a + 1).padStart(5, "0") : String(base + a + 1).padStart(6, "0"); };
+const MB_EXC = [[1, "Illegal function", "The function code is not offered for this table"], [2, "Illegal data address", "No value at this address, or a block that runs past the map"],
+                [3, "Illegal data value", "Outside the allowed range, wrong count, or writes are off"], [4, "Server device failure", "The instrument could not complete the request"],
+                [6, "Server device busy", "Try again: the instrument is busy (for example saving settings)"]];
+/* The handover workbook (layout agreed with the standard-map thread): Cover, Standard values, Project map, Platform block, Codes, Commissioning */
+async function mbHandoverData() {
+  const [m, i, al] = [await api("/api/modbus/map"), await api("/api/info"), await api("/api/alarms/config").catch(() => ({}))];
+  const mb = i.modbus || {}, d = new Date(), p2 = n => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  const fmtName = { u16: "unsigned 16-bit", i16: "signed 16-bit", u32: "unsigned 32-bit", i32: "signed 32-bit", f32: "float 32-bit (IEEE 754)",
+                    bit: "bit", bytes: "bytes, 2 per register", array: "array" };
+  const wide = f => f === "u32" || f === "i32" || f === "f32";
+  const HEAD = ["Table", "Address (0-based)", "Modicon", "Read FC", "Write FC", "Format", "Registers", "Word order", "Byte order", "Name", "Description",
+                "Unit", "Min", "Max", "Scaling", "Access", "Write login", "Write mode", "Parameter ID", "Checked by integrator"];
+  const row = e => [(MB_TABLE[e.table] || [e.table])[0], e.addr, mbRef(e.table, e.addr), e.fc_read, Array.isArray(e.fc_write) ? e.fc_write.join(", ") : e.fc_write ?? "",
+    (fmtName[e.format] || e.format) + (e.elem ? ` of ${e.elem}` : ""), e.count, wide(e.format) ? (e.word_order === "low_first" ? "low word first" : "high word first") : "",
+    e.format === "bytes" ? (e.byte_order === "low_first" ? "low byte first" : "high byte first") : "", e.name, e.description || "", e.unit || "",
+    e.min ?? "", e.max ?? "", e.scale_dec ? `÷ ${10 ** e.scale_dec} (${e.scale_dec} decimals)` : "", e.access, e.write_level || "",
+    e.fc_write ? (e.write_any_mode === false ? "REMOTE only" : "any mode") : "", e.id, ""];
+  const W = [16, 9, 9, 7, 8, 22, 9, 15, 14, 24, 40, 9, 9, 9, 18, 11, 11, 12, 11, 14];
+  const all = m.entries || [], std = all.filter(e => e.table !== "coil" && e.addr >= 7000 && e.addr <= 7999);   /* the core's fixed block, digital input alarms included */
+  const blk = all.filter(e => e.block), frc = all.filter(e => e.forceable);
+  const cover = [["CEMS instrument: Modbus TCP handover", ""], ["Product", m.product || i.product], ["Serial number", i.serial],
+    ["Firmware", `${m.fw || i.fw}${i.build ? " (build " + i.build + ")" : ""}${i.core ? ", core " + i.core : ""}`],
+    ["Register map version", m.map_version], ["Platform block layout", m.block_layout], ["IP address (plant port)", location.hostname],
+    ["Modbus TCP port", mb.port || 502], ["Unit ID", "Any value is accepted and echoed; use 1 if the master needs one"],
+    ["Addressing", "Address column: 0-based, as sent in the protocol. Modicon column: 00001 coils, 10001 discrete inputs, 30001 input registers, 40001 holding registers (6 digits above 9998)"],
+    ["32-bit values", "Two registers, high word first unless the Word order column says otherwise"],
+    ["Modbus writes", mb.read_only ? "off (read only)" : "allowed"], ["Allowed client", mb.allow_ip || "any address"],
+    ["Generated", `${stamp} from the instrument's web page, ${LV[level] || "logged in"} login`],
+    ["Integrator guide", "docs/MODBUS.md: connection, function codes, exceptions, supervising the link, commissioning checklist"],
+    ["", ""], ["Integrator sign-off", ""], ["Company", ""], ["Name", ""], ["Signature", ""], ["Date", ""]];
+  const codes = [["Group", "Code", "Name", "Meaning"]];
+  const GRP = { quality: "Quality", state: "State", common_bits: "Common alarm bit", clock_source: "Clock source", exceptions: "Modbus exception",
+                std_status_bits: "Standard status bit", input_alarm_status: "Digital input alarm state" };
+  const exc = Object.fromEntries(MB_EXC.map(([c, , t]) => [c, t]));
+  for (const [g, list] of Object.entries(m.codes || {})) for (const c of list)
+    codes.push([GRP[g] || g, c.code ?? c.bit ?? "", c.name || c.key || "", c.text || c.meaning || (g === "exceptions" ? exc[c.code] || "" : c.key && c.key !== c.name ? c.key : "")]);
+  /* the alarm's label as set now (a digital input alarm's label typed on the touchscreen or here), then its code name */
+  for (const a of al.alarms || []) codes.push(["Alarm ID", a.id, a.text || a.name, `${a.name}, ${a.severity}`]);
+  if (!(m.codes && m.codes.exceptions)) for (const [c, n, t] of MB_EXC) codes.push(["Modbus exception", c, n, t]);
+  const comm = [["Commissioning: forcing values", ""],
+    ["What it does", "At admin login, the web page (Service tab) can force a value below for 30 s: the control system reads the forced value, then the real one again. Forcing again restarts the 30 s."],
+    ["What it does not change", "The web page, touchscreen, alarms and logs keep the real value. Up to 16 values at once."],
+    ["How the PLC can tell", "Input register 9090 holds the number of forced values, and bit 4 of the common alarm is set while any value is forced."],
+    ["Logged", "Every force, release and 30 s end is in the instrument's event log."], ["", ""],
+    ["Forceable values", ""]];
+  return { stamp, sn: String(i.serial ?? "unit").replace(/[^\w.-]/g, ""), HEAD, W, all, row, sheets: [
+    { name: "Cover", cols: [26, 90], rows: cover },
+    { name: "Standard values", cols: W, rows: std.length ? [HEAD, ...std.map(row)] : [["Standard values (addresses 7000-7999)"], ["None on this product yet: see the Project map."]] },
+    { name: "Project map", cols: W, rows: [HEAD, ...all.map(row)] },
+    { name: "Platform block", cols: W, rows: [HEAD.slice(0, -1), ...blk.map(e => row(e).slice(0, -1))] },
+    { name: "Codes", cols: [18, 8, 26, 70], rows: codes },
+    { name: "Commissioning", cols: [24, 100], rows: [...comm, ...[["Table", "Modicon / name"]], ...frc.map(e => [(MB_TABLE[e.table] || [e.table])[0], `${mbRef(e.table, e.addr)}  ${e.name}${e.unit ? " (" + e.unit + ")" : ""}`])] }] };
+}
+function saveBlob(blob, name) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function modbusHandover(csv) {
+  const btn = $(csv ? "mbcsv" : "mbxlsx"); $("mbxerr").textContent = "";
+  btn.disabled = true;
+  try {
+    const h = await mbHandoverData(), base = `modbus-map-${h.sn}-${h.stamp.slice(0, 10)}`;
+    if (csv) {
+      const q = v => { v = String(v ?? ""); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+      saveBlob(new Blob(["﻿" + [h.HEAD, ...h.all.map(h.row)].map(r => r.map(q).join(",")).join("\r\n") + "\r\n"], { type: "text/csv" }), base + ".csv");
+    } else saveBlob(xlsx(h.sheets), base + ".xlsx");
+  } catch (e) { $("mbxerr").textContent = e.status === 404 ? "This firmware does not publish its register map yet." : explain(e); }
+  btn.disabled = false;
+}
+$("mbcsv").onclick = () => modbusHandover(true);
+$("mbxlsx").onclick = () => modbusHandover(false);
+
 let lastValues = {};
 async function pollValues() {
   try {
@@ -973,12 +1376,18 @@ async function pollValues() {
     lastValues = j.v; lastQ = j.q || {}; lastOk = Date.now();
     renderApp();
     trRecord(j.v, lastQ);
-    for (const d of defs) { const c = $("v" + d.id); if (c) { c.textContent = fmt(d, j.v[d.id]); markQ(c, d.id); } }
+    const fx = fc && level >= 2 ? fc.forces || [] : [], gone = Math.floor((Date.now() - fcAt) / 1000);
+    for (const d of defs) { const c = $("v" + d.id); if (c) {
+      c.textContent = fmt(d, j.v[d.id]); markQ(c, d.id);
+      const f = fx.filter(a => a.id === d.id);                 /* Modbus serves a forced value; this is the real one */
+      if (f.length) c.textContent += " (Modbus: forced " + f.map(a => (a.index !== null && a.index !== undefined ? `[${a.index}] ` : "") +
+        `to ${typeof a.v === "boolean" ? (a.v ? "on" : "off") : a.v}, ${Math.max(0, a.left_s - gone)} s left`).join("; ") + ")";
+    } }
     document.body.classList.remove("stale");
-    $("conn").textContent = "live"; $("conn").className = "badge b-ok";
+    $("conn").textContent = "live"; $("conn").className = "badge b-ok"; $("loginconn").style.display = "none";
   } catch (e) {
     document.body.classList.add("stale");
-    $("conn").textContent = "offline"; $("conn").className = "badge b-bad";
+    $("conn").textContent = "offline"; $("conn").className = "badge b-bad"; $("loginconn").style.display = "";
     $("lasttime").textContent = lastOk ? new Date(lastOk).toLocaleTimeString() : "never";
   }
   setTimeout(pollValues, 500);
@@ -995,12 +1404,14 @@ async function refreshInfo() {
     showAlarmBadge(i.alarms);
     showState(i.state);
     showSelftest(i.selftest);
+    showHealth(i); showModbus(i.modbus);
     const lk = $("link");                                 /* supervisory link (CIP-21.5): LINK OK / LINK LOST */
     const ct = defs.find(d => d.name === "comms_timeout"), off = ct && lastValues[ct.id] === 0;   /* no watchdog: NO LINK */
     if (typeof i.link_lost === "boolean") {
       lk.style.display = ""; lk.textContent = off ? "NO LINK" : i.link_lost ? "LINK LOST" : "LINK OK";
       lk.className = "badge " + (off ? "" : i.link_lost ? "b-bad" : "b-ok");
     }
+    showEth(i.eth);
     if (i.tls_fingerprint) $("tlsfp").textContent = i.tls_fingerprint;
     $("defpw").style.display = i.default_passwords ? "block" : "none";
     const newLevel = LV.indexOf(i.session.level);
@@ -1016,8 +1427,10 @@ async function refreshInfo() {
     if (adm && $("actions").style.display === "none") { loadActions(); loadMail(); loadClock(); }
     $("clocksec").style.display = adm ? "block" : "none";
     $("actions").style.display = adm ? "block" : "none";
+    if (!adm) $("diasec").style.display = "none"; else if (changed && tab === "alarmcfg") diaLoad();
     $("mailsec").style.display = adm ? "block" : "none";
     if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); refreshDc(); } }
+    if (changed) pollInst(true);                       /* the Instruments tab shows for admin even with none set up */
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
@@ -1445,6 +1858,395 @@ async function pollIob(once) {
 }
 pollIob();
 
+/* ---- third-party instruments (Modbus TCP master on the I/O port; firmware inst.h, docs/MODBUS_ROLES.md role 2) ----
+   Settings are parameters 500-621 (arrays indexed by instrument 0-7 or point 0-31) written with /api/write. */
+const IP_ = { en: 500, ip: 501, port: 502, unit: 503, period: 504, timeout: 505, max: 506, gap: 507, stpt: 508, fm: 509, mm: 510, cm: 511, name: 521,
+              pinst: 530, fc: 531, addr: 532, type: 533, order: 534, bit: 535, gain: 536, offset: 537, lo: 538, hi: 539, qrole: 543, pname: 550, punit: 590 };
+const PT_TYPES = ["u16", "i16", "u32", "i32", "f32", "bit"], PT_ORDERS = ["ABCD", "CDAB", "BADC", "DCBA"];
+const PT_QROLES = ["none", "fault", "calibration", "maintenance"];   /* a flag point: when it reads non-zero, its instrument's other points carry that quality */
+const hasQrole = () => !!byId[IP_.qrole];             /* firmware before PR #16 dcc9c0f has no pt_qrole */
+const PT_FC = { 1: "01 coils", 2: "02 discrete inputs", 3: "03 holding", 4: "04 input" };
+const INST_N = 8, PT_N = 32;
+let inst = null, instEdit = 0, instCfg = null, instRows = [];
+const ipStr = v => [24, 16, 8, 0].map(s => (v >>> s) & 255).join(".");
+const ipNum = t => { const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(t.trim()); return m && m.slice(1).every(x => +x < 256) ? ((+m[1] << 24) | (+m[2] << 16) | (+m[3] << 8) | +m[4]) >>> 0 : null; };
+const hexIn = t => { t = String(t).trim(); if (!t) return 0; const v = /^0x/i.test(t) ? parseInt(t, 16) : /^[01]+b$/i.test(t) ? parseInt(t, 2) : Number(t); return Number.isInteger(v) && v >= 0 && v <= 0xFFFF ? v : null; };
+const instCan = () => level >= 2 && byId[IP_.ip] && writable(byId[IP_.ip]);
+TAB_KICK.inst = () => pollInst(true);
+async function pollInst(once) {
+  if (!once && bgSkip("inst")) { setTimeout(pollInst, 1000); return; }
+  try {
+    inst = await api("/api/inst");
+    const any = inst.instruments.some(i => i.enabled);
+    $("instsec").style.display = any || level >= 2 ? "block" : "none";
+    showInst();
+  } catch (e) { if (e.status === 404) { $("instsec").style.display = "none"; return; } }
+  if (!once) setTimeout(pollInst, 1000);
+}
+function qSpan(el, q) {                                /* the same marks as every other value (docs/UI_CONVENTIONS.md 4) */
+  el.classList.toggle("q", !!q && q !== "valid"); el.classList.toggle("qbad", q === "fault" || q === "range"); el.classList.toggle("qgrey", q === "unavailable");
+  if (q && q !== "valid") el.dataset.q = QTXT[q] || q; else delete el.dataset.q;
+}
+function ptVal(p) { return p.value === null || p.value === undefined ? "----" : (Math.abs(p.value) >= 1e5 || Number.isInteger(p.value) ? String(p.value) : p.value.toPrecision(5).replace(/\.?0+$/, "")) + (p.unit ? " " + p.unit : ""); }
+function showInst() {
+  if (!inst) return;
+  $("instmode").style.display = level >= 2 && !instCan() ? "" : "none";
+  $("exbox").style.display = level >= 2 ? "" : "none";
+  const ST = { ok: "b-ok", connecting: "b-warn", failing: "b-warn", lost: "b-bad", "bad settings": "b-bad" };
+  const rows = inst.instruments.filter(i => i.enabled || i.state !== "off" || level >= 2 && (i.name || i.ip !== "0.0.0.0") || level >= 2 && i.n === firstFreeInst());
+  $("insttab").tBodies[0].replaceChildren(...rows.flatMap(i => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>";
+    tr.cells[0].textContent = i.n; tr.cells[1].textContent = i.name || (i.enabled ? "" : "(not set up)");
+    tr.cells[2].textContent = i.ip === "0.0.0.0" ? "-" : `${i.ip}:${i.port}, unit ${i.unit}`;
+    tr.cells[3].innerHTML = `<span class="badge ${ST[i.state] || ""}"></span>`; tr.cells[3].firstChild.textContent = i.enabled ? i.state : "off";
+    tr.cells[4].textContent = `${i.good} (${i.errors})`;
+    tr.cells[5].textContent = i.last_error ? i.last_error + (i.last_exception ? ` (exception ${String(i.last_exception).padStart(2, "0")})` : "") : "";
+    tr.cells[6].textContent = i.resp_ms ? i.resp_ms + " ms" : "";
+    if (level >= 2) { const b = document.createElement("button"); b.className = "ghost"; b.textContent = i.enabled || i.name ? "Edit" : "Set up"; b.onclick = () => openInst(i.n); tr.cells[7].appendChild(b); }
+    const pts = inst.points.filter(p => p.inst === i.n);
+    if (!pts.length) return [tr];
+    const sub = document.createElement("tr"), td = document.createElement("td"); td.colSpan = 8; sub.appendChild(td);
+    td.innerHTML = '<div class="wrow"></div>';
+    td.firstChild.replaceChildren(...pts.map(p => {
+      const d = document.createElement("div"); d.className = "tile";
+      d.innerHTML = '<div class="k"></div><div class="v" style="font-size:16px"></div><div class="note"></div>';
+      d.children[0].textContent = p.name || "Point " + p.n; d.children[1].textContent = ptVal(p); qSpan(d.children[1], p.q);
+      d.children[2].textContent = `${PT_FC[p.fc] || p.fc} ${p.addr}, ${p.type} ${p.type === "bit" || p.type.endsWith("16") ? "" : p.order}`.trim() + (p.raw ? `, raw ${p.raw}` : "");
+      return d;
+    }));
+    return [tr, sub];
+  }));
+  if (instEdit) for (const r of instRows) {                         /* live values in the editor */
+    const p = inst.points.find(x => x.n === r.n); if (r.now) { r.now.textContent = p ? ptVal(p) : ""; qSpan(r.now, p && p.q); }
+  }
+  const sel = $("expinst"), want = inst.instruments.filter(i => i.enabled || i.name || i.ip !== "0.0.0.0").map(i => i.n);
+  if (sel.dataset.k !== want.join()) { sel.dataset.k = want.join(); sel.replaceChildren(...want.map(n => { const o = document.createElement("option"); o.value = n; o.textContent = `Instrument ${n}` + (inst.instruments[n - 1].name ? " " + inst.instruments[n - 1].name : ""); return o; })); }
+}
+function firstFreeInst() { const f = inst && inst.instruments.find(i => !i.enabled && !i.name && i.ip === "0.0.0.0"); return f ? f.n : 0; }
+async function instLoad() {                           /* every instrument and point setting, as the parameter table holds it */
+  const ids = [...Object.values(IP_).filter(x => (x < 521 || (x >= 530 && x < 550)) && (x !== IP_.qrole || hasQrole()))];
+  for (let k = 0; k < INST_N; k++) ids.push(IP_.name + k);
+  for (let p = 0; p < PT_N; p++) ids.push(IP_.pname + p, IP_.punit + p);
+  return paramsGet(ids);
+}
+async function paramsGet(ids) {                      /* settings by ID, 40 to a request */
+  const v = {};
+  for (let i = 0; i < ids.length; i += 40) {
+    const part = ids.slice(i, i + 40);
+    for (let t = 0; ; t++) {                          /* null: the settings task was writing that one just then (a guarded read), ask again */
+      const got = (await api("/api/values?ids=" + part.join(","))).v;
+      if (part.every(id => got[id] !== null && got[id] !== undefined)) { Object.assign(v, got); break; }
+      if (t >= 20) throw new Error("busy");
+      await new Promise(ok => setTimeout(ok, 100));
+    }
+  }
+  return v;
+}
+async function openInst(n, prefill, cfg) {        /* cfg: values already read back after a save */
+  $("ieerr").textContent = "";
+  try { instCfg = cfg || await instLoad(); } catch (e) { $("ieerr").textContent = explain(e); return; }
+  instEdit = n; const k = n - 1, c = instCfg, A = id => c[id] || [];
+  $("iehead").textContent = `Instrument ${n}`;
+  $("ie_en").checked = !!A(IP_.en)[k]; $("ie_name").value = c[IP_.name + k] || ""; $("ie_ip").value = A(IP_.ip)[k] ? ipStr(A(IP_.ip)[k]) : "";
+  $("ie_port").value = A(IP_.port)[k] ?? 502; $("ie_unit").value = A(IP_.unit)[k] ?? 1; $("ie_period").value = A(IP_.period)[k] ?? 1000;
+  $("ie_timeout").value = A(IP_.timeout)[k] ?? 1000; $("ie_max").value = A(IP_.max)[k] ?? 64; $("ie_gap").value = A(IP_.gap)[k] ?? 0;
+  const hx = v => v ? "0x" + v.toString(16).toUpperCase().padStart(4, "0") : "";
+  $("ie_fm").value = hx(A(IP_.fm)[k]); $("ie_mm").value = hx(A(IP_.mm)[k]); $("ie_cm").value = hx(A(IP_.cm)[k]);
+  instRows = [];
+  for (let p = 0; p < PT_N; p++) if (A(IP_.pinst)[p] === n)
+    instRows.push({ n: p + 1, name: c[IP_.pname + p] || "", unit: c[IP_.punit + p] || "", fc: A(IP_.fc)[p], addr: A(IP_.addr)[p], type: A(IP_.type)[p], order: A(IP_.order)[p],
+                    bit: A(IP_.bit)[p], gain: A(IP_.gain)[p], offset: A(IP_.offset)[p], lo: A(IP_.lo)[p], hi: A(IP_.hi)[p], qrole: A(IP_.qrole)[p] || 0 });
+  instRows.stpt = A(IP_.stpt)[k] || 0;
+  if (prefill) instRows.push({ n: 0, name: "", unit: "", gain: 1, offset: 0, lo: 0, hi: 0, bit: 0, ...prefill });
+  drawPts();
+  $("instedit").style.display = "";
+  $("instedit").scrollIntoView({ block: "nearest" });
+}
+function drawPts() {
+  const can = instCan();
+  for (const id of ["ie_en", "ie_name", "ie_ip", "ie_port", "ie_unit", "ie_period", "ie_timeout", "ie_max", "ie_gap", "ie_stpt", "ie_fm", "ie_mm", "ie_cm", "ieadd", "iesave"]) $(id).disabled = !can;
+  const opt = (list, cur) => list.map(([v, t]) => `<option value="${v}"${String(v) === String(cur) ? " selected" : ""}>${esc(t)}</option>`).join("");
+  $("ptab").tBodies[0].replaceChildren(...instRows.map((r, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.n || "new"}</td><td><input data-f="name" maxlength="23"></td><td><input data-f="unit" maxlength="7" size="5"></td>` +
+      `<td><select data-f="fc">${opt(Object.entries(PT_FC), r.fc ?? 3)}</select></td><td><input data-f="addr" size="5"></td>` +
+      `<td><select data-f="type">${opt(PT_TYPES.map((t, k) => [k, t]), r.type ?? 0)}</select></td><td><select data-f="order">${opt(PT_ORDERS.map((t, k) => [k, t]), r.order ?? 0)}</select></td>` +
+      `<td><input data-f="bit" size="2"></td><td><input data-f="gain" size="6"></td><td><input data-f="offset" size="6"></td><td><input data-f="lo" size="6"></td><td><input data-f="hi" size="6"></td>` +
+      `<td class="qrolecol"><select data-f="qrole">${opt(PT_QROLES.map((t, k) => [k, t]), r.qrole ?? 0)}</select></td><td class="val"></td><td><button class="ghost">Remove</button></td>`;
+    for (const el of tr.querySelectorAll("input")) { el.value = r[el.dataset.f] ?? ""; el.disabled = !can; el.oninput = () => { r[el.dataset.f] = el.value; }; }
+    for (const el of tr.querySelectorAll("select")) { el.disabled = !can; el.onchange = () => { r[el.dataset.f] = +el.value; }; }
+    r.now = tr.cells[13];
+    const b = tr.querySelector("button"); b.disabled = !can; b.onclick = () => { r.removed = true; tr.style.display = "none"; };
+    return tr;
+  }));
+  for (const el of document.querySelectorAll("#ptab .qrolecol")) el.style.display = hasQrole() ? "" : "none";
+  $("ie_stpt").replaceChildren(...[[0, "none"], ...instRows.filter(r => r.n).map(r => [r.n, `point ${r.n}` + (r.name ? " " + r.name : "")])].map(([v, t]) => {
+    const o = document.createElement("option"); o.value = v; o.textContent = t; if (v === instRows.stpt) o.selected = true; return o;
+  }));
+  showInst();
+}
+async function instWrite(items) {                     /* [{id, o?, v}] a few per request: the write queue is short */
+  for (let i = 0; i < items.length; i += 6) {
+    const body = items.slice(i, i + 6).map(x => `id=${x.id}` + (x.o !== undefined ? `&o=${x.o}` : "") + `&v=${encodeURIComponent(x.v)}`).join("&");
+    for (let t = 0; ; t++) {                          /* "busy": the queue is still saving the last batch */
+      try { await api("/api/write", body); break; }
+      catch (e) { if (e.message !== "busy" || t >= 20) throw e; await new Promise(ok => setTimeout(ok, 250)); }
+    }
+  }
+}
+async function instSettled(items, load = instLoad) {  /* writes are queued and saved by the settings task: wait until they read back */
+  const same = (a, b) => typeof a === "number" || typeof b === "number" ? Math.abs(Number(a) - Number(b)) <= 1e-4 * Math.max(1, Math.abs(Number(b))) : String(a ?? "") === String(b ?? "");
+  for (let t = 0; t < 20; t++) {
+    const v = await load();
+    if (items.every(x => { const c = v[x.id]; const got = x.o === undefined ? c : Array.isArray(c) ? c[x.o] : undefined;
+                           return same(typeof got === "boolean" ? +got : got, x.v); })) return v;
+    await new Promise(ok => setTimeout(ok, 200));
+  }
+  throw new Error("busy");
+}
+function instItems(n, rows, stpt) {                   /* the editor's contents as parameter writes; points get free numbers */
+  const k = n - 1, w = [], num = (t, f) => { const v = Number(t); if (t === "" || !Number.isFinite(v)) throw new Error("value:" + f); return v; };
+  const ip = $("ie_ip").value.trim() ? ipNum($("ie_ip").value) : 0;
+  if (ip === null) throw new Error("value:IP address");
+  const masks = ["ie_fm", "ie_mm", "ie_cm"].map(id => hexIn($(id).value));
+  if (masks.includes(null)) throw new Error("value:status bits (0x0000-0xFFFF)");
+  w.push({ id: IP_.name + k, v: $("ie_name").value.trim() }, { id: IP_.ip, o: k, v: ip }, { id: IP_.port, o: k, v: num($("ie_port").value, "port") },
+         { id: IP_.unit, o: k, v: num($("ie_unit").value, "unit ID") }, { id: IP_.period, o: k, v: num($("ie_period").value, "poll period") },
+         { id: IP_.timeout, o: k, v: num($("ie_timeout").value, "timeout") }, { id: IP_.max, o: k, v: num($("ie_max").value, "registers per read") },
+         { id: IP_.gap, o: k, v: num($("ie_gap").value, "gap") }, { id: IP_.fm, o: k, v: masks[0] }, { id: IP_.mm, o: k, v: masks[1] }, { id: IP_.cm, o: k, v: masks[2] });
+  const used = new Set((instCfg[IP_.pinst] || []).map((v, p) => v ? p + 1 : 0).filter(Boolean));
+  for (const r of rows) {
+    if (r.removed) { if (r.n) { w.push({ id: IP_.pinst, o: r.n - 1, v: 0 }); used.delete(r.n); } continue; }
+    if (!r.n) { let p = 1; while (used.has(p) && p <= PT_N) p++; if (p > PT_N) throw new Error("full"); r.n = p; used.add(p); }
+    const p = r.n - 1;
+    w.push({ id: IP_.pname + p, v: String(r.name || "").trim() }, { id: IP_.punit + p, v: String(r.unit || "").trim() },
+           { id: IP_.fc, o: p, v: num(r.fc ?? 3, "function") }, { id: IP_.addr, o: p, v: num(r.addr, "address") }, { id: IP_.type, o: p, v: num(r.type ?? 0, "type") },
+           { id: IP_.order, o: p, v: num(r.order ?? 0, "order") }, { id: IP_.bit, o: p, v: num(r.bit || 0, "bit") }, { id: IP_.gain, o: p, v: num(r.gain ?? 1, "gain") },
+           { id: IP_.offset, o: p, v: num(r.offset || 0, "offset") }, { id: IP_.lo, o: p, v: num(r.lo || 0, "low") }, { id: IP_.hi, o: p, v: num(r.hi || 0, "high") },
+           ...(hasQrole() ? [{ id: IP_.qrole, o: p, v: num(r.qrole || 0, "flags") }] : []), { id: IP_.pinst, o: p, v: n });   /* assigned last */
+  }
+  w.push({ id: IP_.stpt, o: k, v: stpt }, { id: IP_.en, o: k, v: $("ie_en").checked ? 1 : 0 });   /* enable last, once its points exist */
+  return w;
+}
+$("iesave").onclick = async () => {
+  $("ieerr").textContent = "";
+  try {
+    const w = instItems(instEdit, instRows, +$("ie_stpt").value);
+    await instWrite(w);
+    await openInst(instEdit, null, await instSettled(w)); pollInst(true); $("ieerr").textContent = "Saved";
+  } catch (e) {
+    $("ieerr").textContent = e.message === "full" ? `All ${PT_N} points are in use: remove some first` :
+      e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e);
+  }
+};
+$("ieadd").onclick = () => { instRows.push({ n: 0, name: "", unit: "", fc: 3, addr: 0, type: 0, order: 0, bit: 0, gain: 1, offset: 0, lo: 0, hi: 0, qrole: 0 }); drawPts(); };
+$("iecancel").onclick = () => { instEdit = 0; $("instedit").style.display = "none"; };
+/* a profile: one device model's settings and points, without its IP (kind "cems-instrument-profile") */
+$("ieexp").onclick = () => {
+  const live = instRows.filter(r => !r.removed), sp = live.findIndex(r => r.n && r.n === +$("ie_stpt").value);
+  const prof = { kind: "cems-instrument-profile", version: 1, name: $("ie_name").value.trim(), exported: new Date().toISOString(),
+    device: { port: +$("ie_port").value, unit: +$("ie_unit").value, period_ms: +$("ie_period").value, timeout_ms: +$("ie_timeout").value,
+              max_regs: +$("ie_max").value, gap: +$("ie_gap").value },
+    status: { point: sp >= 0 ? sp : null, fault_bits: hexIn($("ie_fm").value) || 0, maint_bits: hexIn($("ie_mm").value) || 0, cal_bits: hexIn($("ie_cm").value) || 0 },
+    points: live.map(r => ({ name: r.name, unit: r.unit, fc: +r.fc || 3, addr: +r.addr || 0, type: PT_TYPES[+r.type || 0], order: PT_ORDERS[+r.order || 0],
+                             bit: +r.bit || 0, gain: r.gain === "" ? 1 : +r.gain, offset: +r.offset || 0, lo: +r.lo || 0, hi: +r.hi || 0, qrole: PT_QROLES[+r.qrole || 0] })) };
+  const nm = (prof.name || "instrument").replace(/[^\w.-]+/g, "-");
+  saveBlob(new Blob([JSON.stringify(prof, null, 1)], { type: "application/json" }), `profile-${nm}.json`);
+};
+$("ieimp").onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ""; $("ieerr").textContent = "";
+  if (!f) return;
+  try {
+    const prof = JSON.parse(await f.text());
+    if (prof.kind !== "cems-instrument-profile" || !Array.isArray(prof.points)) throw new Error("profile");
+    const d = prof.device || {}, st = prof.status || {};
+    if (instRows.some(r => !r.removed && r.n) && !confirm(`Replace the ${instRows.filter(r => !r.removed && r.n).length} points of instrument ${instEdit} with the profile's ${prof.points.length}?`)) return;
+    for (const r of instRows) r.removed = true;
+    if (prof.name) $("ie_name").value = prof.name;
+    for (const [id, key] of [["ie_port", "port"], ["ie_unit", "unit"], ["ie_period", "period_ms"], ["ie_timeout", "timeout_ms"], ["ie_max", "max_regs"], ["ie_gap", "gap"]])
+      if (d[key] !== undefined) $(id).value = d[key];
+    const hx = v => v ? "0x" + Number(v).toString(16).toUpperCase().padStart(4, "0") : "";
+    $("ie_fm").value = hx(st.fault_bits); $("ie_mm").value = hx(st.maint_bits); $("ie_cm").value = hx(st.cal_bits);
+    const fresh = prof.points.map(p => ({ n: 0, name: p.name || "", unit: p.unit || "", fc: +p.fc || 3, addr: +p.addr || 0, type: Math.max(0, PT_TYPES.indexOf(p.type)),
+      order: Math.max(0, PT_ORDERS.indexOf(p.order)), bit: +p.bit || 0, gain: p.gain ?? 1, offset: p.offset || 0, lo: p.lo || 0, hi: p.hi || 0, qrole: Math.max(0, PT_QROLES.indexOf(p.qrole)) }));
+    const rows = [...instRows, ...fresh];
+    const w = instItems(instEdit, rows, 0);                          /* numbers the new points, then the status point by its place in the profile */
+    if (Number.isInteger(st.point) && fresh[st.point]) w.find(x => x.id === IP_.stpt).v = fresh[st.point].n;
+    await instWrite(w);
+    await openInst(instEdit, null, await instSettled(w)); pollInst(true);
+    $("ieerr").textContent = `Profile loaded: ${fresh.length} points`;
+  } catch (e) {
+    $("ieerr").textContent = e instanceof SyntaxError || e.message === "profile" ? "Not an instrument profile file" :
+      e.message === "full" ? `Not enough free points (${PT_N} in all)` : e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e);
+  }
+};
+
+/* ---- digital input alarms (MODBUS_STANDARD_BLOCK.md 7): 24 slots, alarm 30 + s; settings 340-345 (arrays) and labels 350-373 ---- */
+const DIA = { input: 340, when: 341, delay: 342, latch: 343, sev: 344, status: 345, label: 350 }, DIA_N = 24, DI_MAX = 64;
+const DIA_ST = ["unused", "normal", "active, acknowledged", "active, not acknowledged", "cleared, not acknowledged", "input unreliable"];
+const DIA_STC = ["", "b-ok", "b-warn", "b-bad", "b-warn", "b-bad"];
+let diaRows = null, diaKey = "";
+const diaIds = () => [DIA.input, DIA.when, DIA.delay, DIA.latch, DIA.sev, ...Array.from({ length: DIA_N }, (_, s) => DIA.label + s)];
+async function diaLoad() {
+  if (!byId[DIA.input] || level < 2) { $("diasec").style.display = "none"; return; }
+  $("diasec").style.display = "block"; $("diaerr").textContent = "";
+  try { diaDraw(await paramsGet(diaIds())); } catch (e) { $("diaerr").textContent = explain(e); }
+}
+function diaDraw(v) {
+  const A = id => v[id] || [], can = writable(byId[DIA.input]);
+  $("diamode").style.display = can ? "none" : "";
+  $("diamode").textContent = level < byId[DIA.input].level ? "Log in as admin to change these." : "These change in REMOTE only (set at the touchscreen), or on the touchscreen itself.";
+  $("diasave").disabled = $("diareload").disabled = !can;
+  diaRows = Array.from({ length: DIA_N }, (_, s) => ({ input: +A(DIA.input)[s] || 0, when: +!!A(DIA.when)[s], delay: A(DIA.delay)[s] ?? 2, latch: +!!A(DIA.latch)[s],
+                                                     sev: A(DIA.sev)[s] || 2, label: v[DIA.label + s] || "" }));
+  diaRows.orig = diaRows.map(r => ({ ...r }));
+  const opt = (list, cur) => list.map(([val, t]) => `<option value="${val}"${+val === +cur ? " selected" : ""}>${esc(t)}</option>`).join("");
+  const inputs = [[0, "not used"], ...Array.from({ length: DI_MAX }, (_, i) => [i + 1, `DI ${i + 1}`])];
+  $("diatab").tBodies[0].replaceChildren(...diaRows.map((r, s) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${30 + s}</td><td><select data-f="input">${opt(inputs, r.input)}</select></td>` +
+      `<td><select data-f="when">${opt([[0, "active (closed)"], [1, "inactive (open)"]], r.when)}</select></td>` +
+      `<td><input data-f="delay" size="4"></td><td><input type="checkbox" data-f="latch"></td>` +
+      `<td><select data-f="sev">${opt([[1, "warning"], [2, "alarm"], [3, "fault"]], r.sev)}</select></td>` +
+      `<td><input data-f="label" maxlength="32" size="24"></td><td><span class="badge"></span></td>`;
+    const d = tr.querySelector("[data-f=delay]"), l = tr.querySelector("[data-f=label]"), c = tr.querySelector("[data-f=latch]");
+    d.value = r.delay; l.value = r.label; l.placeholder = r.input ? `Digital input ${r.input}` : ""; c.checked = !!r.latch;
+    d.oninput = () => { r.delay = d.value; }; l.oninput = () => { r.label = l.value; }; c.onchange = () => { r.latch = +c.checked; };
+    for (const el of tr.querySelectorAll("select")) el.onchange = () => {
+      r[el.dataset.f] = +el.value;
+      if (el.dataset.f === "input") l.placeholder = r.input ? `Digital input ${r.input}` : "";
+    };
+    for (const el of tr.querySelectorAll("input,select")) el.disabled = !can;
+    r.badge = tr.querySelector(".badge");
+    return tr;
+  }));
+  diaKey = ""; diaStatus();
+}
+async function diaStatus() {                          /* the slots' live state, while the tab is open */
+  if (!diaRows || tab !== "alarmcfg" || $("diasec").style.display === "none") return;
+  try {
+    const st = (await paramsGet([DIA.status]))[DIA.status] || [], k = st.join();
+    if (k !== diaKey) { diaKey = k; diaRows.forEach((r, s) => { r.badge.className = "badge " + (DIA_STC[st[s]] || ""); r.badge.textContent = DIA_ST[st[s]] ?? st[s]; }); }
+  } catch (e) { }
+}
+setInterval(diaStatus, 2000);
+$("diareload").onclick = diaLoad;
+$("diasave").onclick = async () => {
+  $("diaerr").textContent = "";
+  const w = [];
+  try {
+    diaRows.forEach((r, s) => {
+      const o = diaRows.orig[s], delay = Number(r.delay);
+      if (!Number.isInteger(delay) || delay < 0 || delay > 3600) throw new Error(`value:delay of alarm ${30 + s} (0 to 3600 s)`);
+      if (/[^\x20-\x7e]/.test(r.label)) throw new Error(`value:label of alarm ${30 + s} (letters, digits and common signs only)`);
+      for (const f of ["input", "when", "latch", "sev"]) if (+r[f] !== +o[f]) w.push({ id: DIA[f], o: s, v: +r[f] });
+      if (delay !== +o.delay) w.push({ id: DIA.delay, o: s, v: delay });
+      if (r.label.trim() !== o.label) w.push({ id: DIA.label + s, v: r.label.trim() });
+    });
+    if (!w.length) { $("diaerr").textContent = "No changes"; return; }
+    await instWrite(w);
+    diaDraw(await instSettled(w, () => paramsGet(diaIds())));
+    $("diaerr").textContent = `Saved (${w.length} change${w.length > 1 ? "s" : ""})`;
+  } catch (e) { $("diaerr").textContent = e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e); }
+};
+TAB_KICK.alarmcfg = () => diaLoad();
+
+/* register explorer: POST /api/inst/explore, then GET it until busy is false */
+let exData = null, exPick = null;
+$("exgo").onclick = async () => {
+  $("exstate").textContent = ""; $("exgo").disabled = true;
+  const q = { ip: $("ex_ip").value.trim(), port: $("ex_port").value.trim() || 502, unit: $("ex_unit").value.trim() || 1, fc: $("ex_fc").value,
+              addr: $("ex_addr").value.trim() || 0, count: $("ex_count").value.trim() || 1 };
+  try {
+    await api("/api/inst/explore", form(q));
+    $("exstate").textContent = "Reading...";
+    let r;
+    for (let t = 0; t < 40; t++) { await new Promise(ok => setTimeout(ok, 250)); r = await api("/api/inst/explore"); if (!r.busy) break; }
+    exData = r; showEx();
+  } catch (e) {
+    $("exstate").textContent = { ip: "Enter the device's IP address", range: "Check port, unit, address and count (count up to 125 registers)" }[e.message] ||
+      (e.status === 409 ? "A read is still running, or the count is too large" : explain(e));
+  }
+  $("exgo").disabled = false;
+};
+function exDecodes(w, i) {                             /* every reading of the words at i (and i+1) */
+  const dv = new DataView(new ArrayBuffer(4)), out = [];
+  const a = w[i], b = w[i + 1];
+  dv.setUint16(0, a); out.push(["u16", "ABCD", dv.getUint16(0)], ["i16", "ABCD", dv.getInt16(0)]);
+  dv.setUint16(0, ((a & 255) << 8) | (a >> 8)); out.push(["u16", "BADC", dv.getUint16(0)], ["i16", "BADC", dv.getInt16(0)]);
+  if (b !== undefined) {
+    const A = a >> 8, B = a & 255, C = b >> 8, D = b & 255;
+    for (const [o, bytes] of [["ABCD", [A, B, C, D]], ["CDAB", [C, D, A, B]], ["BADC", [B, A, D, C]], ["DCBA", [D, C, B, A]]]) {
+      bytes.forEach((x, k) => dv.setUint8(k, x));
+      out.push(["f32", o, dv.getFloat32(0)], ["u32", o, dv.getUint32(0)], ["i32", o, dv.getInt32(0)]);
+    }
+  }
+  return out;
+}
+const exFmt = (t, v) => t === "f32" ? (Number.isFinite(v) && Math.abs(v) < 1e9 && (v === 0 || Math.abs(v) > 1e-6) ? String(+v.toPrecision(6)) : "-") : String(v);
+function showEx() {
+  const r = exData; if (!r) return;
+  exPick = null; $("expick").style.display = "none";
+  if (!r.ok) {
+    $("extab").style.display = "none";
+    $("exstate").textContent = r.result === "exception" ? `The device answered with exception ${String(r.exception).padStart(2, "0")}` +
+      ({ 1: " (function not supported)", 2: " (no such address: try another range)", 3: " (bad value or count)", 4: " (device failure)", 6: " (busy)", 10: " (gateway path)", 11: " (no answer behind the gateway)" }[r.exception] || "")
+      : `No answer: ${r.result}`;
+    return;
+  }
+  $("exstate").textContent = `${r.count} ${r.fc <= 2 ? "bits" : "registers"} in ${r.ms} ms`;
+  const th = $("extab").tHead, tb = $("extab").tBodies[0];
+  if (r.fc <= 2) {                                    /* coils, discrete inputs: packed, first one in bit 0 */
+    const bytes = (r.hex.match(/../g) || []).map(h => parseInt(h, 16));
+    th.innerHTML = "<tr><th>Address</th><th>State</th></tr>";
+    tb.replaceChildren(...Array.from({ length: r.count }, (_, k) => {
+      const tr = document.createElement("tr"), on = (bytes[k >> 3] >> (k & 7)) & 1;
+      tr.innerHTML = `<td>${r.addr + k}</td><td class="d">${on ? "1 (on)" : "0 (off)"}</td>`;
+      tr.cells[1].onclick = () => exChoose(tr.cells[1], { fc: r.fc, addr: r.addr + k, type: 0, order: 0 });
+      return tr;
+    }));
+  } else {
+    const w = r.words, cols = exDecodes([0, 0], 0).map(([t, o]) => [t, o]);
+    th.innerHTML = "<tr><th>Address</th><th>Hex</th>" + cols.map(([t, o]) => `<th>${t}${t.endsWith("16") ? (o === "BADC" ? " swapped" : "") : " " + o}</th>`).join("") + "</tr>";
+    tb.replaceChildren(...w.map((x, i) => {
+      const tr = document.createElement("tr"); tr.innerHTML = `<td>${r.addr + i}</td><td>${x.toString(16).toUpperCase().padStart(4, "0")}</td>`;
+      for (const [t, o, v] of exDecodes(w, i)) {
+        const td = document.createElement("td"); td.className = "d"; td.textContent = exFmt(t, v); td.dataset.v = v;
+        td.title = `${t} ${o} at ${r.addr + i}: click to use`;
+        td.onclick = () => exChoose(td, { fc: r.fc, addr: r.addr + i, type: PT_TYPES.indexOf(t), order: PT_ORDERS.indexOf(o) });
+        tr.appendChild(td);
+      }
+      for (let k = tr.cells.length; k < cols.length + 2; k++) tr.appendChild(document.createElement("td"));
+      return tr;
+    }));
+  }
+  $("extab").style.display = "";
+  exFind();
+}
+function exFind() {                                   /* mark the readings within 0.5 % of the value the device displays */
+  const t = $("ex_find").value.trim(), want = Number(t);
+  for (const td of document.querySelectorAll("#extab td.d")) {
+    const v = Number(td.dataset.v);
+    td.classList.toggle("hit", t !== "" && Number.isFinite(want) && Number.isFinite(v) && (want === 0 ? Math.abs(v) < 1e-6 : Math.abs(v - want) <= Math.abs(want) * 0.005));
+  }
+}
+$("ex_find").oninput = exFind;
+function exChoose(td, pick) {
+  for (const x of document.querySelectorAll("#extab td.pick")) x.classList.remove("pick");
+  td.classList.add("pick"); exPick = pick;
+  $("expicktxt").textContent = `${PT_FC[pick.fc]} ${pick.addr}` + (pick.fc > 2 ? `, ${PT_TYPES[pick.type]}${PT_TYPES[pick.type].endsWith("16") ? (pick.order ? " swapped" : "") : " " + PT_ORDERS[pick.order]}` : "") + `: ${td.textContent}`;
+  const match = inst && inst.instruments.find(i => i.ip === $("ex_ip").value.trim());
+  if (match) $("expinst").value = match.n;
+  $("expick").style.display = "";
+}
+$("exuse").onclick = () => {
+  if (!exPick) return;
+  const n = +$("expinst").value || firstFreeInst() || 1;
+  openInst(n, { fc: exPick.fc, addr: exPick.addr, type: exPick.fc <= 2 ? 0 : exPick.type, order: exPick.fc <= 2 ? 0 : exPick.order });
+};
+pollInst();
+
 /* ---- calibration records (CIP-18, /api/cal): channels, the one calibrating, history ---- */
 const calT = t => { if (!t) return "-"; const d = new Date(t * 1000), z = n => String(n).padStart(2, "0");   /* the unit's local time */
   return `${d.getUTCFullYear()}-${z(d.getUTCMonth() + 1)}-${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}`; };
@@ -1531,15 +2333,66 @@ async function pollSvc(once) {
     $("svctest").innerHTML = "";
     if (!t) $("svctest").textContent = "No manufacturing test recorded.";
     else {
-      const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : "b-bad"); b.textContent = t.passed ? "PASSED" : "FAILED";
+      /* nothing failed but something was skipped: not passed, yet not a fault (a part absent or not answering) */
+      const nFail = t.results.filter(r => r === 2).length, nSkip = t.results.filter(r => r === 0).length, skipOnly = !t.passed && !nFail && nSkip;
+      const skipW = t.names ? "skipped" : "not run";
+      if (t.names) words[0] = "skipped";
+      const b = document.createElement("span"); b.className = "badge " + (t.passed ? "b-ok" : skipOnly ? "b-warn" : "b-bad");
+      b.textContent = t.passed ? "PASSED" : skipOnly ? `NOT PASSED: ${nSkip} ${skipW}, 0 failed` : "FAILED";
       const n = document.createElement("span");
-      n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${k + 1} ${words[r] || r}`).join(", ");
+      const nm = k => t.names && t.names[k] ? (ST_NAMES[t.names[k]] || t.names[k]) : k + 1;   /* the board test names its tests */
+      n.textContent = ` ${calT(t.time)}, station ${t.station || "-"}: ` + t.results.map((r, k) => `${nm(k)} ${words[r] || r}`).join(", ");
       $("svctest").append(b, n);
     }
     $("svcform").style.display = $("svctestform").style.display = level >= 3 ? "flex" : "none";
+    showBoardTest(j.boardtest);
   } catch (e) { if (e.status === 404) { $("svcsec").style.display = "none"; return; } }
   if (!once) setTimeout(pollSvcTick, 10000);
 }
+/* factory board test (CIP-23.3): POST /api/service/boardtest runs ~2.5 s, then saves itself as the test record (station "board") */
+let btWatching = false;
+function showBoardTest(bt) {
+  const shown = bt && (bt.running || bt.done);         /* before the first run "tests" lists every name, all skipped */
+  $("btbox").style.display = bt && (level >= 3 || shown) ? "" : "none";   /* viewers: only a result */
+  if (!bt) return;
+  $("btrun").style.display = level >= 3 ? "" : "none";
+  $("btrun").disabled = !!bt.running;
+  const tests = shown ? bt.tests || [] : [], cnt = r => tests.filter(x => x.result === r).length;
+  $("btstate").textContent = bt.running ? "Board test running..." : bt.done
+    ? `Last board test: ${cnt("pass")} pass, ${cnt("fail")} fail, ${cnt("skipped")} skipped${bt.saved ? ", saved as the manufacturing test record" : ""}.`
+    : level >= 3 ? "Checks the board's memories, clock, network, I/O port, display and supply (about 3 s)." : "";
+  $("bttab").style.display = tests.length ? "" : "none";
+  $("bttab").tBodies[0].replaceChildren(...tests.map(x => {
+    const tr = document.createElement("tr"); tr.innerHTML = "<td></td><td></td><td></td>";
+    tr.cells[0].textContent = ST_NAMES[x.name] || x.name;
+    const b = document.createElement("span");
+    b.className = "badge " + ({ pass: "b-ok", fail: "b-bad" }[x.result] || "");
+    b.textContent = x.result === "skipped" ? "not checked" : x.result;
+    tr.cells[1].appendChild(b);
+    tr.cells[2].textContent = x.detail || "";
+    return tr;
+  }));
+  if (bt.running && !btWatching) btWatch();
+}
+async function btWatch() {                            /* every second while it runs */
+  btWatching = true;
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    let j; try { j = await api("/api/service"); } catch (e) { continue; }
+    if (!j.boardtest || !j.boardtest.running) break;
+    showBoardTest(j.boardtest);
+  }
+  btWatching = false;
+  pollSvc(true);
+}
+$("btrun").onclick = async () => {
+  $("svcerr").textContent = "";
+  try { await api("/api/service/boardtest", ""); $("btrun").disabled = true; $("btstate").textContent = "Board test running..."; if (!btWatching) btWatch(); }
+  catch (e) {
+    $("svcerr").textContent = e.status === 403 ? "Needs the factory login" : e.status === 409
+      ? "Not now: a board test is running, or the start-up self-test has not finished" : explain(e);
+  }
+};
 async function svcPost(path, body) {
   $("svcerr").textContent = "";
   try { await api(path, form(body)); return true; }
@@ -1572,14 +2425,39 @@ $("iobcards").onclick = async ev => {
   } catch (e) { alert("Not set: " + e.message); }
 };
 
+/* the Ethernet port (/api/info "eth"): a header badge, details on the Service tab */
+const LINK_MODES = ["auto", "100 Mbit only", "10 Mbit only"];
+let ethLast = null;
+function showEth(e) {
+  const b = $("ethb");
+  if (!e) { b.style.display = "none"; return; }
+  const dup = f => f ? "full duplex" : "half duplex";
+  const errs = e.rx_crc_errors + e.rx_align_errors + e.rx_missed + e.rx_overflow + e.rx_pool_empty;
+  const grew = ethLast && (errs > ethLast.errs || e.link_drops > ethLast.drops);
+  ethLast = { errs, drops: e.link_drops };
+  b.style.display = "";
+  b.textContent = e.link ? `ETH ${e.phy_mbps} ${e.phy_full ? "FD" : "HD"}${e.fallback ? " (auto)" : ""}` : "ETH DOWN";
+  b.title = e.fallback ? "100 Mbit lost data on this switch or cable, so the port dropped to 10 Mbit on its own (until a restart)"
+                       : "The Ethernet port: speed and duplex the switch agreed";
+  b.className = "badge " + (!e.link ? "b-bad" : (e.phy_mbps < 100 || !e.phy_full || grew) ? "b-warn" : "b-ok");
+  $("svceth").textContent = !e.link ? "No link: check the cable and the switch." :
+    `Link ${e.phy_mbps} Mbit ${dup(e.phy_full)} (setting: ${LINK_MODES[e.link_mode] || e.link_mode}` +
+    `${e.partner_autoneg ? "" : "; the switch did not negotiate, its mode was guessed"}). ` +
+    (e.fallback ? "100 Mbit lost data on this switch or cable, so the port dropped to 10 Mbit on its own; a restart tries 100 Mbit again. " : "") +
+    (e.tcp_segs !== undefined ? `TCP data ${e.tcp_segs} segments sent, ${e.tcp_rexmits} sent again. ` : "") +
+    `Since power-up: ${e.link_drops} link drops, ${e.resyncs} renegotiations, receive errors ${e.rx_crc_errors} CRC, ` +
+    `${e.rx_align_errors} alignment, ${e.phy_symbol_errors} line symbol, ${e.rx_missed + e.rx_overflow + e.rx_pool_empty} dropped by the unit. ` +
+    `Frames: ${e.rx_good_unicast} received, ${e.tx_good} sent.`;
+}
+
 async function pollInfo() { await refreshInfo(); setTimeout(pollInfo, 2000); }
 
-const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", restore_defaults: "Defaults restored",
+const EVT = { force: "Modbus force", power_up: "Power-up", param: "Setting changed", mode: "Mode", restore_defaults: "Defaults restored",
   time_set: "Clock set", login: "Login", login_fail: "Login failed", logout: "Logout", password: "Password changed",
   restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
   fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
   events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key", mail: "Alarm email",
-  serial: "Serial number" };
+  serial: "Serial number", eth_speed: "Ethernet speed" };
 const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
 const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
 function evDetail(e) {
@@ -1591,6 +2469,8 @@ function evDetail(e) {
   case "serial": return e.new === null ? `${num(e.old)}: ${e.detail}` : `${num(e.old)} → ${num(e.new)}: ${e.detail}`;
   case "time_set": return e.old === null ? "clock set" : `stepped ${num(e.new - e.old)} s`;
   case "password": return LV[e.arg] || "";
+  case "eth_speed": return `100 Mbit lost data (${e.arg} % sent again): now 10 Mbit until a restart`;
+  case "force": return e.new !== null && e.new !== undefined ? `${e.detail} forced to ${num(e.new)} for Modbus` : `${e.detail} released` + (e.old ? " (30 s ended)" : "");
   default: return [e.detail, e.arg ? "#" + e.arg : ""].filter(Boolean).join(" ");
   }
 }
@@ -1625,10 +2505,19 @@ async function pollEvents(once) {
   if (!once) setTimeout(pollEvents, 5000);
 }
 
+let loginHere = false;                                /* a login made on this page is never "left over" */
 $("loginbtn").onclick = async () => {
+  const btn = $("loginbtn");
+  if (btn.disabled) return;
   $("loginerr").textContent = "";
-  try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
-  catch (e) { $("loginerr").textContent = e.message === "locked" ? "Too many attempts, wait 30 s" : "Wrong password"; }
+  if (!$("pw").value) { $("loginerr").textContent = "Enter the password"; $("pw").focus(); return; }
+  loginHere = true; btn.disabled = true; btn.textContent = "Logging in…";
+  try { await apiTimed("/api/login", form({ level: $("lvl").value, password: $("pw").value }), 10000); $("pw").value = ""; await refreshInfo(); }
+  catch (e) {
+    $("loginerr").textContent = e.message === "locked" || e.status === 429 ? "Too many attempts, wait 30 s"
+      : e.status === 401 || e.status === 403 ? "Wrong password"
+      : e.status ? explain(e) : "No answer from the unit, check the connection";   /* timeout or network error: the password was not checked */
+  } finally { btn.disabled = false; btn.textContent = "Log in"; }
 };
 /* credential recovery (CIP-19.3): a developer token signed over this chip's ID and its reset count */
 async function loadReset() {
@@ -1680,6 +2569,10 @@ async function refreshFw() {
     if (!f.signing_required) t += ". Development build: unsigned firmware is accepted";
     if (f.waiting_local) t += `. Waiting for someone at the instrument to confirm the restart (${f.waiting_left_s} s left)`;
     if (f.not_safe) t += `. Last restart refused: ${f.not_safe}`;
+    const b = f.bootloader, IMG = { ok: "image ok", none: "no image", header: "bad header", hash: "bad hash", signature: "bad signature" };
+    if (b) t += `. Bootloader v${b.version}: ${IMG[b.image] || b.image}` + (b.swapped ? ", banks swapped" : "") +
+                (b.rollback ? ", rolled back" : "") + (b.other ? `, other bank ${IMG[b.other] || b.other}` : "");
+    else if (f.bootloader === null) t += ". No bootloader ran at this start";
     $("fwinfo").textContent = t + ".";
     const hk = JSON.stringify(f.history || []);
     if (hk !== fwHistKey) {
@@ -1735,7 +2628,27 @@ $("restorebtn").onclick = async () => {
   catch (e) { $("restoreerr").textContent = e.message; }
 };
 
+/* Closing the page logs out: a page opened in a new tab or window, while no other page of this
+   instrument is open in the browser, ends a login it finds left over (the cookie can outlive the
+   window, e.g. Edge keeps running in the background). A reload, and a second tab next to one that
+   is open, keep it. The instrument still ends a login 10 minutes after the last change. */
+let tabCh = null;
+try { tabCh = new BroadcastChannel("cems-page"); tabCh.addEventListener("message", e => { if (e.data === "anyone") tabCh.postMessage("here"); }); } catch (e) { }
+async function leftOverLogin(i) {
+  let mine = false;
+  try { mine = sessionStorage.getItem("cems-open") === "1"; } catch (e) { return false; }   /* no storage: leave it */
+  if (mine || loginHere || !i.session || i.session.level === "view") return false;
+  if (!tabCh) return true;
+  return new Promise(res => {
+    const h = e => { if (e.data === "here") { clearTimeout(t); tabCh.removeEventListener("message", h); res(false); } };
+    const t = setTimeout(() => { tabCh.removeEventListener("message", h); res(!loginHere); }, 300);
+    tabCh.addEventListener("message", h);
+    tabCh.postMessage("anyone");
+  });
+}
 (async function start() {
+  try { if (await leftOverLogin(await api("/api/info"))) await api("/api/logout", ""); } catch (e) { }
+  try { sessionStorage.setItem("cems-open", "1"); } catch (e) { }
   for (;;) {
     try { defs = await api("/api/params"); break; }
     catch (e) { document.body.classList.add("stale"); await new Promise(r => setTimeout(r, 2000)); }

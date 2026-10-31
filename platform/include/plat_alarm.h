@@ -42,7 +42,7 @@
 #include "plat_io.h"
 
 #ifndef PLAT_ALARM_MAX
-#define PLAT_ALARM_MAX 96u           /* platform + application definitions */
+#define PLAT_ALARM_MAX 128u          /* platform (incl. the 24 digital input alarms) + application definitions */
 #endif
 #define ALARM_ID_MAX      255u
 #define ALARM_ID_APP_FIRST 100u
@@ -51,6 +51,18 @@
 
 /* severities: the colour in the lists and the header */
 enum { AL_SEV_STATUS = 0, AL_SEV_WARNING = 1, AL_SEV_ALARM = 2, AL_SEV_FAULT = 3 };
+
+/* Priority tiers (Gary 31 Oct: assigned per alarm, each application configures its own;
+ * ISA-18.2 / EEMUA 191 style). Parameter 52 holds one byte per alarm ID: AL_PRIO_DEFAULT =
+ * the definition's tier (from its severity), 1..5 = that tier, AL_PRIO_OFF = switched off (not
+ * for AL_STOPS or AL_NO_OFF alarms: they say why measurement stopped or can't be trusted). The tier sets the order in the lists,
+ * the colour (severity: Critical and High red, Medium alarm, Low warning, Info status), the
+ * per-tier counts (54, 55) and, for an alarm whose own actions are not set (46), the tier's
+ * actions (53). Tier names are editable (90-94). */
+enum { AL_PRIO_DEFAULT = 0, AL_PRIO_CRITICAL = 1, AL_PRIO_HIGH = 2, AL_PRIO_MEDIUM = 3, AL_PRIO_LOW = 4,
+       AL_PRIO_INFO = 5, AL_PRIO_OFF = 6 };
+#define AL_TIERS       5u
+#define AL_TIER_NAME   17u       /* bytes, with the NUL */
 
 /* Actions (routes), per alarm. Each alarm has a default in its definition; the user
  * changes it with parameter 46 (one byte per alarm ID): bit 7 set = configured (bits
@@ -70,6 +82,8 @@ enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
 #define ACOM_ANY_ACTIVE  0x0004u
 #define ACOM_ANY_UNACKED 0x0008u
 #define ACOM_FORCED      0x0010u  /* values are forced on Modbus (commissioning, modbus.h mb_force_*) */
+#define ACOM_CRIT_ACTIVE 0x0020u  /* a Critical-tier alarm is active */
+#define ACOM_CRIT_UNACKED 0x0040u /* a Critical-tier alarm waits for an acknowledge */
 #define ACOM_RELAY(k)    ((uint16_t)(0x0100u << (k)))   /* relay k is in alarm (before inversion) */
 
 /* flags */
@@ -77,6 +91,7 @@ enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
 #define AL_NO_ACK  0x02u   /* status alarm: no acknowledge, leaves the list when it clears */
 #define AL_NOTIFY  0x04u   /* passed to alarm_on_change (notification: email, relay; Stage 8) */
 #define AL_STOPS   0x08u   /* while active the instrument is in FAULT: measurement stopped (plat_state.h) */
+#define AL_NO_OFF  0x10u   /* its tier can't be set to Off (AL_STOPS alarms never can either) */
 
 typedef struct {
     uint16_t    id;            /* 1..99 platform, 100..255 application */
@@ -117,12 +132,35 @@ enum {
     ALARM_ID_CAL_DUE           = 21,  /* a channel's calibration is overdue (plat_cal.h, CIP-18) */
     ALARM_ID_HW_REV            = 22,  /* the board's revision straps disagree with the factory hw_rev (CIP-01.3) */
     ALARM_ID_SELFTEST          = 23,  /* a start-up self-test failed (plat_selftest.h, CIP-11.1) */
+    ALARM_ID_DIA_FIRST         = 30,  /* 30..53: digital input alarm slot s = ID - 30 (below) */
 };
+
+/* ---------------- digital input alarms (Gary 30 Oct; docs/MODBUS_STANDARD_BLOCK.md section 7) ----
+ * Any digital input can raise an alarm that goes out on Modbus, named by the label typed on the
+ * touchscreen's or the web page's alarm setup. PLAT_DIA_SLOTS slots, alarm ALARM_ID_DIA_FIRST + s,
+ * each with parameters 340-344 (input, alarm when active or inactive, on-delay, latch, severity)
+ * and a label (350 + s, the alarm's description; empty: "Digital input n"). Routing is the usual
+ * per-alarm actions (default Modbus). An unused slot never raises; an unreliable input (wire
+ * break, I/O board lost) does not raise it either (alarms 12 and 15 cover that) and shows in its
+ * status. Modbus discrete inputs, read-only:
+ *   7000 + s slot s active, 7032 + s slot s waiting for an acknowledge,
+ *   7064 + s slot s input unreliable, 7100 + i digital input i+1 after the filter. */
+#define PLAT_DIA_SLOTS   24u
+#define PLAT_DIA_LABEL   33u          /* label bytes: 32 characters and the end */
+enum { DIA_ST_UNUSED = 0, DIA_ST_NORMAL, DIA_ST_ACTIVE_ACKED, DIA_ST_ACTIVE_UNACKED, DIA_ST_CLEARED_UNACKED,
+       DIA_ST_UNRELIABLE };
+#define PLAT_DIA_MB_ADDR 7000u        /* discrete inputs 7000-7999: the core's */
+#define PLAT_DIA_MB_END  7999u
+void alarm_io_in(const plat_io_in_t *in);       /* scan task, after the inputs are read: the slots' conditions */
+bool plat_dia_mb_bit(uint16_t addr);             /* discrete input addr (7000-7999) as Modbus serves it */
+/* Input n (1..PLAT_DI_MAX) by where it is: "I/O board k input j" or "Input n". */
+void plat_dia_input_name(unsigned n, char *buf, size_t cap);
 
 /* A copy of one alarm, for lists. */
 typedef struct {
     uint16_t id;
-    uint8_t  severity, flags;
+    uint8_t  severity, flags;  /* severity follows the tier in force */
+    uint8_t  priority;         /* AL_PRIO_CRITICAL..AL_PRIO_INFO, or AL_PRIO_OFF */
     bool     active, unacked, cond, enabled;
     uint32_t t_raise;          /* s since 1970 when raised (0 if the clock was not set) */
     uint32_t up_raise;         /* uptime s when raised */
@@ -136,6 +174,7 @@ typedef struct {
     uint16_t unacked;          /* alarms waiting for an acknowledge (active or cleared) */
     uint16_t shown;            /* entries in the list: active or unacked */
     int8_t   worst;            /* highest severity among the shown entries, -1 if none */
+    uint8_t  worst_prio;       /* most urgent tier among them, 0 if none */
     bool     worst_unacked;    /* that severity has an unacknowledged entry */
 } alarm_summary_t;
 
@@ -175,6 +214,10 @@ bool   alarm_active(uint16_t id);          /* e.g. to mark a logged value FLAG *
 size_t alarm_count(void);                  /* definitions */
 const alarm_def_t *alarm_def_at(size_t i);
 const char *alarm_sev_name(uint8_t sev);
+uint8_t alarm_prio(uint16_t id);                       /* tier in force, AL_PRIO_OFF, or 0 if unknown */
+uint8_t alarm_prio_default(const alarm_def_t *d);      /* the definition's tier */
+bool    alarm_can_switch_off(const alarm_def_t *d);    /* not AL_STOPS or AL_NO_OFF */
+const char *alarm_prio_name(uint8_t prio);             /* the tier's (editable) name, "Off", or "?" */
 
 /* Notification hook (Stage 8: email, relay, nothing). Called in the scan task on
  * every transition of an AL_NOTIFY alarm. what: 1 raised, 2 cleared, 3 acknowledged. */

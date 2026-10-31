@@ -563,3 +563,24 @@ void bsp_chip_uid(uint8_t uid[12]) {
         for (unsigned k = 0; k < 4u; ++k) uid[4u * w + k] = (uint8_t)(v >> (8u * k));
     }
 }
+
+/* The NODE role's backup words (plat_node.h): TAMP BKP0R..BKP15R, kept over a reset, lost at
+ * power-off (no battery on VBAT). BKP30R/BKP31R are the bootloader's (boot.h). */
+static void backup_open(void) {
+    RCC->APB3ENR |= RCC_APB3ENR_RTCAPBEN;      /* TAMP sits behind the RTC's bus clock */
+    (void)RCC->APB3ENR;
+    PWR->DBPCR |= PWR_DBPCR_DBP;               /* the backup domain is write protected */
+}
+
+uint32_t bsp_backup_read(unsigned idx) {
+    if (idx >= 16u) return 0;
+    backup_open();
+    return (&TAMP->BKP0R)[idx];
+}
+
+bool bsp_backup_write(unsigned idx, uint32_t v) {
+    if (idx >= 16u) return false;
+    backup_open();
+    (&TAMP->BKP0R)[idx] = v;
+    return (&TAMP->BKP0R)[idx] == v;
+}

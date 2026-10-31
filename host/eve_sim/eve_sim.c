@@ -159,20 +159,36 @@ static int b_read(eve_bus_t *b, uint8_t *p, uint32_t n) {
     return 0;
 }
 
-static void b_delay(uint32_t ms) { (void)ms; }
+static eve_sim_t *sim_now;                              /* the simulator in use (one at a time) */
+static void b_delay(uint32_t ms) {                      /* time passes for REG_CLOCK at sysclk_hz */
+    eve_sim_t *s = sim_now;
+    if (!s || !s->sysclk_hz) return;
+    uint32_t a = 0x302008u - EVE_RAM_REG, v = 0;
+    for (int k = 0; k < 4; ++k) v |= (uint32_t)s->regs[a + k] << (8 * k);
+    v += (uint32_t)((uint64_t)s->sysclk_hz * ms / 1000u);
+    for (int k = 0; k < 4; ++k) s->regs[a + k] = (uint8_t)(v >> (8 * k));
+}
 
 void eve_sim_init(eve_sim_t *s) {
     memset(s, 0, sizeof *s);
     s->present = true;
+    sim_now = s;
     s->ram_g = ram_g_pool;
     s->zbuf = zbuf_pool;
     memset(ram_g_pool, 0, sizeof ram_g_pool);
     s->regs[REG_ID - EVE_RAM_REG] = EVE_CHIP_ID;
+    eve_sim_touch_xy(s, -32768, -32768);             /* no finger, as the chip reports it */
+    static const uint8_t chip[4] = { 0x08, 0x17, 0x01, 0x00 };   /* BT817 chip ID in RAM_G after boot */
+    memcpy(ram_g_pool + 0x0C0000u, chip, sizeof chip);
     s->bus.select = b_select; s->bus.write = b_write; s->bus.read = b_read;
     s->bus.delay_ms = b_delay; s->bus.ctx = s;
 }
 
 void eve_sim_touch(eve_sim_t *s, uint8_t tag) { s->regs[REG_TOUCH_TAG - EVE_RAM_REG] = tag; }
+void eve_sim_touch_xy(eve_sim_t *s, int16_t x, int16_t y) {
+    uint32_t v = (uint32_t)(uint16_t)x << 16 | (uint16_t)y;
+    for (int k = 0; k < 4; ++k) s->regs[REG_TOUCH_SCREEN_XY - EVE_RAM_REG + k] = (uint8_t)(v >> (8 * k));
+}
 
 /* ---- frame walking ---- */
 typedef void (*visit_fn)(void *ctx, uint32_t cmd, const uint8_t *args, const char *str, uint8_t tag);

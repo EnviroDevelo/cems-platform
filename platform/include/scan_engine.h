@@ -48,6 +48,7 @@ typedef struct {
 #define SCAN_CMD_UNKNOWN 1     /* sys->apply: not a table ID, offer it to app->apply_cmd */
 typedef struct {
     int  (*apply)(const plat_cmd_t *cmd);   /* 0 accepted, SCAN_CMD_UNKNOWN, or another code = rejected */
+    void (*io_in)(const plat_io_in_t *in);  /* after the inputs are read: platform input checks (alarms) */
     void (*pre_logic)(uint32_t now_ms);     /* after commands, before the logic */
     void (*publish)(void);                  /* inside the seqlock, before app->publish */
     void (*io_out)(plat_io_out_t *out);     /* after app->io_out: platform-owned outputs (alarm relays) */

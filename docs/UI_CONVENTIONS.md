@@ -45,12 +45,15 @@ alarms. On the web, an unacknowledged row is bold.
 
 From left to right: the product name, the instrument state, LOCAL/REMOTE, the supervisory
 link, the alarm pill (tap it for the list), and the time ("--:--:--" when the clock is not set).
+While any value is forced on Modbus, an amber "FORCED n" pill replaces the product name, and
+tapping it opens the force list.
 
 | Element | Words | Colour |
 |---|---|---|
 | Instrument state (CIP-09, 21.2) | The state name in capitals: STARTING, INITIALISING, WARMING UP, READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT, SAFE MODE | MEASURING and READY: C_OK. WARMING UP, MAINTENANCE and CALIBRATION: C_WARN. FAULT and SAFE MODE: C_BAD. STARTING and INITIALISING: neutral |
 | Control | LOCAL / REMOTE | REMOTE: C_OK. LOCAL: neutral |
 | Supervisory link (CIP-21.5) | LINK OK / LINK LOST / NO LINK | C_OK / C_BAD / neutral. LOST means no request for `comms_timeout`. NO LINK means none since start, or the timeout is 0 |
+| Modbus force (commissioning) | FORCED n | C_WARN, only while a force is active |
 
 The web page shows the same elements with the same words, plus a "live" / "offline" badge for
 the page's own connection to the instrument. While that connection is down, it also shows the red
@@ -77,6 +80,9 @@ carries the clock.
 | calibration | calibration | C_WARN |
 | fault | fault | C_BAD |
 
+- A Modbus force (`mb_force_*`) changes only what the PLC reads. The screens keep showing the
+  real value, with "Modbus: forced to X, 23 s" in C_WARN beside it where the force is listed.
+  There is no "forced" quality word, because the value on screen is not forced.
 - No screen shows a non-valid reading in the valid style, including tiles, grids and the I/O
   boards screen. Where there is no room for the word, the tile's border takes the word's colour
   and the word goes on the second line.
@@ -104,7 +110,8 @@ carries the clock.
   with 6 px between neighbours. An action happens on release over the same widget, so sliding
   off cancels it.
 - These ask "Are you sure?" first: a mode change, a network change, restore defaults, a
-  firmware restart, entering or leaving MAINTENANCE, and any entry flagged `PF_CONFIRM`.
+  firmware restart, entering or leaving MAINTENANCE, a Modbus force, and any entry flagged
+  `PF_CONFIRM`.
 - A disabled control stays visible in C_GREY, and the row says why.
 - The screen dims after 10 minutes, and the first touch only wakes it. A login lapses after
   10 minutes without a touch.

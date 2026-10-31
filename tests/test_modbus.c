@@ -240,7 +240,62 @@ static void t_device_id(void) {
     uint8_t r4[4] = { 0x2B, 0x0E, 4, 2 }; go(r4, 4);
     CHECK_EQ(rsp[6], 1); CHECK_EQ(rsp[7], 2); CHECK(memcmp(rsp + 9, "1.2.3", 5) == 0);
     uint8_t r9[4] = { 0x2B, 0x0E, 4, 9 }; go(r9, 4); CHECK(EXC(2));
-    uint8_t r3[4] = { 0x2B, 0x0E, 3, 0 }; go(r3, 4); CHECK(EXC(3));
+    uint8_t r5[4] = { 0x2B, 0x0E, 5, 0 }; go(r5, 4); CHECK(EXC(3));
+    uint8_t r1[4] = { 0x2B, 0x0E, 1, 0 }; go(r1, 4); CHECK_EQ(rsp[3], 0x83);   /* conformity: extended */
+    /* VDI 4201-3 self-description (docs/MODBUS_STANDARD_BLOCK.md section 5) */
+    uint8_t c81[4] = { 0x2B, 0x0E, 4, 0x81 }; go(c81, 4);
+    CHECK_EQ(rsp[7], 0x81); CHECK_EQ(rsp[8], 2); CHECK_EQ(rsp[9], 0); CHECK_EQ(rsp[10], 30);   /* ComponentNumber */
+    uint8_t c82[4] = { 0x2B, 0x0E, 4, 0x82 }; go(c82, 4); CHECK_EQ((rsp[9] << 8) | rsp[10], 7000);
+    uint8_t c84[4] = { 0x2B, 0x0E, 4, 0x84 }; go(c84, 4); CHECK_EQ((rsp[9] << 8) | rsp[10], 7256);
+    uint8_t c85[4] = { 0x2B, 0x0E, 4, 0x85 }; go(c85, 4);                 /* component 1: no emissions engine here */
+    CHECK_EQ(rsp[8], 10); CHECK(memcmp(rsp + 9, "not fitted", 10) == 0);
+    uint8_t c86[4] = { 0x2B, 0x0E, 4, 0x86 }; go(c86, 4);                 /* range start: NaN */
+    CHECK_EQ(rsp[8], 4); CHECK_EQ(rsp[9], 0x7F); CHECK_EQ(rsp[10], 0xC0);
+    uint8_t c88[4] = { 0x2B, 0x0E, 4, 0x88 }; go(c88, 4); CHECK(memcmp(rsp + 9, "% vol", 5) == 0);
+    uint8_t cfd[4] = { 0x2B, 0x0E, 4, 0x85 + 4 * 30 }; go(cfd, 4); CHECK(EXC(2));   /* no component 31 */
+    /* code 3 streams everything from the start, in pieces: "more follows" and the next object */
+    uint8_t c3[4] = { 0x2B, 0x0E, 3, 0 };
+    unsigned objs = 0, rounds = 0;
+    for (;;) {
+        go(c3, 4); CHECK_EQ(rsp[0], 0x2B);
+        objs += rsp[6];
+        if (rsp[4] != 0xFF || ++rounds > 20) break;
+        c3[3] = rsp[5];
+    }
+    CHECK_EQ(objs, 4u + 5u + 4u * 30u);           /* 0-2, 4, 0x80-0x84, components */
+    CHECK(rounds > 0);
+}
+
+/* the standard CEMS block (VDI 4201-3): read-only, holding mirrors input, unfitted slots NaN */
+static void t_standard_block(void) {
+    setup();
+    rd(4, 7000, 4);                               /* slot 0: value NaN, status 0 */
+    CHECK_EQ(rl, 10); CHECK_EQ(reg(0), 0x7FC0); CHECK_EQ(reg(1), 0); CHECK_EQ(reg(2), 0); CHECK_EQ(reg(3), 0);
+    uint16_t in[16], ho[16];
+    rd(4, 7940, 16); for (int k = 0; k < 16; ++k) in[k] = reg(k);
+    rd(3, 7940, 16); for (int k = 0; k < 16; ++k) ho[k] = reg(k);
+    CHECK(memcmp(in, ho, sizeof in) == 0);        /* holding mirror */
+    CHECK_EQ(in[0], 1);                           /* block version */
+    CHECK_EQ(in[1], 0); CHECK_EQ(in[2], 0);       /* no slot fitted */
+    rd(4, 7748, 1); CHECK_EQ(reg(0), 2);          /* quality unavailable */
+    rd(4, 7300, 2); CHECK_EQ(reg(0), 0x7FC0);     /* bank 1 NaN */
+    rd(4, 7990, 10); CHECK_EQ(rl, 22);            /* to the block's last register */
+    rd(4, 7990, 20); CHECK(EXC(2));               /* past it: 8000 is not mapped */
+    rd(4, 6999, 2); CHECK(EXC(2));                /* 6999 is not mapped */
+    rd(4, 7999, 2); CHECK(EXC(2));                /* nor 8000 */
+    uint16_t v[2] = { 0, 0 };
+    wr16(7000, v, 2); CHECK(EXC(2));              /* read-only, BasisS included */
+    wr16(7128, v, 2); CHECK(EXC(2));
+    uint8_t w6[5] = { 6, 0x1B, 0x58, 0, 1 }; go(w6, 5); CHECK(EXC(2));   /* 7000 */
+    /* word order setting */
+    plat_cmd_t c = { .id = PARAM_ID_MB_STD_WORDS, .src = PLAT_SRC_WEB, .level = PLAT_LVL_ADMIN, .kind = PLAT_VAL_U32, .v.u = 1 };
+    CHECK_EQ(param_apply(&c), PERR_OK); scan();
+    rd(4, 7000, 2); CHECK_EQ(reg(0), 0); CHECK_EQ(reg(1), 0x7FC0);
+    /* an application entry in 7000-7999 stops start-up, in input or holding */
+    mb_map_t bad[1] = { MB_ENTRY(MB_HOLDING, 7998, P_PRESET, MBF_U32) };
+    CHECK_EQ(mb_init(bad, 1, NULL), 1);
+    mb_map_t bad2[1] = { MB_ENTRY(MB_INPUT, 6999, P_PRESET, MBF_U32) };
+    CHECK_EQ(mb_init(bad2, 1, NULL), 1);
 }
 
 /* MBAP framing */
@@ -398,6 +453,7 @@ void test_modbus_all(void) {
     RUN(t_permissions);
     RUN(t_busy);
     RUN(t_device_id);
+    RUN(t_standard_block);
     RUN(t_platform_block);
     RUN(t_force);
 }

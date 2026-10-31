@@ -108,9 +108,14 @@ enum {
     PARAM_ID_NET_MASK         = 12,
     PARAM_ID_NET_GW           = 13,
     PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
+    PARAM_ID_NET_LINK_MODE    = 15,  /* what the port offers the switch: 0 auto (10/100, half/full), 1 100 Mbit only, 2 10 Mbit only (long or poor cable) */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */
+    PARAM_ID_ALARM_PRIO       = 52,  /* 256 bytes, one per alarm ID: AL_PRIO_* tier (0 = default, 6 = off; plat_alarm.h) */
+    PARAM_ID_ALARM_TIER_ROUTE = 53,  /* 5 bytes, one per tier: AR_SET | actions for alarms with none of their own */
+    PARAM_ID_ALARM_TIER_ACTIVE = 54, /* RO: 5 words, alarms active per tier */
+    PARAM_ID_ALARM_TIER_UNACKED = 55, /* RO: 5 words, alarms waiting for an acknowledge per tier */
     PARAM_ID_ALARM_ACK        = 40,  /* write an alarm ID (or 65535 = all) to acknowledge it; any mode, no login */
     PARAM_ID_ALARM_ACTIVE     = 41,  /* RO: alarms active */
     PARAM_ID_ALARM_UNACKED    = 42,  /* RO: alarms waiting for an acknowledge */
@@ -143,6 +148,7 @@ enum {
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
+    PARAM_ID_ALARM_TIER_NAME_FIRST = 90, /* 90..94: the names of tiers 1..5 (text, empty = Critical, High, ...) */
     PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
     PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet on the main port, 2 the I/O port (W5500, iob_w5500.h) */
@@ -187,6 +193,63 @@ enum {
     PARAM_ID_CONFIG_CRC       = 332, /* RO: checksum of the user settings (CIP-05.4) */
     PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
     PARAM_ID_MB_FORCED        = 334, /* RO: values forced on Modbus now (modbus.h mb_force_*) */
+    PARAM_ID_MB_STD_WORDS     = 335, /* standard block 7000-7999: 0 floats/u32 high word first, 1 low word first */
+    PARAM_ID_DIA_INPUT        = 340, /* digital input alarms (plat_alarm.h), [24] per slot: 0 unused, 1..64 the input */
+    PARAM_ID_DIA_WHEN         = 341, /* [24] bool: 0 alarm when the input is active, 1 when it is inactive */
+    PARAM_ID_DIA_DELAY        = 342, /* [24] on-delay, s (default 2) */
+    PARAM_ID_DIA_LATCH        = 343, /* [24] bool: stays active until acknowledged */
+    PARAM_ID_DIA_SEV          = 344, /* [24] AL_SEV_WARNING..AL_SEV_FAULT (default alarm) */
+    PARAM_ID_DIA_STATUS       = 345, /* RO [24] DIA_ST_* */
+    PARAM_ID_DIA_LABEL_FIRST  = 350, /* 350 + s: slot s's label (32 characters), the alarm's description */
+    /* 400-499 emissions calculation (emis.h, docs/EMISSIONS_MATH.md); arrays are indexed by channel
+     * = slot of the Modbus standard block. Settings at admin level, persisted, logged on change. */
+    PARAM_ID_EMIS_ENABLE      = 400, /* the engine runs (off: every result unavailable) */
+    PARAM_ID_EMIS_T_REF       = 401, /* reference temperature, K (273.15) */
+    PARAM_ID_EMIS_P_REF       = 402, /* reference pressure, kPa (101.325) */
+    PARAM_ID_EMIS_DILUENT     = 403, /* EMIS_DIL_*: 0 none, 1 O2, 2 CO2 */
+    PARAM_ID_EMIS_REF_PCT     = 404, /* reference O2 (or CO2) % */
+    PARAM_ID_EMIS_O2_MAX      = 405, /* no O2 correction above this O2 % */
+    PARAM_ID_EMIS_ONLY_ABOVE  = 406, /* correct only when O2 is above the reference (IED Annex VI Pt 6 2.7) */
+    PARAM_ID_EMIS_CH_O2       = 407, /* channel of the dry O2 (or CO2) */
+    PARAM_ID_EMIS_H2O_MODE    = 408, /* EMIS_H2O_*: 0 dried sample, 1 measured, 2 fixed */
+    PARAM_ID_EMIS_CH_H2O      = 409,
+    PARAM_ID_EMIS_H2O_FIXED   = 410, /* % */
+    PARAM_ID_EMIS_CH_T        = 411, /* stack temperature channel (255: fixed 413) */
+    PARAM_ID_EMIS_CH_P        = 412, /* stack pressure channel (255: fixed 414) */
+    PARAM_ID_EMIS_T_FIXED     = 413, /* degC */
+    PARAM_ID_EMIS_P_FIXED     = 414, /* kPa absolute */
+    PARAM_ID_EMIS_CH_FLOW     = 415, /* flow channel (255: no mass emissions) */
+    PARAM_ID_EMIS_PERIOD_S    = 416, /* short-term average: 600, 1800 or 3600 s */
+    PARAM_ID_EMIS_MIN_AVAIL   = 417, /* % of the operating time that must be valid for a valid average */
+    PARAM_ID_EMIS_MAX_DISCARD = 418, /* short-term averages a day may lose (5 waste; 3 LCP) */
+    PARAM_ID_EMIS_CI_SUBTRACT = 419, /* subtract the confidence interval (IED) */
+    PARAM_ID_EMIS_CLAMP_ZERO  = 420, /* a validated average below zero is reported as zero */
+    PARAM_ID_EMIS_CAL_EXT     = 421, /* valid calibration range: ys,max + this % of the ELV */
+    PARAM_ID_EMIS_OPERATING   = 422, /* the plant is in its effective operating time (the application or a PLC writes it) */
+    PARAM_ID_EMIS_CFG_ERROR   = 423, /* RO: 0, or the emis_check result (channel + 1; 33 = plant settings) */
+    PARAM_ID_EMIS_SRC         = 430, /* [32] source: 0-199 measurement (plat_meas index), 200+p instrument point p, 255 none */
+    PARAM_ID_EMIS_UNIT        = 431, /* [32] EMIS_U_* */
+    PARAM_ID_EMIS_WET         = 432, /* [32] the reading is wet */
+    PARAM_ID_EMIS_REF         = 433, /* [32] correct to the reference diluent */
+    PARAM_ID_EMIS_ADD         = 434, /* [32] also add this channel's reading (NOx = NO + NO2), 255 = no */
+    PARAM_ID_EMIS_MOLAR_MASS  = 435, /* [32] g/mol of what it is expressed as, times any factor (TOC as C from propane: 36.033) */
+    PARAM_ID_EMIS_QAL2_A      = 437, /* [32] EN 14181 calibration function intercept */
+    PARAM_ID_EMIS_QAL2_B      = 438, /* [32] slope (0 = no QAL2 yet) */
+    PARAM_ID_EMIS_YS_MAX      = 439, /* [32] highest calibrated value in the QAL2, standard conditions */
+    PARAM_ID_EMIS_ELV         = 440, /* [32] daily ELV, standard conditions, reference O2 */
+    PARAM_ID_EMIS_CI_PCT      = 441, /* [32] 95 % confidence interval, % of the ELV */
+    PARAM_ID_EMIS_BANK_FIRST  = 450, /* 450 + b: RO [32] float, bank b = EMIS_B_* (raw, std, ref, mass, run, avg, val, day) */
+    PARAM_ID_EMIS_Q_IN        = 460, /* RO [32] PLAT_Q_* of the raw reading */
+    PARAM_ID_EMIS_Q_CALC      = 461, /* RO [32] of banks 1-2 */
+    PARAM_ID_EMIS_Q_MASS      = 462, /* RO [32] of bank 3 */
+    PARAM_ID_EMIS_Q_AVG       = 463, /* RO [32] of banks 5-6 */
+    PARAM_ID_EMIS_Q_DAY       = 464, /* RO [32] of bank 7 */
+    PARAM_ID_EMIS_Q_RUN       = 465, /* RO [32] of bank 4 */
+    PARAM_ID_EMIS_STATUS      = 466, /* RO [32] EMIS_ST_* bits */
+    PARAM_ID_EMIS_DISCARDED   = 467, /* RO [32] short-term averages discarded today */
+    PARAM_ID_EMIS_DAYS_INVALID = 468, /* RO [32] days invalid this year */
+    PARAM_ID_EMIS_WEEKS_ABOVE = 469, /* RO [32] consecutive weeks above the valid calibration range */
+    PARAM_ID_EMIS_BLOCK       = 910, /* retained: periods in progress (emis_bind.c) */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
