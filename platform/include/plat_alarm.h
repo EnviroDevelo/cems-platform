@@ -55,7 +55,7 @@ enum { AL_SEV_STATUS = 0, AL_SEV_WARNING = 1, AL_SEV_ALARM = 2, AL_SEV_FAULT = 3
 /* Priority tiers (Gary 31 Oct: assigned per alarm, each application configures its own;
  * ISA-18.2 / EEMUA 191 style). Parameter 52 holds one byte per alarm ID: AL_PRIO_DEFAULT =
  * the definition's tier (from its severity), 1..5 = that tier, AL_PRIO_OFF = switched off (not
- * for AL_STOPS alarms: they say why measurement stopped). The tier sets the order in the lists,
+ * for AL_STOPS or AL_NO_OFF alarms: they say why measurement stopped or can't be trusted). The tier sets the order in the lists,
  * the colour (severity: Critical and High red, Medium alarm, Low warning, Info status), the
  * per-tier counts (54, 55) and, for an alarm whose own actions are not set (46), the tier's
  * actions (53). Tier names are editable (90-94). */
@@ -91,6 +91,7 @@ enum { AR_MODE_ACTIVE = 0,      /* on while any routed alarm is active */
 #define AL_NO_ACK  0x02u   /* status alarm: no acknowledge, leaves the list when it clears */
 #define AL_NOTIFY  0x04u   /* passed to alarm_on_change (notification: email, relay; Stage 8) */
 #define AL_STOPS   0x08u   /* while active the instrument is in FAULT: measurement stopped (plat_state.h) */
+#define AL_NO_OFF  0x10u   /* its tier can't be set to Off (AL_STOPS alarms never can either) */
 
 typedef struct {
     uint16_t    id;            /* 1..99 platform, 100..255 application */
@@ -215,6 +216,7 @@ const alarm_def_t *alarm_def_at(size_t i);
 const char *alarm_sev_name(uint8_t sev);
 uint8_t alarm_prio(uint16_t id);                       /* tier in force, AL_PRIO_OFF, or 0 if unknown */
 uint8_t alarm_prio_default(const alarm_def_t *d);      /* the definition's tier */
+bool    alarm_can_switch_off(const alarm_def_t *d);    /* not AL_STOPS or AL_NO_OFF */
 const char *alarm_prio_name(uint8_t prio);             /* the tier's (editable) name, "Off", or "?" */
 
 /* Notification hook (Stage 8: email, relay, nothing). Called in the scan task on

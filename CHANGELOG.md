@@ -27,7 +27,8 @@ One source for the CORE and the I/O node (30 Oct, Gary):
   input or holding registers stops start-up (none of the current maps uses it).
 - Alarm priority tiers (Gary 31 Oct, `plat_alarm.h`): every alarm has a tier, Critical, High,
   Medium, Low or Info, or Off (param 52, one byte per alarm ID; 0 = the definition's default
-  from its severity; AL_STOPS alarms can't be switched off). The tier sets the list order and
+  from its severity; AL_STOPS alarms and CAL_INVALID, SAFE_MODE, PARAM_WRITE_FAIL (AL_NO_OFF)
+  can't be switched off). The tier sets the list order and
   colour, per-tier counts (54, 55), ACOM_CRIT_ACTIVE / ACOM_CRIT_UNACKED in the common word, and
   per-tier actions (53) for alarms without their own. Tier names are editable (90-94).
   `/api/alarms` gains `priority`, `tier`, `worst_priority`; `/api/alarms/config` gains

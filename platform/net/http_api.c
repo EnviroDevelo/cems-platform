@@ -944,7 +944,7 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
         out_str(o, ",\"priority\":"); json_uint(o, v.priority);                     /* in force: 1..5, 6 off */
         out_str(o, ",\"default_priority\":"); json_uint(o, alarm_prio_default(d));
-        out_str(o, ",\"can_switch_off\":"); json_bool(o, !(d->flags & AL_STOPS));
+        out_str(o, ",\"can_switch_off\":"); json_bool(o, alarm_can_switch_off(d));
         out_str(o, ",\"route\":"); json_uint(o, alarm_route(d->id));
         out_str(o, ",\"default\":"); json_uint(o, d->route);
         out_str(o, ",\"configured\":"); json_bool(o, (route[d->id] & AR_SET) != 0);

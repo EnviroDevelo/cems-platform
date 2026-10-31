@@ -360,6 +360,8 @@ static void t_tiers(void) {
     alarm_set(A_FLOW, true); scan(20);
     CHECK(!get(A_FLOW).active);
     plat_alarm_prio[A_FLOW] = AL_PRIO_DEFAULT; alarm_set(A_FLOW, false);
+    plat_alarm_prio[ALARM_ID_CAL_INVALID] = AL_PRIO_OFF;           /* protected: Off acts as the default */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);
     alarm_set(A_DI, false); scan(20); alarm_ack(ALARM_ACK_ALL, 0, 0); scan(20);
     memset(plat_alarm_route, 0, 256); memset(plat_alarm_prio, 0, 256); memset(plat_alarm_tier_route, 0, AL_TIERS);
     memset(plat_alarm_tier_name, 0, sizeof plat_alarm_tier_name);
