@@ -4,18 +4,23 @@ GET /api/alarms .alarms[].help string
 GET /api/alarms .alarms[].id number
 GET /api/alarms .alarms[].latch bool
 GET /api/alarms .alarms[].name string
+GET /api/alarms .alarms[].priority number
 GET /api/alarms .alarms[].severity string
 GET /api/alarms .alarms[].since string
 GET /api/alarms .alarms[].text string
+GET /api/alarms .alarms[].tier string
 GET /api/alarms .alarms[].time number
 GET /api/alarms .alarms[].unacked bool
 GET /api/alarms .alarms[].uptime number
 GET /api/alarms .unacked number
 GET /api/alarms .worst string
+GET /api/alarms/config .alarms[].can_switch_off bool
 GET /api/alarms/config .alarms[].configured bool
 GET /api/alarms/config .alarms[].default number
+GET /api/alarms/config .alarms[].default_priority number
 GET /api/alarms/config .alarms[].id number
 GET /api/alarms/config .alarms[].name string
+GET /api/alarms/config .alarms[].priority number
 GET /api/alarms/config .alarms[].route number
 GET /api/alarms/config .alarms[].severity string
 GET /api/alarms/config .alarms[].text string
@@ -23,6 +28,12 @@ GET /api/alarms/config .relays[].do number
 GET /api/alarms/config .relays[].failsafe bool
 GET /api/alarms/config .relays[].in_alarm bool
 GET /api/alarms/config .relays[].mode number
+GET /api/alarms/config .tiers[].active number
+GET /api/alarms/config .tiers[].configured bool
+GET /api/alarms/config .tiers[].name string
+GET /api/alarms/config .tiers[].priority number
+GET /api/alarms/config .tiers[].route number
+GET /api/alarms/config .tiers[].unacked number
 GET /api/auth/reset .key bool
 GET /api/auth/reset .message string
 GET /api/auth/reset .uid string
@@ -55,6 +66,7 @@ GET /api/fw .waiting_local bool
 GET /api/info .alarms.active number
 GET /api/info .alarms.unacked number
 GET /api/info .alarms.worst string
+GET /api/info .alarms.worst_priority number
 GET /api/info .api number
 GET /api/info .board_rev number
 GET /api/info .build string
@@ -300,6 +312,7 @@ GET /api/params [].flags[] string
 GET /api/params [].id number
 GET /api/params [].level number
 GET /api/params [].max number
+GET /api/params [].meas number
 GET /api/params [].min number
 GET /api/params [].name string
 GET /api/params [].q bool
@@ -368,7 +381,6 @@ POST /api/alarms/ack
 POST /api/auth/reset
 POST /api/cal
 POST /api/fw/activate
-POST /api/fw/upload
 POST /api/inst/explore
 POST /api/iob/assign
 POST /api/iob/find
@@ -416,6 +428,10 @@ param 48 alarm_relay_mode array - level=2 flags=persist,any_mode,no_modbus
 param 49 alarm_relay_inv array - level=2 flags=persist,any_mode,no_modbus
 param 50 serial uint - level=3 flags=persist,factory,any_mode,no_modbus,ro,dev
 param 51 hw_rev uint - level=3 flags=persist,factory,any_mode,no_modbus
+param 52 alarm_prio array - level=2 flags=persist,any_mode,no_modbus
+param 53 alarm_tier_route array - level=2 flags=persist,any_mode,no_modbus
+param 54 alarm_tier_active array - level=0 flags=ro
+param 55 alarm_tier_unacked array - level=0 flags=ro
 param 60 store_status uint - level=0 flags=ro
 param 61 log_status uint - level=0 flags=ro
 param 70 mail_enable bool - level=2 flags=persist,any_mode,no_modbus
@@ -437,6 +453,11 @@ param 85 clock_set uint s level=1 flags=-
 param 86 clock_unix uint s level=0 flags=ro
 param 87 fw_local_confirm bool - level=2 flags=persist,any_mode,no_modbus
 param 88 fw_min_version uint - level=3 flags=persist,any_mode,no_modbus
+param 90 alarm_tier1_name text - level=2 flags=persist,any_mode,no_modbus
+param 91 alarm_tier2_name text - level=2 flags=persist,any_mode,no_modbus
+param 92 alarm_tier3_name text - level=2 flags=persist,any_mode,no_modbus
+param 93 alarm_tier4_name text - level=2 flags=persist,any_mode,no_modbus
+param 94 alarm_tier5_name text - level=2 flags=persist,any_mode,no_modbus
 param 100 iob_hold uint s level=2 flags=persist
 param 101 iob_filter uint ms level=2 flags=persist
 param 102 iob_link uint - level=2 flags=persist
@@ -605,6 +626,12 @@ param 420 emis_clamp_zero bool - level=2 flags=persist,no_modbus
 param 421 emis_cal_ext float % level=2 flags=persist,no_modbus
 param 422 emis_operating bool - level=1 flags=any_mode
 param 423 emis_cfg_error uint - level=0 flags=ro
+param 424 emis_period2_s uint s level=2 flags=persist,no_modbus
+param 425 emis_q3_k float - level=2 flags=persist,no_modbus
+param 426 emis_q3_interval uint d level=2 flags=persist,no_modbus
+param 427 emis_q3_record uint - level=2 flags=no_modbus
+param 428 emis_q3_reset uint - level=2 flags=no_modbus
+param 429 emis_q3_result uint - level=0 flags=ro
 param 430 emis_src array - level=2 flags=persist,no_modbus
 param 431 emis_unit array - level=2 flags=persist,no_modbus
 param 432 emis_wet array - level=2 flags=persist,no_modbus
@@ -616,6 +643,12 @@ param 438 emis_qal2_b array - level=2 flags=persist,no_modbus
 param 439 emis_ys_max array - level=2 flags=persist,no_modbus
 param 440 emis_elv array - level=2 flags=persist,no_modbus
 param 441 emis_ci_pct array - level=2 flags=persist,no_modbus
+param 442 emis_elv2 array - level=2 flags=persist,no_modbus
+param 444 emis_q3_sams array - level=2 flags=persist,no_modbus
+param 445 emis_q3_zero_ref array - level=2 flags=persist,no_modbus
+param 446 emis_q3_span_ref array - level=2 flags=persist,no_modbus
+param 447 emis_q3_zero_rd array - level=2 flags=no_modbus
+param 448 emis_q3_span_rd array - level=2 flags=no_modbus
 param 450 emis_raw array - level=0 flags=ro
 param 451 emis_std array - level=0 flags=ro
 param 452 emis_ref_o2 array - level=0 flags=ro
@@ -634,6 +667,17 @@ param 466 emis_status array - level=0 flags=ro
 param 467 emis_discarded array - level=0 flags=ro
 param 468 emis_days_invalid array - level=0 flags=ro
 param 469 emis_weeks_above array - level=0 flags=ro
+param 470 emis_avg2 array - level=0 flags=ro
+param 471 emis_q_avg2 array - level=0 flags=ro
+param 472 emis_n2 array - level=0 flags=ro
+param 473 emis_n2_above array - level=0 flags=ro
+param 474 emis_n2_day array - level=0 flags=ro
+param 475 emis_n2_above_day array - level=0 flags=ro
+param 476 emis_q3_zero_dev array - level=0 flags=ro
+param 477 emis_q3_span_dev array - level=0 flags=ro
+param 478 emis_q3_last array - level=0 flags=ro
+param 479 emis_q3_status array - level=0 flags=ro
+param 480 emis_q3_n array - level=0 flags=ro
 param 500 inst_enable array - level=2 flags=persist
 param 501 inst_ip array - level=2 flags=persist
 param 502 inst_port array - level=2 flags=persist

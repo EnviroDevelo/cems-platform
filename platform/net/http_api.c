@@ -1272,7 +1272,8 @@ static void get_mb_map(http_out_t *o) {
                "{\"bit\":21,\"name\":\"calculation input missing\"},{\"bit\":22,\"name\":\"average incomplete\"},"
                "{\"bit\":23,\"name\":\"day invalid\"},{\"bit\":24,\"name\":\"confidence interval not applied\"},"
                "{\"bit\":25,\"name\":\"fixed H2O used\"},{\"bit\":26,\"name\":\"below range\"},"
-               "{\"bit\":27,\"name\":\"QAL2 review due\"}],"
+               "{\"bit\":27,\"name\":\"QAL2 review due\"},{\"bit\":28,\"name\":\"QAL3 warning limit exceeded\"},"
+               "{\"bit\":29,\"name\":\"QAL3 chart out of control\"},{\"bit\":30,\"name\":\"QAL3 check due\"}],"
                "\"input_alarm_status\":[{\"code\":0,\"name\":\"not used\"},{\"code\":1,\"name\":\"normal\"},"
                "{\"code\":2,\"name\":\"active, acknowledged\"},{\"code\":3,\"name\":\"active, not acknowledged\"},"
                "{\"code\":4,\"name\":\"cleared, not acknowledged\"},{\"code\":5,\"name\":\"input unreliable\"}");

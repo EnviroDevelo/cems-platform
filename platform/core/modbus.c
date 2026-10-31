@@ -83,7 +83,9 @@ enum {                                       /* the emissions engine's parameter
     STD_ENABLE = 400, STD_T_REF = 401, STD_P_REF = 402, STD_DILUENT = 403, STD_REF_PCT = 404,
     STD_PERIOD = 416, STD_OPERATING = 422, STD_CFG_ERROR = 423, STD_UNIT = 431,
     STD_BANK0 = 450, STD_Q_IN = 460, STD_Q_CALC = 461, STD_Q_MASS = 462, STD_Q_AVG = 463,
-    STD_Q_DAY = 464, STD_Q_RUN = 465, STD_STATUS = 466, STD_DISCARDED = 467, STD_DAYS_INVALID = 468
+    STD_Q_DAY = 464, STD_Q_RUN = 465, STD_STATUS = 466, STD_DISCARDED = 467, STD_DAYS_INVALID = 468,
+    STD_P2_AVG = 470, STD_P2_Q = 471, STD_P2_TODAY = 472, STD_P2_TODAY_OVER = 473, STD_P2_DAY = 474,
+    STD_P2_DAY_OVER = 475, STD_Q3_ZERO = 476, STD_Q3_SPAN = 477, STD_Q3_LAST = 478, STD_Q3_STATUS = 479
 };
 #define STD_SLOTS       32u
 #define STD_COMPONENTS  30u                  /* 43/14 component objects: 0x85 + 4n stays below 0x100 */
@@ -91,6 +93,9 @@ enum {                                       /* the emissions engine's parameter
 #define STD_EMIS_ST_ABOVE_CAL   0x0040u      /* emis.h EMIS_ST_* bits the status word uses */
 #define STD_EMIS_ST_OVER_RANGE  0x0080u
 #define STD_EMIS_ST_QAL2_REVIEW 0x8000u
+#define STD_Q3_WARN  0x06u                   /* emis_qal3.h EMIS_Q3_*: zero/span warning */
+#define STD_Q3_OUT   0x18u                   /*   zero/span out of control */
+#define STD_Q3_DUE   0x20u                   /*   check due */
 
 /* ---------------- forced values (modbus.h) ---------------- */
 typedef struct { uint16_t id, index; double x; plat_val_t v; uint32_t until; uint8_t src, level; } force_t;
@@ -277,7 +282,7 @@ bool mb_force_get(unsigned i, mb_force_t *out, uint32_t now_ms) {
 }
 
 /* ---------------- the standard CEMS block (VDI 4201-3) ----------------
- * Input registers 7000-7999 and the same in the holding registers, read-only: built here on each
+ * Input registers 7000-8999 and the same in the holding registers, read-only: built here on each
  * read, not from map entries. Layout: docs/MODBUS_STANDARD_BLOCK.md. The values come from the
  * emissions engine's parameters (emis.h); a build without them reads every slot as not fitted. */
 uint8_t plat_mb_std_words;                   /* param 335 */
@@ -339,10 +344,16 @@ static uint32_t std_status(unsigned n) {
     uint32_t es = isfinite(sd) ? (uint32_t)sd : 0u, w = 0;
     if (q == PLAT_Q_FAULT || q == PLAT_Q_UNAVAILABLE) w |= 1u << 0;
     if (q == PLAT_Q_MAINT || q == PLAT_Q_CAL || q == PLAT_Q_WARMUP) w |= 1u << 1;
-    if (alarm_active(ALARM_ID_CAL_DUE) || (es & STD_EMIS_ST_QAL2_REVIEW)) w |= 1u << 2;
-    if (q == PLAT_Q_RANGE || q == PLAT_Q_STALE || (es & (STD_EMIS_ST_ABOVE_CAL | STD_EMIS_ST_OVER_RANGE))) w |= 1u << 3;
+    double q3d = std_elem(STD_Q3_STATUS, (uint16_t)n);
+    uint32_t q3 = isfinite(q3d) ? (uint32_t)q3d : 0u;
+    if (alarm_active(ALARM_ID_CAL_DUE) || alarm_active(ALARM_ID_QAL3) || (es & STD_EMIS_ST_QAL2_REVIEW)) w |= 1u << 2;
+    if (q == PLAT_Q_RANGE || q == PLAT_Q_STALE || (es & (STD_EMIS_ST_ABOVE_CAL | STD_EMIS_ST_OVER_RANGE)) || (q3 & STD_Q3_OUT))
+        w |= 1u << 3;
     if (frc) w |= 1u << 4 | 1u << 16;
     w |= ((es >> 5) & 0x7FFu) << 17;                     /* engine bits 5-15 -> 17-27 */
+    if (q3 & STD_Q3_WARN) w |= 1u << 28;                 /* this slot's QAL3 chart (Rev C) */
+    if (q3 & STD_Q3_OUT)  w |= 1u << 29;
+    if (q3 & STD_Q3_DUE)  w |= 1u << 30;
     return w;
 }
 
@@ -355,7 +366,35 @@ static uint16_t std_half(uint32_t v, uint16_t a, uint16_t base) {
     return (uint16_t)(hi ? v >> 16 : v);
 }
 
+/* Rev C extension 8000-8999 (section 8): second-period averages and QAL3, from 470-479 */
+static uint16_t std_reg_c(uint16_t a) {
+    if (a < 8064u) {                                     /* second-period average, float */
+        unsigned n = (a - 8000u) / 2u;
+        return std_half(std_f32(std_fitted(n) ? std_elem(STD_P2_AVG, (uint16_t)n) : NAN), a, (uint16_t)(8000u + 2u * n));
+    }
+    if (a < 8096u) { unsigned n = a - 8064u; return std_fitted(n) ? std_q(STD_P2_Q, n) : PLAT_Q_UNAVAILABLE; }
+    if (a < 8224u) {                                     /* counts today / last day, valid and above */
+        static const uint16_t id[4] = { STD_P2_TODAY, STD_P2_TODAY_OVER, STD_P2_DAY, STD_P2_DAY_OVER };
+        unsigned g = (a - 8096u) / 32u, n = (a - 8096u) % 32u;
+        return std_fitted(n) ? std_u16(std_elem(id[g], (uint16_t)n)) : 0u;
+    }
+    if (a < 8352u) {                                     /* QAL3 zero, span deviation, float */
+        unsigned g = (a - 8224u) / 64u, n = ((a - 8224u) % 64u) / 2u;
+        double x = std_fitted(n) ? std_elem(g ? STD_Q3_SPAN : STD_Q3_ZERO, (uint16_t)n) : NAN;
+        return std_half(std_f32(x), a, (uint16_t)(8224u + 64u * g + 2u * n));
+    }
+    if (a < 8416u) {                                     /* QAL3 last check time, u32 */
+        unsigned n = (a - 8352u) / 2u;
+        double t = std_fitted(n) ? std_elem(STD_Q3_LAST, (uint16_t)n) : 0.0;
+        uint32_t u = isfinite(t) && t > 0.0 ? (t >= 4294967295.0 ? 0xFFFFFFFFu : (uint32_t)t) : 0u;
+        return std_half(u, a, (uint16_t)(8352u + 2u * n));
+    }
+    if (a < 8448u) { unsigned n = a - 8416u; return std_fitted(n) ? std_u16(std_elem(STD_Q3_STATUS, (uint16_t)n)) : 0u; }
+    return 0;                                            /* reserved */
+}
+
 static uint16_t std_reg(uint16_t a) {
+    if (a >= 8000u) return std_reg_c(a);
     if (a < 7128u) {                                     /* BasisM: value, status */
         unsigned n = (a - 7000u) / 4u, k = (a - 7000u) % 4u;
         bool fit = std_fitted(n);
@@ -468,6 +507,8 @@ int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
         if ((map[k].table == MB_INPUT || map[k].table == MB_HOLDING) && map[k].addr <= PLAT_MB_STD_END &&
             (uint32_t)map[k].addr + sp > PLAT_MB_STD_ADDR)
             return (int)k + 1;                         /* the standard CEMS block */
+        if (map[k].table == MB_COILS && map[k].addr <= PLAT_MB_STD_COIL_END && (uint32_t)map[k].addr + sp > PLAT_MB_STD_COIL_ADDR)
+            return (int)k + 1;                         /* its reserved coils */
         if (map[k].table == MB_DISCRETE && map[k].addr <= PLAT_DIA_MB_END && (uint32_t)map[k].addr + sp > PLAT_DIA_MB_ADDR)
             return (int)k + 1;                         /* the digital input alarms (plat_alarm.h) */
         idx[n_idx++] = (ent_t){ &map[k], d, sp };
