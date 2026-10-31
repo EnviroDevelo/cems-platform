@@ -26,7 +26,17 @@
 extern SPI_HandleTypeDef W5500_SPI_HANDLE;
 #define TMO 10u
 
+#if defined(CS_A_Pin)                     /* the CORE PCB: SPI4 shared with the I/O node's chips */
+#include "spi4_bus.h"
+static void cs(w5500_bus_t *b, bool on) {
+    (void)b;
+    if (on) spi4_claim(0, 0);
+    HAL_GPIO_WritePin(W5500_CS_GPIO_Port, W5500_CS_Pin, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    if (!on) spi4_release();
+}
+#else
 static void cs(w5500_bus_t *b, bool on) { (void)b; HAL_GPIO_WritePin(W5500_CS_GPIO_Port, W5500_CS_Pin, on ? GPIO_PIN_RESET : GPIO_PIN_SET); }
+#endif
 
 static void xfer(w5500_bus_t *b, const uint8_t *tx, uint8_t *rx, uint16_t n) {
     (void)b;

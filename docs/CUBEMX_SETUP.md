@@ -268,6 +268,29 @@ OCTOSPI). On flying leads add `PSRAM_CLK_PRESCALER=24u` (10 MHz) to the defines,
 Nucleo's solder bridge to the LED on PB0. Bench checks on the first board: an HTTPS handshake time against the DK's (the TLS pool is in the
 PSRAM; `TLS_POOL_PLACE=` empty puts it back on chip), and a backup/restore.
 
+## 3l. The I/O node's field chips (CORE PCB rev 0.2 in the node role, CORE_PCB.md 14)
+
+One image serves both roles (J7). On the CORE PCB the node role drives the real field chips through
+`node/drivers` on SPI4, shared with the W5500. Leave these out for the DK and the Nucleo; without
+the `CS_A` label the node falls back to the platform's pins (the Nucleo bench).
+
+- **Sources:** add `node/drivers/*.c`, `port/stm32h5/node_io_stm32h5.c` and `port/stm32h5/spi4_bus.c`;
+  include paths `node/drivers` and `port/node_stm32g0` (for `node_port.h`).
+- **SPI4** stays as in 3h (mode 0, the W5500's clock). The firmware switches the mode and divider per
+  transaction: 4 MHz for the field chips, mode 1 for the ADS124S08 (`spi4_bus.h`).
+- **GPIO outputs, initial high:** `CS_A` PE2, `CS_B` PE3, `CS_IN` PE4, `CS_T` PE15, `CS_AI` PE0.
+- **GPIO outputs, initial low:** `GATE_EN` PB8, `WDI` PB9, `PUMP_DIR` PC6, `PUMP_EN` PC7.
+- **Open-drain outputs, initial high (relays off):** `REL1_N` PB4, `REL2_N` PB5.
+- **Inputs, pull-up:** `A_ERR` PD1, `IN_ERR` PC13, `B_FAULT` PD14, `B_PGOOD` PD15, `GATE_FB` PD8.
+- **TIM1** CH1 PWM on PA8 (AF1), prescaler set so the counter runs at **1 MHz**; leave it stopped (the
+  firmware sets ARR, CCR1 and MOE). **TIM2** CH1 input capture on PA0 (AF1), rising edge, 1 MHz, 32-bit
+  free running, no interrupt.
+- **The gate:** WDI toggles on every node pass in which the node core is healthy and its gate open,
+  and GATE_EN follows that gate, so the MAX6369 (30 ms) drops every output if the iobus task stalls.
+  To check on the first board: the MAX6369 start-up timeout against the time to the first command
+  (the gate must open once kicks start), and GATE_FB against GATE_EN (`bsp_node_gate_fault`).
+- **Not yet:** the AD4112 analog inputs (no node registers for them yet; `CS_AI` is held high).
+
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 
 The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the

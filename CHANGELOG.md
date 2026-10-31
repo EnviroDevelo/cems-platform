@@ -13,6 +13,10 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
   their counts and the QAL3 charts (params 470-479). The status word gains bit 2 from alarm 24
   QAL3 and maker bits 28 (QAL3 warning), 29 (chart out of control, also bit 3) and 30 (check due).
   A product map may no longer use input or holding 8000-8999, nor coils 8000-8099 (reserved).
+- The CORE PCB rev 0.2 in the I/O node role: `port/stm32h5/node_io_stm32h5.c` runs the field chips'
+  drivers (node/drivers) on SPI4, shared with the W5500 (`spi4_bus.c`), and the output gate (GATE_EN,
+  WDI kick on each healthy pass, GATE_FB). plat_node.h gains the port hooks `bsp_node_chips` and
+  `bsp_node_pass` (weak defaults: the platform's pins, as before). CubeMX steps: CUBEMX_SETUP.md 3l.
 - `/api/params`: `meas` gives a measured parameter's position in plat_meas.
 - Interface snapshots brought up to date with the alarm tiers, emissions and instrument
   parameters merged since 0.9.0.

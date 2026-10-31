@@ -126,7 +126,20 @@ static const node_hw_t hw = {
     .b_supply_ok = b_true, .relays = relays, .addr_store = addr_store, .serial_store = serial_store,
 };
 
-const node_hw_t *plat_node_hw(void) { return &hw; }
+__attribute__((weak)) const node_hw_t *bsp_node_chips(void) { return NULL; }
+__attribute__((weak)) void bsp_node_pass(bool healthy, bool gate) { (void)healthy; (void)gate; }
+
+static node_hw_t chips;                  /* the board's chips, with this file's address and serial store */
+static const node_hw_t *in_use = &hw;
+
+const node_hw_t *plat_node_hw(void) { return in_use; }
+
+static void pass(plat_node_t *p, uint32_t now) {
+    node_poll(&p->node, now);
+    bsp_node_pass(node_healthy(&p->node), p->node.gate);
+}
+
+void plat_node_idle(plat_node_t *p, uint32_t now) { pass(p, now); }
 
 /* ---------------- start-up ---------------- */
 static node_reset_t reset_cause(void) {
@@ -149,6 +162,14 @@ void plat_node_init(plat_node_t *p, uint32_t now) {
     p->disc_to = 0xFFFFFFFFu;
     memset(&out, 0, sizeof out);
     bsp_io_write(&out);
+    const node_hw_t *board = bsp_node_chips();
+    if (board) {
+        chips = *board;
+        chips.addr_store = addr_store;
+        chips.serial_store = serial_store;
+        in_use = &chips;
+    } else
+        in_use = &hw;
 
     node_boot_t b;
     memset(&b, 0, sizeof b);
@@ -164,7 +185,7 @@ void plat_node_init(plat_node_t *p, uint32_t now) {
     uint8_t rev;
     b.hw_rev = bsp_hw_straps(&rev) ? rev : (uint8_t)PLAT_NODE_HW_REV;
     uid_words(b.uid);
-    node_init(&p->node, &hw, &b, now);
+    node_init(&p->node, in_use, &b, now);
 
     node_ipcfg_t ipc;
     ip_load(&ipc);
@@ -302,5 +323,5 @@ void plat_node_poll(plat_node_t *p, uint32_t now, unsigned wait_ms) {
     bool cleared = node_net_poll(&p->net);           /* the address cleared over USB: a new board again */
     PLAT_CRIT_EXIT();
     if (cleared) drop_conn(p);
-    node_poll(&p->node, bsp_ms());
+    pass(p, bsp_ms());
 }
