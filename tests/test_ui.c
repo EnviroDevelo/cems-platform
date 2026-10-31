@@ -32,6 +32,7 @@ extern uint8_t plat_alarm_tier_route[AL_TIERS], plat_alarm_prio[ALARM_ID_MAX + 1
 #include "plat_power.h"
 #include "plat_cal.h"
 #include "plat_service.h"
+#include "inst.h"
 #include "plat_version.h"
 
 static eve_sim_t sim;
@@ -929,6 +930,43 @@ static void t_service_screen(void) {
     CHECK(tap("Log out factory"));
 }
 
+/* System > Instruments: the analysers the core polls on the I/O network, read only */
+static void t_inst_screen(void) {
+    setup();
+    inst_reset();
+    memset(&inst_tags, 0, sizeof inst_tags); memset(&inst_pt, 0, sizeof inst_pt);
+    inst_init(NULL);
+    CHECK(tap("System")); CHECK(tap("Instruments")); CHECK_EQ(ui_screen(), UI_INST);
+    CHECK(shows("No instruments are set up."));
+    inst_tags.enable[0] = true; strcpy(inst_tags.name[0], "O2 analyser");
+    inst_tags.ip[0] = 0xC0A80114u; inst_tags.port[0] = 502; inst_tags.unit[0] = 1; inst_tags.period_ms[0] = 1000;
+    inst_tags.timeout_ms[0] = 1000; inst_tags.max_regs[0] = 64;
+    inst_tags.enable[2] = true; inst_tags.ip[2] = 0xC0A80115u; inst_tags.port[2] = 502; inst_tags.unit[2] = 7;
+    inst_pt.inst[0] = 1; strcpy(inst_pt.name[0], "O2"); inst_pt.unit[0][0] = '%';
+    inst_pt.inst[1] = 1; strcpy(inst_pt.name[1], "CO");
+    { const uint8_t u[] = { 'm', 0, 'g', 0, '/', 0, 'N', 0, 'm', 0, 0xB3, 0 }; memcpy(inst_pt.unit[1], u, sizeof u); }   /* mg/Nm³ */
+    inst_pt.inst[2] = 3; strcpy(inst_pt.name[2], "Flow");
+    inst_scan(now);
+    inst_pt.value[0] = 20.9f; inst_pt.q[0] = PLAT_Q_VALID;            /* as if read */
+    inst_pt.value[1] = 41.5f; inst_pt.q[1] = PLAT_Q_STALE;
+    inst_tags.state[0] = INST_S_OK; inst_tags.good[0] = 120; inst_tags.errors[0] = 2; inst_tags.resp_ms[0] = 35;
+    inst_tags.last_err[0] = INST_E_TIMEOUT;
+    frame();
+    CHECK(shows("O2 analyser")); CHECK(shows("Instrument 3"));          /* no name: by number */
+    CHECK(shows("192.168.1.20:502, unit 1"));
+    CHECK(shows("120 polls good, 2 failed, reply 35 ms"));
+    CHECK(shows("Last error: no reply"));
+    CHECK(shows("20.9 %")); CHECK(shows("41.5 mg/Nm")); CHECK(shows("stale"));
+    CHECK(!shows("Flow"));                                             /* instrument 3's point */
+    dump("instruments");
+    CHECK(tap("Instrument 3"));
+    CHECK(shows("Flow")); CHECK(!shows("41.5"));
+    CHECK(shows("----"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    inst_reset();
+    memset(&inst_tags, 0, sizeof inst_tags); memset(&inst_pt, 0, sizeof inst_pt);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
@@ -943,4 +981,5 @@ void test_ui_all(void) {
     RUN(t_dia_screen);
     RUN(t_trends_screen);
     RUN(t_service_screen);
+    RUN(t_inst_screen);
 }

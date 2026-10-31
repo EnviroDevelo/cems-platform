@@ -28,6 +28,7 @@
 #include "plat_service.h"
 #include "plat_selftest.h"
 #include "plat_boardtest.h"
+#include "inst.h"
 #include "plat_version.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
@@ -78,6 +79,7 @@ enum {
     T_TR_PEN0 = 196,        /* .. 199: trend pens */
     T_TR_ADD = 206, T_TR_DEL, T_TR_CLR, T_TRENDS,       /* trends */
     T_SVC = 226, T_SVC_BT, T_SVC_LOG,                  /* service screen, board test, add a service log entry */
+    T_INST = 229,           /* System: open the instruments page */
     T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
     T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE,  /* display test (bench bring-up) */
     T_FORCE = 240, T_FC_CLEAR_ALL,      /* Modbus force (commissioning) */
@@ -87,6 +89,7 @@ enum {
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
 typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL, ACT_FORCE, ACT_ELEM, ACT_BT } act_t;
 #define TR_PENS 4
+#define INST_PT_ROWS 9u          /* instruments page: point rows shown */
 #define TR_N    150              /* trend samples kept: 10 minutes at TR_MS */
 #define TR_MS   4000u
 
@@ -167,6 +170,8 @@ static struct {
     unsigned tr_first;
     /* service log entry from the touchscreen: 1 = typing who, 2 = typing the work */
     uint8_t  svc_step;
+    uint8_t  inst_sel;             /* instruments page: the instrument shown (0..INST_MAX-1), its first point row */
+    unsigned inst_first;
     char     svc_tech[16];
     /* record editor */
     const ui_record_t *rec;
@@ -908,6 +913,12 @@ static void tap(uint8_t t, uint32_t now) {
             goto_scr(UI_TRENDS);
         }
         break;
+    case UI_INST:
+        if (t == T_BACK) goto_scr(UI_SYSTEM);
+        else if (t >= T_ROW0 && t < T_ROW0 + INST_MAX) { U.inst_sel = (uint8_t)(t - T_ROW0); U.inst_first = 0; U.dirty = true; }
+        else if (t == T_PGUP) { U.inst_first = U.inst_first >= INST_PT_ROWS ? U.inst_first - INST_PT_ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { U.inst_first += INST_PT_ROWS; U.dirty = true; }
+        break;
     case UI_SERVICE:
         if (t == T_BACK) goto_scr(UI_SYSTEM);
         else if (t == T_DISP) { U.dt_mode = 0; U.dt_t0 = 0; U.dt_hz10 = U.dt_mhz10 = 0; goto_scr(UI_DISPLAY); }
@@ -939,6 +950,7 @@ static void tap(uint8_t t, uint32_t now) {
             ask(ACT_FW, m);
         } else if (t == T_IOB) goto_scr(UI_IOB);
         else if (t == T_SVC) goto_scr(UI_SERVICE);
+        else if (t == T_INST) { U.inst_first = 0; goto_scr(UI_INST); }
         else if (t == T_CAL) { unsigned a; if (plat_cal_active(&a)) U.cal_ch = (uint8_t)a; goto_scr(UI_CAL); }
         else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
@@ -1384,12 +1396,13 @@ static void draw_system(uint32_t now) {
         button(T_FW_ACT, 32, BODY_Y + 184, 460, 64, b, C_WARN, U.level >= PLAT_LVL_FACTORY);
     }
     /* brightness */
-    color(C_INK); text(32, BODY_Y + 266, F_TEXT, 0, "Screen brightness");
+    color(C_INK); text(32, BODY_Y + 282, F_TEXT, OPT_CENTERY, "Screen brightness");
     snprintf(b, sizeof b, "%u %%", U.bright);
-    button(T_BRIGHT_DN, 32, BODY_Y + 306, 100, 64, "-", C_ACCENT, true);
-    color(C_INK); text(182, BODY_Y + 338, F_BIG, OPT_CENTER, b);
-    button(T_BRIGHT_UP, 232, BODY_Y + 306, 100, 64, "+", C_ACCENT, true);
-    button(T_SVC, 344, BODY_Y + 306, 148, 64, "Service", 0x5B6577u, true);   /* self-test, board test, service log, display test */
+    button(T_BRIGHT_DN, 252, BODY_Y + 254, 72, 56, "-", C_ACCENT, true);
+    color(C_INK); text(372, BODY_Y + 282, F_BIG, OPT_CENTER, b);
+    button(T_BRIGHT_UP, 420, BODY_Y + 254, 72, 56, "+", C_ACCENT, true);
+    button(T_INST, 32, BODY_Y + 316, 224, 56, "Instruments", C_ACCENT, true);   /* third-party analysers (inst.h) */
+    button(T_SVC, 268, BODY_Y + 316, 224, 56, "Service", 0x5B6577u, true);   /* self-test, board test, service log, display test */
     /* HTTPS fingerprint: a technician compares it with the browser's to know it reached this unit */
     const char *fp = tls_fingerprint();
     color(C_MUTE); text(32, BODY_Y + 378, F_SMALL, 0, fp[0] ? "HTTPS certificate fingerprint (SHA-256)" : "HTTPS not available");
@@ -2087,6 +2100,82 @@ static void draw_tr_pick(void) {
     if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No values to trend"); }
     button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.tr_first > 0);
     button(T_PGDN, 908, BODY_Y + 136, 100, 120, "Down", C_ACCENT, U.tr_first + ROWS < n);
+    button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
+}
+
+/* ---------------- instruments (role 2: the core polls analysers on the I/O network), read only ---------------- */
+static uint32_t inst_colour(uint8_t s) {
+    return s == INST_S_OK ? C_OK : s == INST_S_LOST || s == INST_S_BAD_SETTINGS ? C_BAD : s == INST_S_FAILING ? C_WARN : C_GREY;
+}
+static void inst_label(unsigned k, char *b, size_t cap) {
+    if (inst_tags.name[k][0]) snprintf(b, cap, "%.23s", inst_tags.name[k]); else snprintf(b, cap, "Instrument %u", k + 1u);
+}
+
+static void draw_inst(void) {
+    char b[112], l[32];
+    unsigned shown = 0;
+    box(16, BODY_Y, 384, 392, C_CARD, 8);
+    box(412, BODY_Y, 484, 392, C_CARD, 8);
+    if (U.inst_sel >= INST_MAX || !inst_tags.enable[U.inst_sel])
+        for (unsigned k = 0; k < INST_MAX; ++k) if (inst_tags.enable[k]) { U.inst_sel = (uint8_t)k; break; }
+    for (unsigned k = 0; k < INST_MAX; ++k) {          /* the instruments: enabled ones only */
+        if (!inst_tags.enable[k]) continue;
+        int16_t y = (int16_t)(BODY_Y + 4 + shown * 48);
+        uint8_t tg = (uint8_t)(T_ROW0 + k);
+        eve_tag(E, tg);
+        box(20, y, 376, 46, U.pressed == tg ? 0xDCE6F5u : k == U.inst_sel ? 0xEEF3FAu : C_CARD, 4);
+        if (shown) { color(C_LINE); eve_line(E, 24, y, 392, y, 1); }
+        inst_label(k, l, sizeof l);
+        color(C_INK); text(32, (int16_t)(y + 14), F_SMALL, OPT_CENTERY, l);
+        color(inst_colour(inst_tags.state[k])); text(388, (int16_t)(y + 14), F_SMALL, OPT_CENTERY | OPT_RIGHTX, inst_state_name(inst_tags.state[k]));
+        char ip[20]; fmt_ip(ip, sizeof ip, inst_tags.ip[k]);
+        snprintf(b, sizeof b, "%s:%u, unit %u", inst_tags.ip[k] ? ip : "no address", (unsigned)inst_tags.port[k], (unsigned)inst_tags.unit[k]);
+        color(C_MUTE); text(32, (int16_t)(y + 34), F_SMALL, OPT_CENTERY, b);
+        eve_tag(E, 0);
+        ++shown;
+    }
+    if (!shown) {
+        color(C_MUTE);
+        text(32, BODY_Y + 24, F_SMALL, 0, "No instruments are set up.");
+        text(32, BODY_Y + 48, F_SMALL, 0, "Set them up on the web page, Instruments.");
+        button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
+        return;
+    }
+    /* the selected instrument: counters, then its points */
+    unsigned k = U.inst_sel;
+    inst_label(k, l, sizeof l);
+    color(C_INK); text(428, BODY_Y + 20, F_TEXT, OPT_CENTERY, l);
+    color(inst_colour(inst_tags.state[k])); text(880, BODY_Y + 20, F_SMALL, OPT_CENTERY | OPT_RIGHTX, inst_state_name(inst_tags.state[k]));
+    snprintf(b, sizeof b, "%lu polls good, %lu failed, reply %u ms", (unsigned long)inst_tags.good[k], (unsigned long)inst_tags.errors[k],
+             (unsigned)inst_tags.resp_ms[k]);
+    color(C_MUTE); text(428, BODY_Y + 46, F_SMALL, OPT_CENTERY, b);
+    if (inst_tags.last_err[k]) {
+        if (inst_tags.last_err[k] == INST_E_EXCEPTION) snprintf(b, sizeof b, "Last error: exception %02X", (unsigned)inst_tags.last_exc[k]);
+        else snprintf(b, sizeof b, "Last error: %s", inst_err_name(inst_tags.last_err[k]));
+        color(C_WARN); text(428, BODY_Y + 68, F_SMALL, OPT_CENTERY, b);
+    }
+    unsigned np = 0, row = 0;
+    for (unsigned p = 0; p < INST_POINTS; ++p) {
+        if (inst_pt.inst[p] != k + 1u) continue;
+        if (np++ < U.inst_first || row >= INST_PT_ROWS) continue;
+        int16_t y = (int16_t)(BODY_Y + 92 + row * 33);
+        if (row) { color(C_LINE); eve_line(E, 424, (int16_t)(y - 4), 884, (int16_t)(y - 4), 1); }
+        float v; uint8_t q;
+        if (!inst_point(p, &v, &q)) { v = NAN; q = PLAT_Q_UNAVAILABLE; }
+        char nm[32], un[24], vs[24];
+        if (inst_pt.name[p][0]) snprintf(nm, sizeof nm, "%.22s", inst_pt.name[p]); else snprintf(nm, sizeof nm, "Point %u", p + 1u);
+        if (utf16le_to_utf8(inst_pt.unit[p], INST_UNIT_LEN / 2u, un, sizeof un) < 0) un[0] = 0;
+        if (q == PLAT_Q_UNAVAILABLE || isnan(v)) snprintf(vs, sizeof vs, "----"); else fmt_float(vs, sizeof vs, (double)v);
+        snprintf(b, sizeof b, "%s %s", vs, un);
+        color(C_MUTE); text(428, (int16_t)(y + 12), F_SMALL, OPT_CENTERY, nm);
+        color(q == PLAT_Q_VALID ? C_INK : C_GREY); text(730, (int16_t)(y + 12), F_SMALL, OPT_CENTERY | OPT_RIGHTX, b);
+        color(q_color(q)); text(880, (int16_t)(y + 12), F_SMALL, OPT_CENTERY | OPT_RIGHTX, q == PLAT_Q_VALID ? "ok" : plat_quality_name(q));
+        ++row;
+    }
+    if (!np) { color(C_MUTE); text(428, BODY_Y + 104, F_SMALL, 0, "No points read from this instrument"); }
+    if (U.inst_first >= np && np) U.inst_first = (np - 1u) / INST_PT_ROWS * INST_PT_ROWS;
+    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.inst_first > 0);
+    button(T_PGDN, 908, BODY_Y + 136, 100, 120, "Down", C_ACCENT, U.inst_first + INST_PT_ROWS < np);
     button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
 }
 
@@ -2904,6 +2993,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_TRENDS: draw_trends(); break;
     case UI_TR_PICK: draw_tr_pick(); break;
     case UI_SERVICE: draw_service(); break;
+    case UI_INST: draw_inst(); break;
     case UI_CLOCK: draw_clock(); break;
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;

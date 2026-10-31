@@ -158,6 +158,7 @@ instead of guessing. **Previous** and **Next** move between slots.
   - **Set clock** (admin). Only needed when there is no time server. "Clock, not synced" means nothing outside has confirmed the time;
   - **I/O boards**: each board's link, inputs, outputs, temperatures and faults, in words;
   - screen brightness;
+  - **Instruments** (see 8c);
   - **Service** (see 9).
 
   The HTTPS fingerprint at the bottom lets a technician check that their browser has reached this unit.
@@ -187,6 +188,13 @@ including test bits.
 - **Remove** takes the selected value off. **Restart** clears the lines and starts again.
 - A gap in a line means the value was not valid then: stale, unavailable, in maintenance and so on.
 - Trends keep recording while you use other screens. They are not saved: a restart clears them. For longer periods, download the data log from the web page.
+
+## 8c. Instruments (System, then Instruments)
+
+Third-party instruments, such as gas analysers and flow meters, that the instrument reads over Modbus TCP on its I/O network. The page only shows them. They are set up on the web page (Instruments).
+
+- **Left:** each instrument that is switched on, with its address and its state: ok, connecting, failing, lost (several polls in a row failed; it keeps trying), bad settings, or off. Tap one to show it on the right.
+- **Right:** how many polls worked and failed, how long the last reply took, the last error, and each value read from it with its unit and quality word. A greyed value is not valid: the word beside it says why (stale, unavailable, out of range, fault...). **Up** and **Down** page through the values.
 
 ## 9. Service (System, then Service)
 
