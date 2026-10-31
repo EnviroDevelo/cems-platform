@@ -62,3 +62,13 @@ From the datasheet and the Linux ad7173 driver (supports AD4111/AD4112):
 - **ADS124S08:**
   - CLK to DGND gives the internal 4.096 MHz oscillator. Max SCLK 10 MHz.
   - /RESET is active low. REFOUT needs 1-47 µF.
+
+## ADS124S08 facts (checked 31 Oct against SBAS660, Zephyr ads1x4s0x, variegated-ads124s08 crate)
+
+- SYS 0x09, reset 0x10: SYS_MON[7:5] (000 off, 001 PGA short, 010 internal temperature sensor, 011 AVDD/4, 100 DVDD/4, 101/110/111 burn-out 0.2/1/10 µA), CAL_SAMP[4:3], TIMEOUT bit 2, CRC bit 1, SENDSTAT bit 0.
+- Internal temperature sensor: 129 mV at 25 °C, 403 µV/°C. Burn-out sources 0.2/1/10 µA (±8/4/2 %).
+- STATUS 0x01: POR bit 7, /RDY bit 6, P/N rail flags bits 5:2, REF_L1 bit 1, REF_L0 bit 0.
+- DATARATE 0x04: G_CHOP 7, CLK 6, MODE 5 (1 = single shot), FILTER 4 (1 = low latency), DR[3:0] (0000 2.5, 0001 5, 0010 10, 0011 16.6, 0100 20, 0101 50, 0110 60, 0111 100, 1000 200 ... 1101 4000 SPS).
+- PGA 0x03: PGA_EN[4:3] 01 = on, 00 = bypass; GAIN[2:0]. REF 0x05: REFSEL 00 REFP0/N0, 01 REFP1/N1, 10 internal; REFCON 00 off, 01 on, 10 always on; buffer bits are active-low disables.
+- SPI mode 1 (CPOL 0, CPHA 1); SCLK at most 10 MHz. CLK to DGND = internal 4.096 MHz.
+- NOT verified (register-map and CRC pages missing from every copy read): the CRC-8 seed and coverage (x^8+x^2+x+1, seed 0xFF, STATUS + data is the usual statement) and the DEV_ID code. Confirm on the bench: a wrong seed fails every frame, which the driver reports as IOB_TS_ADC.
