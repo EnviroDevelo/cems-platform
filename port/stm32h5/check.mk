@@ -40,6 +40,11 @@ SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/ta
           $(APP_SRC) port/stm32h5/check/check_main.c \
           $(FR)/tasks.c $(FR)/list.c $(FR)/queue.c $(FR)/timers.c \
           $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/port.c $(FR)/portable/GCC/ARM_CM33_NTZ/non_secure/portasm.c
+# the CORE PCB in the I/O node role (CHECK_WITH_NODE_IO): the field chips' drivers on SPI4
+ifneq ($(findstring CHECK_WITH_NODE_IO,$(DEV)),)
+SRCS   += $(wildcard node/drivers/*.c) port/stm32h5/node_io_stm32h5.c port/stm32h5/spi4_bus.c
+INC    += -Inode/drivers -Iport/node_stm32g0
+endif
 OUT    ?= build/target
 OBJS    = $(addprefix $(OUT)/,$(notdir $(SRCS:.c=.o)))
 vpath %.c $(sort $(dir $(SRCS)))

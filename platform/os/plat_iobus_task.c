@@ -19,7 +19,7 @@ static void node_body(void) {
     plat_node_init(&node, bsp_ms());
     for (;;) {
         if (plat_net_ready()) plat_node_poll(&node, bsp_ms(), 1);   /* waits up to 1 ms for traffic */
-        else { node_poll(&node.node, bsp_ms()); vTaskDelay(1); }   /* no network yet: the core alone (all off) */
+        else { plat_node_idle(&node, bsp_ms()); vTaskDelay(1); }   /* no network yet: the core alone (all off) */
         plat_checkin(PLAT_TASK_IOBUS);
     }
 }

@@ -57,7 +57,19 @@ void plat_node_poll(plat_node_t *p, uint32_t now_ms, unsigned wait_ms);
 void plat_node_close(plat_node_t *p);
 /* The IP settings the board should have now (ip 0: none, a new board). */
 bool plat_node_ipcfg(node_ipcfg_t *c);
-const node_hw_t *plat_node_hw(void);   /* the board's pins as node_hw_t */
+const node_hw_t *plat_node_hw(void);   /* the board's chips or pins as node_hw_t, as the core uses it */
+/* One node pass without the network (before it is up): the core alone, everything off. */
+void plat_node_idle(plat_node_t *p, uint32_t now_ms);
+
+/* The port's hooks (weak defaults here: none).
+ *   bsp_node_chips: the board's own I/O chips (the CORE PCB in the node role: node/drivers on SPI4,
+ *     port/stm32h5/node_io_stm32h5.c). NULL: the platform's pins through bsp_io (the Nucleo bench).
+ *     The address and serial number stay in the backup words either way.
+ *   bsp_node_pass: after every node pass. healthy: the core's HEALTHY toggle (FW-22), which kicks
+ *     the board's gate watchdog (MAX6369); gate: the outputs may switch (GATE_EN). A stuck task
+ *     stops the kicks, and the hardware gate drops every output within 30 ms. */
+const node_hw_t *bsp_node_chips(void);
+void bsp_node_pass(bool healthy, bool gate);
 /* The board's MAC (iob_mac_from_uid of the chip ID): discovery reports it, and in the NODE role the
  * Ethernet interface uses it too (plat_net_mac), so "Find boards" matches the switch and ARP. */
 void plat_node_mac(uint8_t mac[6]);
