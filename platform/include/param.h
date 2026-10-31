@@ -112,6 +112,10 @@ enum {
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */
+    PARAM_ID_ALARM_PRIO       = 52,  /* 256 bytes, one per alarm ID: AL_PRIO_* tier (0 = default, 6 = off; plat_alarm.h) */
+    PARAM_ID_ALARM_TIER_ROUTE = 53,  /* 5 bytes, one per tier: AR_SET | actions for alarms with none of their own */
+    PARAM_ID_ALARM_TIER_ACTIVE = 54, /* RO: 5 words, alarms active per tier */
+    PARAM_ID_ALARM_TIER_UNACKED = 55, /* RO: 5 words, alarms waiting for an acknowledge per tier */
     PARAM_ID_ALARM_ACK        = 40,  /* write an alarm ID (or 65535 = all) to acknowledge it; any mode, no login */
     PARAM_ID_ALARM_ACTIVE     = 41,  /* RO: alarms active */
     PARAM_ID_ALARM_UNACKED    = 42,  /* RO: alarms waiting for an acknowledge */
@@ -144,6 +148,7 @@ enum {
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
+    PARAM_ID_ALARM_TIER_NAME_FIRST = 90, /* 90..94: the names of tiers 1..5 (text, empty = Critical, High, ...) */
     PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
     PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
     PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet on the main port, 2 the I/O port (W5500, iob_w5500.h) */
