@@ -473,6 +473,11 @@ static void t_bind(void) {
     CHECK(param_find(PARAM_ID_EMIS_SRC) != NULL);
     CHECK_EQ(emis_set.src[7], EMIS_NONE);                  /* defaults: no channel fed */
     CHECK(param_find(PARAM_ID_EMIS_QAL2_A)->flags & PF_NO_MODBUS);
+    /* before the first scan no result reads as valid (PLAT_Q_VALID is 0: a zeroed result would) */
+    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
+        for (unsigned k = 0; k < EMIS_QS; ++k) CHECK_EQ(emis_res.q[k][i], PLAT_Q_UNAVAILABLE);
+        CHECK_EQ(emis_res.q2[i], PLAT_Q_UNAVAILABLE);
+    }
     emis_bind_scan(bsp_ms());
     CHECK_EQ(emis_res.q[1][3], PLAT_Q_UNAVAILABLE);        /* off */
     /* CO in ppm from measurement 0, dry O2 from measurement 1 */

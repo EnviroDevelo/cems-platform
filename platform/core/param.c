@@ -314,6 +314,9 @@ static const param_def_t plat_defs[] = {
 #define EM_RO(ID, NAME, VAR, CT, HI) \
     { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
       .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.u = 0u, .vmax.u = (HI) }
+#define EM_ROQ(ID, NAME, VAR) \
+    { .id = (ID), .ctype = CT_U8, .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = emis_dflt_unavail, .name = (NAME), .vmin.u = 0u, .vmax.u = PLAT_Q_COUNT - 1 }
 #define EM_ROF(ID, NAME, VAR) \
     { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
       .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.f = -3.4e38f, .vmax.f = 3.4e38f }
@@ -372,18 +375,18 @@ static const param_def_t plat_defs[] = {
     EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 5, "emis_avg", emis_res.v[5]),
     EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 6, "emis_val", emis_res.v[6]),
     EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 7, "emis_day", emis_res.v[7]),
-    EM_RO(PARAM_ID_EMIS_Q_IN, "emis_q_in", emis_res.q[0], CT_U8, PLAT_Q_COUNT - 1),
-    EM_RO(PARAM_ID_EMIS_Q_CALC, "emis_q_calc", emis_res.q[1], CT_U8, PLAT_Q_COUNT - 1),
-    EM_RO(PARAM_ID_EMIS_Q_MASS, "emis_q_mass", emis_res.q[2], CT_U8, PLAT_Q_COUNT - 1),
-    EM_RO(PARAM_ID_EMIS_Q_AVG, "emis_q_avg", emis_res.q[3], CT_U8, PLAT_Q_COUNT - 1),
-    EM_RO(PARAM_ID_EMIS_Q_DAY, "emis_q_day", emis_res.q[4], CT_U8, PLAT_Q_COUNT - 1),
-    EM_RO(PARAM_ID_EMIS_Q_RUN, "emis_q_run", emis_res.q[5], CT_U8, PLAT_Q_COUNT - 1),
+    EM_ROQ(PARAM_ID_EMIS_Q_IN, "emis_q_in", emis_res.q[0]),
+    EM_ROQ(PARAM_ID_EMIS_Q_CALC, "emis_q_calc", emis_res.q[1]),
+    EM_ROQ(PARAM_ID_EMIS_Q_MASS, "emis_q_mass", emis_res.q[2]),
+    EM_ROQ(PARAM_ID_EMIS_Q_AVG, "emis_q_avg", emis_res.q[3]),
+    EM_ROQ(PARAM_ID_EMIS_Q_DAY, "emis_q_day", emis_res.q[4]),
+    EM_ROQ(PARAM_ID_EMIS_Q_RUN, "emis_q_run", emis_res.q[5]),
     EM_RO(PARAM_ID_EMIS_STATUS, "emis_status", emis_res.status, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_DISCARDED, "emis_discarded", emis_res.discarded, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_DAYS_INVALID, "emis_days_invalid", emis_res.days_invalid, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_WEEKS_ABOVE, "emis_weeks_above", emis_res.weeks_above, CT_U16, 0xFFFFu),
     EM_ROF(PARAM_ID_EMIS_AVG2, "emis_avg2", emis_res.v2),
-    EM_RO(PARAM_ID_EMIS_Q_AVG2, "emis_q_avg2", emis_res.q2, CT_U8, PLAT_Q_COUNT - 1),
+    EM_ROQ(PARAM_ID_EMIS_Q_AVG2, "emis_q_avg2", emis_res.q2),
     EM_RO(PARAM_ID_EMIS_N2, "emis_n2", emis_res.n2, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_N2_ABOVE, "emis_n2_above", emis_res.n2_above, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_N2_DAY, "emis_n2_day", emis_res.n2_day, CT_U16, 0xFFFFu),
