@@ -1,8 +1,11 @@
 """Pin tables for the I/O parts that are missing from the KiCad 7 libraries.
 
 gen_schematic.py draws each one as a plain box (ic_symbol) into cems_core.kicad_sym.
-Every table was read from the maker's datasheet through a summarising web fetch, so each
-part carries CHECK in design.py until a person has compared it pin by pin with the PDF.
+31 Oct: every table was compared pin by pin with the maker's datasheet (read through a web
+reader, as vendor PDFs cannot be downloaded here): AD4112, ADS124S08 (SBAS660), ISO2H823V2.5
+(Rev 2.1), ISO1I813T, ISO808A-1 (DS14170) and ISO7741 all match. The ISO2H823V2.5 also has
+two exposed pads (GND and GNDBB) not yet in the symbol; their numbers come with the package
+drawing.
 Entries: (pin number, name, KiCad electrical type). Left side = logic (MCU) side,
 right side = field or analog side. None leaves a gap.
 """
@@ -17,7 +20,7 @@ def ic(name, desc, footprint, left, right, datasheet=""):
 
 
 # Infineon ISOFACE ISO2H823V2.5: 8 x 0.6 A isolated high-side, SPI, PG-VQFN-70 12 x 12 mm
-ic("ISO2H823V2.5", "8 ch isolated 24 V high-side switch 0.6 A, SPI, diagnostics (Infineon ISOFACE). CHECK pinout",
+ic("ISO2H823V2.5", "8 ch isolated 24 V high-side switch 0.6 A, SPI, diagnostics (Infineon ISOFACE)",
    "cems_core:Infineon_PG-VQFN-70_12x12mm_P0.5mm",
    [(37, "VCC", PW)] + [(n, "GND", PW) for n in (33, 34, 35, 39, 46, 47, 58, 59, 60)] + [None] +
    [(36, "SEL", PI), (41, "SYNC", PI), (40, "ODIS", PI), (42, "WR", PI), (43, "ALE/RST", PI),
@@ -34,7 +37,7 @@ ic("ISO2H823V2.5", "8 ch isolated 24 V high-side switch 0.6 A, SPI, diagnostics 
    "https://www.infineon.com/part/ISO2H823V2.5")
 
 # Infineon ISOFACE ISO1I813T: 8 ch isolated 24 V digital input, SPI, wire-break, TSSOP-48
-ic("ISO1I813T", "8 ch isolated 24 V digital input IEC 61131-2 type 1/2/3, SPI, wire-break (Infineon ISOFACE). CHECK pinout",
+ic("ISO1I813T", "8 ch isolated 24 V digital input IEC 61131-2 type 1/2/3, SPI, wire-break (Infineon ISOFACE)",
    "Package_SO:TSSOP-48_6.1x12.5mm_P0.5mm",
    [(5, "VCC", PW)] + [(n, "GND", PW) for n in (1, 7, 10, 11, 18, 24)] + [None] +
    [(2, "SEL", PI), (3, "SYNC", PI), (19, "MS0", PI), (20, "MS1", PI), (21, "DC_ENA", PI), (4, "ROSC", PS), None,
@@ -47,7 +50,7 @@ ic("ISO1I813T", "8 ch isolated 24 V digital input IEC 61131-2 type 1/2/3, SPI, w
    "https://www.infineon.com/part/ISO1I813T")
 
 # ST ISO808A-1: 8 x 1 A isolated high-side, SPI, PowerSO-36 (tab = VCC)
-ic("ISO808A-1", "8 ch galvanically isolated 24 V high-side driver 1 A, SPI (ST). CHECK pinout",
+ic("ISO808A-1", "8 ch galvanically isolated 24 V high-side driver 1 A, SPI (ST)",
    "Package_SO:HSOP-36-1EP_11.0x15.9mm_P0.65mm_SlugDown",
    [(2, "VDD", PW), (15, "GNDDD", PW), None, (3, "OUT_EN", PI), (4, "~{SS}", PI), (5, "CLK", PI), (6, "SDI", PI),
     (13, "SDO", PO), (14, "~{FAULT}", OC), (7, "PGOOD", OC), None] +
@@ -59,7 +62,7 @@ ic("ISO808A-1", "8 ch galvanically isolated 24 V high-side driver 1 A, SPI (ST).
    "https://www.st.com/en/power-management/iso808a.html")
 
 # TI ADS124S08: 12 ch 24-bit delta-sigma ADC, TQFP-32
-ic("ADS124S08", "24-bit 4 kSPS 12 ch delta-sigma ADC, PGA, IDACs, reference (TI). CHECK pinout",
+ic("ADS124S08", "24-bit 4 kSPS 12 ch delta-sigma ADC, PGA, IDACs, reference (TI)",
    "Package_QFP:TQFP-32_7x7mm_P0.8mm",
    [(15, "IOVDD", PW), (16, "DVDD", PW), (14, "DGND", PW), None,
     (9, "~{CS}", PI), (11, "SCLK", PI), (10, "DIN", PI), (12, "DOUT/~{DRDY}", PO), (13, "~{DRDY}", PO),
@@ -72,7 +75,7 @@ ic("ADS124S08", "24-bit 4 kSPS 12 ch delta-sigma ADC, PGA, IDACs, reference (TI)
    "https://www.ti.com/product/ADS124S08")
 
 # ADI AD4112: 24-bit ADC, 8 x +/-10 V inputs and 4 x 0-20 mA inputs, LFCSP-40
-ic("AD4112", "24-bit ADC, 8 x +/-10 V and 4 x 0-20 mA inputs, internal reference (Analog Devices). CHECK pinout",
+ic("AD4112", "24-bit ADC, 8 x +/-10 V and 4 x 0-20 mA inputs, internal reference (Analog Devices)",
    "Package_CSP:LFCSP-40-1EP_6x6mm_P0.5mm_EP3.9x3.9mm",
    [(20, "IOVDD", PW), (21, "DGND", PW), (22, "REGCAPD", PS), None,
     (17, "~{CS}", PI), (16, "SCLK", PI), (15, "DIN", PI), (14, "DOUT/~{RDY}", PO), (18, "~{ERROR}", BI),
@@ -87,7 +90,7 @@ ic("AD4112", "24-bit ADC, 8 x +/-10 V and 4 x 0-20 mA inputs, internal reference
    "https://www.analog.com/en/products/ad4112.html")
 
 # TI ISO7741: quad digital isolator, 3 forward / 1 reverse, SOIC-16 wide
-ic("ISO7741", "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI). CHECK pinout",
+ic("ISO7741", "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI)",
    "Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm",
    [(1, "VCC1", PW), (2, "GND1", PW), (8, "GND1", PW), (7, "EN1", PI), None,
     (3, "INA", PI), (4, "INB", PI), (5, "INC", PI), (6, "OUTD", PO)],

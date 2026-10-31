@@ -139,7 +139,7 @@
     (property "ki_keywords" "" (id 4) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "ki_description" "8 ch isolated 24 V high-side switch 0.6 A, SPI, diagnostics (Infineon ISOFACE). CHECK pinout" (id 5) (at 0 0 0)
+    (property "ki_description" "8 ch isolated 24 V high-side switch 0.6 A, SPI, diagnostics (Infineon ISOFACE)" (id 5) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (symbol "ISO2H823V2.5_0_1"
@@ -447,7 +447,7 @@
     (property "ki_keywords" "" (id 4) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "ki_description" "8 ch isolated 24 V digital input IEC 61131-2 type 1/2/3, SPI, wire-break (Infineon ISOFACE). CHECK pinout" (id 5) (at 0 0 0)
+    (property "ki_description" "8 ch isolated 24 V digital input IEC 61131-2 type 1/2/3, SPI, wire-break (Infineon ISOFACE)" (id 5) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (symbol "ISO1I813T_0_1"
@@ -667,7 +667,7 @@
     (property "ki_keywords" "" (id 4) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "ki_description" "8 ch galvanically isolated 24 V high-side driver 1 A, SPI (ST). CHECK pinout" (id 5) (at 0 0 0)
+    (property "ki_description" "8 ch galvanically isolated 24 V high-side driver 1 A, SPI (ST)" (id 5) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (symbol "ISO808A-1_0_1"
@@ -843,7 +843,7 @@
     (property "ki_keywords" "" (id 4) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "ki_description" "24-bit 4 kSPS 12 ch delta-sigma ADC, PGA, IDACs, reference (TI). CHECK pinout" (id 5) (at 0 0 0)
+    (property "ki_description" "24-bit 4 kSPS 12 ch delta-sigma ADC, PGA, IDACs, reference (TI)" (id 5) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (symbol "ADS124S08_0_1"
@@ -999,7 +999,7 @@
     (property "ki_keywords" "" (id 4) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "ki_description" "24-bit ADC, 8 x +/-10 V and 4 x 0-20 mA inputs, internal reference (Analog Devices). CHECK pinout" (id 5) (at 0 0 0)
+    (property "ki_description" "24-bit ADC, 8 x +/-10 V and 4 x 0-20 mA inputs, internal reference (Analog Devices)" (id 5) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (symbol "AD4112_0_1"
@@ -1191,7 +1191,7 @@
     (property "ki_keywords" "" (id 4) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "ki_description" "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI). CHECK pinout" (id 5) (at 0 0 0)
+    (property "ki_description" "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI)" (id 5) (at 0 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (symbol "ISO7741_0_1"

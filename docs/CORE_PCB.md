@@ -501,8 +501,8 @@ GND only through an isolating part.
 
 | Block | Circuit | Firmware note |
 |---|---|---|
-| Output gate | MAX6369 watchdog (SET = 010, 30 ms) AND `GATE_EN` in a 74LVC1G08 = `GATE`. GATE drives ISO808A OUT_EN, ISO2H823 ODIS (through an inverter), the pump EN and PWM (AND gates) and the relay LEDs | Kick `WDI` from a timer at least every 20 ms; set `GATE_EN` only when outputs may switch; read back `GATE_FB` |
-| Bank A | ISO2H823V2.5, serial mode, 12 nF per output, IADJ 6.81 kΩ, J10 IDC26 to the breakout | as io-node |
+| Output gate | MAX6369 watchdog (SET = 010, 30 ms). Its WDO only pulses, so a 74LVC1G175 flip-flop latches a trip: WDO clears it, a rising `GATE_EN` sets it. `GATE` = `GATE_EN` AND armed (74LVC1G08). GATE drives ISO808A OUT_EN and ISO2H823 /ODIS (both active-low disables that also clear the chips' output registers), the pump EN and PWM (AND gates) and the relay LEDs | Kick `WDI` at least every 20 ms. To enable: `GATE_EN` low then high (the rising edge arms). After a trip `GATE_FB` reads low; re-arm the same way and rewrite the outputs |
+| Bank A | ISO2H823V2.5, serial mode 3, 12 nF per output, IADJ 6.81 kΩ, OLADJ 12.1 kΩ (open load about 1 mA), CLKADJ 10 kΩ 0.1 %, J10 IDC26 to the breakout | as io-node |
 | Bank B | ISO808A-1, J11 10-way; flyback footprints per channel as on the breakout (S1M + 0 Ω fitted, Zener optional) | PGOOD = field B present |
 | Inputs | ISO1I813T, type 1/3, 12 kΩ RIN and 2 kΩ RLED per channel, wire-break 33 kΩ, J12 IDC26 | as io-node |
 | Pump | IPS7091S switch on +24V_FP (5 A fuse); PWM and DIR as 24 V push-pull (2N7002 + BC817/BC807); tacho comparator 1.5 V with hysteresis, 30 V tolerant, JP2 pull-up for open collector; all through an ISO7741 | PWM 100 Hz for the 107Z, 5-95 %; EN switches the supply |
@@ -514,11 +514,15 @@ GND only through an isolating part.
 The ISOW7741s drive SPI4_MISO only while their chip select is low (EN_IO1 = NOT CS through
 a 74LVC1G04), so they share the bus with the W5500 and the other chips.
 
-**Still to check (CHECK in the sheet notes):** every pin table of the six project symbols
-(read through a summarising web fetch, not yet compared with the PDFs): ISO2H823V2.5,
-ISO1I813T, ISO808A-1, ADS124S08, AD4112, ISO7741; the ISO2H823 ODIS polarity, OLADJ and
-mode pins; the ISO1I813T TS and WB values; the MAX6369 SET table; the ISOW7741 VSEL levels;
-the LT3045 PGFB tie; the LMV331 SOT-23-5 pin order; the IPS7091S rating once the pump current
-is known; the PG-VQFN-70 footprint (to be drawn); and whether 55 field terminals fit the
-BC 107,6 (section 10).
+**Datasheet check, 31 Oct.** The pin tables of AD4112, ADS124S08, ISO2H823V2.5, ISO1I813T,
+ISO808A-1, ISO7741 and ISOW7741 were compared with the makers' datasheets (read through a web
+reader: this environment cannot download vendor PDFs) and all match. The AD4112 register map
+was cross-checked against the Linux `ad7173` driver. Extracts: `/mnt/project-files/datasheets/`.
+Corrections made: ISO2H823 /ODIS is active low (the inverter is gone, it takes GATE directly);
+OLADJ fitted (12.1 kΩ); ISOW7741 EN/FLT pulled up to 3.3 V (VIO level), not 5 V; the gate
+latch above (the MAX6369 output only pulses).
 
+**Still to check:** the ISO1I813T TS value for type 1 (the eval board uses 33 Ω; the datasheet
+extract lost the unit); the ISO2H823 PG-VQFN-70 footprint and its two exposed pads (package
+drawing); the AD4112 exposed pad size; the LT3045 PGFB tie (its datasheet would not load); the
+IPS7091S rating once the pump current is known; and the BC 215,6 drawing (section 10).

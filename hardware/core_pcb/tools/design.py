@@ -409,17 +409,21 @@ S = "io_dig"
 part("U11", "Power_Supervisor:MAX6369", "MAX6369", "Package_TO_SOT_SMD:SOT-23-8", S,
      {1: "WDI", 2: "GND", 4: "GND", 5: "+3V3", 6: "GND", 7: "WDO_N", 8: "+3V3"},
      mpn="MAX6369KA+T",
-     note="SET2..0 = 010: 30 ms watchdog (outputs off within 50 ms). CHECK the SET table and startup delay")
+     note="SET2..0 = 010: 30 ms startup delay and timeout (minimum), so outputs drop within 50 ms. WDO pulses; U13 latches it")
 nc("100n", S, "+3V3", "GND")
 nr("10k", S, "+3V3", "WDO_N")
 nr("100k", S, "GATE_EN", "GND", note="gate shut while the MCU is in reset")
-gate_and("U12", S, "GATE_EN", "WDO_N", "GATE", note="GATE = GATE_EN and watchdog OK")
+# MAX6369 WDO only pulses (about 100 ms) and then re-arms, so a D flip-flop latches the trip:
+# WDO_N clears it, and the firmware re-arms the gate by taking GATE_EN low and then high.
+part("U13", "74xGxx:74LVC1G175", "74LVC1G175", "Package_TO_SOT_SMD:SOT-23-6", S,
+     {1: "GATE_EN", 2: "GND", 3: "+3V3", 4: "GATE_ARM", 5: "+3V3", 6: "WDO_N"}, mpn="SN74LVC1G175DBVR",
+     note="D flip-flop: rising GATE_EN sets GATE_ARM, a watchdog trip clears it until the next rising edge")
+nc("100n", S, "+3V3", "GND")
+gate_and("U12", S, "GATE_EN", "GATE_ARM", "GATE", note="GATE = GATE_EN and armed (no watchdog trip since)")
 nr("1k", S, "GATE", "GATE_FB", note="firmware reads the gate back (PD8)")
-inverter("U13", S, "GATE", "GATE_N",
-         note="ODIS of the ISO2H823V2.5. CHECK ODIS polarity: if it is active low, link GATE instead")
 
 # Bank A: 8 x 0.6 A, ISO2H823V2.5, to the valve breakout over IDC26 J10
-a = {37: "+3V3", 36: "+3V3", 41: "+3V3", 40: "GATE_N", 43: "GND", 44: "+3V3", 45: "+3V3",
+a = {37: "+3V3", 36: "+3V3", 41: "+3V3", 40: "GATE", 43: "GND", 44: "+3V3", 45: "+3V3",
      38: "A_CLKADJ", 48: "CS_A", 54: "SPI4_SCK", 49: "SPI4_MOSI", 56: "SPI4_MISO", 57: "A_ERR",
      28: "A_OLADJ", 29: "A_IADJ", 30: "A_VDDIO", 31: "A_VCORE"}
 a.update({n: "GND" for n in (33, 34, 35, 39, 46, 47, 58, 59, 60)})
@@ -431,13 +435,14 @@ for ch, pins in enumerate(((24, 25), (18, 19), (15, 16), (13, 14), (9, 10), (7, 
 a.update({62: "A_LEDX", 63: "A_LEDX", 64: "A_LEDX", 65: "A_LEDY", 66: "A_LEDY", 67: "A_LEDY"})
 part("U14", "cems_core:ISO2H823V2.5", "ISO2H823V2.5", "cems_core:Infineon_PG-VQFN-70_12x12mm_P0.5mm", S, a,
      mpn="Infineon ISO2H823V25XUMA1",
-     note="serial mode: SEL high, MS0/MS1 high, ALE/RST low. No LED matrix: X pins tied, Y pins tied. "
-          "CHECK pinout, mode pins and OLADJ against the datasheet; footprint is a project footprint to draw")
+     note="pinout checked against datasheet Rev 2.1 (31 Oct). Serial mode 3: SEL high, MS0/MS1 high, ALE/RST low; "
+          "ODIS active low from GATE. No LED matrix: X pins tied, Y pins tied. The package has two exposed pads "
+          "(GND and GNDBB): footprint is a placeholder to redraw from the package drawing")
 nc("2u2", S, "+3V3", "GND", fp=C0805)
 nc("100n", S, "+3V3", "GND")
-nr("10k", S, "A_CLKADJ", "GND", note="CLKADJ, CHECK")
-nr("6k81 1%", S, "A_IADJ", "FIELD_0V", note="IADJ, CHECK")
-nr("DNF", S, "A_OLADJ", "FIELD_0V", dnp=True, note="open-load threshold option, CHECK")
+nr("10k 0.1%", S, "A_CLKADJ", "GND", note="CLKADJ, high-precision 10k (datasheet)")
+nr("6k81 1%", S, "A_IADJ", "FIELD_0V", note="IADJ, 6.81k only (datasheet)")
+nr("12k1 1%", S, "A_OLADJ", "FIELD_0V", note="open-load threshold, about 1 mA (2.3k-25k allowed: 5-0.5 mA)")
 nc("1u 50V", S, "A_VDDIO", "FIELD_0V", fp=C0805)
 nc("470n", S, "A_VCORE", "FIELD_0V")
 nc("2u2 50V", S, "+24V_FA", "FIELD_0V", fp=C1210)
@@ -463,7 +468,7 @@ for ch, pins in enumerate(((35, 36), (33, 34), (31, 32), (29, 30), (27, 28), (25
     for p in pins:
         b[p] = f"B_OUT{ch + 1}"
 part("U15", "cems_core:ISO808A-1", "ISO808A-1", "Package_SO:HSOP-36-1EP_11.0x15.9mm_P0.65mm_SlugDown", S, b,
-     mpn="ST ISO808A-1TR", note="tab = VCC (+24V_FB): copper pour on the field side only. CHECK pinout")
+     mpn="ST ISO808A-1TR", note="pinout checked against DS14170 (31 Oct). Tab = VCC (+24V_FB): copper pour on the field side only")
 nc("100n", S, "+3V3", "GND")
 nc("1u", S, "+3V3", "GND")
 nc("100n 50V", S, "+24V_FB", "FIELD_0V")
@@ -492,14 +497,14 @@ for ch, (h, l) in enumerate(((28, 27), (30, 29), (33, 32), (35, 34), (40, 39), (
 part("U16", "cems_core:ISO1I813T", "ISO1I813T", "Package_SO:TSSOP-48_6.1x12.5mm_P0.5mm", S, d,
      mpn="Infineon ISO1I813TXUMA1",
      note="serial mode; internal DC/DC off (DC_ENA low), field side from VBB. Values from Infineon's "
-          "ISO1I813T evaluation board. CHECK pinout and SEL/MS levels")
+          "ISO1I813T evaluation board. Pinout checked against the datasheet (31 Oct): serial mode 3 (24-bit, CRC)")
 nc("100n", S, "+3V3", "GND")
 nc("10u", S, "+3V3", "GND", fp=C0805)
 nc("470n 50V", S, "+24V_FA", "FIELD_0V", fp=C0805)
 nc("470n 50V", S, "+24V_FA", "FIELD_0V", fp=C0805)
-nr("22k 1%", S, "IN_ROSC", "GND", note="500 kHz")
-nr("33R", S, "IN_TS", "FIELD_0V", note="type 1/3 (eval board RTS). CHECK")
-nr("33k", S, "IN_WB", "FIELD_0V", note="wire-break threshold (eval board). CHECK")
+nr("22k1 1%", S, "IN_ROSC", "GND", note="22.1k: about 500 kHz scan (datasheet typical)")
+nr("33R", S, "IN_TS", "FIELD_0V", note="type 1 (eval board RTS = 33 ohm; datasheet: type 2 = 33k, type 3 = 330k). CHECK type 1 value")
+nr("33k", S, "IN_WB", "FIELD_0V", note="wire-break current, 25-55k range (datasheet curves)")
 nr("10k", S, "+3V3", "IN_ERR")
 for ch in range(1, 9):
     nr("12k 1%", S, f"DI{ch}", f"IN{ch}_H", fp=R1206, note="RIN, eval board" if ch == 1 else "")
@@ -553,7 +558,7 @@ part("U18", "cems_core:ISO7741", "ISO7741", "Package_SO:SOIC-16W_7.5x10.3mm_P1.2
      {1: "+3V3", 2: "GND", 8: "GND", 7: "+3V3", 3: "PUMP_PWM_G", 4: "PUMP_DIR", 5: "PUMP_EN_G", 6: "PUMP_TACH",
       16: "+5V_P", 9: "FIELD_0V", 15: "FIELD_0V", 10: "+5V_P", 14: "P_PWM_F", 13: "P_DIR_F", 12: "P_EN_F",
       11: "P_TACH_F"},
-     mpn="TI ISO7741FDWR (F: outputs low when side 1 is unpowered)", note="CHECK pinout and the F suffix")
+     mpn="TI ISO7741FDWR (F: outputs low when side 1 is unpowered)", note="pinout checked (31 Oct)")
 nc("100n", S, "+3V3", "GND")
 nc("100n", S, "+5V_P", "FIELD_0V")
 part("U21", "Power_Management:IPS7091SPBF", "IPS7091S", "Package_TO_SOT_SMD:TO-263-5_TabPin3", S,
@@ -636,7 +641,7 @@ def isow(ref, inv, cs, side, vsel_net, note):
           7: f"{pre}_EN1", 8: f"{pre}_ENFLT", 12: v, 20: v, 11: g, 15: g, 13: vsel_net, 14: v,
           19: f"{pre}_SCLK", 18: f"{pre}_DIN", 17: f"{pre}_CS", 16: f"{pre}_DOUT"},
          mpn="TI ISOW7741DFMR", note=note)
-    nr("10k", S, "+5V", f"{pre}_ENFLT")
+    nr("10k", S, "+3V3", f"{pre}_ENFLT", note="EN/FLT high (VIO level) enables the DC/DC; reads low on a fault")
     nc("10u", S, "+5V", "GND", fp=C0805)
     nc("100n", S, "+5V", "GND")
     nc("100n", S, "+3V3", "GND")
@@ -645,7 +650,7 @@ def isow(ref, inv, cs, side, vsel_net, note):
 
 
 # Temperatures: ADS124S08, 3 connectors x 2 channels (TC, RTD or NTC), as io-node today
-isow("U28", "U29", "CS_T", ("+3V3_T", "GND_T"), "GND_T", "VSEL low = 3.3 V out. CHECK")
+isow("U28", "U29", "CS_T", ("+3V3_T", "GND_T"), "GND_T", "VSEL to GND2 = 3.3 V out (140 mA)")
 fb("FB10", "600R@100MHz", S, "+3V3_T", "+3V3_TA")
 t = {15: "+3V3_T", 16: "+3V3_T", 14: "GND_T", 9: "T_CS", 11: "T_SCLK", 10: "T_DIN", 12: "T_DOUT",
      8: "GND_T", 18: "T_RST", 17: "GND_T", 26: "+3V3_TA", 27: "GND_T", 28: "GND_T", 23: "T_REFOUT",
@@ -655,7 +660,7 @@ for k in range(6):
     t[ain[2 * k]], t[ain[2 * k + 1]] = f"T{k + 1}_P", f"T{k + 1}_N"
 part("U30", "cems_core:ADS124S08", "ADS124S08", "Package_QFP:TQFP-32_7x7mm_P0.8mm", S, t,
      mpn="TI ADS124S08IPBSR",
-     note="internal clock (CLK low), START low (conversions by command), DOUT/DRDY on one pin. CHECK pinout")
+     note="pinout checked (SBAS660, 31 Oct). Internal 4.096 MHz clock (CLK to DGND), START low (conversions by command), DOUT/DRDY on one pin")
 nc("100n", S, "+3V3_T", "GND_T")
 nc("1u", S, "+3V3_TA", "GND_T")
 nc("100n", S, "+3V3_TA", "GND_T")
@@ -673,7 +678,7 @@ for j in range(3):
         f"TEMP{j + 1}", note=f"T{2 * j + 1} +/-, T{2 * j + 2} +/-, RTD return")
 
 # Analog: AD4112 on its own isolated island (ISOW7741 for SPI, ITX2424SA for 24 V loop power)
-isow("U31", "U32", "CS_AI", ("+5V_AI", "GND_AI"), "+5V_AI", "VSEL high = 5 V out. CHECK")
+isow("U31", "U32", "CS_AI", ("+5V_AI", "GND_AI"), "+5V_AI", "VSEL to VISOOUT = 5 V out (110 mA)")
 part("U33", "Converter_DCDC:ITX2424SA", "ITX2424SA", "Converter_DCDC:Converter_DCDC_XP_POWER-ITXxxxxSA_THT", S,
      {2: "+24V", 1: "GND", 6: "+24V_AI", 7: "GND_AI"}, mpn="XP Power ITX2424SA (6 W, 1.6 kV)",
      note="loop power 6 x 22 mA + level + mass-flow supply, about 4 W")
@@ -688,7 +693,7 @@ ai = {20: "+5V_AI", 21: "GND_AI", 22: "AI_REGCAPD", 17: "AI_CS", 16: "AI_SCLK", 
 part("U34", "cems_core:AD4112", "AD4112", "Package_CSP:LFCSP-40-1EP_6x6mm_P0.5mm_EP3.9x3.9mm", S, ai,
      mpn="ADI AD4112BCPZ",
      note="internal oscillator and 2.5 V reference. VIN0/1: 4-20 mA ch 5/6 on shunts; VIN2 level; VIN3 mass flow; "
-          "VIN4 10 V monitor; VIN5 5 V monitor. CHECK pinout and exposed pad size")
+          "VIN4 10 V monitor; VIN5 5 V monitor. Pinout checked (31 Oct); CHECK the exposed pad size against the CP-40 drawing")
 nc("100n", S, "+5V_AI", "GND_AI")
 nc("1u", S, "+5V_AIA", "GND_AI")
 nc("100n", S, "+5V_AIA", "GND_AI")

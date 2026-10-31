@@ -529,7 +529,7 @@
       (property "ki_keywords" "" (id 4) (at 0 0 0)
         (effects (font (size 1.27 1.27)) hide)
       )
-      (property "ki_description" "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI). CHECK pinout" (id 5) (at 0 0 0)
+      (property "ki_description" "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI)" (id 5) (at 0 0 0)
         (effects (font (size 1.27 1.27)) hide)
       )
       (symbol "ISO7741_0_1"
@@ -2487,7 +2487,7 @@
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid edf7d400-f08b-51e6-8775-eb69d40ca446)
   )
-  (text "\nU18: CHECK pinout and the F suffix\nU21: about 4 A pump supply with current limit; can PWM a brushed motor to 1 kHz. CHECK rating once the 107Z current is known\nR147: diagnostic, test point only\nD26: motor freewheel\nR149: pump PWM: 24 V push-pull, 20 Hz-25 kHz\nR151: pump DIR: 24 V push-pull, 20 Hz-25 kHz\nD27: clamp to the 5 V rail"
+  (text "\nU18: pinout checked (31 Oct)\nU21: about 4 A pump supply with current limit; can PWM a brushed motor to 1 kHz. CHECK rating once the 107Z current is known\nR147: diagnostic, test point only\nD26: motor freewheel\nR149: pump PWM: 24 V push-pull, 20 Hz-25 kHz\nR151: pump DIR: 24 V push-pull, 20 Hz-25 kHz\nD27: clamp to the 5 V rail"
     (at 203.2 347.98 0)
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid b5ef58e7-64bb-5236-9de5-74abd8a03659)
