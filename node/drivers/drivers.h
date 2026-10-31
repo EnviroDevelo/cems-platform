@@ -30,7 +30,7 @@
 #endif
 
 #ifndef ADS124S08_CONFIRMED
-#define ADS124S08_CONFIRMED 0     /* register layout cross-checked (Zephyr driver); SYS, CRC and sensor constants not yet */
+#define ADS124S08_CONFIRMED 1     /* SBAS660 + Zephyr + variegated-ads124s08, 31 Oct 2026; CRC seed and DEV_ID to see on the bench */
 #endif
 #ifndef AD4112_CONFIRMED
 #define AD4112_CONFIRMED 1        /* datasheet + Linux ad7173 driver, 31 Oct 2026 (IO_CHIPS_DATASHEET_CHECK.md) */

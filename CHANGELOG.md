@@ -20,7 +20,8 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
 - I/O board register map 3: analog inputs (the CORE PCB node's AD4112: six 4-20 mA, level, mass flow)
   at 107 and 112..129, read by the master into `plat_io_in_t ai_raw` from `iobN_first_ai`, the RO
   arrays 374..379 and `/api/iob` `ai`. The AD4112 driver is checked against its datasheet (ID 0x30DX,
-  49.68 SPS filter, current inputs with the buffers off) and enabled.
+  49.68 SPS filter, current inputs with the buffers off) and enabled. The ADS124S08 (temperature
+  inputs) is confirmed too (`ADS124S08_CONFIRMED` 1); its CRC seed and DEV_ID wait for the bench.
   Map 1 and 2 boards still run. IO_NODE.md "Analog inputs".
 - `/api/modbus/map` lists the standard block (`"core":"standard"`, `"mirror":"holding"`): every item of
   each fitted slot plus BasisR and the globals, in address order, so the Excel handover file carries it.
