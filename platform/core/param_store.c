@@ -55,7 +55,11 @@ typedef struct {
     uint32_t payload_len;       /* of the last snapshot */
 } region_t;
 
-static uint8_t img_fac[STORE_FAC_SLOT], img_usr[STORE_USR_SLOT];
+/* One block holds both staging images, after room for the backup file's own header, so
+ * between saves it is also the web server's backup/restore buffer (param_store_lease). */
+static uint8_t img_all[STORE_BACKUP_MAX] PLAT_EXTRAM;   /* external PSRAM when the board has it */
+#define img_fac (img_all + STORE_BACKUP_HDR)
+#define img_usr (img_all + STORE_BACKUP_HDR + STORE_FAC_SLOT)
 
 static struct {
     nvm_dev_t *dev;
@@ -77,6 +81,7 @@ static struct {
     const uint8_t *imp_buf[2];   /* import: payloads to apply */
     uint32_t imp_len[2];
     uint16_t imp_ver[2];
+    volatile bool leased;        /* the web server holds img_all: no snapshot starts */
 } S;
 
 enum { REQ_NONE = 0, REQ_SNAPSHOT, REQ_IMPORT };
@@ -413,13 +418,17 @@ void param_store_scan_service(void) {
 /* ---------------- store task side ---------------- */
 /* Jobs from other tasks (the web server), run here so only the store task
  * touches the NVM device. */
-enum { JOB_NONE = 0, JOB_EXPORT, JOB_IMPORT };
+enum { JOB_NONE = 0, JOB_EXPORT, JOB_IMPORT, JOB_LEASE };
 enum { JS_IDLE = 0, JS_PENDING, JS_RUNNING, JS_DONE };
 
 static void run_job(void) {
     if (S.job_state == JS_PENDING) {
         PLAT_DMB();
-        if (S.job == JOB_EXPORT) {
+        if (S.job == JOB_LEASE) {                          /* staging buffers are not in use here */
+            S.leased = true;
+            S.job_result = (int32_t)sizeof img_all;
+            S.job_state = JS_DONE;
+        } else if (S.job == JOB_EXPORT) {
             S.job_result = (int32_t)param_store_export(S.job_buf, S.job_len);
             S.job_state = JS_DONE;
         } else {
@@ -434,14 +443,28 @@ static void run_job(void) {
     }
 }
 
-int param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level) {
+static int job_start(uint8_t job, uint8_t *buf, uint32_t len, uint8_t level) {
+    /* Only the web server uses jobs, one at a time, so a finished job nobody collected was
+     * abandoned (its caller timed out): reclaim it, and with it a lease granted too late. */
+    if (S.job_state == JS_DONE) {
+        if (S.job == JOB_LEASE) S.leased = false;
+        S.job_state = JS_IDLE;
+    }
     if (S.job_state != JS_IDLE) return -1;
-    S.job = is_export ? JOB_EXPORT : JOB_IMPORT;
+    S.job = job;
     S.job_buf = buf; S.job_len = len; S.job_level = level;
     PLAT_DMB();
     S.job_state = JS_PENDING;
     return 0;
 }
+
+int param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level) {
+    return job_start(is_export ? JOB_EXPORT : JOB_IMPORT, buf, len, level);
+}
+
+int      param_store_lease_start(void) { return job_start(JOB_LEASE, NULL, 0, 0); }
+uint8_t *param_store_lease_buf(void)   { return S.leased ? img_all : NULL; }
+void     param_store_lease_end(void)   { PLAT_DMB(); S.leased = false; }
 
 bool param_store_job_done(int32_t *result) {
     if (S.job_state != JS_DONE) return false;
@@ -461,6 +484,7 @@ void param_store_poll(uint32_t now_ms) {
     }
     if (!S.started) run_job();                          /* between saves: staging buffers are not in use */
     if (S.req != REQ_NONE) return;                      /* the scan has not serviced the request yet */
+    if (S.leased) return;                               /* the web server is using the staging buffers */
 
     if (S.started) {                                    /* snapshot complete: staging buffers are ours */
         S.started = false;

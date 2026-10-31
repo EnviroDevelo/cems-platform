@@ -38,6 +38,9 @@
 #define SUPPLY_SENSE_Pin GPIO_PIN_0
 #define SUPPLY_SENSE_GPIO_Port GPIOC
 #endif
+#if defined(PLAT_PSRAM) && PLAT_PSRAM
+#define PSRAM_XSPI_HANDLE hospi1
+#endif
 #ifdef CHECK_WITH_FRAM
 #define FRAM_CS_Pin GPIO_PIN_4
 #define FRAM_CS_GPIO_Port GPIOE

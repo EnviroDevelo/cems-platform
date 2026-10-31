@@ -180,6 +180,10 @@ void plat_start(const plat_app_t *app) {
     plat_diag_boot(bsp_reset_cause());
     bsp_init();
     bsp_io_safe_state();
+    if (!bsp_psram_ok()) {                     /* the TLS pool and the settings buffer live there */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "psram", 0, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     plat_role_t role = plat_role_init();          /* CORE, NODE or NONE (plat_role.h), once */
 
     uint32_t now = bsp_ms();

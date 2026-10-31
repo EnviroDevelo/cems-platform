@@ -36,7 +36,7 @@ void plat_modbus_task_body(void) {
     }
 }
 
-static uint8_t http_buf[4096u + STORE_FAC_SLOT + STORE_USR_SLOT + 64u];   /* largest upload: a backup file */
+static uint8_t http_buf[PLAT_HTTP_BUF];   /* headers and form bodies; backups use the store's buffer, uploads stream */
 
 static void http_alive(void) { plat_checkin(PLAT_TASK_HTTP); }
 static void http_wait(void)  { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(10)); }
