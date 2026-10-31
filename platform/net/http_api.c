@@ -1171,7 +1171,9 @@ static void get_mb_map(http_out_t *o) {
     out_str(o, "],\"common_bits\":[{\"bit\":0,\"name\":\"a Modbus-routed alarm is active\"},"
                "{\"bit\":1,\"name\":\"a Modbus-routed alarm waits for an acknowledge\"},"
                "{\"bit\":2,\"name\":\"any alarm is active\"},{\"bit\":3,\"name\":\"any alarm waits for an acknowledge\"},"
-               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"}");
+               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"},"
+               "{\"bit\":5,\"name\":\"a Critical-tier alarm is active\"},"
+               "{\"bit\":6,\"name\":\"a Critical-tier alarm waits for an acknowledge\"}");
     for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
         char b[64]; snprintf(b, sizeof b, ",{\"bit\":%u,\"name\":\"alarm relay %u in alarm\"}", 8u + k, k + 1u);
         out_str(o, b);
