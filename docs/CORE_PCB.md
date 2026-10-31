@@ -227,8 +227,10 @@ board's -40 to 85 °C parts, sets the instrument's rating.
     10 Mbit. **Prototype acceptance test (flagged by Gary, 31 Oct):** 1000 × 1472-byte pings
     plus page loads, 0 % loss at 100 Mbit, through three different switches (including a cheap
     unmanaged one, and Gary's bench switch that fails with the DK) and over a 100 m Cat5e
-    drum. The link must stay at 100 Mbit: the firmware's automatic 10 Mbit fallback must not
-    trigger. If it fails, check the PHY clock (Y3 on MCO or a probe), the TX pair layout and
+    drum. The link must stay at 100 Mbit: in `/api/info` eth, `fallback` stays false and
+    `phy_symbol_errors` does not climb (the firmware's automatic 10 Mbit fallback, PR #14, is the
+    field safety net only). Small pings hide the fault: the DK lost 10-12 % of 1400-byte
+    frames and 0 % of 64-byte ones. If it fails, check the PHY clock (Y3 on MCO or a probe), the TX pair layout and
     the MagJack.
   - The W5500 port has the same line rules. It has no auto-MDIX, but its peer (the I/O
     node's LAN8742A) does.
