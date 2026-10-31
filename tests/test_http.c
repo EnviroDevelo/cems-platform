@@ -291,14 +291,17 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/values?ids=1001,1003,9999", NULL, false), 200);
     CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25},\"q\":{}}"));
     {   /* quality (CIP-10) and state (CIP-09): a measurement not yet updated is "unavailable" */
-        static const plat_meas_def_t m[] = { { .id = 1003, .index = PLAT_MEAS_NO_INDEX, .lo = 0.0f, .hi = 10.0f } };
-        CHECK_EQ(plat_state_init(m, 1), 0);
+        static const plat_meas_def_t m[] = { { .id = 1003, .index = PLAT_MEAS_NO_INDEX, .lo = 0.0f, .hi = 10.0f },
+                                             { .id = 1004, .index = 1, .lo = 0.0f, .hi = 0.0f } };
+        CHECK_EQ(plat_state_init(m, 2), 0);
         CHECK_EQ(call("GET", "/api/values?ids=1001,1003", NULL, false), 200);
         CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25},\"q\":{\"1003\":\"unavailable\"}}"));
         CHECK_EQ(call("GET", "/api/values?ids=1001", NULL, false), 200);
         CHECK(has("\"q\":{}}"));                                  /* only the IDs asked for */
         CHECK_EQ(call("GET", "/api/params", NULL, false), 200);
-        CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25,\"q\":true"));
+        CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25,\"q\":true,\"meas\":0,"));
+        CHECK(has("\"name\":\"arr\"") && has("\"meas\":[null,1,null]"));  /* an array: one entry per element */
+        CHECK(!has("\"name\":\"setpoint\",\"type\":\"int\",\"unit\":\"%\",\"min\":0,\"max\":100,\"def\":10,\"meas\""));
         CHECK(!has("\"name\":\"setpoint\",\"type\":\"int\",\"unit\":\"%\",\"min\":0,\"max\":100,\"def\":10,\"q\""));
         CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
         CHECK(has("\"api\":2,\"state\":\"INITIALISING\",\"state_since\":0"));

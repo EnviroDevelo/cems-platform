@@ -8,35 +8,35 @@ module, and before choosing hardware. Last run: 2026-10-31.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 523.5 KB | 1016.0 KB | 52 % | 492.5 KB |
-| RAM (STM32H573/H563, 640 KB) | 523.8 KB | 640.0 KB | 82 % | 116.2 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 555.1 KB | 1016.0 KB | 55 % | 460.9 KB |
+| RAM (STM32H573/H563, 640 KB) | 533.0 KB | 640.0 KB | 83 % | 107.0 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 31.7 | 0.1 |
-| Parameter table | 17.2 | 25.8 |
+| Scan engine, queue, watchdog, diag | 34.9 | 0.1 |
+| Parameter table | 22.5 | 25.8 |
 | Parameter store (FRAM) | 6.7 | 57.3 |
-| Event log / data logger | 15.2 | 6.8 |
-| Alarm manager, state, supply, calibration, service, self-test | 17.0 | 11.0 |
+| Event log / data logger | 15.1 | 6.8 |
+| Alarm manager, state, supply, calibration, service, self-test | 17.7 | 11.3 |
 | Emissions calculations (emis) | 8.4 | 4.4 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 2.0 | 0.1 |
 | Firmware update, signatures, serial | 7.0 | 2.0 |
-| I/O boards (Ethernet/RS-485 master) | 19.1 | 2.5 |
-| Modbus TCP | 13.2 | 18.1 |
-| Web server + page + logins | 89.7 | 73.5 |
-| HTTPS (tls.c + mbedTLS) | 96.8 | 83.4 |
-| Touch UI + EVE driver | 59.5 | 2.5 |
-| Task layer (FreeRTOS glue) | 3.2 | 99.7 |
+| I/O boards (Ethernet/RS-485 master) | 19.6 | 2.5 |
+| Modbus TCP | 13.3 | 18.1 |
+| Web server + page + logins | 93.4 | 73.5 |
+| HTTPS (tls.c + mbedTLS) | 96.7 | 83.4 |
+| Touch UI + EVE driver | 71.4 | 3.1 |
+| Task layer (FreeRTOS glue) | 3.3 | 99.7 |
 | Board support (BSP) | 1.6 | 0.8 |
 | lwIP + Ethernet driver | 55.0 | 51.5 |
 | FreeRTOS kernel + heap | 9.8 | 64.8 |
 | ST HAL + startup | 19.3 | 0.0 |
 | Application | 2.6 | 0.2 |
 | C library | 27.8 | 0.8 |
-| Other | 14.7 | 4.4 |
+| Other | 21.0 | 12.5 |
 | Main stack (interrupts, start-up) + C heap | 0.0 | 12.0 |
 
 
