@@ -16,6 +16,7 @@ Pictures of every screen are in `docs/ui/`.
 - **Asking first.** Some actions ask "Are you sure?" before they take effect: changing control between LOCAL and REMOTE, entering or leaving maintenance, calibration steps, network changes, a firmware restart, and some settings.
 - **Dimming.** The screen dims after 10 minutes with no touch. The first touch only wakes it, so it can't press anything by accident.
 - **Greyed buttons.** A greyed button can't be used right now. Tapping it, or the line under it, tells you why.
+- **The bar at the bottom** opens Home, Trends, Settings, Events and System, and holds **Log in**.
 
 ## 2. The header (top of every screen)
 
@@ -116,7 +117,7 @@ A coloured bar on the left gives the severity.
 - Each row's status line starts with the alarm's **priority tier**: Critical, High, Medium, Low or Info (or the names set for your site). The list is sorted by tier, most urgent first.
 - **Actions** (admin) sets each alarm's tier and what it does: email, Modbus, and relays 1 to 4.
   - **The tier button**: each tap moves to the next tier: Critical, High, Medium, Low, Info, Off, then back to the alarm's own default. A star (*) means the alarm is on its default tier. Off takes the alarm out of the list, the counts and the actions. Alarms that stop measurement, and a few that protect the data (such as no valid calibration), can't be switched off: the button skips Off for them.
-  - **The action buttons** (green = on): changing one gives the alarm its own actions. Until then it follows its tier's actions, if the tier has any, or its built-in default.
+  - **The action buttons** (green = on): changing one gives the alarm its own actions, and the line under its name says "own actions". Until then it follows its tier's actions, if the tier has any, or its built-in default. To put an alarm back on its tier's actions, tap its name and confirm.
   - **Tiers** opens the tier page. Each tier shows how many of its alarms are active and how many are not acknowledged. Tap a tier's name to rename it, up to 16 characters. The action buttons set what that tier's alarms do when they have no actions of their own, and **Use defaults** clears them.
 
 - **Inputs** (admin) sets up the input alarms (see 7a).
@@ -157,7 +158,7 @@ instead of guessing. **Previous** and **Next** move between slots.
   - **Set clock** (admin). Only needed when there is no time server. "Clock, not synced" means nothing outside has confirmed the time;
   - **I/O boards**: each board's link, inputs, outputs, temperatures and faults, in words;
   - screen brightness;
-  - **Display test** (see 9).
+  - **Service** (see 9).
 
   The HTTPS fingerprint at the bottom lets a technician check that their browser has reached this unit.
 
@@ -177,7 +178,25 @@ including test bits.
   how many values are forced, at input register 9090, and in common alarm bit 4. The details are
   in `docs/MODBUS.md`.
 
-## 9. Display test (System, then Display test)
+## 8b. Trends
+
+**Trends** draws up to four values over the last 10 minutes, with a new point every 4 seconds.
+
+- **Add** lists the values that can be trended, the instrument's own values first. Tap one to add it. Its line starts from that moment.
+- The boxes at the top show each value now, in its line's colour. Each line has its own scale, so values in different units can share the chart. Tap a box to show that value's scale on the left; its line is drawn thicker.
+- **Remove** takes the selected value off. **Restart** clears the lines and starts again.
+- A gap in a line means the value was not valid then: stale, unavailable, in maintenance and so on.
+- Trends keep recording while you use other screens. They are not saved: a restart clears them. For longer periods, download the data log from the web page.
+
+## 9. Service (System, then Service)
+
+For technicians. The page shows:
+- **Start-up self-test:** every check made at start-up, with pass, FAIL or skipped.
+- **Board test** (factory login): **Run board test** checks the hardware the unit can test on itself and saves the result as the unit's test record. It writes to the settings memory byte by byte, so run it on the bench, not on a unit in service. The page shows the last run, or the stored test record, and the first failure.
+- **Service log:** the hours since the last service and the latest entries. **Add entry** (factory login) asks who did the work, then what was done (up to 39 characters). Saving it starts the hours since service again.
+- **Display test** (see 9a).
+
+## 9a. Display test (System, then Service, then Display test)
 
 This page is for checking the screen itself. Nothing on it changes the instrument.
 
@@ -194,4 +213,4 @@ This page is for checking the screen itself. Nothing on it changes the instrumen
 | LINK LOST | Check the PLC/SCADA connection and the network |
 | Values "stale" or "unavailable" | Open I/O boards: a board marked lost or faulty is the usual cause |
 | The screen is dark but the instrument runs | Touch it (it may be dimmed). If it stays dark, the instrument keeps measuring; use the web page and call service |
-| Touches land in the wrong place | Run the touch test (9) and report the offsets |
+| Touches land in the wrong place | Run the touch test (9a) and report the offsets |

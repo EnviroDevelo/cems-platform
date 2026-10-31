@@ -477,7 +477,15 @@ static void t_ui(void) {
     CHECK_EQ(plat_alarm_prio[ALARM_ID_CAL_INVALID], AL_PRIO_DEFAULT);  /* CAL_INVALID can't be switched off */
     CHECK(shows("High*"));
     CHECK(!shows("Off"));
-    CHECK(tap("Tiers")); CHECK_EQ(ui_screen(), UI_TIERS);
+    CHECK(shows("CAL_INVALID, own actions"));                         /* R1 and Email changed above */
+    CHECK(tap("No valid calibration data:..."));                       /* its name: back to the tier's actions */
+    CHECK(shows("back on its tier's actions")); CHECK(tap("Yes"));
+    CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_EMAIL | AR_MODBUS); /* no tier actions: the definition's */
+    CHECK(!shows("own actions"));
+    CHECK(tap("No valid calibration data:..."));
+    CHECK(!strcmp(ui_toast(), "CAL_INVALID follows its tier's actions"));
+    CHECK(tap("R1"));                                                  /* own actions again, for the screenshot */
+        CHECK(tap("Tiers")); CHECK_EQ(ui_screen(), UI_TIERS);
     CHECK(shows("1  Critical")); CHECK(shows("5  Info")); CHECK(shows("alarm defaults"));
     CHECK(tap("Email"));                                               /* tier 1: email for alarms with no actions of their own */
     CHECK_EQ(plat_alarm_tier_route[0], AR_SET | AR_EMAIL);
@@ -706,7 +714,7 @@ static void t_iob_screen(void) {
  * (points from REG_TOUCH_SCREEN_XY, the offset from the nearest cross) */
 static void t_display_screen(void) {
     setup();
-    CHECK(tap("System"));
+    CHECK(tap("System")); CHECK(tap("Service"));
     CHECK(tap("Display test"));
     CHECK_EQ(ui_screen(), UI_DISPLAY);
     CHECK(shows("Colour test")); CHECK(shows("Touch test"));
@@ -747,7 +755,7 @@ static void t_display_screen(void) {
     dump("display_touch");
     CHECK(tap("Clear")); CHECK(!shows("Last touch"));
     CHECK(tap("Done")); CHECK(shows("Colour test"));
-    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SERVICE);
 }
 
 /* Modbus force for commissioning (modbus.h mb_force_*): the list of forceable values with the
@@ -857,6 +865,70 @@ static void t_dia_screen(void) {
     CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
 }
 
+/* live trends (Trends on the nav bar): pick values, they are sampled every 4 s on any screen,
+ * one pen is selected for its scale, remove and restart */
+static void t_trends_screen(void) {
+    setup();
+    CHECK(tap("Trends")); CHECK_EQ(ui_screen(), UI_TRENDS);
+    CHECK(shows("Tap Add to choose a value to trend"));
+    CHECK_EQ(eve_sim_tag_of(&sim, "Remove"), 0);                       /* nothing to remove yet */
+    CHECK(tap("Add")); CHECK_EQ(ui_screen(), UI_TR_PICK);
+    CHECK(shows("stack_temp")); CHECK(!shows("valve_name"));           /* numbers only: no text */
+    CHECK(tap("stack_temp")); CHECK_EQ(ui_screen(), UI_TRENDS);
+    CHECK(tap("Add")); CHECK(tap("run_seconds"));
+    CHECK(tap("Add")); CHECK(tap("stack_temp"));                      /* twice: refused */
+    CHECK(!strcmp(ui_toast(), "Already trended"));
+    for (int k = 0; k < 40; ++k) {                                     /* 160 s on another screen still records */
+        a_temp = 180.0f + (float)(k % 10); a_run = (uint32_t)k;
+        if (k == 5) { CHECK(tap("Home")); }
+        now += 4000; param_publish(); ui_input(0, now);
+    }
+    CHECK(tap("Trends"));
+    CHECK(shows("run_seconds")); CHECK(shows("the scale shown is run_seconds's"));
+    CHECK(shows("now")); CHECK(shows("-10 min"));
+    CHECK_EQ(eve.overflow, false);
+    CHECK(tap("stack_temp"));                                          /* select the first pen: its scale */
+    CHECK(shows("the scale shown is stack_temp's"));
+    dump("trends");
+    CHECK(tap("Remove"));
+    CHECK(!shows("stack_temp")); CHECK(shows("the scale shown is run_seconds's"));
+    CHECK(tap("Restart"));
+    CHECK(tap("Remove"));
+    CHECK(shows("Tap Add to choose a value to trend"));
+    CHECK(tap("Add")); dump("trend_pick"); CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_TRENDS);
+}
+
+/* System > Service: self-test, board test (factory), service log entry (factory), display test */
+static void t_service_screen(void) {
+    setup();
+    plat_service_reset_for_test();
+    CHECK(tap("System")); CHECK(tap("Service")); CHECK_EQ(ui_screen(), UI_SERVICE);
+    CHECK(shows("Start-up self-test")); CHECK(shows("Board test")); CHECK(shows("Service log"));
+    CHECK(shows("No entries yet"));
+    CHECK(tap("Add entry"));
+    CHECK(!strcmp(ui_toast(), "Log in at factory (tech) level to add to the service log"));
+    CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));
+    CHECK_EQ(ui_screen(), UI_SERVICE);
+    CHECK(tap("Add entry")); CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Service log: who did the work"));
+    CHECK(tap("Next"));                                                /* empty: refused */
+    CHECK(!strcmp(ui_toast(), "Enter who did the work"));
+    type("Gary"); CHECK(tap("Next"));
+    CHECK(shows("Service log: the work done")); CHECK(shows("By Gary."));
+    type("Replaced fan"); CHECK(tap("Save"));
+    CHECK_EQ(ui_screen(), UI_SERVICE);
+    plat_service_scan(now); frame();
+    CHECK(shows("Replaced fan")); CHECK(shows("Gary"));
+    dump("service");
+    CHECK(tap("Run board test")); CHECK(shows("Run the board test now?"));
+    CHECK(tap("Yes"));
+    CHECK(!strncmp(ui_toast(), "Board test started", 18) || !strncmp(ui_toast(), "Not now", 7));
+    CHECK(tap("Display test")); CHECK_EQ(ui_screen(), UI_DISPLAY);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SERVICE);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    CHECK(tap("Log out factory"));
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
@@ -869,4 +941,6 @@ void test_ui_all(void) {
     RUN(t_display_screen);
     RUN(t_force_screen);
     RUN(t_dia_screen);
+    RUN(t_trends_screen);
+    RUN(t_service_screen);
 }

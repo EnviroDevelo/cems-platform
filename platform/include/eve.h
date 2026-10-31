@@ -215,6 +215,7 @@ void eve_gradcolor(eve_t *e, uint32_t rgb);
 void eve_color(eve_t *e, uint32_t rgb);
 void eve_rect(eve_t *e, int16_t x, int16_t y, int16_t w, int16_t h, uint16_t radius);   /* filled, current colour */
 void eve_line(eve_t *e, int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t width);
+void eve_strip(eve_t *e, const int16_t *xy, unsigned n, uint16_t width);   /* a line through n points (x, y pairs) */
 void eve_tag(eve_t *e, uint8_t tag);
 int  eve_frame_end(eve_t *e);                          /* 0 ok, -1 co-processor fault (recovered), -2 timeout */
 

@@ -85,6 +85,8 @@ def render(data):
         elif st["prim"] == 3:                                 # LINES
             for a, b in zip(v[0::2], v[1::2]):
                 d.line([a, b], fill=st["color"], width=max(1, st["lw"] // 8))
+        elif st["prim"] == 4 and len(v) > 1:                  # LINE_STRIP
+            d.line(v, fill=st["color"], width=max(1, st["lw"] // 8), joint="curve")
         st["verts"] = []
 
     while i < words * 4:

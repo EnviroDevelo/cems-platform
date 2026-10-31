@@ -27,6 +27,7 @@
 #include "modbus.h"
 #include "plat_service.h"
 #include "plat_selftest.h"
+#include "plat_boardtest.h"
 #include "plat_version.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
@@ -74,6 +75,9 @@ enum {
     T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
     T_PRIO0 = 214,          /* .. T_PRIO0 + ROWS - 1: an alarm's tier (actions page), a tier's "Use defaults" (tiers page) */
     T_TIERS = 236,          /* actions page: open the tiers page */
+    T_TR_PEN0 = 196,        /* .. 199: trend pens */
+    T_TR_ADD = 206, T_TR_DEL, T_TR_CLR, T_TRENDS,       /* trends */
+    T_SVC = 226, T_SVC_BT, T_SVC_LOG,                  /* service screen, board test, add a service log entry */
     T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
     T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE,  /* display test (bench bring-up) */
     T_FORCE = 240, T_FC_CLEAR_ALL,      /* Modbus force (commissioning) */
@@ -81,7 +85,10 @@ enum {
 };
 
 typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
-typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL, ACT_FORCE } act_t;
+typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL, ACT_FORCE, ACT_ELEM, ACT_BT } act_t;
+#define TR_PENS 4
+#define TR_N    150              /* trend samples kept: 10 minutes at TR_MS */
+#define TR_MS   4000u
 
 static struct {
     const ui_cfg_t *cfg;
@@ -152,6 +159,15 @@ static struct {
     bool     elem;                 /* UI_EDIT is entering element el_idx of the array U.ed */
     uint16_t el_idx;
     char     el_title[48];
+    /* a confirmed one-byte write to one element of an array (ACT_ELEM) */
+    uint16_t pe_id, pe_idx; uint8_t pe_v;
+    /* trends: the pens (parameter IDs), the selected one, the picker's first row; history below */
+    uint16_t tr_id[TR_PENS];
+    uint8_t  tr_sel;
+    unsigned tr_first;
+    /* service log entry from the touchscreen: 1 = typing who, 2 = typing the work */
+    uint8_t  svc_step;
+    char     svc_tech[16];
     /* record editor */
     const ui_record_t *rec;
     uint8_t  rec_buf[PARAM_RECORD_MAX];
@@ -370,6 +386,15 @@ static void do_action(uint32_t now) {
         U.forcing = false;
         goto_scr(UI_FORCE);
         return;
+    } else if (U.act == ACT_ELEM) {
+        e = param_blob_post(U.pe_id, U.pe_idx, &U.pe_v, 1, false, PLAT_SRC_LOCAL, U.level);
+    } else if (U.act == ACT_BT) {
+        int r = plat_boardtest_start(PLAT_SRC_LOCAL, U.level);
+        U.act = ACT_NONE;
+        if (r == -3) toast(true, now, "Log in at factory (tech) level to run the board test");
+        else if (r) toast(true, now, "Not now: a test is running or the start-up self-test has not finished");
+        else toast(false, now, "Board test started");
+        return;
     } else if (U.act == ACT_FW_LOCAL) {
         fw_local_answer(true, U.level);
         fw_status_t st; fw_status(&st);
@@ -405,6 +430,21 @@ static void edit_begin(const param_def_t *d, uint32_t now) {
 static bool cell_submit(bool on, uint32_t now);
 static void edit_submit(bool on, uint32_t now) {
     if (U.cell_f) { if (cell_submit(on, now)) goto_scr(UI_REC); return; }
+    if (U.svc_step) {                                 /* a service log entry: who, then the work done */
+        if (!U.entry[0]) { toast(true, now, U.svc_step == 1 ? "Enter who did the work" : "Enter the work done"); return; }
+        if (U.svc_step == 1) {
+            snprintf(U.svc_tech, sizeof U.svc_tech, "%.15s", U.entry);
+            U.svc_step = 2; U.entry[0] = 0; U.shift = false; U.dirty = true;
+            return;
+        }
+        int r = plat_service_log(U.svc_tech, U.entry, PLAT_SRC_LOCAL, U.level);
+        if (r == -3) { toast(true, now, "Log in at factory (tech) level to add to the service log"); return; }
+        if (r) { toast(true, now, r == -1 ? "Busy: try again" : "Too long (at most 39 characters)"); return; }
+        toast(false, now, "Service log entry added; hours since service start again");
+        U.svc_step = 0;
+        goto_scr(UI_SERVICE);
+        return;
+    }
     const param_def_t *d = U.ed;
     if (U.elem) {                                     /* one element of an array (input alarm settings) */
         char *end = NULL;
@@ -593,6 +633,54 @@ static void dia_tap(uint8_t t, uint32_t now) {
     U.dirty = true;
 }
 
+/* ---------------- trends: sampled here whatever screen is up ---------------- */
+static float    tr_v[TR_PENS][TR_N];   /* NAN = no valid value at that sample */
+static unsigned tr_head, tr_count;      /* tr_head = the next slot written */
+static uint32_t tr_last;
+static bool tr_value(uint16_t id, double *out) {   /* a numeric scalar, valid quality */
+    const param_def_t *d = id ? param_find(id) : NULL;
+    plat_val_t v;
+    if (!d || !param_read(id, &v) || param_quality(id, UW_NO_INDEX) != PLAT_Q_VALID) return false;
+    switch (d->ptype) {
+    case PT_BOOL:  *out = v.b ? 1.0 : 0.0; return true;
+    case PT_INT:   *out = v.i; return true;
+    case PT_UINT:  *out = v.u; return true;
+    case PT_FLOAT: *out = v.f; return isfinite(v.f);
+    default:       return false;
+    }
+}
+static bool tr_able(const param_def_t *d) {
+    return d && d->ptype <= PT_FLOAT && !(d->flags & (PF_SECRET | PF_DEV)) && !is_ip(d);
+}
+static void tr_sample(uint32_t now) {
+    if (now - tr_last < TR_MS && tr_count) return;
+    bool any = false;
+    for (unsigned p = 0; p < TR_PENS; ++p) any |= U.tr_id[p] != 0;
+    if (!any) return;
+    tr_last = now;
+    for (unsigned p = 0; p < TR_PENS; ++p) { double x; tr_v[p][tr_head] = U.tr_id[p] && tr_value(U.tr_id[p], &x) ? (float)x : NAN; }
+    tr_head = (tr_head + 1u) % TR_N;
+    if (tr_count < TR_N) ++tr_count;
+    if (U.scr == UI_TRENDS) U.dirty = true;
+}
+static void tr_clear(void) { tr_count = 0; tr_head = 0; }
+static float tr_at(unsigned p, unsigned k) { return tr_v[p][(tr_head + TR_N - tr_count + k) % TR_N]; }   /* k = 0 oldest */
+
+/* the values a trend can follow: numeric scalars, not secret */
+static unsigned tr_pick_count(void) {
+    unsigned n = 0;
+    for (size_t i = 0; i < n_params(); ++i) n += tr_able(param_at(i));
+    return n;
+}
+static const param_def_t *tr_pick_at(unsigned k) {   /* the product's values first, then the platform's */
+    for (int pass = 0; pass < 2; ++pass)
+        for (size_t i = 0; i < n_params(); ++i) {
+            const param_def_t *d = param_at(i);
+            if (tr_able(d) && (d->id >= PARAM_ID_APP_FIRST) == (pass == 0) && !k--) return d;
+        }
+    return NULL;
+}
+
 /* the tiers page: rename, actions (AR_SET | bits for alarms with none of their own), back to the defaults */
 static void tier_tap(uint8_t t, uint32_t now) {
     static const uint8_t bit[6] = { AR_EMAIL, AR_MODBUS, AR_RELAY(0), AR_RELAY(1), AR_RELAY(2), AR_RELAY(3) };
@@ -638,6 +726,7 @@ static void tap(uint8_t t, uint32_t now) {
     case T_FORCE: U.fc_first = 0; goto_scr(UI_FORCE); return;
     case T_ALARMS: U.al_first = 0; U.al_sel = 0; goto_scr(UI_ALARMS); return;
     case T_ACTIONS: U.cfg_first = 0; goto_scr(UI_ALARM_CFG); return;
+    case T_TRENDS: goto_scr(UI_TRENDS); return;
     default: break;
     }
     switch (U.scr) {
@@ -674,7 +763,7 @@ static void tap(uint8_t t, uint32_t now) {
         break;
     case UI_REC: rec_tap(t, now); break;
     case UI_EDIT:
-        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else { U.forcing = false; U.elem = false; goto_scr(U.back); } }
+        if (t == T_CANCEL) { if (U.cell_f) { U.cell_f = NULL; goto_scr(UI_REC); } else { U.forcing = false; U.elem = false; U.svc_step = 0; goto_scr(U.back); } }
         else if (t == T_OK) edit_submit(true, now);
         else if (t == T_ON || t == T_OFF) { strcpy(U.entry, t == T_ON ? "1" : "0"); edit_submit(t == T_ON, now); }
         else if (t == T_BKSP) { size_t n = strlen(U.entry); if (n) U.entry[n - 1] = 0; }
@@ -753,6 +842,17 @@ static void tap(uint8_t t, uint32_t now) {
         else if (t == T_PGUP) { U.cfg_first = U.cfg_first >= ROWS ? U.cfg_first - ROWS : 0; U.dirty = true; }
         else if (t == T_PGDN) { if (U.cfg_first + ROWS < alarm_count()) U.cfg_first += ROWS; U.dirty = true; }
         else if (t == T_TIERS) goto_scr(UI_TIERS);
+        else if (t >= T_ROW0 && t < T_ROW0 + ROWS) {     /* the alarm's name: back to its tier's (or default) actions */
+            const alarm_def_t *d = alarm_def_at(U.cfg_first + (unsigned)(t - T_ROW0));
+            if (!d) break;
+            if (!(pv(PARAM_ID_ALARM_ROUTE, d->id, 0) & AR_SET)) { toast(false, now, "%s follows its tier's actions", d->name); break; }
+            if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to change alarm actions"); break; }
+            char m[112];
+            snprintf(m, sizeof m, "Put %.32s back on its tier's actions (or its default if the tier has none)?", d->name);
+            U.pe_id = PARAM_ID_ALARM_ROUTE; U.pe_idx = d->id; U.pe_v = 0;
+            snprintf(U.ok_msg, sizeof U.ok_msg, "%.24s follows its tier again", d->name);
+            ask(ACT_ELEM, m);
+        }
         else if (t >= T_PRIO0 && t < T_PRIO0 + ROWS) {   /* the tier: default, Critical .. Info, Off, round again */
             const alarm_def_t *d = alarm_def_at(U.cfg_first + (unsigned)(t - T_PRIO0));
             if (!d) break;
@@ -777,6 +877,50 @@ static void tap(uint8_t t, uint32_t now) {
         }
         break;
     case UI_TIERS: tier_tap(t, now); break;
+    case UI_TRENDS:
+        if (t >= T_TR_PEN0 && t < T_TR_PEN0 + TR_PENS) { U.tr_sel = (uint8_t)(t - T_TR_PEN0); U.dirty = true; }
+        else if (t == T_TR_ADD) {
+            unsigned p = 0;
+            while (p < TR_PENS && U.tr_id[p]) ++p;
+            if (p == TR_PENS) { toast(true, now, "Up to %u values: remove one first", TR_PENS); break; }
+            U.tr_first = 0; goto_scr(UI_TR_PICK);
+        } else if (t == T_TR_DEL && U.tr_id[U.tr_sel]) {
+            U.tr_id[U.tr_sel] = 0;
+            for (unsigned k = 0; k < TR_N; ++k) tr_v[U.tr_sel][k] = NAN;
+            for (unsigned p = 0; p < TR_PENS; ++p) if (U.tr_id[p]) { U.tr_sel = (uint8_t)p; break; }
+            U.dirty = true;
+        } else if (t == T_TR_CLR) { tr_clear(); U.dirty = true; }
+        break;
+    case UI_TR_PICK:
+        if (t == T_BACK) goto_scr(UI_TRENDS);
+        else if (t == T_PGUP) { U.tr_first = U.tr_first >= ROWS ? U.tr_first - ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { if (U.tr_first + ROWS < tr_pick_count()) U.tr_first += ROWS; U.dirty = true; }
+        else if (t >= T_ROW0 && t < T_ROW0 + ROWS) {
+            const param_def_t *d = tr_pick_at(U.tr_first + (unsigned)(t - T_ROW0));
+            if (!d) break;
+            unsigned p = 0;
+            for (unsigned k = 0; k < TR_PENS; ++k) if (U.tr_id[k] == d->id) { toast(true, now, "Already trended"); goto_scr(UI_TRENDS); return; }
+            while (p < TR_PENS && U.tr_id[p]) ++p;
+            if (p < TR_PENS) {
+                U.tr_id[p] = d->id; U.tr_sel = (uint8_t)p;
+                for (unsigned k = 0; k < TR_N; ++k) tr_v[p][k] = NAN;   /* history starts now */
+            }
+            goto_scr(UI_TRENDS);
+        }
+        break;
+    case UI_SERVICE:
+        if (t == T_BACK) goto_scr(UI_SYSTEM);
+        else if (t == T_DISP) { U.dt_mode = 0; U.dt_t0 = 0; U.dt_hz10 = U.dt_mhz10 = 0; goto_scr(UI_DISPLAY); }
+        else if (t == T_SVC_BT) {
+            if (U.level < PLAT_LVL_FACTORY) { toast(true, now, "Log in at factory (tech) level to run the board test"); break; }
+            ask(ACT_BT, "Run the board test now? It checks the settings memory byte by byte: run it on the bench, not on a unit in service.");
+        } else if (t == T_SVC_LOG) {
+            if (U.level < PLAT_LVL_FACTORY) { toast(true, now, "Log in at factory (tech) level to add to the service log"); break; }
+            U.svc_step = 1; U.entry[0] = 0; U.shift = false; U.kb = KB_TEXT; U.ed = NULL;
+            U.back = UI_SERVICE;
+            goto_scr(UI_EDIT);
+        }
+        break;
     case UI_SYSTEM:
         if (t == T_CLOCK) {
             if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to set the clock"); break; }
@@ -794,7 +938,7 @@ static void tap(uint8_t t, uint32_t now) {
             char m[96]; snprintf(m, sizeof m, "Restart on firmware %s now? Measurement stops during the restart.", st.staged_version);
             ask(ACT_FW, m);
         } else if (t == T_IOB) goto_scr(UI_IOB);
-        else if (t == T_DISP) { U.dt_mode = 0; U.dt_t0 = 0; U.dt_hz10 = U.dt_mhz10 = 0; goto_scr(UI_DISPLAY); }
+        else if (t == T_SVC) goto_scr(UI_SERVICE);
         else if (t == T_CAL) { unsigned a; if (plat_cal_active(&a)) U.cal_ch = (uint8_t)a; goto_scr(UI_CAL); }
         else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
@@ -807,7 +951,7 @@ static void tap(uint8_t t, uint32_t now) {
         else if (t == T_CAL_REVERT) cal_tap(PLAT_CAL_CMD_REVERT, now);
         break;
     case UI_DISPLAY:
-        if (t == T_BACK) { U.dt_mode = 0; goto_scr(UI_SYSTEM); }
+        if (t == T_BACK) { U.dt_mode = 0; goto_scr(UI_SERVICE); }
         else if (t == T_DT_COLOURS) { U.dt_mode = 1; U.dt_pat = 0; U.dirty = true; }
         else if (t == T_DT_TOUCH) { U.dt_mode = 2; U.dt_n = 0; U.dt_tgt = 0; U.dirty = true; }
         else if (t == T_DT_NEXT && U.dt_mode == 1) { if (++U.dt_pat >= DT_PATTERNS) U.dt_mode = 0; U.dirty = true; }
@@ -820,6 +964,7 @@ static void tap(uint8_t t, uint32_t now) {
 }
 
 void ui_input(uint8_t tag, uint32_t now) {
+    tr_sample(now);
     if (U.level && now - U.activity > AUTH_IDLE_MS) logout(now, "idle");
     if (tag && !U.last_tag) {                          /* finger down */
         bool dimmed = now - U.activity > IDLE_DIM_MS;
@@ -952,18 +1097,23 @@ static void header(uint32_t now) {
 }
 
 static void nav(void) {
-    static const char *const lab[] = { "Home", "Settings", "Events", "System" };
-    static const int scr_of[] = { UI_HOME, UI_PARAMS, UI_EVENTS, UI_SYSTEM };
+    static const char *const lab[] = { "Home", "Trends", "Settings", "Events", "System" };
+    static const uint8_t tag[] = { T_NAV_HOME, T_TRENDS, T_NAV_PARAMS, T_NAV_EVENTS, T_NAV_SYSTEM };
+    static const int16_t x[] = { 8, 162, 316, 482, 636 }, w[] = { 148, 148, 160, 148, 148 };
     box(0, NAV_Y - 4, W, NAV_H + 8, 0xE4E7ECu, 1);
-    for (int k = 0; k < 4; ++k) {
-        bool cur = U.scr == scr_of[k] || (k == 1 && ((U.scr == UI_EDIT && !U.cell_f) || U.scr == UI_FORCE)) || (k == 0 && (U.scr == UI_APP || U.scr == UI_REC)) ||
-                   (k == 3 && (U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL || U.scr == UI_DISPLAY));
-        button((uint8_t)(T_NAV_HOME + k), (int16_t)(8 + k * 202), NAV_Y, 194, NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
+    for (int k = 0; k < 5; ++k) {
+        bool cur = (k == 0 && (U.scr == UI_HOME || U.scr == UI_APP || U.scr == UI_REC)) ||
+                   (k == 1 && (U.scr == UI_TRENDS || U.scr == UI_TR_PICK)) ||
+                   (k == 2 && (U.scr == UI_PARAMS || (U.scr == UI_EDIT && !U.cell_f && !U.svc_step) || U.scr == UI_FORCE)) ||
+                   (k == 3 && U.scr == UI_EVENTS) ||
+                   (k == 4 && (U.scr == UI_SYSTEM || U.scr == UI_IOB || U.scr == UI_CLOCK || U.scr == UI_CAL || U.scr == UI_DISPLAY ||
+                               U.scr == UI_SERVICE || (U.scr == UI_EDIT && U.svc_step)));
+        button(tag[k], x[k], NAV_Y, w[k], NAV_H, lab[k], cur ? C_HEAD : C_ACCENT, true);
     }
     char b[32];
     if (U.level) snprintf(b, sizeof b, "Log out %s", lvl_name(U.level));
     else snprintf(b, sizeof b, "Log in");
-    button(T_NAV_LOGIN, 8 + 4 * 202, NAV_Y, 200, NAV_H, b, U.level ? C_WARN : C_ACCENT, true);
+    button(T_NAV_LOGIN, 790, NAV_Y, 226, NAV_H, b, U.level ? C_WARN : C_ACCENT, true);
 }
 
 static void draw_home(void) {
@@ -1048,6 +1198,21 @@ static void draw_cell_edit(void);
 static void fmt_elem(const param_def_t *d, uint16_t idx, char *b, size_t cap);
 static void draw_edit(void) {
     if (U.cell_f) { draw_cell_edit(); return; }
+    if (U.svc_step) {                                    /* service log entry: no parameter behind it */
+        char b[64];
+        box(16, BODY_Y, 760, 88, C_CARD, 8);
+        color(C_INK); text(32, BODY_Y + 10, F_BIG, 0, U.svc_step == 1 ? "Service log: who did the work" : "Service log: the work done");
+        if (U.svc_step == 1) snprintf(b, sizeof b, "Up to 15 characters, for example a name or company");
+        else snprintf(b, sizeof b, "By %.15s. Up to 39 characters", U.svc_tech);
+        color(C_MUTE); text(32, BODY_Y + 56, F_TEXT, 0, b);
+        box(16, BODY_Y + 96, 760, 48, C_CARD, 6);
+        snprintf(b, sizeof b, "%.60s_", U.entry);
+        color(C_INK); text(28, BODY_Y + 120, F_BIG, OPT_CENTERY, b);
+        draw_keyboard(BODY_Y + 150, true);
+        button(T_OK, 784, BODY_Y, 108, 144, U.svc_step == 1 ? "Next" : "Save", C_OK, true);
+        button(T_CANCEL, 900, BODY_Y, 108, 144, "Cancel", 0x5B6577u, true);
+        return;
+    }
     const param_def_t *d = U.ed;
     if (!d) return;
     char b[96], r[64];
@@ -1224,7 +1389,7 @@ static void draw_system(uint32_t now) {
     button(T_BRIGHT_DN, 32, BODY_Y + 306, 100, 64, "-", C_ACCENT, true);
     color(C_INK); text(182, BODY_Y + 338, F_BIG, OPT_CENTER, b);
     button(T_BRIGHT_UP, 232, BODY_Y + 306, 100, 64, "+", C_ACCENT, true);
-    button(T_DISP, 344, BODY_Y + 306, 148, 64, "Display test", 0x5B6577u, true);   /* bench bring-up page */
+    button(T_SVC, 344, BODY_Y + 306, 148, 64, "Service", 0x5B6577u, true);   /* self-test, board test, service log, display test */
     /* HTTPS fingerprint: a technician compares it with the browser's to know it reached this unit */
     const char *fp = tls_fingerprint();
     color(C_MUTE); text(32, BODY_Y + 378, F_SMALL, 0, fp[0] ? "HTTPS certificate fingerprint (SHA-256)" : "HTTPS not available");
@@ -1716,6 +1881,8 @@ static void draw_alarm_cfg(void) {
         if (!d) break;
         int16_t y = (int16_t)(BODY_Y + 4 + r * ROW_H);
         if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+        eve_tag(E, (uint8_t)(T_ROW0 + r));            /* the name: tap to go back to the tier's actions */
+        box(20, (int16_t)(y + 2), 274, ROW_H - 4, U.pressed == T_ROW0 + r ? 0xDCE6F5u : C_CARD, 4);
         alarm_view_t v = { .severity = d->severity };
         char d7[64]; size_t k = 0;
         if (alarm_get(d->id, &v))
@@ -1731,7 +1898,12 @@ static void draw_alarm_cfg(void) {
         uint8_t pr = alarm_prio(d->id);
         box(24, (int16_t)(y + 8), 8, ROW_H - 16, pr == AL_PRIO_OFF ? C_GREY : sev_colour(v.severity), 2);
         color(C_INK); text(40, (int16_t)(y + 20), F_SMALL, OPT_CENTERY, d7);
-        color(C_MUTE); text(40, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, d->name);
+        {
+            char nm[48];
+            snprintf(nm, sizeof nm, "%.20s%s", d->name, pv(PARAM_ID_ALARM_ROUTE, d->id, 0) & AR_SET ? ", own actions" : "");
+            color(C_MUTE); text(40, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, nm);
+        }
+        eve_tag(E, 0);
         {   /* the tier: a tap moves to the next; "(default)" when it is the definition's own */
             char tl[32];
             uint8_t tg = (uint8_t)(T_PRIO0 + r);
@@ -1809,6 +1981,196 @@ static void draw_tiers(void) {
     if (!can) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, "Green = on. Log in as admin to change."); }
 }
 
+
+/* ---------------- trends ---------------- */
+static const uint32_t tr_col[TR_PENS] = { 0x1F5FAEu, 0xD9822Bu, 0x1A7F4Bu, 0x7B4FB0u };   /* pen colours: blue, orange, green, purple */
+
+static void tr_range(unsigned p, float *lo, float *hi) {
+    bool any = false;
+    for (unsigned k = 0; k < tr_count; ++k) {
+        float x = tr_at(p, k);
+        if (isnan(x)) continue;
+        if (!any || x < *lo) *lo = x;
+        if (!any || x > *hi) *hi = x;
+        any = true;
+    }
+    if (!any) { *lo = 0.0f; *hi = 1.0f; return; }
+    float pad = (*hi - *lo) * 0.05f;
+    if (pad <= 0.0f) pad = fabsf(*hi) > 1.0f ? fabsf(*hi) * 0.05f : 0.5f;   /* a flat line sits in the middle */
+    *lo -= pad; *hi += pad;
+}
+
+static void draw_trends(void) {
+    enum { L = 104, R = 880, T = BODY_Y + 92, B = BODY_Y + 334 };
+    char b[112];
+    unsigned npen = 0;
+    for (unsigned p = 0; p < TR_PENS; ++p) npen += U.tr_id[p] != 0;
+    if (npen && !U.tr_id[U.tr_sel]) for (unsigned p = 0; p < TR_PENS; ++p) if (U.tr_id[p]) { U.tr_sel = (uint8_t)p; break; }
+    /* the pens: name and value now; tap one to show its scale */
+    for (unsigned p = 0; p < TR_PENS; ++p) {
+        int16_t x = (int16_t)(16 + p * 222);
+        const param_def_t *d = U.tr_id[p] ? param_find(U.tr_id[p]) : NULL;
+        if (!d) { box(x, BODY_Y, 214, 64, 0xE9ECF1u, 8); continue; }
+        uint8_t tg = (uint8_t)(T_TR_PEN0 + p);
+        eve_tag(E, tg);
+        box(x, BODY_Y, 214, 64, U.pressed == tg ? 0xDCE6F5u : p == U.tr_sel ? 0xEEF3FAu : C_CARD, 8);
+        box((int16_t)(x + 6), BODY_Y + 8, 6, 48, tr_col[p], 2);
+        snprintf(b, sizeof b, "%.18s", d->name);
+        color(C_MUTE); text((int16_t)(x + 20), BODY_Y + 18, F_SMALL, OPT_CENTERY, b);
+        char v[48]; fmt_value(d, v, sizeof v);
+        qvalue((int16_t)(x + 20), BODY_Y + 44, F_TEXT, d->id, UW_NO_INDEX, v);
+        eve_tag(E, 0);
+    }
+    box(16, BODY_Y + 72, 880, 320, C_CARD, 8);
+    for (int g = 0; g <= 4; ++g) { int16_t y = (int16_t)(T + g * (B - T) / 4); color(C_LINE); eve_line(E, L, y, R, y, 1); }
+    color(C_MUTE);
+    text(L, B + 18, F_SMALL, OPT_CENTERY, "-10 min");
+    text((L + R) / 2, B + 18, F_SMALL, OPT_CENTER, "-5 min");
+    text(R, B + 18, F_SMALL, OPT_CENTERY | OPT_RIGHTX, "now");
+    if (!npen) {
+        color(C_MUTE); text((L + R) / 2, (T + B) / 2, F_TEXT, OPT_CENTER, "Tap Add to choose a value to trend");
+    } else {
+        float lo = 0, hi = 1;
+        tr_range(U.tr_sel, &lo, &hi);
+        const param_def_t *d = param_find(U.tr_id[U.tr_sel]);
+        for (int g = 0; g <= 4; ++g) {                 /* the selected pen's scale */
+            fmt_float(b, sizeof b, (double)(hi - (hi - lo) * (float)g / 4.0f));
+            color(tr_col[U.tr_sel]); text(L - 8, (int16_t)(T + g * (B - T) / 4), F_SMALL, OPT_CENTERY | OPT_RIGHTX, b);
+        }
+        static int16_t xy[2 * TR_N];
+        for (unsigned p = 0; p < TR_PENS; ++p) {        /* each pen on its own scale; a gap where it had no valid value */
+            if (!U.tr_id[p]) continue;
+            float plo = 0, phi = 1;
+            tr_range(p, &plo, &phi);
+            unsigned n = 0;
+            for (unsigned k = 0; k <= tr_count; ++k) {
+                float x = k < tr_count ? tr_at(p, k) : NAN;
+                if (!isnan(x)) {
+                    xy[2 * n] = (int16_t)(R - (int)((tr_count - 1u - k) * (unsigned)(R - L) / (TR_N - 1u)));
+                    xy[2 * n + 1] = (int16_t)(B - (int)((x - plo) / (phi - plo) * (float)(B - T)));
+                    ++n;
+                    continue;
+                }
+                color(tr_col[p]);
+                if (n == 1) eve_line(E, xy[0], xy[1], (int16_t)(xy[0] + 1), xy[1], p == U.tr_sel ? 3 : 2);
+                else eve_strip(E, xy, n, p == U.tr_sel ? 3 : 2);
+                n = 0;
+            }
+        }
+        snprintf(b, sizeof b, "Each value on its own scale; the scale shown is %.20s's%s%.8s%s. A sample every %u s.", d ? d->name : "?",
+                 d && d->unit ? " (" : "", d && d->unit ? d->unit : "", d && d->unit ? ")" : "", TR_MS / 1000u);
+        color(C_MUTE); text(32, BODY_Y + 372, F_SMALL, OPT_CENTERY, b);
+    }
+    button(T_TR_ADD, 908, BODY_Y, 100, 120, "Add", C_ACCENT, npen < TR_PENS);
+    button(T_TR_DEL, 908, BODY_Y + 136, 100, 120, "Remove", 0x5B6577u, npen > 0);
+    button(T_TR_CLR, 908, BODY_Y + 272, 100, 120, "Restart", 0x5B6577u, npen > 0);
+}
+
+static void draw_tr_pick(void) {
+    unsigned n = tr_pick_count();
+    box(16, BODY_Y, 880, ROWS * ROW_H + 8, C_CARD, 8);
+    for (unsigned r = 0; r < ROWS && U.tr_first + r < n; ++r) {
+        const param_def_t *d = tr_pick_at(U.tr_first + r);
+        int16_t y = (int16_t)(BODY_Y + 4 + (int)r * ROW_H);
+        eve_tag(E, (uint8_t)(T_ROW0 + r));
+        box(20, y, 872, ROW_H - 2, U.pressed == T_ROW0 + r ? 0xDCE6F5u : C_CARD, 4);
+        if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+        char b[64], v[48];
+        snprintf(b, sizeof b, "%.40s", d->name);
+        color(C_INK); text(32, (int16_t)(y + 20), F_TEXT, OPT_CENTERY, b);
+        snprintf(b, sizeof b, "%u", d->id);
+        color(C_MUTE); text(32, (int16_t)(y + 46), F_SMALL, OPT_CENTERY, b);
+        fmt_value(d, v, sizeof v);
+        color(C_INK); text(880, (int16_t)(y + 32), F_TEXT, OPT_CENTERY | OPT_RIGHTX, v);
+        eve_tag(E, 0);
+    }
+    if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No values to trend"); }
+    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.tr_first > 0);
+    button(T_PGDN, 908, BODY_Y + 136, 100, 120, "Down", C_ACCENT, U.tr_first + ROWS < n);
+    button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
+}
+
+/* ---------------- service: self-test, board test, test record, service log ---------------- */
+static const char *test_word(uint8_t r, uint32_t *c) {
+    if (r == PLAT_TEST_PASS) { *c = C_OK; return "pass"; }
+    if (r == PLAT_TEST_FAIL) { *c = C_BAD; return "FAIL"; }
+    *c = C_GREY; return "skipped";
+}
+
+static void draw_service(void) {
+    char b[112];
+    uint32_t c;
+    box(16, BODY_Y, 496, 392, C_CARD, 8);
+    box(528, BODY_Y, 480, 316, C_CARD, 8);
+    /* start-up self-test, every check by name */
+    color(C_INK); text(32, BODY_Y + 10, F_TEXT, 0, plat_selftest_done() ? "Start-up self-test" : "Start-up self-test (running)");
+    unsigned nst = plat_selftest_count();
+    for (unsigned i = 0; i < nst && i < 16u; ++i) {
+        const char *nm; uint8_t r;
+        if (!plat_selftest_get(i, &nm, &r)) continue;
+        int16_t x = (int16_t)(32 + (i % 2u) * 236), y = (int16_t)(BODY_Y + 44 + (i / 2u) * 22);
+        const char *w = r == PLAT_STR_PASS ? "pass" : r == PLAT_STR_FAIL ? "FAIL" : r == PLAT_STR_SKIP ? "skipped" : "...";
+        c = r == PLAT_STR_PASS ? C_OK : r == PLAT_STR_FAIL ? C_BAD : C_GREY;
+        snprintf(b, sizeof b, "%.14s", nm);
+        color(C_MUTE); text(x, y, F_SMALL, 0, b);
+        color(c); text((int16_t)(x + 140), y, F_SMALL, 0, w);
+    }
+    /* board test (factory): live while it runs, else the last run or the stored record */
+    plat_bt_status_t bt; plat_boardtest_status(&bt);
+    plat_test_record_t tr;
+    bool rec = plat_service_test_record(&tr);
+    color(C_INK); text(32, BODY_Y + 230, F_TEXT, 0, "Board test");
+    if (bt.running) snprintf(b, sizeof b, "running...");
+    else if (bt.done || rec) {
+        unsigned np = 0, nf = 0, ns = 0, n = bt.done ? PLAT_BT_N : (tr.n < PLAT_SVC_TESTS ? tr.n : PLAT_SVC_TESTS);
+        const char *first = NULL;
+        for (unsigned i = 0; i < n; ++i) {
+            uint8_t r = bt.done ? bt.result[i] : tr.result[i];
+            if (r == PLAT_TEST_PASS) ++np; else if (r == PLAT_TEST_FAIL) { ++nf; if (!first) first = plat_boardtest_name(i); } else ++ns;
+        }
+        if (bt.done) snprintf(b, sizeof b, "this run: %u passed, %u failed, %u skipped", np, nf, ns);
+        else {
+            char t[24];
+            if (tr.time) log_fmt_time(t, sizeof t, tr.time, true); else snprintf(t, sizeof t, "clock not set");
+            snprintf(b, sizeof b, "%.16s, %.11s: %u passed, %u failed", t, tr.station, np, nf);
+        }
+        if (first) { color(C_BAD); char f[48]; snprintf(f, sizeof f, "First failure: %.24s", first); text(32, BODY_Y + 286, F_SMALL, 0, f); }
+    } else snprintf(b, sizeof b, "not run on this unit");
+    color(C_INK); text(32, BODY_Y + 262, F_SMALL, 0, b);
+    if (bt.done) {                                     /* the run's results, two columns */
+        for (unsigned i = 0; i < PLAT_BT_N; ++i) {
+            const char *nm = plat_boardtest_name(i);
+            if (!nm) break;
+            int16_t x = (int16_t)(32 + (i % 3u) * 156), y = (int16_t)(BODY_Y + 286 + 22 + (i / 3u) * 20);
+            const char *w = test_word(bt.result[i], &c);
+            snprintf(b, sizeof b, "%.9s %s", nm, w);
+            color(c); text(x, y, F_SMALL, 0, b);
+        }
+    }
+    button(T_SVC_BT, 300, BODY_Y + 222, 196, 56, bt.running ? "Running..." : "Run board test", C_ACCENT, !bt.running);
+    /* service log, newest first */
+    color(C_INK); text(544, BODY_Y + 10, F_TEXT, 0, "Service log");
+    {   uint32_t h = plat_service_since_x10();
+        snprintf(b, sizeof b, "%lu.%lu h since the last service", (unsigned long)(h / 10u), (unsigned long)(h % 10u));
+        color(C_MUTE); text(544, BODY_Y + 40, F_SMALL, 0, b); }
+    plat_svc_entry_t se;
+    unsigned ne = 0;
+    for (unsigned i = 0; i < 4u && plat_service_entry(i, &se); ++i, ++ne) {
+        int16_t y = (int16_t)(BODY_Y + 70 + i * 60);
+        char t[24];
+        if (se.time) log_fmt_time(t, sizeof t, se.time, true); else snprintf(t, sizeof t, "clock not set");
+        snprintf(b, sizeof b, "%.16s  %.15s", t, se.tech);
+        color(C_INK); text(544, y, F_SMALL, 0, b);
+        snprintf(b, sizeof b, "%.39s", se.work);
+        color(C_MUTE); text(544, (int16_t)(y + 22), F_SMALL, 0, b);
+        if (i) { color(C_LINE); eve_line(E, 544, (int16_t)(y - 8), 992, (int16_t)(y - 8), 1); }
+    }
+    if (!ne) { color(C_MUTE); text(544, BODY_Y + 76, F_SMALL, 0, "No entries yet"); }
+    button(T_SVC_LOG, 544, BODY_Y + 330, 196, 62, "Add entry", C_ACCENT, true);
+    button(T_DISP, 752, BODY_Y + 330, 150, 62, "Display test", 0x5B6577u, true);
+    button(T_BACK, 910, BODY_Y + 330, 98, 62, "Back", 0x5B6577u, true);
+    if (U.level < PLAT_LVL_FACTORY) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, "The board test and the service log need a factory (tech) login."); }
+}
 
 /* ================= application screens and record editors (ui_app.h, D26) ================= */
 #define APP_Y   (BODY_Y + 54)          /* below the tabs */
@@ -2539,6 +2901,9 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_ALARMS: draw_alarms(); break;
     case UI_ALARM_CFG: draw_alarm_cfg(); break;
     case UI_TIERS: draw_tiers(); break;
+    case UI_TRENDS: draw_trends(); break;
+    case UI_TR_PICK: draw_tr_pick(); break;
+    case UI_SERVICE: draw_service(); break;
     case UI_CLOCK: draw_clock(); break;
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;
