@@ -303,7 +303,7 @@ The agreed state/action matrix is in section 7.
 | CIP-21.4 | Quality shown on every value | M | Done | Greyed with the quality word on tiles, settings rows, widgets and per grid cell (`t_state_quality`, `app_grid_quality`); web `"q"` |
 | CIP-21.5 | Communications health visible | M | Done | LINK OK / LINK LOST / NO LINK in the touchscreen header; web "Connection lost" banner and live/offline badge; I/O boards screen |
 | CIP-21.6 | Version information | M | Done | System screen, web Administration |
-| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Done | `docs/UI_CONVENTIONS.md`; palette, quality words and touch-target sizes checked against both interfaces by `make test` |
+| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Done | `docs/UI_CONVENTIONS.md`; `tests/integration/ui_conventions_test.py` (run by `make test`) checks the touchscreen and web colours, the quality words and touch-target sizes against it |
 | CIP-21.8 | A local screen | O | Done | RVT70 touchscreen; a product may ship with web only |
 
 ### 4.22 Service and maintenance support
@@ -447,7 +447,7 @@ after Gary's review.
 **Documentation (any thread)**
 1. Operator manual, service manual, Modbus register map document (CIP-26.7). Done.
 2. `CHANGELOG.md`, release notes, supported-combinations matrix (CIP-25.4, 25.5).
-3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5); UI convention page (CIP-21.7).
+3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5).
 
 ## 9. Keeping the core common across the product family
 

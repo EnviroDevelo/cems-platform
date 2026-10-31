@@ -25,6 +25,16 @@ One source for the CORE and the I/O node (30 Oct, Gary):
   extended objects (serial, ComponentNumber 30, BasisM/S/R addresses, name/range/unit per
   component) and streams codes 1-3 with "more follows". A product map entry in 7000-7999 of the
   input or holding registers stops start-up (none of the current maps uses it).
+- I/O boards: a board that has never answered since power-up gets PLAT_IOB_START_MS (20 s)
+  before it counts as "not responding", so a restart no longer raises IOB_LOST while the network
+  comes up (outputs stay off until it is online, as before). Fault text "No reply: board switches
+  off after hold". Bench builds: `PLAT_BENCH_SETTINGS` writes are logged as param events.
+- Automatic 10 Mbit (net_link_mode 0): the port counts TCP data segments and retransmissions
+  (lwIP hook, `lwip_hooks.h`); two 10 s windows in a row with 40+ segments and 3 % or more sent
+  again at 100 Mbit drop the offer to 10 Mbit until a restart or a setting change. Event
+  `eth_speed`, `/api/info` eth gains `fallback`, `fallbacks`, `tcp_segs`, `tcp_rexmits`, and the
+  header badge reads "ETH 10 FD (auto)". Bench: the DK lost 14-45 % at 100 Mbit through Gary's
+  switch and none at 10 Mbit (its board's 100BASE-TX transmit signal; the Nucleo was clean).
 - Digital-input alarms (`docs/MODBUS_STANDARD_BLOCK.md` section 7): 24 slots (params 340-345,
   labels 350-373 `diaN_label`, alarm IDs 30-53, PLAT_ALARM_MAX 128). Each ties a digital input to
   an alarm with trigger level, delay, latch and severity; the label becomes the alarm text, the

@@ -622,6 +622,9 @@ static void t_no_port(void) {
     if (cur_link == IOB_LINK_IOPORT) iob_init_ioport(NULL, NULL); else if (ETH) iob_init_eth(NULL, NULL); else iob_init(NULL);
     iob_tags[0].enable = true;
     run(1100, true);
+    CHECK(view(0).state != IOB_S_LOST);         /* never answered since power-up: given PLAT_IOB_START_MS */
+    CHECK(!alarm_on(ALARM_ID_IOB_LOST));
+    run(PLAT_IOB_START_MS, true);
     CHECK_EQ(view(0).state, IOB_S_LOST);
     if (ETH) { CHECK(iob_dc_find()); run(20, true); iob_dc_view_t d; iob_dc_view(&d); CHECK_EQ(d.result, IOB_CM_NO_REPLY); }
     plat_cmd_t c = { .id = PARAM_ID_IOB_LINK, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_U32, .v.u = cur_link };

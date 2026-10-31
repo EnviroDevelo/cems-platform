@@ -91,6 +91,9 @@
 #define CHECKSUM_CHECK_TCP              0
 #define CHECKSUM_CHECK_ICMP             0
 
+/* ---- hooks ---- */
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"   /* TCP retransmission count (ethernetif.c) */
+
 /* ---- diagnostics ---- */
 #define LWIP_STATS                      0
 #define LWIP_DEBUG                      0

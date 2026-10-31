@@ -660,7 +660,7 @@ static void t_iob_screen(void) {
     iob_run(1100);
     frame();
     CHECK(shows("not responding"));
-    CHECK(shows("No reply: outputs off after the hold"));
+    CHECK(shows("No reply: board switches off after hold"));
     dump("iob_lost");
     CHECK(tap("Home"));
     CHECK_EQ(ui_screen(), UI_HOME);

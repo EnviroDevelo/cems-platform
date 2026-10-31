@@ -227,6 +227,10 @@ static void get_eth(http_out_t *o) {
     out_str(o, ",\"rx_pool_empty\":"); json_uint(o, d.rx_pool_empty);
     out_str(o, ",\"rx_kicks\":"); json_uint(o, d.rx_kicks);
     out_str(o, ",\"link_mode\":"); json_uint(o, d.link_mode);
+    out_str(o, ",\"fallback\":"); json_bool(o, d.fallback);       /* auto mode dropped to 10 Mbit: 100 lost data */
+    out_str(o, ",\"fallbacks\":"); json_uint(o, d.fallbacks);
+    out_str(o, ",\"tcp_segs\":"); json_uint(o, d.tcp_segs);
+    out_str(o, ",\"tcp_rexmits\":"); json_uint(o, d.tcp_rexmits);
     out_str(o, ",\"link_drops\":"); json_uint(o, d.link_drops);
     out_str(o, ",\"resyncs\":"); json_uint(o, d.resyncs);
     out_str(o, ",\"anar\":"); json_uint(o, d.phy_anar);       /* PHY registers 4-6, raw */
