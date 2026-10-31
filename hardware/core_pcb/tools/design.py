@@ -377,7 +377,7 @@ R1206 = "Resistor_SMD:R_1206_3216Metric"
 SOT23_5 = "Package_TO_SOT_SMD:SOT-23-5"
 MCV = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_{n}-G-3.81_1x{n:02d}_P3.81mm_Vertical"
 MSTBVA2 = "Connector_Phoenix_MSTB:PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical"
-IDC26 = "Connector_IDC:IDC-Header_2x13_P2.54mm_Latch_Vertical"
+IDC40 = "Connector_IDC:IDC-Header_2x20_P2.54mm_Latch_Vertical"
 NANO2 = "Fuse:Fuseholder_Littelfuse_Nano2_157x"
 PTC1206 = "Fuse:Fuse_1206_3216Metric"
 PTC1812 = "Fuse:Fuse_1812_4532Metric"
@@ -422,7 +422,7 @@ nc("100n", S, "+3V3", "GND")
 gate_and("U12", S, "GATE_EN", "GATE_ARM", "GATE", note="GATE = GATE_EN and armed (no watchdog trip since)")
 nr("1k", S, "GATE", "GATE_FB", note="firmware reads the gate back (PD8)")
 
-# Bank A: 8 x 0.6 A, ISO2H823V2.5, to the valve breakout over IDC26 J10
+# Bank A: 8 x 0.6 A, ISO2H823V2.5, to the breakout over the 40-way ribbon J10
 a = {37: "+3V3", 36: "+3V3", 41: "+3V3", 40: "GATE", 43: "GND", 44: "+3V3", 45: "+3V3",
      38: "A_CLKADJ", 48: "CS_A", 54: "SPI4_SCK", 49: "SPI4_MOSI", 56: "SPI4_MISO", 57: "A_ERR",
      28: "A_OLADJ", 29: "A_IADJ", 30: "A_VDDIO", 31: "A_VCORE"}
@@ -450,16 +450,6 @@ nc("100n 50V", S, "+24V_FA", "FIELD_0V")
 nr("10k", S, "+3V3", "A_ERR")
 for ch in range(1, 9):
     nc("12n 100V", S, f"A_OUT{ch}", "FIELD_0V", note="per output, datasheet application circuit" if ch == 1 else "")
-idc = {}
-for i in range(8):
-    idc[2 * i + 1], idc[2 * i + 2] = f"A_OUT{i + 1}", "FIELD_0V"
-for p in range(17, 27):
-    idc[p] = "+24V_RA" if p % 2 else "FIELD_0V"
-part("J10", "Connector_Generic:Conn_02x13_Odd_Even", "BANK A IDC26", IDC26, S, idc,
-     mpn="Wurth 61202622821 (WR-BHD, long latches, 3 A), same as the breakout",
-     note="same pinout as the breakout J1, straight-through ribbon")
-part("F10", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RA"},
-     mpn="Bourns MF-MSMF075-2", note="ribbon +24 V (breakout LEDs)")
 
 # Bank B: 8 x 1 A, ISO808A-1, on a 10-way 3.81 mm pluggable J11
 b = {2: "+3V3", 15: "GND", 3: "GATE", 4: "CS_B", 5: "SPI4_SCK", 6: "SPI4_MOSI", 13: "SPI4_MISO",
@@ -486,7 +476,7 @@ for ch in range(1, 9):
     part(f"D{40 + ch}", "Device:D_Zener", "24V 1.5W", "Diode_SMD:D_SMB", S, {1: "FIELD_0V", 2: f"B_CL{ch}"},
          mpn="1SMB5934BT3", dnp=True, note="fast-release option (remove the 0R)" if ch == 1 else "")
 
-# 8 digital inputs: ISO1I813T, type 1/3, to the input breakout over IDC26 J12
+# 8 digital inputs: ISO1I813T, type 1/3, to the breakout over the same ribbon J10
 d = {5: "+3V3", 2: "+3V3", 3: "+3V3", 19: "+3V3", 20: "+3V3", 21: "GND", 4: "IN_ROSC",
      16: "CS_IN", 13: "SPI4_SCK", 8: "SPI4_MOSI", 15: "SPI4_MISO", 14: "GND", 6: "IN_ERR",
      26: "+24V_FA", 36: "IN_TS", 38: "IN_WB"}
@@ -509,15 +499,21 @@ nr("10k", S, "+3V3", "IN_ERR")
 for ch in range(1, 9):
     nr("12k 1%", S, f"DI{ch}", f"IN{ch}_H", fp=R1206, note="RIN, eval board" if ch == 1 else "")
     nr("2k 1%", S, f"IN{ch}_L", "FIELD_0V", note="RLED (no LED here; the breakout has them)" if ch == 1 else "")
+
+# One 40-way ribbon carries all the digital I/O to one breakout (Gary, 31 Oct: one header,
+# so no ribbon can go into the wrong slot). Pins 1-16: valve outputs, each beside its 0 V
+# return; 17-32: inputs, each beside a 0 V; 33-40: 4 x +24 V sensor and LED supply, 4 x 0 V.
 idc = {}
 for i in range(8):
-    idc[2 * i + 1], idc[2 * i + 2] = f"DI{i + 1}", "FIELD_0V"
-for p in range(17, 27):
-    idc[p] = "+24V_RI" if p % 2 else "FIELD_0V"
-part("J12", "Connector_Generic:Conn_02x13_Odd_Even", "INPUTS IDC26", IDC26, S, idc,
-     mpn="Wurth 61202622821, same as J10", note="same pinout as the breakout J1")
-part("F11", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RI"},
-     mpn="Bourns MF-MSMF075-2", note="sensor supply down the input ribbon")
+    idc[2 * i + 1], idc[2 * i + 2] = f"A_OUT{i + 1}", "FIELD_0V"
+    idc[2 * i + 17], idc[2 * i + 18] = f"DI{i + 1}", "FIELD_0V"
+for p in range(33, 41):
+    idc[p] = "+24V_RIB" if p % 2 else "FIELD_0V"
+part("J10", "Connector_Generic:Conn_02x20_Odd_Even", "DIGITAL I/O IDC40", IDC40, S, idc,
+     mpn="Wurth 61204022821 (WR-BHD 40-way, long latches, 3 A). CHECK MPN",
+     note="same pinout as the breakout J1, standard straight-through 40-way ribbon")
+part("F10", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RIB"},
+     mpn="Bourns MF-MSMF075-2", note="ribbon +24 V: sensor supply and breakout LEDs")
 
 # CS pull-ups: every chip stays deselected while the MCU is in reset
 for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI"):

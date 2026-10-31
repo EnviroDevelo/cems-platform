@@ -39,11 +39,11 @@ GAP = 0.3                        # gap between courtyards when packing (mm); cou
 
 # Connectors along the housing faces, left to right. Top face: power, Ethernet, USB, field
 # supplies, pump, relays, bank B. Bottom face: the analog and temperature terminals, beside
-# their isolated islands. IDC headers stand on the board face, set back from the top edge
-# (second tier), so the ribbons leave through the top cover.
+# their isolated islands. The IDC header stands on the board face, set back from the top edge
+# (second tier), so the ribbon leaves through the top cover.
 TOP_EDGE = ["J1", "J2", "J3", "J18", "J13", "J14", "J15", "J16", "J17", "J11"]
 BOTTOM_EDGE = ["J19", "J20", "J21", "J25", "J22", "J23", "J24"]  # right-aligned, under io_ana
-TIER2 = ["J10", "J12"]
+TIER2 = ["J10"]
 
 # Blocks, left to right across the band between the two connector rows; each block's width
 # is set from its parts' courtyard area at FILL. io_dig starts below the two IDC headers.
@@ -54,7 +54,7 @@ BAND = (20.0, 76.0)              # y range between the connector rows (mm)
 FILL = 0.62
 
 ISO_CLASSES = {
-    "FIELD": ("FIELD_0V", "+24V_FA", "+24V_FB", "+24V_FP", "FA_IN", "FB_IN", "+24V_RA", "+24V_RI", "+24V_REL",
+    "FIELD": ("FIELD_0V", "+24V_FA", "+24V_FB", "+24V_FP", "FA_IN", "FB_IN", "+24V_RIB", "+24V_REL",
               "+5V_P", "PUMP_PWR", "A_IADJ", "A_OLADJ", "A_VDDIO", "A_VCORE", "A_LEDX", "A_LEDY",
               "IN_TS", "IN_WB", "FA_LED_A", "FB_LED_A"),
     "ISO_T": ("GND_T", "+3V3_T", "+3V3_TA"),

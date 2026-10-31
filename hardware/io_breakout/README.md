@@ -1,94 +1,78 @@
 # I/O breakout board (KiCad 7)
 
-A small DIN-rail board that takes one standard 26-way ribbon from the main board and
-breaks it out to screw terminals. It is our own version of the generic IDC26P-B board
-(Gary, 30 Oct 2026: the Phoenix module, about AUD 230, is not viable). Rev 0.1, draft
-for review. The board-level decisions are in the doc
+A small DIN-rail board that takes the main board's **one 40-way ribbon** and breaks out
+all the digital I/O to pluggable terminals: the 8 valve outputs (bank A) and the 8 digital
+inputs. It is rev 0.2, a draft for review.
+
+Rev 0.2 (Gary, 31 Oct 2026) replaces the two 26-way ribbons and two boards of rev 0.1.
+- With only one header, no ribbon can go into the wrong slot.
+- The main board saves a header and the field needs one breakout instead of two.
+
+The board-level decisions are in the doc
 [One PCB for CORE and I/O board](https://claude.ai/artifact/5oGgPyMKgN8YEAyrkMxLkh).
-
-## One design, two builds
-
-| Build | Used for | Fitted per channel | Not fitted |
-|---|---|---|---|
-| **OUT** | Valve bank A: 8 × 0.6 A high-side outputs (ISO2H823V2.5 on the main board) | LED, R, DS, flyback diode D, RZ (0 Ω) | Z, RW |
-| **OUT, fast release** | Valves whose closing time matters | As OUT, but Z instead of RZ | RZ, RW |
-| **IN** | 8 digital inputs (ISO1I813T on the main board) | LED, R, DS | D, RZ, Z, RW (wire-break bias goes at the sensor) |
-
-The schematic's fitted/not-fitted flags are the OUT build. Mark the build on the
-silkscreen box at assembly.
 
 ## Ribbon (Gary's rule: off the shelf, nothing special)
 
-Standard 26-way 1.27 mm flat cable (28 AWG) with 2.54 mm IDC sockets, wired straight
-through, pin 1 to pin 1. Both ends use a shrouded box header with ejector latches; the
-shroud notch is the only keying. The main board's header uses **the same pinout**, so
-any standard cable is correct.
+- **Cable:** standard 40-way 1.27 mm flat cable (28 AWG) with 2.54 mm IDC sockets, wired straight through, pin 1 to pin 1.
+- **Headers:** both ends use a shrouded box header with ejector latches. The shroud notch is the only keying.
+- **Pinout:** the main board's J10 has the same pinout, so any standard cable is correct.
 
 | Pins | Signal | Why |
 |---|---|---|
-| 1, 3, 5, … 15 | CH1 … CH8 | Each channel conductor sits beside a 0 V conductor |
-| 2, 4, 6, … 16 | 0V | Return beside each channel |
-| 17, 19, 21, 23, 25 | +24V | Sensor supply for the inputs (5 conductors) |
-| 18, 20, 22, 24, 26 | 0V | 13 × 0 V in all |
+| 1, 3, … 15 | OUT1 … OUT8 (valves, 24 V, 0.6 A) | Each output conductor sits beside its own 0 V return |
+| 2, 4, … 16 | 0V | |
+| 17, 19, … 31 | IN1 … IN8 (24 V inputs) | Each input beside a 0 V |
+| 18, 20, … 32 | 0V | |
+| 33, 35, 37, 39 | +24V | Sensor supply and LEDs, fused 0.75 A on the main board |
+| 34, 36, 38, 40 | 0V | 20 × 0 V in all |
 
-A 28 AWG conductor and an IDC contact are each good for about 1 A. Bank A's worst case,
-8 × 0.6 A = 4.8 A, returns over 13 × 0 V conductors (about 0.4 A each). The main board
-fuses the +24 V it sends down the ribbon (1 A).
+A 28 AWG conductor and an IDC contact are each good for about 1 A. Bank A's worst case
+is 8 × 0.6 A = 4.8 A, which returns over 20 × 0 V conductors (about 0.25 A each).
 
-## Terminals
+## Terminals: two-tier pluggable, 3.81 mm
 
-Two 12-way 5.08 mm screw terminals, three positions per channel: **CHn, 0V, +24V**.
-- Valve: CHn and 0V.
-- Contact or 2-wire sensor: +24V and CHn.
-- 3-wire sensor: all three.
+Each channel is one column, with the upper tier over the lower tier.
 
-J2 carries CH1-CH4 and J3 carries CH5-CH8, on the two long edges, about 61 mm each (fits the 80 mm length). The
-silkscreen shows the channel numbers and has a blank line beside each channel for the
-valve or signal name.
+| Ref | Upper tier | Lower tier |
+|---|---|---|
+| J2 VALVES 1-8 | OUT1 … OUT8 | 0V |
+| J3 INPUTS 1-8 | IN1 … IN8 | +24V |
+| J4 SENSOR 0V (single tier) | 0V × 8, for 3-wire sensors | |
+
+How each field device wires in:
+- **Valve:** both terminals of its column on J2.
+- **Contact or 2-wire sensor:** both terminals of its column on J3.
+- **3-wire sensor:** as a 2-wire sensor, plus 0 V from J4.
 
 ## Per channel
 
-- **Status LED:** 10 kΩ + 1N4148W + green LED from CHn to 0 V. It draws 2.2 mA at
-  24 V, so it is lit when an output is on or an input contact is closed. The series
-  diode protects the LED's 5 V reverse rating from a coil's negative turn-off spike.
-- **Flyback clamp (OUT):** S1M from CHn back to 0 V through RZ (0 Ω). This is a plain
-  diode clamp: it keeps the spike at the valve end and off the ribbon, which helps EMC,
-  and adds about 10-30 ms to the valve's release. The ISO2H823V2.5 clamps internally,
-  so nothing fails without it.
-- **Fast release (option):** remove RZ and fit Z, a 24 V 1.5 W Zener. It clamps at
-  about Vz + 0.7 V below 0 V, so the coil's energy is dumped faster. The diode is
-  reverse-biased while the output is on, so the main board's open-load check still
-  works.
-- **Wire-break bias (IN):** for the ISO1I813T to detect a cut **field** wire, the bias
-  resistor (about 10-47 kΩ, set from its wire-break threshold) must sit across the
-  contact **at the sensor**, at the far end of the cable. RW on this board, from +24V to
-  CHn, bypasses the field wire, so it only detects a ribbon break. Leave RW unfitted
-  unless that is all that is wanted. The silkscreen says "wire-break R at sensor".
+- **Valve LED:** 10 kΩ + 1N4148W + green LED from OUTn to 0 V. The series diode protects the LED from the coil's negative turn-off spike.
+- **Flyback clamp:** S1M from OUTn back to 0 V through RZ (0 Ω).
+  - It keeps the spike at the valve end and off the ribbon, which helps EMC.
+  - It adds about 10-30 ms to the valve's release.
+  - The ISO2H823V2.5 clamps internally, so nothing fails without it.
+- **Fast release (option):** remove RZ and fit Z, a 24 V 1.5 W Zener. It clamps at about Vz + 0.7 V below 0 V.
+- **Input LED:** 10 kΩ + yellow LED from INn to 0 V. It is lit while the contact is closed.
+- **Wire-break bias:** the bias resistor goes across the contact **at the sensor**. The silkscreen says so.
 
-Also on the board: a power LED on +24V, and four M3 holes for a DIN-rail PCB carrier or
-clips.
+Also on the board:
+- a power LED on +24V
+- four M3 holes for a standard 50 × 80 mm DIN-rail PCB holder
 
 ## Board
 
-- 50 × 80 mm (to fit a standard 50 × 80 mm DIN-rail PCB holder), 2-layer, 1.6 mm FR-4, 2 oz copper.
-- 0 V as a wide pour.
-- Silkscreen: pin 1, the channel numbers, a valve-name line per channel, the build (OUT
-  or IN) and the revision.
+- 50 × 80 mm, 2-layer, 1.6 mm FR-4, 2 oz copper.
+- J2 sits on one long edge, and J3 + J4 on the other.
+- 0 V is a wide pour.
 
 ## Still to check (CHECK in the sheet notes)
 
-- **Box header:** chosen 31 Oct: Würth 61202622821 (WR-BHD, long latches, 3 A per contact,
-  RS 771-8446). The main board's J10 and J12 use the same part.
-- **Screw terminals:** the Degson or Dinkle part number, rated UL 300 V, 8 A or more, and
-  its footprint against the Phoenix MKDS 5.08 mm one used here.
-- **Fast-release Zener:** Vz + 0.7 V must stay below the ISO2H823V2.5's own
-  demagnetisation clamp, so the external clamp takes the energy.
-- **Sensor-end bias resistor value:** from the ISO1I813T wire-break threshold (installation note).
-- **DIN carrier:** chosen 31 Oct: a standard 50 × 80 mm DIN-rail PCB holder (Adafruit 4435,
-  about AUD 10 at Core Electronics) for the prototypes; for production, Phoenix UMK-BE 45
-  base and side elements (RS 192-2759) or similar. CHECK the hole positions against the holder.
-- **SMC valves:** whether they come with a built-in surge suppressor. If they do, D is
-  not needed.
+- **Two-tier header:** the Phoenix MCDV 1,5/8-G-3,81 (or the Degson/Dinkle equivalent) part number. Its footprint in `cems_io_breakout.pretty` is a **placeholder**, to redraw from the maker's drawing.
+- **40-way box header:** confirm Würth 61204022821 (WR-BHD, long latches).
+- **Fast-release Zener:** Vz + 0.7 V must stay below the ISO2H823V2.5's own demagnetisation clamp.
+- **Input LED and wire-break:** each input LED draws about 2 mA in parallel with the input, so check that it doesn't mask the ISO1I813T wire-break threshold. If it does, fit a larger LED resistor.
+- **DIN holder:** the hole positions.
+- **SMC valves:** whether they come with a built-in surge suppressor. If they do, D is not needed.
 
 ## Files
 
@@ -96,9 +80,10 @@ clips.
 |---|---|
 | `cems_io_breakout.pdf` | Both sheets, for review without KiCad |
 | `cems_io_breakout.kicad_pro`, `.kicad_sch`, `connectors.kicad_sch`, `channels.kicad_sch` | KiCad project |
-| `bom.csv` | Grouped bill of materials (OUT build) |
+| `cems_io_breakout.pretty/` | Project footprint (two-tier header, placeholder) |
+| `bom.csv` | Grouped bill of materials |
 | `tools/design.py` | **The circuit, as data: edit this, not the sheets** |
 | `tools/gen_schematic.py`, `tools/check_netlist.py`, `tools/build.sh` | Same generator and check as `hardware/core_pcb` |
 
-Run `tools/build.sh` (KiCad 7 and `pip install kiutils`). It currently reports 65 parts,
-35 nets and 166 connected pins, with the check passing.
+Run `tools/build.sh` (KiCad 7 and `pip install kiutils`). It currently reports 74 parts,
+51 nets and 212 connected pins, with the check passing.
