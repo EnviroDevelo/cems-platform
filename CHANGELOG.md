@@ -26,6 +26,10 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
 - `/api/modbus/map` lists the standard block (`"core":"standard"`, `"mirror":"holding"`): every item of
   each fitted slot plus BasisR and the globals, in address order, so the Excel handover file carries it.
   The status word's bit 2 is now also set by bits 28 and 30, as section 3 says.
+- Cable-swap guard (CORE_PCB.md 15): with the boards on the I/O port, one discovery FIND goes out
+  on the client port 20 s after start and every 5 min. I/O boards answering there raise the new
+  platform alarm 25 NET_SWAPPED, Modbus TCP and the web close their ports, and `/api/info` gives
+  `net_swapped`; two clean probes 10 s apart clear it. Alarm ID 25 is now the platform's.
 - `/api/params`: `meas` gives a measured parameter's position in plat_meas.
 - Interface snapshots brought up to date with the alarm tiers, emissions and instrument
   parameters merged since 0.9.0.

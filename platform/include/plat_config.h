@@ -174,5 +174,10 @@
 #define PLAT_IOB_TCP_REPLY_MS     15u    /* a board's Modbus TCP reply (same budget as RS-485: 3 boards per cycle) */
 #define PLAT_IOB_TCP_CONNECT_MS   50u    /* a TCP connection to a board, tried once per retry */
 #define PLAT_IOB_DISC_WAIT_MS     300u   /* answers to a discovery broadcast are collected this long */
+/* the cable-swap guard (iobus.h iob_net_swapped): with the boards on the I/O port, one FIND on the
+ * client port this long after start, then every SLOW (every FAST while swapped) */
+#define PLAT_IOB_SWAP_FIRST_MS    20000u
+#define PLAT_IOB_SWAP_SLOW_MS     300000u
+#define PLAT_IOB_SWAP_FAST_MS     10000u
 
 #endif

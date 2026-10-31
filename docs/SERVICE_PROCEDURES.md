@@ -107,6 +107,7 @@ Start with what the unit already says about itself, in this order:
 | `UNEXPECTED_RESET` now and then | watchdog or supply dips | The last fault names the task. Compare the `power_up` reset cause: 6 brown-out points at the supply |
 | `PARAM_WRITE_FAIL` | settings memory (FRAM) not answering or failing writes | Changes may be lost at power-off. Run the board test (section 4) at a quiet time; replace the core board if the FRAM line fails |
 | `IP_CONFLICT`, network off | another device has the unit's static IP | Change one of the two addresses |
+| `NET_SWAPPED`, plant port off | the plant and I/O RJ45 cables are swapped, or the plant switch also reaches the I/O boards | Swap the two cables back (the I/O cable goes to the port marked I/O). The web page and Modbus TCP come back about 20 s after the I/O boards stop answering on the plant port |
 | PLC reads nothing | wrong IP or port, a client filter, or more than 4 clients | [MODBUS.md](MODBUS.md) 1 and 9. The web Service tab lists the Modbus clients and refused connections |
 | PLC writes refused | LOCAL mode, Modbus writes off, or the value's level | The exception code says which: MODBUS.md 5 |
 | `REMOTE_LINK_LOST` | in REMOTE and the PLC stopped polling | Check the PLC and the network. The timeout is parameter 3 |

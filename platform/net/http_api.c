@@ -302,6 +302,7 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
         out_str(o, "}"); }
     get_eth(o);
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
+    out_str(o, ",\"net_swapped\":"); json_bool(o, iob_net_swapped);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     { alarm_summary_t s; alarm_summary(&s);
       out_str(o, ",\"alarms\":{\"active\":"); json_uint(o, s.active);

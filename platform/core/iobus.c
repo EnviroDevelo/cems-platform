@@ -102,6 +102,11 @@ int iob_link_interlock(uint16_t id, plat_val_t v) {
     return p ? 0 : 1;
 }
 
+/* the cable-swap guard (iobus.h) */
+volatile bool iob_net_swapped;
+static struct { bool armed, sent, found; uint16_t seq; uint32_t at; uint8_t clean; } sw;
+static void swap_guard(uint32_t now, uint8_t link);
+
 void iob_reset(void) {
     PLAT_CRIT_ENTER();
     memset(&cmd, 0, sizeof cmd);
@@ -115,6 +120,8 @@ void iob_reset(void) {
     memset(B, 0, sizeof B);
     safe = false;
     bus_link = 0xFF;
+    memset(&sw, 0, sizeof sw);
+    iob_net_swapped = false;
 }
 
 void iob_safe_state(void) { safe = true; }
@@ -508,6 +515,11 @@ static void dc_run(void);
 void iob_cycle(uint32_t now) {
     cm_run();                                    /* a commissioning request from the web page, if any */
     dc_run();
+    {
+        uint8_t l;
+        PLAT_CRIT_ENTER(); l = cmd.cfg_valid ? cmd.link : iob_link; PLAT_CRIT_EXIT();
+        swap_guard(now, l);
+    }
     cfg_t c[IOB_BOARDS];
     uint16_t out[IOB_BOARDS], pwm[IOB_BOARDS], timeout;
     uint8_t rel[IOB_BOARDS], dir[IOB_BOARDS], filter;
@@ -747,6 +759,42 @@ static unsigned dc_exchange(const iob_disc_t *m, iob_disc_t *list, unsigned max,
     return n;
 }
 
+/* One FIND on the client port; answers are taken without waiting over the next cycles, so the
+ * outputs keep their timing. */
+static void swap_guard(uint32_t now, uint8_t link) {
+    if (link != IOB_LINK_IOPORT || !io_tcp || !disc || !disc->send || !disc->recv) {
+        if (iob_net_swapped) plat_log_event(LOG_EV_IOB, PLAT_SRC_INTERNAL, 0, 0, NAN, 0.0, "swap guard off");
+        memset(&sw, 0, sizeof sw); iob_net_swapped = false;
+        return;
+    }
+    if (!sw.armed) { sw.armed = true; sw.at = now + PLAT_IOB_SWAP_FIRST_MS; }
+    uint8_t b[IOB_DISC_LEN];
+    if (!sw.sent) {
+        if ((int32_t)(now - sw.at) < 0) return;
+        iob_disc_t f; memset(&f, 0, sizeof f);
+        f.op = IOB_DISC_FIND; f.seq = ++dc_seq;
+        (void)iob_disc_encode(&f, b);
+        if (!disc->send(disc, b, IOB_DISC_LEN)) { sw.at = now + PLAT_IOB_SWAP_FAST_MS; return; }   /* network not up yet */
+        sw.sent = true; sw.found = false; sw.seq = f.seq; sw.at = now + PLAT_IOB_DISC_WAIT_MS;
+        return;
+    }
+    uint16_t got;
+    while (!sw.found && (got = disc->recv(disc, b, sizeof b, 0)) != 0) {
+        iob_disc_t h;
+        if (iob_disc_decode(b, got, &h) && h.op == IOB_DISC_HERE && h.seq == sw.seq) sw.found = true;
+    }
+    if (!sw.found && (int32_t)(now - sw.at) < 0) return;
+    sw.sent = false;
+    if (sw.found) {
+        if (!iob_net_swapped) plat_log_event(LOG_EV_IOB, PLAT_SRC_INTERNAL, 0, 0, NAN, 1.0, "I/O net on client port");
+        iob_net_swapped = true; sw.clean = 0;
+    } else if (iob_net_swapped && ++sw.clean >= 2u) {
+        iob_net_swapped = false;
+        plat_log_event(LOG_EV_IOB, PLAT_SRC_INTERNAL, 0, 0, NAN, 0.0, "client port clear");
+    }
+    sw.at = now + (iob_net_swapped ? PLAT_IOB_SWAP_FAST_MS : PLAT_IOB_SWAP_SLOW_MS);
+}
+
 static void dc_run(void) {
     uint8_t op;
     iob_disc_t set;
@@ -906,6 +954,7 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
     alarm_set(ALARM_ID_IOB_SUPPLY, sup);
     alarm_set(ALARM_ID_IOB_NODE_RESET, wdg);
     alarm_set(ALARM_ID_IOB_TEMP_FAULT, tf);
+    alarm_set(ALARM_ID_NET_SWAPPED, iob_net_swapped);
 }
 
 void iob_scan_out(const plat_io_out_t *o, uint32_t now_ms) {
