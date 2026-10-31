@@ -51,15 +51,15 @@ These hold across every item below and override any item where they conflict.
 | 1 | Instrument identity | M | Done | None at platform level (Modbus identity block, board straps read) | Firmware, PCB |
 | 2 | Clock and timekeeping | M | Done | Local standard time kept by decision (D22, an exception to the baseline) | Firmware |
 | 3 | Firmware updates | M | Done | None at platform level (hardware range and build ID in the header) | Firmware |
-| 4 | Bootloader and recovery | M (interface S) | Partial | No immutable first-stage bootloader; debug lock state undecided | Firmware, PCB |
+| 4 | Bootloader and recovery | M (interface S) | Partial | Own first-stage bootloader built and host-tested (`docs/BOOTLOADER.md`); bench test and the debug lock remain | Firmware, PCB |
 | 5 | Configuration management | M | Done | None at platform level (configuration checksum added) | Firmware |
 | 6 | Non-volatile storage | M | Done | Not yet proved on the real FRAM and NOR | Firmware |
 | 7 | Power management | M | Done | Supply sense and shutdown built; not yet proved on the core board | Firmware, PCB |
 | 8 | Watchdog and fault recovery | M | Done | None at platform level (safe mode after a reboot loop) | Firmware |
-| 9 | Instrument operating states | M | Partial | State shown in the touchscreen and web headers (done) | Firmware (+ HMI, HTTPS) |
-| 10 | Measurement validity and quality flags | M | Partial | Quality shown on every value on the touchscreen and web (done) | Firmware (+ HMI, HTTPS) |
+| 9 | Instrument operating states | M | Done | None at platform level (state in the touchscreen and web headers) | Firmware (+ HMI, HTTPS) |
+| 10 | Measurement validity and quality flags | M | Done | None at platform level (quality on every value, touchscreen and web) | Firmware (+ HMI, HTTPS) |
 | 11 | Diagnostics and self-tests | M | Done | None at platform level (self-test list, published code list) | Firmware |
-| 12 | Alarm management | M | Done | None at platform level | Firmware |
+| 12 | Alarm management | M | Done | None at platform level (priority tiers per alarm, 31 Oct) | Firmware |
 | 13 | Communications framework | M (interfaces O) | Done | No written framework document for new interfaces | Firmware |
 | 14 | Common data model | M | Done | Compatibility policy enforced by the interface snapshots and core version rules | Firmware, HTTPS |
 | 15 | Communications health | M | Done | None at platform level (heartbeat and link age in the Modbus block) | Firmware |
@@ -69,13 +69,13 @@ These hold across every item below and override any item where they conflict.
 | 19 | User and service access | M | Done | None at platform level (calibration permission, token recovery) | Firmware, HMI, HTTPS |
 | 20 | Cybersecurity | M | Partial | Debug lock, secure boot (4-character passwords accepted by Gary) | Firmware, PCB |
 | 21 | User interface conventions | M (screen O) | Done | `docs/UI_CONVENTIONS.md`, checked by `tests/integration/ui_conventions_test.py` in `make test` | HMI, HTTPS |
-| 22 | Service and maintenance support | S | Partial | Diagnostic package download; service manual | Firmware, HTTPS |
-| 23 | Factory provisioning and testing | S | Partial | No provisioning procedure or board test (test results are stored) | Firmware, PCB |
+| 22 | Service and maintenance support | S | Done | None at platform level (diagnostic package, `SERVICE_PROCEDURES.md` fault finding) | Firmware, HTTPS |
+| 23 | Factory provisioning and testing | S | Partial | Provisioning procedure and board test built; the board test needs a run on the core board | Firmware, PCB |
 | 24 | Electrical and environmental robustness | M | Partial | No written design basis (EMC levels, IP, humidity) or test plan | PCB |
-| 25 | Version control and traceability | M | Partial | Release notes and the supported-combinations matrix | Firmware |
-| 26 | Verification and documentation | M | Partial | Nothing run on hardware; no operator, service or comms manuals | All |
+| 25 | Version control and traceability | M | Partial | `CHANGELOG.md` and `SUPPORTED.md` in place; the first tagged release waits for the core board | Firmware |
+| 26 | Verification and documentation | M | Partial | Manuals done (operator, web, service, Modbus); DK bench partly done, core board and 72-hour soak to come | All |
 
-Score: 17 Done, 9 Partial, 0 Missing (refreshed 29 Oct: item 21, UI conventions, done in the HMI work).
+Score: 20 Done, 6 Partial, 0 Missing (refreshed 31 Oct: items 9, 10 and 22 done; every Partial now waits on hardware: the DK bench, the core board, the EMC lab).
 
 ## 4. Requirements
 
@@ -314,7 +314,7 @@ The agreed state/action matrix is in section 7.
 | CIP-22.2 | Operating-hours counters | S | Done | Total and since-service hours (0.1 h), parameters 330/331, kept over updates and restore defaults |
 | CIP-22.3 | Fault history | S | Done | Event log; last fault; firmware history |
 | CIP-22.4 | Service records | S | Done | Service log (8 entries) at factory level, `/api/service` |
-| CIP-22.5 | Identify and diagnose without source code | S | Partial | Most information is on screen; `docs/FAULT_CODES.md` (CIP-11.3). Needs a service manual |
+| CIP-22.5 | Identify and diagnose without source code | S | Done | Information on screen and in `/api/info`; `docs/FAULT_CODES.md` (CIP-11.3); fault finding with a symptom table and the network port guide in `docs/SERVICE_PROCEDURES.md` 5 |
 ### 4.23 Factory provisioning and testing
 
 | ID | Requirement | Class | Status | Where / gap |

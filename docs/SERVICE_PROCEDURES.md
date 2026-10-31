@@ -112,7 +112,30 @@ Start with what the unit already says about itself, in this order:
 | `REMOTE_LINK_LOST` | in REMOTE and the PLC stopped polling | Check the PLC and the network. The timeout is parameter 3 |
 | `IOB_LOST` | I/O board power, cable or address | Check the I/O board's power LED, the I/O network cable and its address switch; the web I/O boards tab shows each board's link |
 | Clock wrong or "not synchronised" | no time server reachable | Check the SNTP server setting and the gateway, or set the clock by hand on the touchscreen or web |
+| Pages slow or half-loaded, "connecting" stays on, logins time out | Ethernet frames lost between the unit and the switch | Read the header badge and web Service tab "Network port" (`/api/info` `eth`): see 5.1 |
+| Badge shows "ETH 10 FD (auto)" | 100 Mbit lost data on this switch or cable, so the port dropped to 10 Mbit by itself | Normal working is fine at 10 Mbit. Find the cause (5.1); a restart tries 100 Mbit again. `eth_speed` in the event log says when |
+| `IOB_LOST` stays after the board is back online | latched on purpose: the board also saw the link drop | Acknowledge it (touchscreen, web, or Modbus alarm_ack); find why it dropped from the event log `iob` entries |
+| An alarm never appears | its tier is set to Off, or its enable setting is off | Web Alarm setup or touchscreen Alarms, Actions: check the alarm's tier. CAL_INVALID, SAFE_MODE, PARAM_WRITE_FAIL and alarms that stop measurement can't be switched off |
 | `RESOURCE_LOW` | free memory below its margin | Note the figures on the System screen or `/api/info` `health`, and send the diagnostic package. Not urgent, but don't ignore it |
+
+### 5.1 The network port
+
+The header badge shows the speed and duplex the switch agreed ("ETH 100 FD"); amber means 10
+Mbit, half duplex or rising errors, red means no link. The Service tab's "Network port" line and
+`/api/info` `eth` give the detail. Where the counters point:
+
+| What moves | Points at |
+|---|---|
+| `rx_crc_errors`, `rx_align_errors`, `phy_symbol_errors` | the cable, the connectors or the switch port (receive side) |
+| `rx_missed`, `rx_overflow`, `rx_pool_empty` | the unit too busy to take frames (report it with the diagnostic package) |
+| `tcp_rexmits` rising against `tcp_segs`, with no receive errors | the unit's transmitted frames are lost on the way: switch tolerance, cable length or the port (transmit side). Large frames suffer first: test with 1400-byte pings |
+| `link_drops`, `resyncs` | the link going down, or the switch renegotiating |
+| `partner_autoneg` false | the switch does not negotiate; set it to auto, or fix both ends at the same mode |
+
+`net_link_mode` (admin, Settings): 0 auto (with the automatic drop to 10 Mbit), 1 offers 100
+Mbit only, 2 offers 10 Mbit only. Autonegotiation always stays on, so the switch never ends up at
+the wrong duplex. 10 Mbit is plenty for this unit (a full web page in about 0.3 s) and is more
+tolerant of long or poor cables.
 
 Keeping the settings: web Administration tab → **Download parameter backup** beforehand, and
 **Restore from file** on the same unit or its replacement. The calibration (factory data) is kept separately and isn't
