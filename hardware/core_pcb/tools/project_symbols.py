@@ -97,3 +97,23 @@ ic("ISO7741", "Quad digital isolator, 3 forward / 1 reverse, 5 kVrms (TI)",
    [(16, "VCC2", PW), (9, "GND2", PW), (15, "GND2", PW), (10, "EN2", PI), None,
     (14, "OUTA", PO), (13, "OUTB", PO), (12, "OUTC", PO), (11, "IND", PI)],
    "https://www.ti.com/product/ISO7741")
+
+# ADI AD5755-1: quad 16-bit 4-20 mA / voltage output DAC with a DC-DC boost per channel, LFCSP-64.
+# Pin numbers from the datasheet's Table 5 (read 31 Oct through a web reader). EP to AVSS.
+ic("AD5755-1", "Quad 16-bit 4-20 mA / voltage output DAC, dynamic power control DC-DC (Analog Devices)",
+   "Package_CSP:LFCSP-64-1EP_9x9mm_P0.5mm_EP5.21x5.21mm",
+   [(11, "DVDD", PW), (12, "DGND", PW), (45, "AVCC", PW), (19, "AVDD", PW), (27, "AVSS", PW), (40, "AVSS", PW),
+    (53, "AVSS", PW), (35, "AGND", PW), (3, "REFGND", PW), (4, "REFGND", PW), (65, "EP", PW), None,
+    (7, "~{SYNC}", PI), (8, "SCLK", PI), (9, "SDIN", PI), (10, "SDO", PO), (5, "AD0", PI), (6, "AD1", PI),
+    (13, "~{LDAC}", PI), (14, "CLEAR", PI), (18, "~{RESET}", PI), (17, "POC", PI), (15, "~{ALERT}", OC),
+    (16, "~{FAULT}", OC), None, (61, "REFIN", PI), (62, "REFOUT", PS),
+    (2, "RSET_A", PS), (1, "RSET_B", PS), (64, "RSET_C", PS), (63, "RSET_D", PS)],
+   [(39, "SWA", PO), (38, "GNDSWA", PW), (24, "VBOOST_A", PW), (23, "COMPDCDC_A", PS), (26, "IOUT_A", PO),
+    (25, "VOUT_A", PO), (22, "+VSENSE_A", PI), (20, "COMPLV_A", PS), (21, "CHARTA", PS), None,
+    (36, "SWB", PO), (37, "GNDSWB", PW), (34, "VBOOST_B", PW), (32, "COMPDCDC_B", PS), (33, "IOUT_B", PO),
+    (31, "VOUT_B", PO), (30, "+VSENSE_B", PI), (28, "COMPLV_B", PS), (29, "CHARTB", PS), None,
+    (44, "SWC", PO), (43, "GNDSWC", PW), (46, "VBOOST_C", PW), (48, "COMPDCDC_C", PS), (47, "IOUT_C", PO),
+    (49, "VOUT_C", PO), (50, "+VSENSE_C", PI), (52, "COMPLV_C", PS), (51, "CHARTC", PS), None,
+    (41, "SWD", PO), (42, "GNDSWD", PW), (56, "VBOOST_D", PW), (57, "COMPDCDC_D", PS), (54, "IOUT_D", PO),
+    (55, "VOUT_D", PO), (58, "+VSENSE_D", PI), (60, "COMPLV_D", PS), (59, "CHARTD", PS)],
+   "https://www.analog.com/en/products/ad5755-1.html")

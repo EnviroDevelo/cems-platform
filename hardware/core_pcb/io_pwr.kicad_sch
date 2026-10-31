@@ -2619,12 +2619,12 @@
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid edf7d400-f08b-51e6-8775-eb69d40ca446)
   )
-  (text "\nU21: about 4 A pump supply with current limit; can PWM a brushed motor to 1 kHz. CHECK rating once the 107Z current is known\nR147: diagnostic, test point only\nD26: motor freewheel\nR149: pump PWM: 24 V push-pull, 20 Hz-25 kHz. 1k makes the output survive a short to 0 V or 24 V for ever (24 mA, 0.6 W). CHECK the 107Z input current (high level = 24 V - 1k x I)\nR151: pump DIR: 24 V push-pull, 20 Hz-25 kHz. 1k makes the output survive a short to 0 V or 24 V for ever (24 mA, 0.6 W). CHECK the 107Z input current (high level = 24 V - 1k x I)\nD27: clamp to the 5 V rail\nR154: 1.5 V threshold"
+  (text "\nU21: about 4 A pump supply with current limit; can PWM a brushed motor to 1 kHz. CHECK rating once the 107Z current is known\nR148: diagnostic, test point only\nD26: motor freewheel\nR150: pump PWM: 24 V push-pull, 20 Hz-25 kHz. 1k makes the output survive a short to 0 V or 24 V for ever (24 mA, 0.6 W). CHECK the 107Z input current (high level = 24 V - 1k x I)\nR152: pump DIR: 24 V push-pull, 20 Hz-25 kHz. 1k makes the output survive a short to 0 V or 24 V for ever (24 mA, 0.6 W). CHECK the 107Z input current (high level = 24 V - 1k x I)\nD27: clamp to the 5 V rail\nR155: 1.5 V threshold"
     (at 203.2 347.98 0)
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid b5ef58e7-64bb-5236-9de5-74abd8a03659)
   )
-  (text "\nU24: CHECK pin order for the SOT-23-5 variant\nR156: hysteresis\nJP2: fit for an open-collector tacho\nJ15: one plug for the whole pump: power, 0 V, PWM, DIR, tacho, signal 0 V (Thomas 107Z: signal ground must be field 0 V)\nF15: per-channel limit: a shorted coil wire trips only its own PTC\nU25: 60 V, 400 mA PhotoMOS: rides out a short until its PTC trips. CHECK with a 10 s short test\nR163: 5 V -> 3.4 V"
+  (text "\nU24: CHECK pin order for the SOT-23-5 variant\nR157: hysteresis\nJP2: fit for an open-collector tacho\nJ15: one plug for the whole pump: power, 0 V, PWM, DIR, tacho, signal 0 V (Thomas 107Z: signal ground must be field 0 V)\nF15: per-channel limit: a shorted coil wire trips only its own PTC\nU25: 60 V, 400 mA PhotoMOS: rides out a short until its PTC trips. CHECK with a 10 s short test\nR164: 5 V -> 3.4 V"
     (at 391.16 347.98 0)
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid 6a110229-de4c-5330-9173-7083e93feddc)
@@ -4058,8 +4058,8 @@
 
   (symbol (lib_id "Device:R") (at 236.22 35.56 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 3785d4d5-b555-5978-9789-b18e0a7de5ac)
-    (property "Reference" "R143" (id 0) (at 236.22 17.78 0)
+    (uuid 450fd5fb-80d2-5981-991b-ae6db27854fa)
+    (property "Reference" "R144" (id 0) (at 236.22 17.78 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 236.22 53.34 0)
@@ -4074,12 +4074,12 @@
     (property "MPN" "10k" (id 4) (at 236.22 35.56 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 033127f5-173b-5ebf-a986-1ec581fd1014))
-    (pin "2" (uuid 1d3c3e44-84bb-5cb3-9555-55262f615ad7))
+    (pin "1" (uuid d5dd8085-5b57-552b-b458-0d9eec5be59b))
+    (pin "2" (uuid 8c26cc8a-5e85-59c6-b2ce-c0a75a0f18b4))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R143") (unit 1)
+          (reference "R144") (unit 1)
         )
       )
     )
@@ -4116,8 +4116,8 @@
 
   (symbol (lib_id "Device:R") (at 287.02 35.56 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 450fd5fb-80d2-5981-991b-ae6db27854fa)
-    (property "Reference" "R144" (id 0) (at 287.02 17.78 0)
+    (uuid c0d3539a-df19-5cc7-82c3-2aabc2f4ce42)
+    (property "Reference" "R145" (id 0) (at 287.02 17.78 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 287.02 53.34 0)
@@ -4132,12 +4132,12 @@
     (property "MPN" "10k" (id 4) (at 287.02 35.56 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid d5dd8085-5b57-552b-b458-0d9eec5be59b))
-    (pin "2" (uuid 8c26cc8a-5e85-59c6-b2ce-c0a75a0f18b4))
+    (pin "1" (uuid c51fd804-124e-5364-a937-afca34770012))
+    (pin "2" (uuid 0d2c4ea7-bc52-567c-88f8-af9de314015f))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R144") (unit 1)
+          (reference "R145") (unit 1)
         )
       )
     )
@@ -4384,8 +4384,8 @@
 
   (symbol (lib_id "Device:R") (at 553.72 35.56 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid c0d3539a-df19-5cc7-82c3-2aabc2f4ce42)
-    (property "Reference" "R145" (id 0) (at 553.72 17.78 0)
+    (uuid 025e1000-aa0a-5426-b4c9-1bd21d6cb766)
+    (property "Reference" "R146" (id 0) (at 553.72 17.78 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "100k" (id 1) (at 553.72 50.8 0)
@@ -4400,12 +4400,12 @@
     (property "MPN" "100k" (id 4) (at 553.72 35.56 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid c51fd804-124e-5364-a937-afca34770012))
-    (pin "2" (uuid 0d2c4ea7-bc52-567c-88f8-af9de314015f))
+    (pin "1" (uuid b49c3961-1427-5c00-89a1-ad639fb92258))
+    (pin "2" (uuid 55b8c445-6f37-5603-851b-f87e79f7bfca))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R145") (unit 1)
+          (reference "R146") (unit 1)
         )
       )
     )
@@ -4413,8 +4413,8 @@
 
   (symbol (lib_id "Device:R") (at 563.88 38.1 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 025e1000-aa0a-5426-b4c9-1bd21d6cb766)
-    (property "Reference" "R146" (id 0) (at 563.88 17.78 0)
+    (uuid 11129790-d3c8-5fb2-87dc-18e75e366513)
+    (property "Reference" "R147" (id 0) (at 563.88 17.78 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "100k" (id 1) (at 563.88 53.34 0)
@@ -4429,12 +4429,12 @@
     (property "MPN" "100k" (id 4) (at 563.88 38.1 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid b49c3961-1427-5c00-89a1-ad639fb92258))
-    (pin "2" (uuid 55b8c445-6f37-5603-851b-f87e79f7bfca))
+    (pin "1" (uuid c9c01f55-ad24-5b07-8eff-2749b4579067))
+    (pin "2" (uuid 7613e662-1634-5d13-aa83-c8ea087944b6))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R146") (unit 1)
+          (reference "R147") (unit 1)
         )
       )
     )
@@ -4575,8 +4575,8 @@
 
   (symbol (lib_id "Device:R") (at 129.54 81.28 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 11129790-d3c8-5fb2-87dc-18e75e366513)
-    (property "Reference" "R147" (id 0) (at 129.54 66.04 0)
+    (uuid 55216561-a48f-5262-8eee-45054bc5e115)
+    (property "Reference" "R148" (id 0) (at 129.54 66.04 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 129.54 93.98 0)
@@ -4591,12 +4591,12 @@
     (property "MPN" "10k" (id 4) (at 129.54 81.28 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid c9c01f55-ad24-5b07-8eff-2749b4579067))
-    (pin "2" (uuid 7613e662-1634-5d13-aa83-c8ea087944b6))
+    (pin "1" (uuid 84cdfbe6-5c3d-5752-af67-22e3ebf6903b))
+    (pin "2" (uuid 4fcfacba-f4ec-5c3a-b740-9eb7841443ac))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R147") (unit 1)
+          (reference "R148") (unit 1)
         )
       )
     )
@@ -4753,8 +4753,8 @@
 
   (symbol (lib_id "Device:R") (at 289.56 86.36 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 55216561-a48f-5262-8eee-45054bc5e115)
-    (property "Reference" "R148" (id 0) (at 289.56 68.58 0)
+    (uuid 3659162f-a51d-5485-88d7-66eb771ba77d)
+    (property "Reference" "R149" (id 0) (at 289.56 68.58 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 289.56 104.14 0)
@@ -4769,12 +4769,12 @@
     (property "MPN" "10k" (id 4) (at 289.56 86.36 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 84cdfbe6-5c3d-5752-af67-22e3ebf6903b))
-    (pin "2" (uuid 4fcfacba-f4ec-5c3a-b740-9eb7841443ac))
+    (pin "1" (uuid 0a6bd7c4-543c-537e-843c-c12ac903466f))
+    (pin "2" (uuid 019a4d2a-5378-5a17-af3c-933a71987aeb))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R148") (unit 1)
+          (reference "R149") (unit 1)
         )
       )
     )
@@ -4842,8 +4842,8 @@
 
   (symbol (lib_id "Device:R") (at 350.52 83.82000000000001 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 3659162f-a51d-5485-88d7-66eb771ba77d)
-    (property "Reference" "R149" (id 0) (at 350.52 66.04 0)
+    (uuid 7760c359-0ec0-5ece-bc25-fe9762d90c57)
+    (property "Reference" "R150" (id 0) (at 350.52 66.04 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "1k 1W" (id 1) (at 350.52 101.6 0)
@@ -4858,12 +4858,12 @@
     (property "MPN" "anti-surge 2512, 1 W" (id 4) (at 350.52 83.82000000000001 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 0a6bd7c4-543c-537e-843c-c12ac903466f))
-    (pin "2" (uuid 019a4d2a-5378-5a17-af3c-933a71987aeb))
+    (pin "1" (uuid f0bc1eb1-9381-54e9-b56d-3a89a0d0af26))
+    (pin "2" (uuid e463d9a1-593a-5330-9070-69deb107b305))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R149") (unit 1)
+          (reference "R150") (unit 1)
         )
       )
     )
@@ -4962,8 +4962,8 @@
 
   (symbol (lib_id "Device:R") (at 457.2 86.36 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 7760c359-0ec0-5ece-bc25-fe9762d90c57)
-    (property "Reference" "R150" (id 0) (at 457.2 68.58 0)
+    (uuid f98122d6-0b35-5d20-958b-4c0cfabe9368)
+    (property "Reference" "R151" (id 0) (at 457.2 68.58 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 457.2 104.14 0)
@@ -4978,12 +4978,12 @@
     (property "MPN" "10k" (id 4) (at 457.2 86.36 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid f0bc1eb1-9381-54e9-b56d-3a89a0d0af26))
-    (pin "2" (uuid e463d9a1-593a-5330-9070-69deb107b305))
+    (pin "1" (uuid c355e211-8066-5102-909d-81035cb278b9))
+    (pin "2" (uuid 99a98aa7-3a85-5158-8b57-bc58a39ba4c5))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R150") (unit 1)
+          (reference "R151") (unit 1)
         )
       )
     )
@@ -5051,8 +5051,8 @@
 
   (symbol (lib_id "Device:R") (at 518.16 83.82000000000001 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid f98122d6-0b35-5d20-958b-4c0cfabe9368)
-    (property "Reference" "R151" (id 0) (at 518.16 66.04 0)
+    (uuid 434cdcb2-ebf2-53dc-9c17-6e26952fb384)
+    (property "Reference" "R152" (id 0) (at 518.16 66.04 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "1k 1W" (id 1) (at 518.16 101.6 0)
@@ -5067,12 +5067,12 @@
     (property "MPN" "anti-surge 2512, 1 W" (id 4) (at 518.16 83.82000000000001 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid c355e211-8066-5102-909d-81035cb278b9))
-    (pin "2" (uuid 99a98aa7-3a85-5158-8b57-bc58a39ba4c5))
+    (pin "1" (uuid abcca69e-7ba8-5ad4-8b1f-4a77f954a495))
+    (pin "2" (uuid f296f25d-1310-55e8-8c31-d3fe64cb8e2a))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R151") (unit 1)
+          (reference "R152") (unit 1)
         )
       )
     )
@@ -5080,8 +5080,8 @@
 
   (symbol (lib_id "Device:R") (at 528.32 86.36 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 434cdcb2-ebf2-53dc-9c17-6e26952fb384)
-    (property "Reference" "R152" (id 0) (at 528.32 68.58 0)
+    (uuid c0b06b90-c4fe-5f90-9f03-6c82d777ebe8)
+    (property "Reference" "R153" (id 0) (at 528.32 68.58 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 528.32 104.14 0)
@@ -5096,12 +5096,12 @@
     (property "MPN" "10k" (id 4) (at 528.32 86.36 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid abcca69e-7ba8-5ad4-8b1f-4a77f954a495))
-    (pin "2" (uuid f296f25d-1310-55e8-8c31-d3fe64cb8e2a))
+    (pin "1" (uuid 134c3a9f-fb81-5599-a7f9-0bc3a6e39c4b))
+    (pin "2" (uuid 272aebe7-652c-50fc-89b2-c87a4277198a))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R152") (unit 1)
+          (reference "R153") (unit 1)
         )
       )
     )
@@ -5168,8 +5168,8 @@
 
   (symbol (lib_id "Device:R") (at 33.02 134.62 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid c0b06b90-c4fe-5f90-9f03-6c82d777ebe8)
-    (property "Reference" "R153" (id 0) (at 33.02 119.38 0)
+    (uuid 3bc6358d-63d0-5f34-8a6b-6b7b51f76164)
+    (property "Reference" "R154" (id 0) (at 33.02 119.38 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 33.02 149.86 0)
@@ -5184,12 +5184,12 @@
     (property "MPN" "10k" (id 4) (at 33.02 134.62 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 134c3a9f-fb81-5599-a7f9-0bc3a6e39c4b))
-    (pin "2" (uuid 272aebe7-652c-50fc-89b2-c87a4277198a))
+    (pin "1" (uuid bfe8f305-b832-5555-9c5e-77ffad6fc576))
+    (pin "2" (uuid 6926e110-04b5-5649-b364-72c789d7b4e2))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R153") (unit 1)
+          (reference "R154") (unit 1)
         )
       )
     )
@@ -5197,8 +5197,8 @@
 
   (symbol (lib_id "Device:R") (at 43.18 137.16 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 3bc6358d-63d0-5f34-8a6b-6b7b51f76164)
-    (property "Reference" "R154" (id 0) (at 43.18 121.92 0)
+    (uuid c9edf127-036d-5210-a5bf-239f6e52d84f)
+    (property "Reference" "R155" (id 0) (at 43.18 121.92 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "4k3" (id 1) (at 43.18 157.48 0)
@@ -5213,12 +5213,12 @@
     (property "MPN" "4k3" (id 4) (at 43.18 137.16 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid bfe8f305-b832-5555-9c5e-77ffad6fc576))
-    (pin "2" (uuid 6926e110-04b5-5649-b364-72c789d7b4e2))
+    (pin "1" (uuid ac0d0044-6110-5cad-acc9-353235d734b8))
+    (pin "2" (uuid 127ddf0b-03ed-547c-b9b9-9d8e0cd6aebe))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R154") (unit 1)
+          (reference "R155") (unit 1)
         )
       )
     )
@@ -5287,8 +5287,8 @@
 
   (symbol (lib_id "Device:R") (at 109.22 134.62 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid c9edf127-036d-5210-a5bf-239f6e52d84f)
-    (property "Reference" "R155" (id 0) (at 109.22 119.38 0)
+    (uuid 47b68102-1824-5f46-8e00-1984fceddaee)
+    (property "Reference" "R156" (id 0) (at 109.22 119.38 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "10k" (id 1) (at 109.22 152.4 0)
@@ -5303,12 +5303,12 @@
     (property "MPN" "10k" (id 4) (at 109.22 134.62 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid ac0d0044-6110-5cad-acc9-353235d734b8))
-    (pin "2" (uuid 127ddf0b-03ed-547c-b9b9-9d8e0cd6aebe))
+    (pin "1" (uuid f07a26a0-4827-5b8a-8e7f-41f01a0f8df5))
+    (pin "2" (uuid 2c9b530f-9707-5340-af84-01d153991371))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R155") (unit 1)
+          (reference "R156") (unit 1)
         )
       )
     )
@@ -5316,8 +5316,8 @@
 
   (symbol (lib_id "Device:R") (at 119.38 139.7 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 47b68102-1824-5f46-8e00-1984fceddaee)
-    (property "Reference" "R156" (id 0) (at 119.38 121.92 0)
+    (uuid ba560030-e4c6-55b5-a3bd-da755880805b)
+    (property "Reference" "R157" (id 0) (at 119.38 121.92 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "1M" (id 1) (at 119.38 157.48 0)
@@ -5332,12 +5332,12 @@
     (property "MPN" "1M" (id 4) (at 119.38 139.7 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid f07a26a0-4827-5b8a-8e7f-41f01a0f8df5))
-    (pin "2" (uuid 2c9b530f-9707-5340-af84-01d153991371))
+    (pin "1" (uuid 1a96c76d-f737-5f44-9a99-1ade63196b15))
+    (pin "2" (uuid d36ce748-305b-553a-9b7f-8781e0bafae4))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R156") (unit 1)
+          (reference "R157") (unit 1)
         )
       )
     )
@@ -5345,8 +5345,8 @@
 
   (symbol (lib_id "Device:R") (at 129.54 134.62 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid ba560030-e4c6-55b5-a3bd-da755880805b)
-    (property "Reference" "R157" (id 0) (at 129.54 119.38 0)
+    (uuid 1abbac9e-ad5a-50d7-82aa-5b33b1d9c083)
+    (property "Reference" "R158" (id 0) (at 129.54 119.38 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "4k7" (id 1) (at 129.54 152.4 0)
@@ -5361,12 +5361,12 @@
     (property "MPN" "4k7" (id 4) (at 129.54 134.62 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 1a96c76d-f737-5f44-9a99-1ade63196b15))
-    (pin "2" (uuid d36ce748-305b-553a-9b7f-8781e0bafae4))
+    (pin "1" (uuid c5fb69c0-3036-56aa-bcc7-f26c513d8f8c))
+    (pin "2" (uuid f122b2cd-63c6-51bb-920e-af547c26c987))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R157") (unit 1)
+          (reference "R158") (unit 1)
         )
       )
     )
@@ -5465,8 +5465,8 @@
 
   (symbol (lib_id "Device:R") (at 205.74 137.16 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 1abbac9e-ad5a-50d7-82aa-5b33b1d9c083)
-    (property "Reference" "R158" (id 0) (at 205.74 121.92 0)
+    (uuid 06690e31-c9bc-5c00-bec8-0201ae671f09)
+    (property "Reference" "R159" (id 0) (at 205.74 121.92 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "330R" (id 1) (at 205.74 152.4 0)
@@ -5481,12 +5481,12 @@
     (property "MPN" "330R" (id 4) (at 205.74 137.16 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid c5fb69c0-3036-56aa-bcc7-f26c513d8f8c))
-    (pin "2" (uuid f122b2cd-63c6-51bb-920e-af547c26c987))
+    (pin "1" (uuid 808b5ba2-5230-50a6-a149-385bee3ddbb9))
+    (pin "2" (uuid a2b744c4-c868-5249-b6e0-5f8d15713748))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R158") (unit 1)
+          (reference "R159") (unit 1)
         )
       )
     )
@@ -5583,8 +5583,8 @@
 
   (symbol (lib_id "Device:R") (at 314.96 137.16 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 06690e31-c9bc-5c00-bec8-0201ae671f09)
-    (property "Reference" "R159" (id 0) (at 314.96 121.92 0)
+    (uuid 4fc78d18-e097-56df-9bcc-c8c6337e5bfb)
+    (property "Reference" "R160" (id 0) (at 314.96 121.92 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "330R" (id 1) (at 314.96 152.4 0)
@@ -5599,12 +5599,12 @@
     (property "MPN" "330R" (id 4) (at 314.96 137.16 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 808b5ba2-5230-50a6-a149-385bee3ddbb9))
-    (pin "2" (uuid a2b744c4-c868-5249-b6e0-5f8d15713748))
+    (pin "1" (uuid c1d8e929-93ec-584c-86ab-a6c5a6a84df5))
+    (pin "2" (uuid dc5a4179-e7e3-557f-ad76-e86e66591a42))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R159") (unit 1)
+          (reference "R160") (unit 1)
         )
       )
     )
@@ -5746,8 +5746,8 @@
 
   (symbol (lib_id "Device:R") (at 485.14 137.16 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 4fc78d18-e097-56df-9bcc-c8c6337e5bfb)
-    (property "Reference" "R160" (id 0) (at 485.14 119.38 0)
+    (uuid 74aba5b5-236a-5258-93af-d9f5dcba21ee)
+    (property "Reference" "R161" (id 0) (at 485.14 119.38 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "5k1" (id 1) (at 485.14 152.4 0)
@@ -5762,12 +5762,12 @@
     (property "MPN" "5k1" (id 4) (at 485.14 137.16 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid c1d8e929-93ec-584c-86ab-a6c5a6a84df5))
-    (pin "2" (uuid dc5a4179-e7e3-557f-ad76-e86e66591a42))
+    (pin "1" (uuid 2569c5ef-8e1f-5df4-b819-06d7f3d2930d))
+    (pin "2" (uuid 045db4c9-f8c6-523a-822b-0af20d883b06))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R160") (unit 1)
+          (reference "R161") (unit 1)
         )
       )
     )
@@ -5775,8 +5775,8 @@
 
   (symbol (lib_id "Device:R") (at 495.3 137.16 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 74aba5b5-236a-5258-93af-d9f5dcba21ee)
-    (property "Reference" "R161" (id 0) (at 495.3 119.38 0)
+    (uuid 74341238-67ca-50e9-9a8a-01697ee8653b)
+    (property "Reference" "R162" (id 0) (at 495.3 119.38 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "5k1" (id 1) (at 495.3 152.4 0)
@@ -5791,12 +5791,12 @@
     (property "MPN" "5k1" (id 4) (at 495.3 137.16 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 2569c5ef-8e1f-5df4-b819-06d7f3d2930d))
-    (pin "2" (uuid 045db4c9-f8c6-523a-822b-0af20d883b06))
+    (pin "1" (uuid 401d5324-bdb1-5d9d-aef6-3cec8767faa8))
+    (pin "2" (uuid 03035c6e-2c64-5a04-b573-60dae271868b))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R161") (unit 1)
+          (reference "R162") (unit 1)
         )
       )
     )
@@ -5837,8 +5837,8 @@
 
   (symbol (lib_id "Device:R") (at 546.1 139.7 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 74341238-67ca-50e9-9a8a-01697ee8653b)
-    (property "Reference" "R162" (id 0) (at 546.1 121.92 0)
+    (uuid 7afde751-0c17-54fe-b2b8-6ddb66ba3a38)
+    (property "Reference" "R163" (id 0) (at 546.1 121.92 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "33k" (id 1) (at 546.1 162.56 0)
@@ -5853,12 +5853,12 @@
     (property "MPN" "33k" (id 4) (at 546.1 139.7 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid 401d5324-bdb1-5d9d-aef6-3cec8767faa8))
-    (pin "2" (uuid 03035c6e-2c64-5a04-b573-60dae271868b))
+    (pin "1" (uuid dd5d87d3-446d-56b7-90cf-4f6d64bed9f2))
+    (pin "2" (uuid fd4e9904-03da-584f-b608-e9d694b6d327))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R162") (unit 1)
+          (reference "R163") (unit 1)
         )
       )
     )
@@ -5866,8 +5866,8 @@
 
   (symbol (lib_id "Device:R") (at 556.26 144.78 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 7afde751-0c17-54fe-b2b8-6ddb66ba3a38)
-    (property "Reference" "R163" (id 0) (at 556.26 121.92 0)
+    (uuid 1f87c7e1-679c-5298-aad0-2a26da365970)
+    (property "Reference" "R164" (id 0) (at 556.26 121.92 0)
       (effects (font (size 1.27 1.27)))
     )
     (property "Value" "68k" (id 1) (at 556.26 160.02 0)
@@ -5882,12 +5882,12 @@
     (property "MPN" "68k" (id 4) (at 556.26 144.78 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (pin "1" (uuid dd5d87d3-446d-56b7-90cf-4f6d64bed9f2))
-    (pin "2" (uuid fd4e9904-03da-584f-b608-e9d694b6d327))
+    (pin "1" (uuid b6945663-fbea-53c3-94cd-518bc3ad6262))
+    (pin "2" (uuid 6e0d2395-e005-5f06-951f-acdf1c4e7c79))
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b/32edba21-9f7c-581b-bd25-c99414627e19"
-          (reference "R163") (unit 1)
+          (reference "R164") (unit 1)
         )
       )
     )

@@ -159,7 +159,7 @@ mcu = {
     15: "V24_SENSE", 59: "LED_RUN", 60: "LED_FAULT", 38: "HWREV0", 39: "HWREV1",
     4: "ROLE_A", 5: "ROLE_B",
     # I/O node section (sheets io_dig, io_pwr, io_ana): chip selects on the shared SPI4
-    1: "CS_A", 2: "CS_B", 3: "CS_IN", 46: "CS_T", 97: "CS_AI",
+    1: "CS_A", 2: "CS_B", 3: "CS_IN", 46: "CS_T", 97: "CS_AI", 84: "CS_AO",
     82: "A_ERR", 7: "IN_ERR", 61: "B_FAULT", 62: "B_PGOOD",
     95: "GATE_EN", 96: "WDI", 55: "GATE_FB",
     67: "PUMP_PWM", 23: "PUMP_TACH", 63: "PUMP_DIR", 64: "PUMP_EN", 90: "REL1_N", 91: "REL2_N",
@@ -391,7 +391,8 @@ PTC1812 = "Fuse:Fuse_1812_4532Metric"
 def mcv(ref, sheet, nets, value, key=None, pitch="3.81", **kw):
     n = len(nets)
     fp = MCV.format(n=n) if pitch == "3.81" else MCV35.format(n=n)
-    code = f"; coding key at pin {key} (header CR-MC, plug coded to match). CHECK coding parts" if key else ""
+    keys = ", ".join(map(str, key)) if isinstance(key, tuple) else key
+    code = f"; coding key at pin {keys} (header CR-MC, plug coded to match). CHECK coding parts" if key else ""
     part(ref, f"Connector_Generic:Conn_01x{n:02d}", value, fp, sheet,
          {i + 1: net for i, net in enumerate(nets)},
          mpn=kw.pop("mpn", f"Phoenix MCV 1,5/{n}-G-{pitch.replace('.', ',')} + coded, labelled plug{code}"), **kw)
@@ -412,10 +413,10 @@ def gate_and(ref, sheet, a, b, y, note=""):
     nc("100n", sheet, "+3V3", "GND")
 
 
-def inverter(ref, sheet, a, y, vcc="+3V3", gnd="GND", sym="74xGxx:74LVC1G04", note=""):
+def inverter(ref, sheet, a, y, vcc="+3V3", gnd="GND", sym="74xGxx:74LVC1G04", note="", dnp=False):
     part(ref, sym, sym.split(":")[1], SOT23_5, sheet, {2: a, 3: gnd, 4: y, 5: vcc},
-         mpn=f"SN{sym.split(':')[1]}DBVR", note=note)
-    nc("100n", sheet, vcc, gnd)
+         mpn=f"SN{sym.split(':')[1]}DBVR", note=note, dnp=dnp)
+    nc("100n", sheet, vcc, gnd, dnp=dnp)
 
 
 # ---------------------------------------------------------------- field digital I/O
@@ -532,7 +533,7 @@ part("F10", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RIB"
      mpn="Bourns MF-MSMF075-2", note="ribbon +24 V: sensor supply and breakout LEDs")
 
 # CS pull-ups: every chip stays deselected while the MCU is in reset
-for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI"):
+for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI", "CS_AO"):
     nr("10k", S, "+3V3", cs)
 
 # ---------------------------------------------------------------- field power, pump, relays, USB
@@ -643,23 +644,23 @@ nr("68k", S, "USB_VBUS_SNS", "GND", note="5 V -> 3.4 V")
 S = "io_ana"
 
 
-def isow(ref, inv, cs, side, vsel_net, note):
+def isow(ref, inv, cs, side, vsel_net, note, pre=None, dnp=False):
     """ISOW7741 (isolator + isolated supply) for one SPI chip. Its side-1 MISO output is
     enabled only while that chip's CS is low (EN_IO1 = not CS), so it can share SPI4_MISO."""
     v, g = side
-    pre = "T" if g == "GND_T" else "AI"
-    inverter(inv, S, cs, f"{pre}_EN1")
+    pre = pre or ("T" if g == "GND_T" else "AI")
+    inverter(inv, S, cs, f"{pre}_EN1", dnp=dnp)
     part(ref, "Isolator:ISOW7741", "ISOW7741", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", S,
          {1: "+3V3", 6: "GND", 9: "+5V", 10: "GND", 2: "SPI4_SCK", 3: "SPI4_MOSI", 4: cs, 5: "SPI4_MISO",
           7: f"{pre}_EN1", 8: f"{pre}_ENFLT", 12: v, 20: v, 11: g, 15: g, 13: vsel_net, 14: v,
           19: f"{pre}_SCLK", 18: f"{pre}_DIN", 17: f"{pre}_CS", 16: f"{pre}_DOUT"},
-         mpn="TI ISOW7741DFMR", note=note)
-    nr("10k", S, "+3V3", f"{pre}_ENFLT", note="EN/FLT high (VIO level) enables the DC/DC; reads low on a fault")
-    nc("10u", S, "+5V", "GND", fp=C0805)
-    nc("100n", S, "+5V", "GND")
-    nc("100n", S, "+3V3", "GND")
-    nc("10u", S, v, g, fp=C0805)
-    nc("100n", S, v, g)
+         mpn="TI ISOW7741DFMR", note=note, dnp=dnp)
+    nr("10k", S, "+3V3", f"{pre}_ENFLT", note="EN/FLT high (VIO level) enables the DC/DC; reads low on a fault", dnp=dnp)
+    nc("10u", S, "+5V", "GND", fp=C0805, dnp=dnp)
+    nc("100n", S, "+5V", "GND", dnp=dnp)
+    nc("100n", S, "+3V3", "GND", dnp=dnp)
+    nc("10u", S, v, g, fp=C0805, dnp=dnp)
+    nc("100n", S, v, g, dnp=dnp)
 
 
 # Temperatures: ADS124S08, 3 connectors x 2 channels (TC, RTD or NTC), as io-node today
@@ -766,3 +767,47 @@ part("D50", "Device:D_Zener", "SMAJ11A", "Diode_SMD:D_SMA", S, {1: "+10V_FLOW", 
 mcv("J25", S, ["+5V_LVL", "LVL_SIG", "GND_AI", "+10V_FLOW", "FLOW_SIG", "GND_AI", "GND_AI"], "SENSORS",
     key=5, pitch="3.5",
     note="level (DFRobot SEN0205): 5 V, SIG, 0 V; mass flow (AWM5104VN): +10 V, OUT, 0 V")
+
+# Analog outputs (fit-optional, Gary 31 Oct: not a general AU CEMS requirement, fitted when a
+# site licence or PLC needs hard-wired 4-20 mA). Every part below is DNP on the standard build.
+# AD5755-1 on the analog island (GND_AI): its own ISOW7741 for SPI (CS_AO on PD3), AVCC from an
+# ITX2405SA (the boost converters draw up to about 3 W at 5 V), AVDD from the 24 V loop supply.
+# Internal reference and internal RSET; voltage-output and HART pins unused.
+AO = dict(dnp=True)
+_n["R"], _n["C"] = max(_n["R"], 300), max(_n["C"], 300)  # C200-C203 are taken: AO parts use R301+/C301+
+isow("U39", "U40", "CS_AO", ("+5V_AOD", "GND_AI"), "+5V_AOD", "VSEL to VISOOUT = 5 V out (DVDD)", pre="AO", **AO)
+part("U41", "Converter_DCDC:ITX2405SA", "ITX2405SA", "Converter_DCDC:Converter_DCDC_XP_POWER-ITXxxxxSA_THT", S,
+     {2: "+24V", 1: "GND", 6: "+5V_AO", 7: "GND_AI"}, mpn="XP Power ITX2405SA (6 W, 1.6 kV)",
+     note="AVCC for the four boost converters", **AO)
+nc("10u 50V", S, "+24V", "GND", fp=C1210, **AO)
+nc("22u", S, "+5V_AO", "GND_AI", fp=C1210, **AO)
+nc("100n", S, "+5V_AO", "GND_AI", **AO)
+ao = {11: "+5V_AOD", 12: "GND_AI", 45: "+5V_AO", 19: "+24V_AI", 27: "GND_AI", 40: "GND_AI", 53: "GND_AI",
+      35: "GND_AI", 3: "GND_AI", 4: "GND_AI", 65: "GND_AI", 7: "AO_CS", 8: "AO_SCLK", 9: "AO_DIN", 10: "AO_DOUT",
+      5: "GND_AI", 6: "GND_AI", 13: "GND_AI", 14: "GND_AI", 17: "GND_AI", 18: "AO_RST", 15: "AO_ALERT",
+      16: "AO_FAULT", 61: "AO_REF", 62: "AO_REF"}
+sw = {"A": (39, 38, 24, 23, 26), "B": (36, 37, 34, 32, 33), "C": (44, 43, 46, 48, 47), "D": (41, 42, 56, 57, 54)}
+for k, (ch, (p_sw, p_gsw, p_vb, p_comp, p_iout)) in enumerate(sw.items(), 1):
+    ao.update({p_sw: f"AO_SW{k}", p_gsw: "GND_AI", p_vb: f"AO_VB{k}", p_comp: f"AO_COMP{k}", p_iout: f"AO_IOUT{k}"})
+    part(f"L{3 + k}", "Device:L", "10uH", "Inductor_SMD:L_Coilcraft_XAL4040-XXX", S, {1: "+5V_AO", 2: f"AO_SW{k}"},
+         mpn="Coilcraft XAL4040-103", note="boost inductor, as the datasheet test circuit" if k == 1 else "", **AO)
+    part(f"D{50 + k}", "Device:D_Schottky", "PMEG4010", "Diode_SMD:D_SOD-323F", S, {2: f"AO_SW{k}", 1: f"AO_VB{k}"},
+         mpn="Nexperia PMEG4010CEJ (40 V, 1 A)", **AO)
+    nc("4u7 50V", S, f"AO_VB{k}", "GND_AI", fp=C1210, **AO)
+    nc("100n 50V", S, f"AO_VB{k}", "GND_AI", **AO)
+    nc("10n", S, f"AO_COMP{k}", "GND_AI", note="COMPDCDC" if k == 1 else "", **AO)
+    part(f"D{54 + k}", "Device:D_Zener", "SMAJ33A", "Diode_SMD:D_SMA", S, {1: f"AO_IOUT{k}", 2: "GND_AI"},
+         mpn="SMAJ33A", note="output clamp. CHECK what IOUT survives when 24 V is wired onto it" if k == 1 else "", **AO)
+    nc("4n7 50V", S, f"AO_IOUT{k}", "GND_AI", **AO)
+part("U42", "cems_core:AD5755-1", "AD5755-1", "Package_CSP:LFCSP-64-1EP_9x9mm_P0.5mm_EP5.21x5.21mm", S, ao,
+     mpn="ADI AD5755-1ACPZ",
+     note="4 x 4-20 mA, short and open-loop detect. Pin numbers from Table 5 (31 Oct). VOUT/+VSENSE/COMPLV/CHART/RSET "
+          "unconnected for current-only use: CHECK the datasheet's unused-pin advice", **AO)
+nc("100n", S, "+5V_AOD", "GND_AI", **AO)
+nc("10u", S, "+5V_AO", "GND_AI", fp=C0805, **AO)
+nc("100n 50V", S, "+24V_AI", "GND_AI", **AO)
+nc("100n", S, "AO_REF", "GND_AI", note="REFOUT to REFIN, 100n to REFGND", **AO)
+for net in ("AO_RST", "AO_ALERT", "AO_FAULT"):
+    nr("10k", S, "+5V_AOD", net, **AO)
+mcv("J26", S, sum(([f"AO_IOUT{k}", "GND_AI"] for k in range(1, 5)), []), "AO 1-4", key=(2, 6), pitch="3.5",
+    note="4-20 mA out: OUTn+, 0 V per channel (active, board powers the loop)", **AO)
