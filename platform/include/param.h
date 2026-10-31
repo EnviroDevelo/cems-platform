@@ -108,6 +108,7 @@ enum {
     PARAM_ID_NET_MASK         = 12,
     PARAM_ID_NET_GW           = 13,
     PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
+    PARAM_ID_NET_LINK_MODE    = 15,  /* what the port offers the switch: 0 auto (10/100, half/full), 1 100 Mbit only, 2 10 Mbit only (long or poor cable) */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */
@@ -187,6 +188,14 @@ enum {
     PARAM_ID_CONFIG_CRC       = 332, /* RO: checksum of the user settings (CIP-05.4) */
     PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
     PARAM_ID_MB_FORCED        = 334, /* RO: values forced on Modbus now (modbus.h mb_force_*) */
+    PARAM_ID_MB_STD_WORDS     = 335, /* standard block 7000-7999: 0 floats/u32 high word first, 1 low word first */
+    PARAM_ID_DIA_INPUT        = 340, /* digital input alarms (plat_alarm.h), [24] per slot: 0 unused, 1..64 the input */
+    PARAM_ID_DIA_WHEN         = 341, /* [24] bool: 0 alarm when the input is active, 1 when it is inactive */
+    PARAM_ID_DIA_DELAY        = 342, /* [24] on-delay, s (default 2) */
+    PARAM_ID_DIA_LATCH        = 343, /* [24] bool: stays active until acknowledged */
+    PARAM_ID_DIA_SEV          = 344, /* [24] AL_SEV_WARNING..AL_SEV_FAULT (default alarm) */
+    PARAM_ID_DIA_STATUS       = 345, /* RO [24] DIA_ST_* */
+    PARAM_ID_DIA_LABEL_FIRST  = 350, /* 350 + s: slot s's label (32 characters), the alarm's description */
     /* 400-499 emissions calculation (emis.h, docs/EMISSIONS_MATH.md); arrays are indexed by channel
      * = slot of the Modbus standard block. Settings at admin level, persisted, logged on change. */
     PARAM_ID_EMIS_ENABLE      = 400, /* the engine runs (off: every result unavailable) */

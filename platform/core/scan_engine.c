@@ -81,6 +81,7 @@ void scan_step(scan_engine_t *s) {
     memset(&s->in, 0, sizeof s->in);
     if (s->hw->io_read) s->hw->io_read(&s->in);
     if (app->io_in) app->io_in(&s->in);
+    if (s->sys && s->sys->io_in) s->sys->io_in(&s->in);
 
     /* 4. external writes, between scans as far as the logic is concerned */
     apply_cmds(s);

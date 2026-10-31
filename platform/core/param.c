@@ -10,6 +10,7 @@
 #include "plat_state.h"
 #include "plat_cal.h"
 #include "emis_bind.h"
+#include "plat_alarm.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -19,7 +20,13 @@
 #endif
 
 /* ---------------- platform parameter storage ---------------- */
-static uint8_t  p_mode = PARAM_MODE_LOCAL;
+/* The mode at power-up is always LOCAL (spec: only the touchscreen hands control to REMOTE).
+ * PLAT_CTRL_MODE_DEFAULT=1 starts REMOTE: development boards without a touchscreen only (the
+ * STM32H573I-DK on the bench), never a product build. */
+#ifndef PLAT_CTRL_MODE_DEFAULT
+#define PLAT_CTRL_MODE_DEFAULT PARAM_MODE_LOCAL
+#endif
+static uint8_t  p_mode = PLAT_CTRL_MODE_DEFAULT;
 static bool     p_link_lost;
 static uint16_t p_comms_timeout_s = 10;
 static bool     p_modbus_write_en = true;
@@ -29,6 +36,12 @@ static bool     p_http_redirect = true;
 static uint32_t p_ip   = 0xC0A80132u;   /* 192.168.1.50  - DECISION D5 */
 static uint32_t p_mask = 0xFFFFFF00u;   /* 255.255.255.0 */
 static uint32_t p_gw   = 0xC0A80101u;   /* 192.168.1.1   */
+/* PLAT_LINK_MODE_DEFAULT: a bench build's starting net_link_mode (1 100 Mbit only, 2 10 Mbit only),
+ * for link tests without a login; product builds start on auto. */
+#ifndef PLAT_LINK_MODE_DEFAULT
+#define PLAT_LINK_MODE_DEFAULT 0
+#endif
+static uint8_t  p_link_mode = PLAT_LINK_MODE_DEFAULT;
 static bool     p_restore;              /* momentary */
 static uint32_t p_serial, p_hw_rev;
 uint32_t        param_store_status_word; /* written by param_store */
@@ -57,6 +70,13 @@ extern uint16_t plat_alarm_active_count, plat_alarm_unack_count;            /* p
 extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alarm_common;
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
 extern bool     plat_alarm_relay_inv[4];
+extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS], plat_dia_status[PLAT_DIA_SLOTS];   /* plat_alarm.c */
+extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+extern uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+extern char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static const uint16_t dia_delay_dflt[PLAT_DIA_SLOTS] = { 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 };
+static const uint8_t  dia_sev_dflt[PLAT_DIA_SLOTS] = { 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 };
+#define DIA_LABEL(S, N) PARAM_TEXT(PARAM_ID_DIA_LABEL_FIRST + (S), "dia" N "_label", plat_dia_label[S], NULL, PLAT_LVL_ADMIN, NET)
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
 param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);
 extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
@@ -66,6 +86,7 @@ extern uint16_t plat_board_rev_tag;                                         /* f
 extern uint32_t plat_svc_hours_tag, plat_svc_since_tag, plat_config_crc_tag;   /* plat_service.c */
 extern uint32_t plat_selftest_tag;                                         /* plat_selftest.c */
 extern uint16_t plat_mb_forced;                                            /* modbus.c */
+extern uint8_t  plat_mb_std_words;                                         /* modbus.c */
 extern uint32_t plat_cal_cmd_tag;                                          /* plat_cal.c */
 extern uint8_t  plat_cal_level_tag;
 extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
@@ -102,7 +123,7 @@ extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
     PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL)
 
 static const param_def_t plat_defs[] = {
-    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
+    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PLAT_CTRL_MODE_DEFAULT,
                PLAT_LVL_OPERATOR, PF_LOCAL_ONLY | PF_ANY_MODE, NULL),
     PARAM_BIT (PARAM_ID_REMOTE_LINK_LOST, "remote_link_lost", p_link_lost, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_COMMS_TIMEOUT_S, "comms_timeout", p_comms_timeout_s, CT_U16, 0, 3600, 10,
@@ -115,6 +136,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_NET_IP,   "net_ip",   p_ip,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80132u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_MASK, "net_mask", p_mask, CT_U32, 0, 0xFFFFFFFFu, 0xFFFFFF00u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_GW,   "net_gw",   p_gw,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80101u, PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_UINT(PARAM_ID_NET_LINK_MODE, "net_link_mode", p_link_mode, CT_U8, 0, 2, PLAT_LINK_MODE_DEFAULT, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_STATUS, "net_status", plat_net_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_BIT (PARAM_ID_RESTORE_DEFAULTS, "restore_defaults", p_restore, PLAT_LVL_ADMIN, PF_ANY_MODE | PF_NO_MODBUS),
@@ -129,6 +151,19 @@ static const param_def_t plat_defs[] = {
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_ALARM_COMMON, "alarm_common", plat_alarm_common, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_ROUTE, "alarm_route", plat_alarm_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
+    /* digital input alarms (plat_alarm.h) */
+    PARAM_ARRAY_UINT(PARAM_ID_DIA_INPUT, "dia_input", plat_dia_input, CT_U8, 0, PLAT_DI_MAX, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_BOOL(PARAM_ID_DIA_WHEN, "dia_when", plat_dia_when, PLAT_LVL_ADMIN, NET),
+    { .id = PARAM_ID_DIA_DELAY, .ctype = CT_U16, .ptype = PT_ARRAY, .flags = NET, .level = PLAT_LVL_ADMIN, .ptr = plat_dia_delay,
+      .vmin.u = 0, .vmax.u = 3600, .size = (uint16_t)sizeof plat_dia_delay, .dflt = dia_delay_dflt, .name = "dia_delay", .unit = "s" },
+    PARAM_ARRAY_BOOL(PARAM_ID_DIA_LATCH, "dia_latch", plat_dia_latch, PLAT_LVL_ADMIN, NET),
+    { .id = PARAM_ID_DIA_SEV, .ctype = CT_U8, .ptype = PT_ARRAY, .flags = NET, .level = PLAT_LVL_ADMIN, .ptr = plat_dia_sev,
+      .vmin.u = AL_SEV_WARNING, .vmax.u = AL_SEV_FAULT, .size = (uint16_t)sizeof plat_dia_sev, .dflt = dia_sev_dflt, .name = "dia_sev" },
+    PARAM_ARRAY_UINT(PARAM_ID_DIA_STATUS, "dia_status", plat_dia_status, CT_U8, 0, DIA_ST_UNRELIABLE, PLAT_LVL_VIEW, PF_RO),
+    DIA_LABEL(0, "1"), DIA_LABEL(1, "2"), DIA_LABEL(2, "3"), DIA_LABEL(3, "4"), DIA_LABEL(4, "5"), DIA_LABEL(5, "6"),
+    DIA_LABEL(6, "7"), DIA_LABEL(7, "8"), DIA_LABEL(8, "9"), DIA_LABEL(9, "10"), DIA_LABEL(10, "11"), DIA_LABEL(11, "12"),
+    DIA_LABEL(12, "13"), DIA_LABEL(13, "14"), DIA_LABEL(14, "15"), DIA_LABEL(15, "16"), DIA_LABEL(16, "17"), DIA_LABEL(17, "18"),
+    DIA_LABEL(18, "19"), DIA_LABEL(19, "20"), DIA_LABEL(20, "21"), DIA_LABEL(21, "22"), DIA_LABEL(22, "23"), DIA_LABEL(23, "24"),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, PLAT_DO_MAX, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_MODE, "alarm_relay_mode", plat_alarm_relay_mode, CT_U8, 0, 2, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_BOOL(PARAM_ID_ALARM_RELAY_INV, "alarm_relay_inv", plat_alarm_relay_inv, PLAT_LVL_ADMIN, NET),
@@ -188,6 +223,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CONFIG_CRC, "config_crc", plat_config_crc_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_SELFTEST, "selftest_fail", plat_selftest_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_MB_FORCED, "mb_forced", plat_mb_forced, CT_U16, 0, MB_FORCE_MAX, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_STD_WORDS, "mb_std_words", plat_mb_std_words, CT_U8, 0, 1, 0, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_BOARD_REV, "board_rev", plat_board_rev_tag, CT_U16, 0, 65535, 65535, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,

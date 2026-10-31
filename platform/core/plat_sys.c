@@ -33,5 +33,5 @@ static void sys_pre_logic(uint32_t now_ms) {
     mb_block_scan(now_ms);             /* the platform's Modbus block: heartbeat, link age, uptime */
 }
 
-const scan_sys_t plat_sys = { .apply = sys_apply, .pre_logic = sys_pre_logic, .publish = param_publish,
+const scan_sys_t plat_sys = { .apply = sys_apply, .io_in = alarm_io_in, .pre_logic = sys_pre_logic, .publish = param_publish,
                                .io_out = alarm_io_out };

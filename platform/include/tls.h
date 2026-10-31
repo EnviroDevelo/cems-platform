@@ -50,6 +50,10 @@ void tls_use(unsigned k);
 int  tls_accept(int fd);                    /* 0 = ok */
 int  tls_read(uint8_t *buf, uint32_t cap);  /* bytes, <= 0 on close/timeout/error */
 int  tls_write(const uint8_t *p, uint32_t n);   /* 0 = all sent */
+/* Called before every socket send and receive the TLS layer makes, so a caller watched by the
+ * task monitor can check in while one large record goes out in many pieces over a slow or lossy
+ * link (the DK after a flash, 30 Oct: the web task was reset mid-page). NULL: none. */
+extern void (*tls_alive_hook)(void);
 void tls_close(void);
 bool tls_resumed(void);                     /* the last handshake resumed a session (ticket) */
 bool tls_pending(void);                     /* decrypted bytes are waiting (a request already received) */
