@@ -24,6 +24,8 @@
 #include "log_csv.h"
 #include "plat_alarm.h"
 #include "plat_clock.h"
+
+extern uint8_t plat_alarm_tier_route[AL_TIERS];
 #include "iobus.h"
 #include "iob_node_sim.h"
 #include "plat_state.h"
@@ -462,8 +464,37 @@ static void t_ui(void) {
     CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_EMAIL | AR_MODBUS | AR_RELAY(0));
     CHECK(tap("Email"));                                               /* and email off */
     CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_MODBUS | AR_RELAY(0));
+    /* priority tiers (Gary 31 Oct): a tap on the tier moves to the next; * marks the alarm's default */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);         /* a fault: High by default */
+    CHECK(tap("High*"));                                               /* first row: default -> Critical */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_CRITICAL);
+    CHECK(tap("Critical"));                                            /* -> High, set by hand: no star */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);
+    CHECK(shows("High"));
     dump("alarm_actions");
+    for (int k = 0; k < 4; ++k) press((uint8_t)eve_sim_tag_of(&sim, alarm_prio_name(alarm_prio(ALARM_ID_CAL_INVALID))));
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_OFF);           /* Medium, Low, Info, Off */
+    CHECK(tap("Off"));                                                 /* and round to the default again */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);
+    CHECK(shows("High*"));
+    CHECK(tap("Tiers")); CHECK_EQ(ui_screen(), UI_TIERS);
+    CHECK(shows("1  Critical")); CHECK(shows("5  Info")); CHECK(shows("alarm defaults"));
+    CHECK(tap("Email"));                                               /* tier 1: email for alarms with no actions of their own */
+    CHECK_EQ(plat_alarm_tier_route[0], AR_SET | AR_EMAIL);
+    CHECK(shows("Use defaults"));
+    CHECK(tap("2  High"));                                             /* rename tier 2 */
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    type("Urgent"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_TIERS);
+    CHECK(!strcmp(alarm_prio_name(AL_PRIO_HIGH), "Urgent"));
+    CHECK(shows("2  Urgent"));
+    dump("alarm_tiers");
+    CHECK(tap("Use defaults"));
+    CHECK_EQ(plat_alarm_tier_route[0], 0);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARM_CFG);
+    CHECK(shows("Urgent"));
     CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(shows("Urgent  -  "));                                       /* the list names each alarm's tier */
     CHECK(tap("Log out admin"));
     { log_event_t ev = { .code = LOG_EV_IP_CONFLICT, .arg = 0xC0A80132u, .new_v = 1.0, .old_v = NAN };
       char w[32], dt[64]; log_event_text(&ev, w, sizeof w, dt, sizeof dt);
