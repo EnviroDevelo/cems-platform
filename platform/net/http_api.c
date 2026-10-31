@@ -347,6 +347,31 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"boots\":"); json_uint(o, plat_diag.boots); out_str(o, "}}");
 }
 
+/* "meas": the parameter's position in the measurement table (plat_meas), so a page can find its
+ * quality in /api/values. A scalar gives a number; an array gives one entry per element (null
+ * where that element isn't a measurement). Left out when the parameter has none. */
+static void meas_json(http_out_t *o, const param_def_t *d) {
+    size_t nm = plat_meas_count();
+    bool any = false;
+    for (size_t m = 0; m < nm && !any; ++m) any = plat_meas_at(m)->id == d->id;
+    if (!any) return;
+    out_str(o, ",\"meas\":");
+    if (d->ptype != PT_ARRAY) {
+        for (size_t m = 0; m < nm; ++m)
+            if (plat_meas_at(m)->id == d->id) { json_uint(o, (uint32_t)m); return; }
+        return;
+    }
+    size_t es = param_ctype_size(d->ctype), n = es ? d->size / es : 0;
+    out_str(o, "[");
+    for (size_t k = 0; k < n; ++k) {
+        if (k) out_str(o, ",");
+        size_t m = 0;
+        while (m < nm && !(plat_meas_at(m)->id == d->id && plat_meas_at(m)->index == k)) ++m;
+        if (m < nm) json_uint(o, (uint32_t)m); else out_str(o, "null");
+    }
+    out_str(o, "]");
+}
+
 static void get_params(http_out_t *o) {
     head(o, 200, "application/json", NULL);
     out_str(o, "[");
@@ -366,6 +391,7 @@ static void get_params(http_out_t *o) {
         if (d->ptype <= PT_FLOAT) { out_str(o, ",\"def\":"); json_val(o, d->ptype, d->vdef); }
         if (PARAM_IS_BLOB(d)) { out_str(o, ",\"size\":"); json_uint(o, d->size); }
         if (param_has_quality(d->id, PLAT_MEAS_NO_INDEX)) out_str(o, ",\"q\":true");
+        meas_json(o, d);
         out_str(o, ",\"level\":"); json_uint(o, d->level);
         out_str(o, ",\"flags\":["); bool f = false;
         static const struct { uint16_t bit; const char *n; } fl[] = {
