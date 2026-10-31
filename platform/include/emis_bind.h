@@ -39,5 +39,6 @@ extern uint8_t emis_p_q3_record, emis_p_q3_reset, emis_p_q3_result;
 extern float   emis_p_q3_zero[EMIS_CH_MAX], emis_p_q3_span[EMIS_CH_MAX];
 enum { EMIS_Q3R_OK = 0, EMIS_Q3R_CHANNEL, EMIS_Q3R_OFF, EMIS_Q3R_NAN, EMIS_Q3R_CLOCK };
 extern const uint8_t emis_dflt_none[EMIS_CH_MAX];
+extern const uint8_t emis_dflt_unavail[EMIS_CH_MAX];
 
 #endif

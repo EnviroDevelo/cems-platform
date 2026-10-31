@@ -44,6 +44,7 @@ float   emis_p_q3_zero[EMIS_CH_MAX], emis_p_q3_span[EMIS_CH_MAX];
 #define X32(v) X4(v), X4(v), X4(v), X4(v), X4(v), X4(v), X4(v), X4(v)
 _Static_assert(EMIS_CH_MAX == 32u, "the defaults below are written for 32 channels");
 const uint8_t emis_dflt_none[N] = { X32(EMIS_NONE) };
+const uint8_t emis_dflt_unavail[N] = { X32(PLAT_Q_UNAVAILABLE) };   /* the result qualities until the first scan */
 
 /* retained: the engine's periods in progress, the QAL3 charts */
 #if PLAT_FRAM_SIZE >= 131072u
