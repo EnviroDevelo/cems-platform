@@ -114,7 +114,7 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | USB (service) | PA11 / PA12 (USB FS), PC8 VBUS sense | ST USB bootloader, address, serial number |
 
 PD3 = CS_EXP and PD7 = EXP_INT (SPI expansion header J26, 31 Oct).
-Free for later: PA3, PA4, PB11, PC9, PD4-PD6, PD9 (PD4-PD6 kept for a USART2 RS-485 option).
+Free for later (checked against the netlist 31 Oct): PA3, PA4, PC9, PD4-PD6, PD9 (PD4-PD6 kept for a USART2 RS-485 option). PB11 is not a GPIO on LQFP100 (pin 48 is VCAP).
 
 ## 5. Power
 
