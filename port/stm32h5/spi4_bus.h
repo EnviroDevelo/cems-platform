@@ -4,6 +4,7 @@
  * FreeRTOS mutex and re-programs the SPI only when the mode or the divider changes.
  *   W5500:         mode 0, max_hz 0 = CubeMX's own setting (up to about 30 MHz)
  *   field chips:   mode 0 or 1 (ADS124S08), 4 MHz
+ *   expansion:     CS_EXP PD3 (CORE_PCB.md 16), held high until a module driver exists (AD5755-1 planned)
  * Before the scheduler runs, the claim does not block (one task at a time then anyway). */
 #ifndef SPI4_BUS_H
 #define SPI4_BUS_H

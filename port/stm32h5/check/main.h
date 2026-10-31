@@ -33,6 +33,10 @@
 #define W5500_CS_GPIO_Port GPIOE
 #define W5500_RST_Pin GPIO_PIN_10
 #define W5500_RST_GPIO_Port GPIOE
+#define CS_EXP_Pin GPIO_PIN_3              /* the SPI expansion header (CORE_PCB.md 16): held high */
+#define CS_EXP_GPIO_Port GPIOD
+#define EXP_INT_Pin GPIO_PIN_7
+#define EXP_INT_GPIO_Port GPIOD
 #endif
 #ifdef CHECK_WITH_NODE_IO             /* the CORE PCB rev 0.2 I/O node pins (CORE_PCB.md 14) */
 #define CS_A_Pin GPIO_PIN_2
