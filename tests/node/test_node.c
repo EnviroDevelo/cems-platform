@@ -223,9 +223,9 @@ static void t_rules(void)         /* section 5 exceptions, FW-12, FW-02 */
     uint16_t two[2] = { 1, 1 };
     CHECK_EQ(wrn(RS, 5, IOB_R_PWM_DIR, two, 2), MBR_EXCEPTION); CHECK_EQ(exc, 2);
     CHECK_EQ(reg(IOB_R_PWM_DIR), 0);
-    /* addresses past 106: 02; counts of 0 or too many: 03 */
-    CHECK_EQ(rd(RS, 5, 106, 2), MBR_EXCEPTION); CHECK_EQ(exc, 2);
-    CHECK_EQ(rd(RS, 5, 106, 1), MBR_OK);
+    /* addresses past 129: 02; counts of 0 or too many: 03 */
+    CHECK_EQ(rd(RS, 5, 129, 2), MBR_EXCEPTION); CHECK_EQ(exc, 2);
+    CHECK_EQ(rd(RS, 5, 129, 1), MBR_OK);
     f[0] = 5; f[1] = 3; f[2] = 0; f[3] = 0; f[4] = 0; f[5] = 0;
     uint16_t c = mbr_crc16(f, 6); f[6] = (uint8_t)c; f[7] = (uint8_t)(c >> 8);
     CHECK_EQ(xfer(RS, f, 8, 0), MBR_EXCEPTION); CHECK_EQ(exc, 3);
@@ -575,7 +575,7 @@ static void t_inputs_hold(void)
     hw.inputs = 0x00; run(4); hw.inputs = 0x80; run(4);
     CHECK_EQ(rd(RS, 3, IOB_R_STATUS, 1), MBR_OK);
     CHECK_EQ(rd(RS, 3, IOB_R_OUT_APPLIED, 2), MBR_OK);
-    CHECK_EQ(rd(RS, 3, IOB_R_INPUTS, 95), MBR_EXCEPTION);
+    CHECK_EQ(rd(RS, 3, IOB_R_INPUTS, 120), MBR_EXCEPTION);
     CHECK_EQ(rd(NODE_PORT_USB, NODE_USB_ADDRESS, IOB_R_INPUTS, 1), MBR_OK);
     CHECK_EQ(regs[0], 0x80);                                    /* USB: as they are now */
     CHECK_EQ(rs_inputs(), 0x00);
@@ -882,6 +882,33 @@ static void t_map2(void)
     CHECK_EQ(reg(IOB_R_TACH_RPM), 0);
 }
 
+/* map 3: the analog inputs (CORE PCB) reach the registers; a board without them reads none */
+static void t_map3(void)
+{
+    sim_hw_init(&hw);
+    boot(4, NODE_RST_POWER_ON, 0);
+    run(2);
+    CHECK_EQ(reg(IOB_R_N_AI), 0);
+    CHECK_EQ(reg(IOB_R_AI_STATE), IOB_TS_OFF);
+    sim_hw_init(&hw);
+    sim_hw_analog(&hw);
+    boot(4, NODE_RST_POWER_ON, 0);
+    run(2);
+    CHECK_EQ(reg(IOB_R_MAP_VERSION), 3);
+    CHECK_EQ(reg(IOB_R_N_AI), IOB_AIS);
+    CHECK(hw.ai_polls > 0);
+    hw.ai.v[0] = 12000; hw.ai.st[0] = IOB_TS_OK;
+    hw.ai.v[5] = 2100;  hw.ai.st[5] = IOB_TS_UNDER;
+    hw.ai.v[7] = 4321;  hw.ai.st[7] = IOB_TS_OK;
+    hw.ai.supply[0] = 10012; hw.ai.supply[1] = 4998;
+    run(1);
+    CHECK_EQ(rd(RS, 4, IOB_R_AI, IOB_R_AIS_N), MBR_OK);
+    CHECK_EQ(regs[0], 12000); CHECK_EQ(regs[5], 2100); CHECK_EQ(regs[7], 4321);
+    CHECK_EQ(regs[8], IOB_TS_OK); CHECK_EQ(regs[8 + 5], IOB_TS_UNDER);
+    CHECK_EQ(regs[16], 10012); CHECK_EQ(regs[17], 4998);
+    CHECK_EQ(wr1(RS, 4, IOB_R_AI, 1), MBR_EXCEPTION); CHECK_EQ(exc, 2);             /* read-only */
+}
+
 void test_node(void)
 {
     t_startup();
@@ -897,4 +924,5 @@ void test_node(void)
     t_commission();
     t_serial();
     t_map2();
+    t_map3();
 }

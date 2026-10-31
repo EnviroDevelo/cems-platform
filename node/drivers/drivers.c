@@ -19,6 +19,11 @@ static const node_hw_t board = {
 #else
     0, 0, 0, 0,                         /* the G0 board has neither: map 2 registers refused */
 #endif
+#if NODE_ANALOG
+    ad4112_poll,
+#else
+    0,
+#endif
 };
 
 const node_hw_t *drivers_hw(void) { return &board; }

@@ -79,6 +79,8 @@ typedef struct {
     bool     ident_ok;
     bool     answered;                  /* replied at least once since power-up */
     uint8_t  map, temps, pwm;           /* the board's map version and what it has (map 2) */
+    uint8_t  ais;                       /* map 3: analog inputs (0 or IOB_AIS) */
+    uint32_t ai_at;                     /* the analog inputs are read next at */
     uint32_t temp_at;                   /* the temperatures are read next at */
     bool     temp_cfg_sent;
     uint16_t temp_sent[IOB_R_CONFIG2_N];
@@ -277,6 +279,15 @@ static bool ident(unsigned b, uint8_t addr) {
     view[b].n_temps = B[b].temps;
     view[b].n_pwm = B[b].pwm;
     PLAT_CRIT_EXIT();
+    B[b].ais = 0;
+    if (map >= 3u) {                                 /* map 3: does it have analog inputs? */
+        uint16_t na = 0;
+        if (transact(b, f, mbr_req_read(f, addr, IOB_R_N_AI, 1), &na, 1) != MBR_OK) return false;
+        B[b].ais = na == IOB_AIS ? (uint8_t)IOB_AIS : 0u;
+    }
+    PLAT_CRIT_ENTER();
+    view[b].n_ai = B[b].ais;
+    PLAT_CRIT_EXIT();
     bool match = r[0] == IOB_MAGIC && map >= 1u && map <= IOB_MAP_VERSION &&
                  r[IOB_R_N_OUT_A - IOB_R_MAGIC] == 8 && r[IOB_R_N_OUT_B - IOB_R_MAGIC] == 8 &&
                  r[IOB_R_N_RELAYS - IOB_R_MAGIC] == 2 && r[IOB_R_N_INPUTS - IOB_R_MAGIC] == 8;
@@ -336,6 +347,23 @@ static bool read_temps(unsigned b, const cfg_t *c, uint32_t now) {
         view[b].temp_st[i] = (uint8_t)r[IOB_R_TEMP_STATE - IOB_R_TEMP + i];
     }
     view[b].cj = (int16_t)r[IOB_R_CJ_TEMP - IOB_R_TEMP];
+    PLAT_CRIT_EXIT();
+    return true;
+}
+
+/* map 3: the analog block, every PLAT_IOB_TEMP_MS */
+static bool read_ai(unsigned b, const cfg_t *c, uint32_t now) {
+    uint8_t f[MBR_FRAME_MAX];
+    uint16_t r[IOB_R_AIS_N];
+    if (transact(b, f, mbr_req_read(f, c->addr, IOB_R_AI, IOB_R_AIS_N), r, IOB_R_AIS_N) != MBR_OK) return false;
+    B[b].ai_at = now + PLAT_IOB_TEMP_MS;
+    PLAT_CRIT_ENTER();
+    for (unsigned i = 0; i < IOB_AIS; ++i) {
+        view[b].ai[i] = r[i];
+        view[b].ai_st[i] = (uint8_t)r[IOB_R_AI_STATE - IOB_R_AI + i];
+    }
+    view[b].ai_supply[0] = r[IOB_R_AI_SUPPLY - IOB_R_AI];
+    view[b].ai_supply[1] = r[IOB_R_AI_SUPPLY - IOB_R_AI + 1];
     PLAT_CRIT_EXIT();
     return true;
 }
@@ -468,6 +496,8 @@ static void publish_state(unsigned b) {
         v->pwm_applied = v->rpm = 0;
         for (unsigned i = 0; i < IOB_TEMPS; ++i) { v->temp[i] = IOB_TEMP_INVALID; v->temp_st[i] = IOB_TS_WAIT; }
         v->cj = IOB_TEMP_INVALID;
+        for (unsigned i = 0; i < IOB_AIS; ++i) { v->ai[i] = 0; v->ai_st[i] = IOB_TS_WAIT; }
+        v->ai_supply[0] = v->ai_supply[1] = 0;
     }
     PLAT_CRIT_EXIT();
 }
@@ -521,6 +551,7 @@ void iob_cycle(uint32_t now) {
             x->cfg_sent = false;
             x->temp_cfg_sent = false;
             x->temp_at = now;
+            x->ai_at = now;
         }
         if (cfg_changed(x, &c[b], timeout, filter) && !write_cfg(b, &c[b], timeout, filter)) {
             failed(b, now); publish_state(b); continue;
@@ -531,6 +562,9 @@ void iob_cycle(uint32_t now) {
         if (x->temps && x->state == IOB_S_RUN && !temps_read && (int32_t)(now - x->temp_at) >= 0 && any_sensor(&c[b])) {
             temps_read = true;
             if (!read_temps(b, &c[b], now)) failed(b, now);
+        } else if (x->ais && x->state == IOB_S_RUN && !temps_read && (int32_t)(now - x->ai_at) >= 0) {
+            temps_read = true;                       /* the same slot: one slow read per cycle */
+            if (!read_ai(b, &c[b], now)) failed(b, now);
         }
         publish_state(b);
     }
@@ -829,6 +863,21 @@ void iob_scan_in(plat_io_in_t *in, uint32_t now_ms) {
                 in->rtd_status[ch] = ps;
             }
             if (used && v[b].state == IOB_S_RUN && t->temp_state[i] > IOB_TS_WAIT) tf = true;
+        }
+        /* analog inputs (map 3): to plat_io_in_t ai_raw (uA or mV) with a status the application can use */
+        for (unsigned i = 0; i < IOB_AIS; ++i) {
+            uint8_t st = v[b].ai_st[i];
+            bool has = on && v[b].n_ai;
+            bool ok = has && v[b].state == IOB_S_RUN && st == IOB_TS_OK;
+            t->ai[i] = ok ? v[b].ai[i] : 0u;
+            t->ai_state[i] = !t->enable || !v[b].n_ai ? (uint8_t)IOB_TS_OFF : !on || v[b].state != IOB_S_RUN ? (uint8_t)IOB_TS_WAIT : st;
+            unsigned ch = t->first_ai ? t->first_ai - 1u + i : PLAT_AI_MAX;
+            if (has && ch < PLAT_AI_MAX) {
+                uint8_t ps = ok ? PLAT_AIN_OK : st == IOB_TS_UNDER || st == IOB_TS_OPEN ? PLAT_AIN_UNDER
+                           : st == IOB_TS_OVER ? PLAT_AIN_OVER : PLAT_AIN_FAULT;
+                in->ai_raw[ch] = ok ? (int32_t)v[b].ai[i] : 0;
+                in->ai_status[ch] = ps;
+            }
         }
         t->cj_temp = v[b].cj;
         t->pump_rpm = v[b].rpm;

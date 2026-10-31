@@ -18,8 +18,9 @@
  * iobus task passes every millisecond. GATE_EN follows the core's gate. A stuck task, or a core
  * that closed its gate, lets the hardware drop bank A, bank B, the pump and the relays.
  *
- * Not here yet: the AD4112 (4-20 mA, level, mass flow). The node map has no registers for it;
- * CS_AI is held high so it never drives the bus. */
+ * The AD4112 (4-20 mA, level, mass flow; map 3) is node/drivers/drv_ad4112.c, built with
+ * NODE_ANALOG 1 (check.mk sets it for this board); until its datasheet check it reports no
+ * converter and never writes the chip. */
 #include "main.h"
 #include "bsp.h"
 #include "plat_node.h"
@@ -47,6 +48,7 @@ int port_spi_xfer(port_cs_t cs, uint8_t mode, const uint8_t *tx, uint8_t *rx, ui
     case PORT_CS_BANK_B: port = CS_B_GPIO_Port;  p = CS_B_Pin;  break;
     case PORT_CS_INPUTS: port = CS_IN_GPIO_Port; p = CS_IN_Pin; break;
     case PORT_CS_TEMP:   port = CS_T_GPIO_Port;  p = CS_T_Pin;  break;
+    case PORT_CS_AI:     port = CS_AI_GPIO_Port; p = CS_AI_Pin; break;
     default: return -1;
     }
     static uint8_t zero[32], sink[32];
@@ -125,7 +127,7 @@ int port_fram_write(uint8_t offset, const uint8_t *buf, uint8_t n) { (void)offse
 static uint32_t gate_fb_bad;            /* passes in a row with GATE_EN set but GATE_FB low */
 
 const node_hw_t *bsp_node_chips(void) {
-    pin(CS_AI_GPIO_Port, CS_AI_Pin, true);                     /* the AD4112 stays off the bus */
+    pin(CS_AI_GPIO_Port, CS_AI_Pin, true);
     pin(GATE_EN_GPIO_Port, GATE_EN_Pin, false);
     port_relays(0);
     port_pwm(0, 0, false);

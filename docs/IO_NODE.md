@@ -270,6 +270,29 @@ nothing and every configured channel reads ADC failed, and a product build stops
 Host tests build it with the macro at 1 against a frame-level model of the chip
 (`tests/sim_ads124s08.c`, `tests/test_temp.c`).
 
+## Analog inputs (register map 3, CORE PCB in the node role)
+
+The CORE PCB rev 0.2 carries an AD4112 behind an ISOW7741 (CORE_PCB.md 14). The node reports
+`IOB_R_N_AI` = 8 (107) and, at 112..129, eight values, their states and the two sensor supplies:
+
+| Registers | Content |
+|---|---|
+| 112..117 | 4-20 mA inputs 1-6, uA (1-4 on the AD4112's own current inputs, 5-6 on 250 ohm shunts) |
+| 118 | level, mV |
+| 119 | mass flow, mV, corrected to a 10.000 V sensor supply (ratiometric, from VIN4) |
+| 120..127 | states, `IOB_TS_*`: OK, WAIT, OPEN (below 1 mA), UNDER (below 3.6 mA, NE 43), OVER (above 21 mA or full scale), ADC (no converter) |
+| 128, 129 | the 10 V and 5 V sensor supplies as measured, mV |
+
+The master reads the block every `PLAT_IOB_TEMP_MS` in the same slot as the temperatures (one slow
+read per cycle) and maps the eight values to `plat_io_in_t ai_raw` from `iobN_first_ai` (parameters
+174/190/206; 0 = not mapped), in uA or mV, with `ai_status` (UNDER for open or under-range, OVER,
+FAULT). The RO arrays `iobN_ai` and `iobN_ai_state` (374..379) and `/api/iob` `ai` show them.
+Boards on map 1 or 2 read 0 at 107 and are not asked.
+
+`node/drivers/drv_ad4112.c` reports "converter fault" on every input until `AD4112_CONFIRMED` is
+set after its datasheet check (register addresses, input codes, setup bits and the current-input
+scale are marked TO CHECK).
+
 ## Decisions made here (change any of them)
 
 | # | Decision |

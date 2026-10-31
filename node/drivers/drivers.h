@@ -5,6 +5,7 @@
  *   drv_iso808.c    bank B, ST ISO808A-1, SPI (8-bit frames), FAULT and PGOOD pins - checked against its datasheet
  *   drv_ads124s08.c temperature inputs, TI ADS124S08 behind an isolator, SPI mode 1   - NOT yet checked (see the file)
  *   pump.c          pump PWM and tacho (map 2), through node_port.h
+ *   drv_ad4112.c    analog inputs (map 3, CORE PCB), ADI AD4112 behind an isolator, SPI mode 3 - NOT yet checked
  * The three I/O chips share the node's SPI bus, each with its own chip select, SPI mode 0, at most 5 MHz
  * (the ISO1I813T's limit; the ISO2H823 allows 6, the ISO808A-1 20); the ADS124S08 runs at mode 1, 4 MHz.
  *
@@ -31,12 +32,18 @@
 #ifndef ADS124S08_CONFIRMED
 #define ADS124S08_CONFIRMED 0     /* register layout cross-checked (Zephyr driver); SYS, CRC and sensor constants not yet */
 #endif
+#ifndef AD4112_CONFIRMED
+#define AD4112_CONFIRMED 0        /* written from the AD411x family layout; not yet checked against the AD4112 datasheet */
+#endif
+#ifndef NODE_ANALOG
+#define NODE_ANALOG 0             /* the CORE PCB in the node role has the AD4112 (port/stm32h5 sets 1) */
+#endif
 #ifndef NODE_TEMP_PWM
 #define NODE_TEMP_PWM 1           /* the H563 board rev A has the temperature inputs and the pump PWM */
 #endif
 
 #if defined(NODE_PRODUCT_BUILD) && !(ISO2H823_CONFIRMED && ISO1I813T_CONFIRMED && ISO808_CONFIRMED && \
-                                     (ADS124S08_CONFIRMED || !NODE_TEMP_PWM))
+                                     (ADS124S08_CONFIRMED || !NODE_TEMP_PWM) && (AD4112_CONFIRMED || !NODE_ANALOG))
 #error "A chip driver is not yet checked against its datasheet (drivers/drivers.h): not a product build"
 #endif
 
@@ -61,6 +68,8 @@ void ads124s08_config(void *ctx, const node_temp_cfg_t *c);
 void ads124s08_poll(void *ctx, uint32_t now_ms, node_temp_t *t);
 void ads124s08_reset_state(void);                      /* host tests: forget everything (power-up) */
 uint8_t ads124s08_crc8(const uint8_t *d, unsigned n);  /* the data CRC: x^8 + x^2 + x + 1, seed 0xFF */
+void ad4112_poll(void *ctx, uint32_t now_ms, node_ai_t *a);
+void ad4112_reset_state(void);                         /* host tests: forget everything (power-up) */
 void pump_pwm(void *ctx, uint16_t duty, uint16_t freq_hz, bool dir);
 uint32_t pump_tach_period_us(void *ctx);
 

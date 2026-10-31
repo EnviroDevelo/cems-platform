@@ -1776,6 +1776,30 @@ static void get_iob(http_out_t *o) {
             out_str(o, ",\"hz\":"); json_uint(o, t->pwm_hz);
             out_str(o, "}");
         } else out_str(o, "null");
+        /* map 3: the analog inputs (CORE PCB node): 1-6 4-20 mA, 7 level, 8 mass flow */
+        out_str(o, ",\"ai\":");
+        if (v.n_ai) {
+            static const char *const what[IOB_AIS] = { "4-20 mA 1", "4-20 mA 2", "4-20 mA 3", "4-20 mA 4",
+                                                       "4-20 mA 5", "4-20 mA 6", "level", "mass flow" };
+            out_str(o, "[");
+            for (unsigned i = 0; i < IOB_AIS; ++i) {
+                if (i) out_str(o, ",");
+                bool ma = i < 6u;
+                out_str(o, "{\"ch\":"); json_uint(o, i + 1u);
+                out_str(o, ",\"name\":"); json_str(o, what[i]);
+                out_str(o, ",\"unit\":"); json_str(o, ma ? "mA" : "V");
+                out_str(o, ",\"state\":"); json_str(o, iob_temp_state_name(t->ai_state[i]));
+                out_str(o, ",\"ok\":"); json_bool(o, t->ai_state[i] == IOB_TS_OK);
+                out_str(o, ",\"v\":");
+                if (t->ai_state[i] == IOB_TS_OK) { char b[16]; snprintf(b, sizeof b, "%.3f", t->ai[i] / 1000.0); out_str(o, b); }
+                else out_str(o, "null");
+                out_str(o, ",\"channel\":"); json_uint(o, t->first_ai ? t->first_ai + i : 0u);
+                out_str(o, "}");
+            }
+            out_str(o, "],\"ai_supply\":[");
+            { char b[40]; snprintf(b, sizeof b, "%.3f,%.3f", v.ai_supply[0] / 1000.0, v.ai_supply[1] / 1000.0); out_str(o, b); }
+            out_str(o, "]");
+        } else out_str(o, "null");
         out_str(o, "}");
     }
     out_str(o, "]}");

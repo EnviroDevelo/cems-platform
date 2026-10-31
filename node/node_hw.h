@@ -49,6 +49,13 @@ typedef struct {
     uint16_t count;          /* finished measurement rounds */
 } node_temp_t;
 
+/* map 3: the analog front end (AD4112 on the CORE PCB) */
+typedef struct {
+    uint16_t v[8];           /* IOB_R_AI: uA (1-6), mV (7-8) */
+    uint8_t  st[8];          /* IOB_TS_* */
+    uint16_t supply[2];      /* 10 V and 5 V sensor supplies, mV */
+} node_ai_t;
+
 typedef struct node_hw {
     void *ctx;
     /* bank A (SPI). config: mode, open-load detection per channel; written and read back. */
@@ -78,6 +85,9 @@ typedef struct node_hw {
     /* pump PWM: duty 0..1000 (0.1 %), frequency Hz, the DIR output. Behind the hardware gate. */
     void (*pwm)(void *ctx, uint16_t duty, uint16_t freq_hz, bool dir);
     uint32_t (*tach_period_us)(void *ctx);                 /* the last full tacho period; 0 = no edge for 2 s */
+    /* map 3, NULL when the board has none (IOB_R_N_AI then reads 0): called every pass, measures
+     * in the background and keeps *a up to date */
+    void (*ai_poll)(void *ctx, uint32_t now_ms, node_ai_t *a);
 } node_hw_t;
 
 #endif

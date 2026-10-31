@@ -35,11 +35,15 @@ typedef struct {
     uint16_t pwm_duty, pwm_hz;
     bool     pwm_dir;
     uint32_t tach_us;
+    /* map 3: the analog front end reports ai as set here (sim_hw_analog) */
+    node_ai_t ai;
+    uint32_t  ai_polls;
     node_hw_t hw;
 } sim_hw_t;
 
 void sim_hw_init(sim_hw_t *s);           /* with the temperature inputs and the pump (H563 board) */
 void sim_hw_map1(sim_hw_t *s);           /* without them (G0 board): before node_init */
 void sim_hw_map2(sim_hw_t *s);           /* with them again */
+void sim_hw_analog(sim_hw_t *s);         /* with the analog inputs too (CORE PCB): before node_init */
 
 #endif

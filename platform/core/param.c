@@ -124,7 +124,10 @@ extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
     PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 10, "iob" N "_temp_state", iob_tags[K].temp_state, CT_U8, 0, 255, PLAT_LVL_VIEW, PF_RO), \
     PARAM_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 11, "iob" N "_cj_temp", iob_tags[K].cj_temp, CT_I16, -32768, 32767, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
     PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 12, "iob" N "_pump_rpm", iob_tags[K].pump_rpm, CT_U16, 0, 65535, 0, PLAT_LVL_VIEW, PF_RO, "rpm"), \
-    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL)
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 14, "iob" N "_first_ai", iob_tags[K].first_ai, CT_U8, 0, PLAT_AI_MAX - IOB_AIS + 1, 0, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_AI_FIRST + 2 * K, "iob" N "_ai", iob_tags[K].ai, CT_U16, 0, 65535, PLAT_LVL_VIEW, PF_RO), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_AI_FIRST + 2 * K + 1, "iob" N "_ai_state", iob_tags[K].ai_state, CT_U8, 0, 255, PLAT_LVL_VIEW, PF_RO)
 
 /* third-party instruments (inst.h): defaults that are not zero */
 #define INST_ALL(V) { V, V, V, V, V, V, V, V }

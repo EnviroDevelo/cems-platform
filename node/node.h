@@ -76,7 +76,7 @@
 #include "iobus.h"
 #include "node_hw.h"
 
-#define NODE_REG_SPACE   107u     /* registers 0..106 */
+#define NODE_REG_SPACE   130u     /* registers 0..129 (map 3) */
 #define NODE_FRAME_MAX   256u     /* FW-50: static 256-byte receive and transmit buffers */
 #define NODE_USB_ADDRESS 247u     /* FW-56: USB service address */
 
@@ -135,6 +135,7 @@ typedef struct {
     node_temp_cfg_t temp_cfg;
     bool     temp_cfg_dirty;
     node_temp_t temp;                /* the front end's latest */
+    node_ai_t   ai;                  /* map 3: the analog front end's latest */
     uint16_t pwm_applied;
     /* state */
     uint8_t  address;               /* from the F-RAM; 0 = not set, never answers on RS-485 */
@@ -166,7 +167,7 @@ typedef struct {
     bool     boot_pending; uint32_t boot_at_ms;
     /* identification */
     uint16_t magic, map_version, hw_rev, fw_version, fw_build, uid[6];
-    uint16_t n_out_a, n_out_b, n_relays, n_inputs, n_temp_pwm;
+    uint16_t n_out_a, n_out_b, n_relays, n_inputs, n_temp_pwm, n_ai;
     /* statistics */
     uint32_t frames, replies, writes0;
     uint32_t act_pulses;            /* valid frames addressed to this node */

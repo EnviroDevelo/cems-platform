@@ -185,6 +185,7 @@ void node_init(node_t *n, const node_hw_t *hw, const node_boot_t *boot, uint32_t
     }
     for (unsigned k = 0; k < IOB_TEMPS; k++) { n->temp.t[k] = IOB_TEMP_INVALID; n->temp.st[k] = IOB_TS_OFF; }
     n->temp.cj = IOB_TEMP_INVALID;
+    for (unsigned k = 0; k < IOB_AIS; k++) n->ai.st[k] = IOB_TS_WAIT;
     n->temp_cfg_dirty = true;
     n->config_needed = true;
     n->gate = false;                                                       /* FW-01 */
@@ -198,6 +199,7 @@ void node_init(node_t *n, const node_hw_t *hw, const node_boot_t *boot, uint32_t
     n->n_relays = NODE_N_RELAYS;
     n->n_inputs = NODE_N_INPUTS;
     n->n_temp_pwm = (uint16_t)((hw->temp_poll ? IOB_TEMPS : 0u) | (hw->pwm ? 1u << 8 : 0u));
+    n->n_ai = hw->ai_poll ? IOB_AIS : 0u;
     n->chip_a.retry_ms = n->chip_in.retry_ms = now;
     n->b_fault_since = now;
     hw->b_write(hw->ctx, 0);
@@ -230,6 +232,7 @@ void node_poll(node_t *n, uint32_t now)
         n->temp_cfg_dirty = false;
         n->hw->temp_poll(n->hw->ctx, now, &n->temp);
     }
+    if (n->hw->ai_poll) n->hw->ai_poll(n->hw->ctx, now, &n->ai);
     apply_outputs(n);                       /* every pass: also rewrites bank A after any glitch */
     if (n->gate && !n->boot_pending) n->hw->b_wdg_service(n->hw->ctx);    /* FW-24 */
 }
@@ -302,7 +305,11 @@ uint16_t node_reg(const node_t *n, uint16_t r)
     case IOB_R_CJ_TEMP: return (uint16_t)(has_temp(n) ? n->temp.cj : IOB_TEMP_INVALID);
     case IOB_R_PWM_FREQ: return n->pwm_hz;
     case IOB_R_TACH_PPR: return n->tach_ppr;
+    case IOB_R_N_AI: return n->n_ai;
     default:
+        if (r >= IOB_R_AI && r < IOB_R_AI + IOB_AIS) return n->n_ai ? n->ai.v[r - IOB_R_AI] : 0u;
+        if (r >= IOB_R_AI_STATE && r < IOB_R_AI_STATE + IOB_AIS) return n->n_ai ? n->ai.st[r - IOB_R_AI_STATE] : IOB_TS_OFF;
+        if (r >= IOB_R_AI_SUPPLY && r < IOB_R_AI_SUPPLY + 2u) return n->n_ai ? n->ai.supply[r - IOB_R_AI_SUPPLY] : 0u;
         if (r >= IOB_R_TEMP && r < IOB_R_TEMP + IOB_TEMPS)
             return (uint16_t)(has_temp(n) ? n->temp.t[r - IOB_R_TEMP] : IOB_TEMP_INVALID);
         if (r >= IOB_R_TEMP_STATE && r < IOB_R_TEMP_STATE + IOB_TEMPS)
