@@ -1,6 +1,6 @@
 # Standard CEMS Modbus block (VDI 4201-3)
 
-Rev B, 31 Oct 2026 (Rev A 30 Oct; Rev B adds the as-built parameter IDs). Build specification for the core's fixed Modbus block at registers
+Rev C, 31 Oct 2026 (Rev A 30 Oct; Rev B as-built parameter IDs; Rev C section 8, second-period averages and QAL3). Build specification for the core's fixed Modbus block at registers
 7000-7999. Background, research and the decision trail are in the design doc
 "CEMS Modbus standard map and Excel handover" (https://claude.ai/artifact/NiAsZJC428qVbjdHsoVVTR).
 
@@ -25,7 +25,8 @@ units (ABB).
 | --- | --- | --- | --- |
 | Project area | all | 0-6999 | the application (`mb_map_t`) |
 | Standard CEMS block (this document) | input registers; read-only mirror in holding registers | 7000-7999 | core |
-| Reserved for Modbus test bits (none defined) | holding, coils | 8000-8199, 8000-8099 | core |
+| Standard block extension (section 8) | input registers; read-only mirror in holding registers | 8000-8999 | core |
+| Reserved (Modbus test bits declined by Gary, 30 Oct) | coils | 8000-8099 | core |
 | Platform block | input registers | 9000-9199 | core (`modbus.h`) |
 
 An application entry overlapping 7000-7999 in the input or holding registers stops start-up,
@@ -97,13 +98,16 @@ Bits 0-15 per VDI 4201-3 (NAMUR NE 107); bits 16-31 are left to the maker by VDI
 | --- | --- | --- |
 | 0 | Failure | measured quality fault or unavailable |
 | 1 | Maintenance (function check) | quality maintenance, calibration or warming up; reference material applied |
-| 2 | Maintenance request | platform alarm 21 CAL_DUE, or bit 27 |
-| 3 | Out of specification | quality out of range or stale; bit 18 or 19 |
+| 2 | Maintenance request | platform alarm 21 CAL_DUE, alarm 24 QAL3, or bit 27, 28 or 30 |
+| 3 | Out of specification | quality out of range or stale; bit 18, 19 or 29 |
 | 4 | Test / simulation value transmitted | the slot is forced from the web page or touchscreen |
 | 5-15 | reserved (0) | |
 | 16 | Forced from the web page or touchscreen | `mb_force_active(id, index)` |
 | 17-27 | Emissions engine status bits 5-15 (466[n] >> 5 << 17): 17 no QAL2, 18 above valid calibration range, 19 analyser over-range, 20 O2 too high to correct, 21 calculation input missing, 22 average incomplete, 23 day invalid, 24 confidence interval not applied, 25 fixed H2O used, 26 below range, 27 QAL2 review due | |
-| 28-31 | reserved (0) | |
+| 28 | QAL3 warning (zero or span; param 479 bits 2/4) | |
+| 29 | QAL3 out of control (zero or span; param 479 bits 8/16) | |
+| 30 | QAL3 check due (param 479 bit 32) | |
+| 31 | reserved (0) | |
 
 ## 4. Simulation (BasisS)
 
@@ -210,3 +214,29 @@ input i's raw state gets the label of the first slot bound to it, else "Digital 
 web page builds the Excel file from that JSON at download time, so a label edited on the
 touchscreen is in the next download. The Excel Codes sheet lists alarms with their current
 labels (`/api/alarms` text), not the built-in names.
+
+## 8. Standard block extension: second-period averages and QAL3 (Rev C, 31 Oct)
+
+Input registers 8000-8999, with the same read-only mirror in the holding registers and the same
+rules as section 1 (never moved, only added; unfitted or not applicable reads NaN / 0). Sources
+are the emissions engine's results (PR #23). The second period is the extra short-term average
+some licences need (for example 10-minute CO for waste incineration).
+
+| Registers | Content | Format | Source |
+| --- | --- | --- | --- |
+| 8000 + 2n | last validated second-period average, slot n | float | 470[n] |
+| 8064 + n | its quality | u16 PLAT_Q_* | 471[n] |
+| 8096 + n | valid second-period averages today | u16 | 472[n] |
+| 8128 + n | of those, above the limit | u16 | 473[n] |
+| 8160 + n | valid second-period averages, last complete day | u16 | 474[n] |
+| 8192 + n | of those, above the limit | u16 | 475[n] |
+| 8224 + 2n | QAL3: last zero check deviation (reading - reference) | float | 476[n] |
+| 8288 + 2n | QAL3: last span check deviation | float | 477[n] |
+| 8352 + 2n | QAL3: time of the last check, local s since 1970 (0 = none) | u32 | 478[n] |
+| 8416 + n | QAL3 status bits (EMIS_Q3_*: 1 on, 2/4 zero/span warning, 8/16 zero/span out of control, 32 due) | u16 | 479[n] |
+| 8448-8999 | reserved | | |
+
+Platform alarm 24 QAL3 also sets the NAMUR maintenance-request bit (section 3).
+
+BasisR (reference material) stays undefined until the VDI 4201 text is read; the engine's QAL3
+check entry (parameters 447/448, then 427 = slot + 1) is the hook it will use.
