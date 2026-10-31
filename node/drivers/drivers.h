@@ -5,7 +5,7 @@
  *   drv_iso808.c    bank B, ST ISO808A-1, SPI (8-bit frames), FAULT and PGOOD pins - checked against its datasheet
  *   drv_ads124s08.c temperature inputs, TI ADS124S08 behind an isolator, SPI mode 1   - NOT yet checked (see the file)
  *   pump.c          pump PWM and tacho (map 2), through node_port.h
- *   drv_ad4112.c    analog inputs (map 3, CORE PCB), ADI AD4112 behind an isolator, SPI mode 3 - NOT yet checked
+ *   drv_ad4112.c    analog inputs (map 3, CORE PCB), ADI AD4112 behind an isolator, SPI mode 3
  * The three I/O chips share the node's SPI bus, each with its own chip select, SPI mode 0, at most 5 MHz
  * (the ISO1I813T's limit; the ISO2H823 allows 6, the ISO808A-1 20); the ADS124S08 runs at mode 1, 4 MHz.
  *
@@ -33,7 +33,7 @@
 #define ADS124S08_CONFIRMED 0     /* register layout cross-checked (Zephyr driver); SYS, CRC and sensor constants not yet */
 #endif
 #ifndef AD4112_CONFIRMED
-#define AD4112_CONFIRMED 0        /* written from the AD411x family layout; not yet checked against the AD4112 datasheet */
+#define AD4112_CONFIRMED 1        /* datasheet + Linux ad7173 driver, 31 Oct 2026 (IO_CHIPS_DATASHEET_CHECK.md) */
 #endif
 #ifndef NODE_ANALOG
 #define NODE_ANALOG 0             /* the CORE PCB in the node role has the AD4112 (port/stm32h5 sets 1) */

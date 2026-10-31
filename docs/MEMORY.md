@@ -8,14 +8,14 @@ module, and before choosing hardware. Last run: 2026-10-31.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 589.5 KB | 1016.0 KB | 58 % | 426.5 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 591.1 KB | 1016.0 KB | 58 % | 424.9 KB |
 | RAM (STM32H573/H563, 640 KB) | 487.9 KB | 640.0 KB | 76 % | 152.1 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 38.7 | 0.1 |
+| Scan engine, queue, watchdog, diag | 38.8 | 0.1 |
 | Parameter table | 23.9 | 25.8 |
 | Parameter store (FRAM) | 6.8 | 57.3 |
 | Event log / data logger | 15.3 | 6.8 |
@@ -26,9 +26,9 @@ module, and before choosing hardware. Last run: 2026-10-31.
 | Firmware update, signatures, serial | 6.9 | 2.0 |
 | I/O boards (Ethernet/RS-485 master) | 20.3 | 2.8 |
 | Modbus TCP | 18.1 | 18.1 |
-| Web server + page + logins | 100.3 | 33.5 |
+| Web server + page + logins | 101.2 | 33.5 |
 | HTTPS (tls.c + mbedTLS) | 96.6 | 83.4 |
-| Touch UI + EVE driver | 84.0 | 6.1 |
+| Touch UI + EVE driver | 84.4 | 6.1 |
 | Task layer (FreeRTOS glue) | 3.4 | 99.7 |
 | Board support (BSP) | 1.6 | 0.8 |
 | lwIP + Ethernet driver | 55.0 | 39.4 |

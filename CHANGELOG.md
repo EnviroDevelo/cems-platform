@@ -14,12 +14,13 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
   QAL3 and maker bits 28 (QAL3 warning), 29 (chart out of control, also bit 3) and 30 (check due).
   A product map may no longer use input or holding 8000-8999, nor coils 8000-8099 (reserved).
 - The CORE PCB rev 0.2 in the I/O node role: `port/stm32h5/node_io_stm32h5.c` runs the field chips'
-  drivers (node/drivers) on SPI4, shared with the W5500 (`spi4_bus.c`), and the output gate (GATE_EN,
-  WDI kick on each healthy pass, GATE_FB). plat_node.h gains the port hooks `bsp_node_chips` and
+  drivers (node/drivers) on SPI4, shared with the W5500 (`spi4_bus.c`), and the latched output gate
+  (GATE_EN low-high arms it, WDI kick on each healthy pass, GATE_FB; re-armed 1 s after a trip). plat_node.h gains the port hooks `bsp_node_chips` and
   `bsp_node_pass` (weak defaults: the platform's pins, as before). CubeMX steps: CUBEMX_SETUP.md 3l.
 - I/O board register map 3: analog inputs (the CORE PCB node's AD4112: six 4-20 mA, level, mass flow)
   at 107 and 112..129, read by the master into `plat_io_in_t ai_raw` from `iobN_first_ai`, the RO
-  arrays 374..379 and `/api/iob` `ai`. The AD4112 driver stays fail-safe until its datasheet check.
+  arrays 374..379 and `/api/iob` `ai`. The AD4112 driver is checked against its datasheet (ID 0x30DX,
+  49.68 SPS filter, current inputs with the buffers off) and enabled.
   Map 1 and 2 boards still run. IO_NODE.md "Analog inputs".
 - `/api/modbus/map` lists the standard block (`"core":"standard"`, `"mirror":"holding"`): every item of
   each fitted slot plus BasisR and the globals, in address order, so the Excel handover file carries it.
