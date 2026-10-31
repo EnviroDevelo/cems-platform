@@ -35,10 +35,10 @@ bool plat_health_low(const plat_health_t *h, char *why, unsigned cap) {
 __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
 
 static const alarm_def_t core_defs[] = {
-    { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_INVALID",
+    { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY | AL_NO_OFF, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_INVALID",
       .text = "No valid calibration data: measurement blocked",
       .help = "Neither copy of the factory data in the settings memory is valid (new unit, or memory fault). Calibrate at factory login, or restore a backup taken from this unit." },
-    { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "PARAM_WRITE_FAIL",
+    { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY | AL_NO_OFF, .route = AR_EMAIL | AR_MODBUS, .name = "PARAM_WRITE_FAIL",
       .text = "Settings memory fault: changes may not be kept", .on_delay_ms = 2000,
       .help = "The settings memory (FRAM) did not verify a write, or is not fitted (RAM fallback). Check the FRAM; changes made now may be lost at power-off." },
     { .id = ALARM_ID_LOG_STORAGE_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "LOG_STORAGE_FAULT",
@@ -53,7 +53,7 @@ static const alarm_def_t core_defs[] = {
     { .id = ALARM_ID_UNEXPECTED_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "UNEXPECTED_RESET",
       .text = "The unit restarted itself (watchdog or supply dip)",
       .help = "The watchdog or a supply dip restarted the unit. The last fault on the System screen says which task or check stopped. Acknowledge to clear." },
-    { .id = ALARM_ID_SAFE_MODE, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SAFE_MODE",
+    { .id = ALARM_ID_SAFE_MODE, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY | AL_NO_OFF, .route = AR_EMAIL | AR_MODBUS, .name = "SAFE_MODE",
       .text = "Restarted repeatedly: safe mode, application stopped",
       .help = "The unit restarted repeatedly within a short time, so it started without the application (outputs off). Read the last fault, then power-cycle." },
     { .id = ALARM_ID_SUPPLY, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SUPPLY",
@@ -267,10 +267,12 @@ uint8_t alarm_prio_default(const alarm_def_t *d) {
     }
 }
 
+bool alarm_can_switch_off(const alarm_def_t *d) { return !(d->flags & (AL_STOPS | AL_NO_OFF)); }
+
 static uint8_t prio_of(size_t i) {
     const alarm_def_t *d = defs[i];
     uint8_t p = plat_alarm_prio[d->id];
-    if (p == AL_PRIO_OFF && (d->flags & AL_STOPS)) p = AL_PRIO_DEFAULT;
+    if (p == AL_PRIO_OFF && !alarm_can_switch_off(d)) p = AL_PRIO_DEFAULT;
     return p >= AL_PRIO_CRITICAL && p <= AL_PRIO_OFF ? p : alarm_prio_default(d);
 }
 uint8_t alarm_prio(uint16_t id) { int i = idx(id); return i < 0 ? 0 : prio_of((size_t)i); }
