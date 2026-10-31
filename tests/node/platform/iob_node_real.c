@@ -43,6 +43,9 @@ static void push(iob_node_t *n, shadow_t *s)
     if (n->n_temp_pwm) sim_hw_map2(h); else sim_hw_map1(h);
     for (unsigned i = 0; i < IOB_TEMPS; i++) { h->temp.t[i] = n->temp[i]; h->temp.st[i] = n->temp_st[i]; }
     h->temp.cj = n->cj; h->temp.flags = n->temp_flags; h->temp.count = n->temp_count;
+    if (n->n_ai) sim_hw_analog(h); else h->hw.ai_poll = 0;
+    for (unsigned i = 0; i < IOB_AIS; i++) { h->ai.v[i] = n->ai[i]; h->ai.st[i] = n->ai_st[i]; }
+    h->ai.supply[0] = n->ai_supply[0]; h->ai.supply[1] = n->ai_supply[1];
     uint32_t ppr = s->me.tach_ppr ? s->me.tach_ppr : 2u;
     h->tach_us = n->tach_rpm ? (60000000u + n->tach_rpm * ppr / 2u) / (n->tach_rpm * ppr) : 0u;
     node_t *m = &s->me;
@@ -51,6 +54,8 @@ static void push(iob_node_t *n, shadow_t *s)
     m->magic = n->magic; m->map_version = n->map_version;
     m->n_out_a = n->n_out_a; m->n_out_b = n->n_out_b; m->n_relays = n->n_relays; m->n_inputs = n->n_inputs;
     m->n_temp_pwm = n->n_temp_pwm;
+    m->n_ai = n->n_ai ? IOB_AIS : 0u;
+    if (n->n_ai) m->ai = h->ai;
     m->fw_version = n->fw_version; m->hw_rev = n->hw_rev; m->fw_build = 1;
     memcpy(m->uid, n->uid, sizeof m->uid);
     s->net.cfg = (node_ipcfg_t){ n->ip, n->mask, n->gw, n->master_ip };

@@ -55,7 +55,9 @@
 #define IOB_BOARDS       3u
 #define IOB_OUTS         18u   /* per board: 8 bank A + 8 bank B + 2 relays */
 #define IOB_INS          8u
-#define IOB_MAP_VERSION  2u        /* 2 adds the temperature inputs and the pump PWM; a map 1 board still runs */
+#define IOB_MAP_VERSION  3u        /* 2 adds the temperature inputs and the pump PWM; 3 the analog inputs (CORE PCB node);
+                                      map 1 and 2 boards still run */
+#define IOB_AIS          8u        /* map 3: analog inputs on a board that has them (IOB_R_N_AI) */
 #define IOB_TEMPS        6u        /* temperature channels per board: 3 connectors, 2 each (IOB_R_TEMP) */
 #define IOB_TEMP_CONNS   3u
 #define IOB_TEMP_INVALID ((int16_t)-32768)   /* IOB_R_TEMP when the channel has no reading */
@@ -146,6 +148,14 @@ enum {
     IOB_R_NTC_BETA    = 102, /* IOB_TEMP_CONNS registers: an NTC's B25/85 constant, K (default 3435) */
     IOB_R_PWM_FREQ    = 105, /* PWM frequency, Hz, 10..25000 (default 1000) */
     IOB_R_TACH_PPR    = 106, /* tacho pulses per revolution, 1..12 (default 2) */
+    /* map 3: analog inputs (the CORE PCB in the node role, AD4112), read every PLAT_IOB_TEMP_MS (FC03 112..129) */
+    IOB_R_N_AI        = 107, /* analog inputs: 0 or IOB_AIS (a map 1 or 2 board reads 0) */
+    IOB_R_AI          = 112, /* IOB_AIS registers: 1-6 the 4-20 mA inputs in uA; 7 level, 8 mass flow, in mV
+                                (8 corrected to a 10.000 V sensor supply: ratiometric) */
+    IOB_R_AI_STATE    = 120, /* IOB_AIS registers: IOB_TS_* (OK, WAIT, OPEN below 1 mA, UNDER below 3.6 mA,
+                                OVER above 21 mA or full scale, ADC: no converter) */
+    IOB_R_AI_SUPPLY   = 128, /* 2 registers: the 10 V and the 5 V sensor supplies as measured, mV */
+    IOB_R_AIS_N       = 18,  /* AI .. AI_SUPPLY */
     IOB_R_STATUS_N    = 12,  /* registers in the status block (map 1) */
     IOB_R_STATUS_N2   = 16,  /* map 2 */
     IOB_R_IDENT_N     = 16,  /* MAGIC .. N_TEMP_PWM (a map 1 board answers 0 at 79) */
@@ -266,6 +276,11 @@ typedef struct {
     int16_t  cj;
     uint16_t temp_flags, temp_count;
     uint16_t pwm_applied, rpm;
+    /* map 3 */
+    uint8_t  n_ai;                   /* 0 or IOB_AIS */
+    uint16_t ai[IOB_AIS];            /* as the board reports them: uA or mV (IOB_R_AI) */
+    uint8_t  ai_st[IOB_AIS];         /* IOB_TS_*; IOB_TS_WAIT until read */
+    uint16_t ai_supply[2];           /* mV */
 } iob_view_t;
 
 void iob_init(iob_port_t *port);       /* plat_start (NULL: no RS-485 port, boards report not responding) */
@@ -318,6 +333,10 @@ typedef struct {
     uint8_t  temp_state[IOB_TEMPS];       /* RO: IOB_TS_* */
     int16_t  cj_temp;                     /* RO */
     uint16_t pump_rpm, pump_duty;         /* RO */
+    /* map 3 */
+    uint8_t  first_ai;                    /* plat_io_in_t ai channel of the board's analog input 1 (0: not mapped) */
+    uint16_t ai[IOB_AIS];                 /* RO: uA (1-6) or mV (7-8), 0 without a reading */
+    uint8_t  ai_state[IOB_AIS];           /* RO: IOB_TS_* (IOB_TS_OFF: the board has none) */
     uint16_t status;         /* RO tags, published by the scan */
     uint32_t out_faults;
     uint8_t  in_faults;

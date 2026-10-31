@@ -6,11 +6,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef enum { PORT_CS_BANK_A = 0, PORT_CS_INPUTS = 1, PORT_CS_BANK_B = 2, PORT_CS_TEMP = 3 } port_cs_t;
+typedef enum { PORT_CS_BANK_A = 0, PORT_CS_INPUTS = 1, PORT_CS_BANK_B = 2, PORT_CS_TEMP = 3, PORT_CS_AI = 4 } port_cs_t;
 
 /* One full-duplex SPI transfer of n bytes with the chip selected for its whole length.
  * spi_mode 0..3 (CPOL << 1 | CPHA), MSB first. Returns 0, or <0 on a bus timeout.
- * PORT_CS_TEMP (the ADS124S08 behind its isolator, H563 board rev A): at most 4 MHz. */
+ * PORT_CS_TEMP (the ADS124S08 behind its isolator, H563 board rev A): at most 4 MHz.
+ * PORT_CS_AI (the AD4112 behind its isolator, CORE PCB rev 0.2): mode 3, at most 4 MHz. */
 int  port_spi_xfer(port_cs_t cs, uint8_t spi_mode, const uint8_t *tx, uint8_t *rx, uint16_t n);
 
 /* bank B (ISO808A-1): its open-drain FAULT and PGOOD pins (both active low) */

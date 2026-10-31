@@ -166,7 +166,9 @@ enum {
          +2 sensor type per connector (3 bytes, IOB_TT_*), +3 NTC R25 (3 x 10 ohm, 0 = 10k), +4 NTC B (3 x K, 0 = 3435),
          +5 calibration offset (6 x 0.01 degC), +6 calibration span (gain - 1, 6 x 0.01 %), +7 PWM frequency (Hz),
          +8 tacho pulses per revolution, +9 RO temperatures (6 x 0.1 degC), +10 RO channel states (6 x IOB_TS_*),
-         +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %) */
+         +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %),
+         +14 first analog input channel (map 3; 0 = not mapped) */
+    PARAM_ID_IOB_AI_FIRST     = 374, /* board k at 374 + 2k (map 3): +0 RO analog inputs (8 x uA or mV), +1 RO their states (IOB_TS_*) */
     PARAM_ID_STATE            = 300, /* RO: instrument state, PLAT_ST_* (plat_state.h) */
     PARAM_ID_MAINTENANCE      = 301, /* operator selects MAINTENANCE (1) or leaves it (0) */
     PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */

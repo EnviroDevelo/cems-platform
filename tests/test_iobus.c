@@ -112,7 +112,7 @@ static void t_node_rules(void) {
     len = mbr_req_read(f, 5, 0, 1); f[len - 1] ^= 1u;
     CHECK_EQ(iob_node_frame(&n, 0, f, (uint16_t)len, rx, sizeof rx), 0u);
     CHECK_EQ(n.rx_errors, 1u);
-    len = mbr_req_read(f, 5, 100, 10);                     /* map 2 ends at 106 */
+    len = mbr_req_read(f, 5, 125, 10);                     /* map 3 ends at 129 */
     got = iob_node_frame(&n, 0, f, (uint16_t)len, rx, sizeof rx);
     uint8_t code = 0;
     CHECK_EQ(mbr_check_reply(f, len, rx, got, r, 10, &code), MBR_EXCEPTION);
@@ -869,7 +869,7 @@ static void t_temps_and_pwm(void) {
     iob_tags[0].first_ao = 2;
     run(100, true);
     CHECK_EQ(view(0).state, IOB_S_RUN);
-    CHECK_EQ(view(0).map_version, 2);
+    CHECK_EQ(view(0).map_version, IOB_MAP_VERSION);
     CHECK_EQ(view(0).n_temps, IOB_TEMPS);
     CHECK_EQ(n1.temp_type[0], IOB_TT_TC_K); CHECK_EQ(n1.temp_type[1], IOB_TT_PT100_3W); CHECK_EQ(n1.temp_type[2], IOB_TT_NTC);
     CHECK_EQ(n1.ntc_r25[2], 270); CHECK_EQ(n1.ntc_beta[2], 3435);
@@ -955,12 +955,42 @@ static void t_map1_board(void) {
     CHECK_EQ(view(0).errors, 0u);                          /* nothing it would refuse was sent */
     CHECK_EQ(iob_tags[0].temp_state[0], IOB_TS_ADC);       /* configured, but the board has no inputs */
     CHECK_EQ(last_in.rtd_status[4], PLAT_AIN_FAULT);
-    n1.map_version = 3;                                    /* a later map: not this master's board */
+    n1.map_version = IOB_MAP_VERSION + 1u;                 /* a later map: not this master's board */
     iob_node_restart(&n1, false, bsp_host.ms);
     n1.powered = false; run(1200, true); n1.powered = true;
     run(1200, true);
     CHECK_EQ(view(0).state, IOB_S_WRONG_TYPE);
     cur_out.do_bits = 0; cur_out.ao_raw[0] = 0;
+}
+
+/* map 3: the analog inputs (CORE PCB node) reach the view, the RO tags and plat_io ai_raw */
+static void t_analog(void) {
+    setup();
+    n1.n_ai = IOB_AIS;
+    for (unsigned i = 0; i < IOB_AIS; ++i) { n1.ai[i] = (uint16_t)(4000u + 1000u * i); n1.ai_st[i] = IOB_TS_OK; }
+    n1.ai_st[2] = IOB_TS_OPEN; n1.ai[2] = 0;
+    n1.ai_supply[0] = 10010;
+    iob_tags[0].enable = true;
+    iob_tags[0].first_ai = 1;
+    run(PLAT_IOB_TEMP_MS * 2u + 200u, true);
+    CHECK_EQ(view(0).state, IOB_S_RUN);
+    CHECK_EQ(view(0).n_ai, IOB_AIS);
+    CHECK_EQ(view(0).ai[0], 4000); CHECK_EQ(view(0).ai_supply[0], 10010);
+    CHECK_EQ(iob_tags[0].ai[1], 5000); CHECK_EQ(iob_tags[0].ai_state[1], IOB_TS_OK);
+    CHECK_EQ(iob_tags[0].ai[2], 0); CHECK_EQ(iob_tags[0].ai_state[2], IOB_TS_OPEN);
+    CHECK_EQ(last_in.ai_raw[1], 5000); CHECK_EQ(last_in.ai_status[1], PLAT_AIN_OK);
+    CHECK_EQ(last_in.ai_status[2], PLAT_AIN_UNDER);
+    /* the board stops answering: the inputs wait, the application sees faults */
+    n1.powered = false; run(PLAT_IOB_LOST_MS + 200u, true);
+    CHECK_EQ(iob_tags[0].ai_state[1], IOB_TS_WAIT); CHECK_EQ(last_in.ai_status[1], PLAT_AIN_FAULT);
+    n1.powered = true;
+    /* a board without them: states read off, nothing mapped */
+    setup();
+    iob_tags[0].enable = true; iob_tags[0].first_ai = 1;
+    memset(&last_in, 0, sizeof last_in);
+    run(PLAT_IOB_TEMP_MS * 2u, true);
+    CHECK_EQ(view(0).n_ai, 0); CHECK_EQ(iob_tags[0].ai_state[0], IOB_TS_OFF);
+    iob_tags[0].first_ai = 0;
 }
 
 void test_iobus_all(void) {
@@ -985,6 +1015,7 @@ void test_iobus_all(void) {
         RUN(t_no_port);
         RUN(t_temps_and_pwm);
         RUN(t_map1_board);
+        RUN(t_analog);
     }
     cur_link = IOB_LINK_ETH;
     RUN(t_eth_commission);

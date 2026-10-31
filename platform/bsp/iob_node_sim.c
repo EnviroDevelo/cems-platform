@@ -4,7 +4,7 @@
 #include "mb_rtu.h"
 #include "bsp.h"
 
-#define REG_SPACE(n) ((n)->map_version >= 2u ? 107u : 80u)
+#define REG_SPACE(n) ((n)->map_version >= 3u ? 130u : (n)->map_version >= 2u ? 107u : 80u)
 #define COMMS_TIMEOUT_MS 1000u
 
 
@@ -56,6 +56,12 @@ static bool has_pwm(const iob_node_t *n) { return n->map_version >= 2u && (n->n_
 
 uint16_t iob_node_reg(const iob_node_t *n, uint16_t r) {
     uint16_t st = 0;
+    if (n->map_version >= 3u) {
+        if (r == IOB_R_N_AI) return n->n_ai;
+        if (r >= IOB_R_AI && r < IOB_R_AI + IOB_AIS) return n->n_ai ? n->ai[r - IOB_R_AI] : 0u;
+        if (r >= IOB_R_AI_STATE && r < IOB_R_AI_STATE + IOB_AIS) return n->n_ai ? n->ai_st[r - IOB_R_AI_STATE] : IOB_TS_OFF;
+        if (r >= IOB_R_AI_SUPPLY && r < IOB_R_AI_SUPPLY + 2u) return n->n_ai ? n->ai_supply[r - IOB_R_AI_SUPPLY] : 0u;
+    }
     if (n->map_version >= 2u) {
         if (r >= IOB_R_TEMP && r < IOB_R_TEMP + IOB_TEMPS) return (uint16_t)(has_temp(n) ? n->temp[r - IOB_R_TEMP] : IOB_TEMP_INVALID);
         if (r >= IOB_R_TEMP_STATE && r < IOB_R_TEMP_STATE + IOB_TEMPS) return has_temp(n) ? n->temp_st[r - IOB_R_TEMP_STATE] : IOB_TS_OFF;

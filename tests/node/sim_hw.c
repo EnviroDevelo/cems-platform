@@ -79,6 +79,9 @@ static void temp_config(void *ctx, const node_temp_cfg_t *c) { sim_hw_t *s = ctx
 static void temp_poll(void *ctx, uint32_t now, node_temp_t *t) { sim_hw_t *s = ctx; (void)now; s->temp_polls++; *t = s->temp; }
 static void pwm(void *ctx, uint16_t d, uint16_t hz, bool dir) { sim_hw_t *s = ctx; s->pwm_duty = d; s->pwm_hz = hz; s->pwm_dir = dir; }
 static uint32_t tach(void *ctx) { return ((sim_hw_t *)ctx)->tach_us; }
+static void ai_poll(void *ctx, uint32_t now, node_ai_t *a) { sim_hw_t *s = ctx; (void)now; s->ai_polls++; *a = s->ai; }
+
+void sim_hw_analog(sim_hw_t *s) { s->hw.ai_poll = ai_poll; }
 
 void sim_hw_map1(sim_hw_t *s)
 {
@@ -96,7 +99,7 @@ void sim_hw_init(sim_hw_t *s)
     s->field_a = s->field_b = true;
     s->hw = (node_hw_t){ s, a_config, a_write, a_diag, in_config, in_read,
                          b_write, b_fault_pin, b_wdg_tripped, b_wdg_service, b_supply_ok, relays, addr_store, serial_store,
-                         temp_config, temp_poll, pwm, tach };
+                         temp_config, temp_poll, pwm, tach, 0 };
     for (unsigned k = 0; k < IOB_TEMPS; k++) { s->temp.t[k] = IOB_TEMP_INVALID; s->temp.st[k] = IOB_TS_OFF; }
     s->temp.cj = IOB_TEMP_INVALID;
 }

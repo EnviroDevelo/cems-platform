@@ -59,6 +59,10 @@ typedef struct {
     uint8_t  temp_st[IOB_TEMPS]; /* IOB_TS_* */
     int16_t  cj;
     uint16_t temp_flags, temp_count, tach_rpm;
+    uint16_t n_ai;               /* map 3: IOB_R_N_AI (0 = none, the default; tests set IOB_AIS) */
+    uint16_t ai[IOB_AIS];        /* uA or mV */
+    uint8_t  ai_st[IOB_AIS];     /* IOB_TS_* */
+    uint16_t ai_supply[2];
     /* identity (tests may change it to provoke a mismatch) */
     uint16_t magic, map_version, n_out_a, n_out_b, n_relays, n_inputs, fw_version, hw_rev;
     uint16_t n_temp_pwm;         /* IOB_R_N_TEMP_PWM: IOB_TEMPS | 1 << 8 (a map 1 board: map_version 1, 0) */

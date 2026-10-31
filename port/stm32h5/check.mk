@@ -43,7 +43,7 @@ SRCS    = platform/core/scan_engine.c platform/core/plat_cmdq.c platform/core/ta
 # the CORE PCB in the I/O node role (CHECK_WITH_NODE_IO): the field chips' drivers on SPI4
 ifneq ($(findstring CHECK_WITH_NODE_IO,$(DEV)),)
 SRCS   += $(wildcard node/drivers/*.c) port/stm32h5/node_io_stm32h5.c port/stm32h5/spi4_bus.c
-INC    += -Inode/drivers -Iport/node_stm32g0
+INC    += -Inode/drivers -Iport/node_stm32g0 -DNODE_ANALOG=1
 endif
 OUT    ?= build/target
 OBJS    = $(addprefix $(OUT)/,$(notdir $(SRCS:.c=.o)))

@@ -163,6 +163,7 @@ GET /api/inst/explore .seq number
 GET /api/inst/explore .unit number
 GET /api/inst/explore .words[] empty
 GET /api/iob .boards[].address number
+GET /api/iob .boards[].ai null
 GET /api/iob .boards[].cj null
 GET /api/iob .boards[].enabled bool
 GET /api/iob .boards[].errors number
@@ -519,6 +520,7 @@ param 170 iob1_temp_state array - level=0 flags=ro
 param 171 iob1_cj_temp int - level=0 flags=ro
 param 172 iob1_pump_rpm uint rpm level=0 flags=ro
 param 173 iob1_pump_duty uint - level=0 flags=ro
+param 174 iob1_first_ai uint - level=2 flags=persist
 param 176 iob2_first_temp uint - level=2 flags=persist
 param 177 iob2_pump_ao uint - level=2 flags=persist
 param 178 iob2_temp_type array - level=2 flags=persist
@@ -533,6 +535,7 @@ param 186 iob2_temp_state array - level=0 flags=ro
 param 187 iob2_cj_temp int - level=0 flags=ro
 param 188 iob2_pump_rpm uint rpm level=0 flags=ro
 param 189 iob2_pump_duty uint - level=0 flags=ro
+param 190 iob2_first_ai uint - level=2 flags=persist
 param 192 iob3_first_temp uint - level=2 flags=persist
 param 193 iob3_pump_ao uint - level=2 flags=persist
 param 194 iob3_temp_type array - level=2 flags=persist
@@ -547,6 +550,7 @@ param 202 iob3_temp_state array - level=0 flags=ro
 param 203 iob3_cj_temp int - level=0 flags=ro
 param 204 iob3_pump_rpm uint rpm level=0 flags=ro
 param 205 iob3_pump_duty uint - level=0 flags=ro
+param 206 iob3_first_ai uint - level=2 flags=persist
 param 300 state uint - level=0 flags=ro
 param 301 maintenance bool - level=1 flags=persist,any_mode
 param 302 state_since uint - level=0 flags=ro
@@ -604,6 +608,12 @@ param 370 dia21_label text - level=2 flags=persist,any_mode,no_modbus
 param 371 dia22_label text - level=2 flags=persist,any_mode,no_modbus
 param 372 dia23_label text - level=2 flags=persist,any_mode,no_modbus
 param 373 dia24_label text - level=2 flags=persist,any_mode,no_modbus
+param 374 iob1_ai array - level=0 flags=ro
+param 375 iob1_ai_state array - level=0 flags=ro
+param 376 iob2_ai array - level=0 flags=ro
+param 377 iob2_ai_state array - level=0 flags=ro
+param 378 iob3_ai array - level=0 flags=ro
+param 379 iob3_ai_state array - level=0 flags=ro
 param 400 emis_enable bool - level=2 flags=persist,no_modbus
 param 401 emis_t_ref float K level=2 flags=persist,no_modbus
 param 402 emis_p_ref float kPa level=2 flags=persist,no_modbus

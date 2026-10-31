@@ -289,7 +289,7 @@ the `CS_A` label the node falls back to the platform's pins (the Nucleo bench).
   and GATE_EN follows that gate, so the MAX6369 (30 ms) drops every output if the iobus task stalls.
   To check on the first board: the MAX6369 start-up timeout against the time to the first command
   (the gate must open once kicks start), and GATE_FB against GATE_EN (`bsp_node_gate_fault`).
-- **Not yet:** the AD4112 analog inputs (no node registers for them yet; `CS_AI` is held high).
+- **AD4112** (map 3 analog inputs): `node/drivers/drv_ad4112.c` with `NODE_ANALOG=1`; it reports "no converter" until `AD4112_CONFIRMED` is set after the datasheet check.
 
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 
