@@ -65,9 +65,9 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,J5,SWD,PinHeader_2x05_P1.27mm_Vertical_SMD,,yes
 1,J6,SERVICE UART,PinHeader_1x06_P2.54mm_Vertical,,yes
 1,J7,ROLE,PinHeader_1x03_P2.54mm_Vertical,,yes
-1,J10,BANK A IDC26,IDC-Header_2x13_P2.54mm_Latch_Vertical,"26-way shrouded latched box header, same as the breakout (hardware/io_breakout)",yes
+1,J10,BANK A IDC26,IDC-Header_2x13_P2.54mm_Latch_Vertical,"Wurth 61202622821 (WR-BHD, long latches, 3 A), same as the breakout",yes
 1,J11,BANK B,"PhoenixContact_MCV_1,5_10-G-3.81_1x10_P3.81mm_Vertical","Phoenix MCV 1,5/10-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J12,INPUTS IDC26,IDC-Header_2x13_P2.54mm_Latch_Vertical,"26-way shrouded latched box header, same as J10",yes
+1,J12,INPUTS IDC26,IDC-Header_2x13_P2.54mm_Latch_Vertical,"Wurth 61202622821, same as J10",yes
 1,J13,FIELD A 24V,"PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical","Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)",yes
 1,J14,FIELD B 24V,"PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical","Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)",yes
 1,J15,PUMP POWER,"PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical","Phoenix MSTBVA 2,5/2-G-5,08 + plug",yes

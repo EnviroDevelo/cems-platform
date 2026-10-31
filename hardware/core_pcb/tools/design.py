@@ -451,7 +451,7 @@ for i in range(8):
 for p in range(17, 27):
     idc[p] = "+24V_RA" if p % 2 else "FIELD_0V"
 part("J10", "Connector_Generic:Conn_02x13_Odd_Even", "BANK A IDC26", IDC26, S, idc,
-     mpn="26-way shrouded latched box header, same as the breakout (hardware/io_breakout)",
+     mpn="Wurth 61202622821 (WR-BHD, long latches, 3 A), same as the breakout",
      note="same pinout as the breakout J1, straight-through ribbon")
 part("F10", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RA"},
      mpn="Bourns MF-MSMF075-2", note="ribbon +24 V (breakout LEDs)")
@@ -510,7 +510,7 @@ for i in range(8):
 for p in range(17, 27):
     idc[p] = "+24V_RI" if p % 2 else "FIELD_0V"
 part("J12", "Connector_Generic:Conn_02x13_Odd_Even", "INPUTS IDC26", IDC26, S, idc,
-     mpn="26-way shrouded latched box header, same as J10", note="same pinout as the breakout J1")
+     mpn="Wurth 61202622821, same as J10", note="same pinout as the breakout J1")
 part("F11", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RI"},
      mpn="Bourns MF-MSMF075-2", note="sensor supply down the input ribbon")
 

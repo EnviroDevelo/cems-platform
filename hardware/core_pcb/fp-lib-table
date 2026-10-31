@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "cems_core")(type "KiCad")(uri "${KIPRJMOD}/cems_core.pretty")(options "")(descr "CEMS core board footprints"))
+)

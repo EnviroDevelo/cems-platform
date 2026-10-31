@@ -730,7 +730,7 @@
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid 575ca2e8-9281-5ea4-a763-ed5cd02e8dfa)
   )
-  (text "\nR20: power LED, 2.2 mA at 24 V\nH1: DIN-rail PCB carrier or clips. CHECK carrier part"
+  (text "\nR20: power LED, 2.2 mA at 24 V\nH1: board 50 x 80 mm for a standard 50 x 80 mm DIN PCB holder (Adafruit 4435 for prototypes); CHECK hole positions against the holder"
     (at 147.32 137.16 0)
     (effects (font (size 1.0 1.0)) (justify left top))
     (uuid 1013cef4-d5a1-503f-912a-5ab5b06d60d7)
@@ -1125,7 +1125,7 @@
     (property "Datasheet" "~" (id 3) (at 33.02 35.56 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "MPN" "26-way 2.54 mm shrouded box header with ejector latches (Wurth, Amphenol or TE), 1 A per contact. CHECK MPN" (id 4) (at 33.02 35.56 0)
+    (property "MPN" "Wurth 61202622821 (WR-BHD, 26-way, long latches, 3 A per contact; RS 771-8446)" (id 4) (at 33.02 35.56 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (pin "1" (uuid 6064f58d-82fe-5554-9216-bf0dd89e624a))

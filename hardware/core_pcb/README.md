@@ -12,6 +12,8 @@ decisions: [`docs/CORE_PCB.md`](../../docs/CORE_PCB.md).
 | `bom.csv` | Grouped bill of materials |
 | `tools/design.py` | **The circuit, as data: edit this, not the sheets** |
 | `tools/gen_schematic.py` | Writes the sheets and `bom.csv` from `design.py` |
+| `cems_core.kicad_pcb`, `cems_core.kicad_dru`, `cems_core.pretty/` | Layout start (block plan, unrouted), isolation rules, project footprints. CORE_PCB.md 10a |
+| `tools/gen_pcb.py`, `tools/gen_footprints.py` | Write the board and the project footprints from `design.py` |
 | `tools/project_symbols.py` | Pin tables of the six I/O chips missing from KiCad (all CHECK) |
 | `tools/check_netlist.py` | Checks KiCad's exported netlist against `design.py`, pin by pin |
 | `tools/build.sh` | Runs all three and exports the PDF |

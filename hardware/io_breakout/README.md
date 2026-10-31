@@ -42,7 +42,7 @@ Two 12-way 5.08 mm screw terminals, three positions per channel: **CHn, 0V, +24V
 - Contact or 2-wire sensor: +24V and CHn.
 - 3-wire sensor: all three.
 
-J2 carries CH1-CH4 and J3 carries CH5-CH8, on the two long edges, about 61 mm each. The
+J2 carries CH1-CH4 and J3 carries CH5-CH8, on the two long edges, about 61 mm each (fits the 80 mm length). The
 silkscreen shows the channel numbers and has a blank line beside each channel for the
 valve or signal name.
 
@@ -70,21 +70,23 @@ clips.
 
 ## Board
 
-- 51 × 85 mm, 2-layer, 1.6 mm FR-4, 2 oz copper.
+- 50 × 80 mm (to fit a standard 50 × 80 mm DIN-rail PCB holder), 2-layer, 1.6 mm FR-4, 2 oz copper.
 - 0 V as a wide pour.
 - Silkscreen: pin 1, the channel numbers, a valve-name line per channel, the build (OUT
   or IN) and the revision.
 
 ## Still to check (CHECK in the sheet notes)
 
-- **Box header:** the maker's part number (Würth, Amphenol or TE), latched and 1 A per
-  contact.
+- **Box header:** chosen 31 Oct: Würth 61202622821 (WR-BHD, long latches, 3 A per contact,
+  RS 771-8446). The main board's J10 and J12 use the same part.
 - **Screw terminals:** the Degson or Dinkle part number, rated UL 300 V, 8 A or more, and
   its footprint against the Phoenix MKDS 5.08 mm one used here.
 - **Fast-release Zener:** Vz + 0.7 V must stay below the ISO2H823V2.5's own
   demagnetisation clamp, so the external clamp takes the energy.
 - **Sensor-end bias resistor value:** from the ISO1I813T wire-break threshold (installation note).
-- **DIN carrier:** the carrier or clip part, which sets the hole positions.
+- **DIN carrier:** chosen 31 Oct: a standard 50 × 80 mm DIN-rail PCB holder (Adafruit 4435,
+  about AUD 10 at Core Electronics) for the prototypes; for production, Phoenix UMK-BE 45
+  base and side elements (RS 192-2759) or similar. CHECK the hole positions against the holder.
 - **SMC valves:** whether they come with a built-in surge suppressor. If they do, D is
   not needed.
 

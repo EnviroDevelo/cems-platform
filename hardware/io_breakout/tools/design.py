@@ -49,7 +49,7 @@ for i, ch in enumerate(CH):
 for pin in range(17, 27):
     idc[pin] = "+24V" if pin % 2 else "0V"
 part("J1", "Connector_Generic:Conn_02x13_Odd_Even", "IDC26", "Connector_IDC:IDC-Header_2x13_P2.54mm_Latch_Vertical",
-     S, idc, mpn="26-way 2.54 mm shrouded box header with ejector latches (Wurth, Amphenol or TE), 1 A per contact. CHECK MPN",
+     S, idc, mpn="Wurth 61202622821 (WR-BHD, 26-way, long latches, 3 A per contact; RS 771-8446)",
      note="pin 1 marked on the silkscreen; keyed by the shroud notch only, standard straight-through ribbon")
 # Terminals: three per channel, CHn, 0V, +24V. Valves use CHn and 0V; inputs use +24V and CHn
 # (plus 0V for a 3-wire sensor).
@@ -64,7 +64,7 @@ r("R20", "10k", S, "+24V", "PWR_LED_A", note="power LED, 2.2 mA at 24 V")
 part("D20", "Device:LED", "green PWR", LED0805, S, {2: "PWR_LED_A", 1: "0V"})
 for n in range(1, 5):
     part(f"H{n}", "Mechanical:MountingHole", "M3", "MountingHole:MountingHole_3.2mm_M3", S, {},
-         note="DIN-rail PCB carrier or clips. CHECK carrier part" if n == 1 else "")
+         note="board 50 x 80 mm for a standard 50 x 80 mm DIN PCB holder (Adafruit 4435 for prototypes); CHECK hole positions against the holder" if n == 1 else "")
 
 # ---------------------------------------------------------------- channels
 S = "channels"
