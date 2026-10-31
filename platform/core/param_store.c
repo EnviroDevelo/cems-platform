@@ -29,6 +29,7 @@ __attribute__((weak)) const retain_def_t *plat_store_blocks(size_t *n) { *n = 0;
 /* The calibration records (plat_cal.c) and the service records (plat_service.c), in the factory region. */
 __attribute__((weak)) const retain_def_t *plat_cal_blocks(size_t *n) { *n = 0; return NULL; }
 __attribute__((weak)) const retain_def_t *plat_service_blocks(size_t *n) { *n = 0; return NULL; }
+__attribute__((weak)) const retain_def_t *plat_emis_blocks(size_t *n) { *n = 0; return NULL; }
 #define PLAT_BLOCKS_MAX 16u
 
 /* one persisted item: a PF_PERSIST parameter or a retained block */
@@ -147,7 +148,7 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
     }
     const retain_def_t *plat[PLAT_BLOCKS_MAX];       /* the platform's own blocks, from each module */
     size_t n_plat = 0;
-    const retain_def_t *(*const providers[])(size_t *) = { plat_store_blocks, plat_cal_blocks, plat_service_blocks };
+    const retain_def_t *(*const providers[])(size_t *) = { plat_store_blocks, plat_cal_blocks, plat_service_blocks, plat_emis_blocks };
     for (size_t p = 0; p < sizeof providers / sizeof providers[0]; ++p) {
         size_t n = 0;
         const retain_def_t *b = providers[p](&n);
@@ -485,6 +486,32 @@ uint32_t param_store_nvm_size(unsigned *parts) {
     if (parts) *parts = S.dev ? S.dev->parts : 0u;
     return S.dev && S.dev->persistent ? S.dev->size : 0u;
 }
+/* board test (plat_boardtest.h): every address line and the last byte get their own value,
+ * twice (the value and its complement), each read back after all are written, so a stuck bit,
+ * a missing chip or two addresses that land on the same cell fail. The bytes are put back. */
+int param_store_nvm_test(void) {
+    if (!S.dev || S.dev->size < 2u) return -1;
+    uint32_t addr[34];
+    uint8_t keep[34], v;
+    unsigned n = 0;
+    addr[n++] = 0;
+    for (uint32_t b = 1; b < S.dev->size && n < 33u; b <<= 1) addr[n++] = b;
+    if (addr[n - 1] != S.dev->size - 1u) addr[n++] = S.dev->size - 1u;
+    for (unsigned k = 0; k < n; ++k) if (S.dev->read(S.dev, addr[k], &keep[k], 1) != 0) return 0;
+    bool ok = true;
+    for (unsigned pass = 0; pass < 2u && ok; ++pass) {
+        for (unsigned k = 0; k < n; ++k) {
+            v = (uint8_t)((0x5Au + k * 0x25u) ^ (pass ? 0xFFu : 0u));
+            if (S.dev->write(S.dev, addr[k], &v, 1) != 0) ok = false;
+        }
+        for (unsigned k = 0; k < n && ok; ++k)
+            ok = S.dev->read(S.dev, addr[k], &v, 1) == 0 && v == (uint8_t)((0x5Au + k * 0x25u) ^ (pass ? 0xFFu : 0u));
+    }
+    for (unsigned k = 0; k < n; ++k) if (S.dev->write(S.dev, addr[k], &keep[k], 1) != 0) ok = false;
+    for (unsigned k = 0; k < n; ++k) if (S.dev->read(S.dev, addr[k], &v, 1) != 0 || v != keep[k]) ok = false;
+    return ok ? 1 : 0;
+}
+
 bool          param_store_calibration_valid(void) { return !(S.status & PSTAT_CAL_INVALID); }
 uint32_t      param_store_status(void) { return S.status; }
 store_stats_t param_store_stats(void) { return S.st; }

@@ -240,7 +240,62 @@ static void t_device_id(void) {
     uint8_t r4[4] = { 0x2B, 0x0E, 4, 2 }; go(r4, 4);
     CHECK_EQ(rsp[6], 1); CHECK_EQ(rsp[7], 2); CHECK(memcmp(rsp + 9, "1.2.3", 5) == 0);
     uint8_t r9[4] = { 0x2B, 0x0E, 4, 9 }; go(r9, 4); CHECK(EXC(2));
-    uint8_t r3[4] = { 0x2B, 0x0E, 3, 0 }; go(r3, 4); CHECK(EXC(3));
+    uint8_t r5[4] = { 0x2B, 0x0E, 5, 0 }; go(r5, 4); CHECK(EXC(3));
+    uint8_t r1[4] = { 0x2B, 0x0E, 1, 0 }; go(r1, 4); CHECK_EQ(rsp[3], 0x83);   /* conformity: extended */
+    /* VDI 4201-3 self-description (docs/MODBUS_STANDARD_BLOCK.md section 5) */
+    uint8_t c81[4] = { 0x2B, 0x0E, 4, 0x81 }; go(c81, 4);
+    CHECK_EQ(rsp[7], 0x81); CHECK_EQ(rsp[8], 2); CHECK_EQ(rsp[9], 0); CHECK_EQ(rsp[10], 30);   /* ComponentNumber */
+    uint8_t c82[4] = { 0x2B, 0x0E, 4, 0x82 }; go(c82, 4); CHECK_EQ((rsp[9] << 8) | rsp[10], 7000);
+    uint8_t c84[4] = { 0x2B, 0x0E, 4, 0x84 }; go(c84, 4); CHECK_EQ((rsp[9] << 8) | rsp[10], 7256);
+    uint8_t c85[4] = { 0x2B, 0x0E, 4, 0x85 }; go(c85, 4);                 /* component 1: no emissions engine here */
+    CHECK_EQ(rsp[8], 10); CHECK(memcmp(rsp + 9, "not fitted", 10) == 0);
+    uint8_t c86[4] = { 0x2B, 0x0E, 4, 0x86 }; go(c86, 4);                 /* range start: NaN */
+    CHECK_EQ(rsp[8], 4); CHECK_EQ(rsp[9], 0x7F); CHECK_EQ(rsp[10], 0xC0);
+    uint8_t c88[4] = { 0x2B, 0x0E, 4, 0x88 }; go(c88, 4); CHECK(memcmp(rsp + 9, "% vol", 5) == 0);
+    uint8_t cfd[4] = { 0x2B, 0x0E, 4, 0x85 + 4 * 30 }; go(cfd, 4); CHECK(EXC(2));   /* no component 31 */
+    /* code 3 streams everything from the start, in pieces: "more follows" and the next object */
+    uint8_t c3[4] = { 0x2B, 0x0E, 3, 0 };
+    unsigned objs = 0, rounds = 0;
+    for (;;) {
+        go(c3, 4); CHECK_EQ(rsp[0], 0x2B);
+        objs += rsp[6];
+        if (rsp[4] != 0xFF || ++rounds > 20) break;
+        c3[3] = rsp[5];
+    }
+    CHECK_EQ(objs, 4u + 5u + 4u * 30u);           /* 0-2, 4, 0x80-0x84, components */
+    CHECK(rounds > 0);
+}
+
+/* the standard CEMS block (VDI 4201-3): read-only, holding mirrors input, unfitted slots NaN */
+static void t_standard_block(void) {
+    setup();
+    rd(4, 7000, 4);                               /* slot 0: value NaN, status 0 */
+    CHECK_EQ(rl, 10); CHECK_EQ(reg(0), 0x7FC0); CHECK_EQ(reg(1), 0); CHECK_EQ(reg(2), 0); CHECK_EQ(reg(3), 0);
+    uint16_t in[16], ho[16];
+    rd(4, 7940, 16); for (int k = 0; k < 16; ++k) in[k] = reg(k);
+    rd(3, 7940, 16); for (int k = 0; k < 16; ++k) ho[k] = reg(k);
+    CHECK(memcmp(in, ho, sizeof in) == 0);        /* holding mirror */
+    CHECK_EQ(in[0], 1);                           /* block version */
+    CHECK_EQ(in[1], 0); CHECK_EQ(in[2], 0);       /* no slot fitted */
+    rd(4, 7748, 1); CHECK_EQ(reg(0), 2);          /* quality unavailable */
+    rd(4, 7300, 2); CHECK_EQ(reg(0), 0x7FC0);     /* bank 1 NaN */
+    rd(4, 7990, 10); CHECK_EQ(rl, 22);            /* to the block's last register */
+    rd(4, 7990, 20); CHECK(EXC(2));               /* past it: 8000 is not mapped */
+    rd(4, 6999, 2); CHECK(EXC(2));                /* 6999 is not mapped */
+    rd(4, 7999, 2); CHECK(EXC(2));                /* nor 8000 */
+    uint16_t v[2] = { 0, 0 };
+    wr16(7000, v, 2); CHECK(EXC(2));              /* read-only, BasisS included */
+    wr16(7128, v, 2); CHECK(EXC(2));
+    uint8_t w6[5] = { 6, 0x1B, 0x58, 0, 1 }; go(w6, 5); CHECK(EXC(2));   /* 7000 */
+    /* word order setting */
+    plat_cmd_t c = { .id = PARAM_ID_MB_STD_WORDS, .src = PLAT_SRC_WEB, .level = PLAT_LVL_ADMIN, .kind = PLAT_VAL_U32, .v.u = 1 };
+    CHECK_EQ(param_apply(&c), PERR_OK); scan();
+    rd(4, 7000, 2); CHECK_EQ(reg(0), 0); CHECK_EQ(reg(1), 0x7FC0);
+    /* an application entry in 7000-7999 stops start-up, in input or holding */
+    mb_map_t bad[1] = { MB_ENTRY(MB_HOLDING, 7998, P_PRESET, MBF_U32) };
+    CHECK_EQ(mb_init(bad, 1, NULL), 1);
+    mb_map_t bad2[1] = { MB_ENTRY(MB_INPUT, 6999, P_PRESET, MBF_U32) };
+    CHECK_EQ(mb_init(bad2, 1, NULL), 1);
 }
 
 /* MBAP framing */
@@ -327,6 +382,65 @@ static void t_platform_block(void) {
     setup();
 }
 
+/* forced values for commissioning (Gary 29 Oct): admin only, Modbus only, 30 s, logged */
+static void t_force(void) {
+    setup();
+    m_inreg = 5; m_mode = 2; m_di = false; scan();
+    CHECK(mb_forceable(P_IN)); CHECK(mb_forceable(P_MODE));          /* input register; read-only holding */
+    CHECK(mb_forceable(P_DI)); CHECK(mb_forceable(P_ALARMS));        /* discrete input; read-only coil array */
+    CHECK(!mb_forceable(P_FLOW)); CHECK(!mb_forceable(P_PRESET));    /* settings the PLC writes */
+    CHECK(!mb_forceable(P_NAME)); CHECK(!mb_forceable(P_ACK));       /* text; writable coils */
+    CHECK(!mb_forceable(PARAM_ID_MB_BLOCK_VERSION)); CHECK(!mb_forceable(PARAM_ID_MB_FORCED));
+    CHECK(!mb_forceable(PARAM_ID_SERIAL)); CHECK(!mb_forceable(PARAM_ID_CLOCK_UNIX));
+    CHECK(mb_forceable(PARAM_ID_STATE));                             /* the block's state: the PLC's FAULT handling */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_OPERATOR, 1000), PERR_ACCESS);
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_MODBUS, PLAT_LVL_FACTORY, 1000), PERR_ACCESS);
+    CHECK_EQ(mb_force_set(P_FLOW, MB_FORCE_SCALAR, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_NO_ID);
+    CHECK_EQ(mb_force_set(P_IN, 0, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);            /* not an array */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 70000, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);   /* not a u16 */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1.5, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);
+    CHECK_EQ(mb_force_set(P_ALARMS, 22, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);       /* 22 elements */
+    CHECK_EQ(mb_force_count(), 0);
+    /* outside the parameter's range is allowed (mode is -1..10): the PLC's own range checks can be tried */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_MODE, MB_FORCE_SCALAR, 99, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_DI, MB_FORCE_SCALAR, 1, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN, 1000), PERR_OK);       /* a test bit */
+    CHECK_EQ(mb_force_set(P_ALARMS, 3, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_count(), 4);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 1234);
+    rd(3, 0, 1); CHECK_EQ(reg(0), 99);
+    rd(2, 0, 1); CHECK_EQ(rsp[2], 1);
+    rd(1, 13, 8); CHECK_EQ(rsp[2], 0x08);
+    plat_val_t v; CHECK(param_read(P_IN, &v)); CHECK_EQ(v.u, 5);    /* the real value is untouched */
+    mb_block_scan(1000); scan();
+    rd(4, 9090, 1); CHECK_EQ(reg(0), 4);                             /* the PLC can see something is forced */
+    mb_force_t f;
+    CHECK(mb_force_get(0, &f, 11000)); CHECK_EQ(f.id, P_IN); CHECK_EQ(f.left_ms, 20000); CHECK_EQ(f.src, PLAT_SRC_WEB);
+    CHECK(!mb_force_get(4, &f, 11000));
+    /* forcing again restarts the 30 s; a clear ends one at once */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 4321, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 20000), PERR_OK);
+    CHECK_EQ(mb_force_count(), 4);
+    CHECK_EQ(mb_force_clear(P_MODE, MB_FORCE_SCALAR, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK);
+    CHECK_EQ(mb_force_clear(P_MODE, MB_FORCE_SCALAR, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_NO_ID);
+    rd(3, 0, 1); CHECK_EQ(reg(0), 2);
+    /* 30 s after: the others revert by themselves; the one set again lasts until 50 s */
+    mb_block_scan(31000); scan();
+    CHECK_EQ(mb_force_count(), 1);
+    rd(2, 0, 1); CHECK_EQ(rsp[2], 0);
+    rd(1, 13, 8); CHECK_EQ(rsp[2], 0x00);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 4321);
+    mb_block_scan(50000); scan();
+    CHECK_EQ(mb_force_count(), 0);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 5);
+    rd(4, 9090, 1); CHECK_EQ(reg(0), 0);
+    /* at most MB_FORCE_MAX; clear all */
+    for (uint16_t k = 0; k < MB_FORCE_MAX; ++k) CHECK_EQ(mb_force_set(P_ALARMS, k, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 60000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 60000), PERR_BUSY);
+    CHECK_EQ(mb_force_clear_all(PLAT_SRC_WEB, PLAT_LVL_OPERATOR), PERR_ACCESS);
+    CHECK_EQ(mb_force_clear_all(PLAT_SRC_WEB, PLAT_LVL_ADMIN), PERR_OK);
+    CHECK_EQ(mb_force_count(), 0);
+}
+
 void test_modbus_all(void) {
     RUN(t_mbtcp_framing);
     RUN(t_map_validation);
@@ -339,5 +453,7 @@ void test_modbus_all(void) {
     RUN(t_permissions);
     RUN(t_busy);
     RUN(t_device_id);
+    RUN(t_standard_block);
     RUN(t_platform_block);
+    RUN(t_force);
 }

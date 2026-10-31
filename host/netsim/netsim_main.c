@@ -40,6 +40,7 @@
 #include "plat_diag.h"
 #include "plat_tasks.h"
 #include "fw_update.h"
+#include "plat_boardtest.h"
 #include "plat_serial.h"
 #include "tls.h"
 #include "iobus.h"
@@ -116,6 +117,7 @@ static iob_port_t sim_rs485 = { .xfer = locked_xfer };
 struct iob_port *bsp_rs485(void) { return &sim_rs485; }
 bool bsp_supply_mv(uint32_t *mv) { (void)mv; return false; }   /* not measured here */
 bool bsp_hw_straps(uint8_t *rev) { *rev = 0; return true; }    /* a Rev A board */
+bool bsp_role_read(bool *a, bool *b) { (void)a; (void)b; return false; }   /* no jumper: a CORE (build/nodesim is the NODE) */
 
 /* Ethernet: the same two boards on a simulated network, or real boards over sockets when
  * CEMS_IOB_TCP is set (CEMS_IOB_TCP_PORT, CEMS_IOB_DISC_PORT and CEMS_IOB_DISC_TO=a.b.c.d change
@@ -306,7 +308,7 @@ static void *store_thread(void *a) {
     (void)a; struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
     uint32_t fw_t = bsp_ms(), fw_scans = 0;
     while (running) {
-        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); plat_selftest_poll(bsp_ms());
+        sleep_until(&t, 20); param_store_poll(bsp_ms()); plat_log_poll(bsp_ms()); plat_selftest_poll(bsp_ms()); plat_boardtest_poll(bsp_ms());
         uint32_t now = bsp_ms();
         if (now - fw_t >= 1000u) { uint32_t sc = scan_stats(&plat_scan).scans; fw_service(now, sc - fw_scans >= 50u); fw_scans = sc; fw_t = now; }
     }

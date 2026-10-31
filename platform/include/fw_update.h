@@ -91,6 +91,7 @@ typedef struct fw_flash {
     void *ctx;
     uint32_t image_off;        /* where the image starts in a bank: PLAT_BOOT_SIZE (the bootloader before it, boot.h) */
     void (*trial_mark)(struct fw_flash *f, bool on);   /* the bootloader's trial counter (boot.h); may be NULL */
+    uint32_t boot_report;      /* what the bootloader left at this start (boot_report_word; 0 = none ran) */
 } fw_flash_t;
 
 typedef enum {
@@ -134,6 +135,7 @@ typedef struct {
     char       not_safe[48];                 /* why the last activation was refused as not safe ("" = it wasn't) */
     char       staged_build[12];             /* build ID of the staged image ("" = none stated) */
     uint8_t    staged_hw_min, staged_hw_max; /* board revisions it runs on (0..255 for a v1 image) */
+    uint32_t   boot_report;                  /* fw_flash_t.boot_report: decode with boot_report_decode */
 } fw_status_t;
 
 /* The board revision from its straps (bsp_hw_straps, read in fw_init): 0.., or -1 if this board

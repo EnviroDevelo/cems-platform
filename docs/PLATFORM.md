@@ -38,7 +38,7 @@ runs on top of it.
 | Clock: set from the touchscreen, the web page, the PLC (parameter 85) or the site's SNTP server; every change logged with its source; local standard time with a UTC offset | `plat_clock.h`, `platform/core/plat_clock.c`, `platform/net/sntp.c`, `bsp_rtc_write`; System > Set clock; Clock on the web page | Done; host-tested and end to end against a test time server |
 | Alarm actions and email: per-alarm email / Modbus common alarm / 4 relay outputs; SMTP client (STARTTLS, TLS, plain) with certificate pinning, batching, retries, NOTIFY_FAIL; write-only secrets kept out of backups | `plat_alarm.h` (routes, relays), `mail.h`, `platform/net/mail.c`, `tls.c` (client); Alarm actions on the web page and the touchscreen | Done; host-tested and end to end against a test mail server (plain, STARTTLS with RSA, TLS with ECDSA, pinning, a changed certificate, retries), in Chromium and on the simulated touchscreen |
 | Alarm manager: one table of alarm definitions, on/off delays, latch, status alarms, acknowledge one or all from the touchscreen, web and Modbus, suppression, range alarms with deadband, editable descriptions, platform alarms, event-log entries | `plat_alarm.h`, `platform/core/plat_alarm.c`; Alarms screen in `ui.c`; `/api/alarms` | Done; host-tested (every state change, delays, latch, deadband, ordering, paging), on real sockets with Modbus and HTTPS, and in Chromium |
-| I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). Compiled for the H5 with lwIP, not yet run on hardware |
+| I/O boards on Ethernet (Modbus TCP) or RS-485 (D27): master for up to 3 CEMS I/O boards (8 × 0.6 A, 8 × 1 A, 2 relays, 8 inputs each), their channels in the platform's image, per-channel fault diagnostics, temperature inputs and a pump PWM output (register map 2), seven platform alarms, events, the I/O boards screen and web section; discovery and IP commissioning from the web page; a simulated node and a simulated network that implement the register map and the protocol | `iobus.h`, `iob_net.h`, `platform/core/iobus.c`, `iob_net.c`, `mb_rtu.h/.c`, `platform/net/iob_tcp.c`, `platform/os/plat_iobus_task.c`, `port/stm32h5/rs485_stm32h5.c`, `platform/bsp/iob_node_sim.c`; `/api/iob`, `/api/iob/net`, `/api/iob/temp/zero` | Done; host-tested on both links against simulated boards (`tests/test_iobus.c`), the socket transport over the loopback (`tests/test_iobtcp.c`), end to end over netsim (`tests/integration/iob_test.py`, browser included) and against the real node firmware on sockets (io-node `make net-e2e`). For the bench before a board exists: `tools/iob_sim.py`, a pretend board on a PC (standard-library Python, console to set inputs, faults and temperatures), checked against the real master in `tests/integration/iob_sim_test.py`. Compiled for the H5 with lwIP, not yet run on hardware |
 | I/O port: W5500 driver, the I/O bus on its hardware sockets, a simulated W5500 (HARDWARE.md H5, Gary 25 Oct) | `w5500.h`, `platform/core/w5500.c`, `iob_w5500.h`, `platform/core/iob_w5500.c`, `port/stm32h5/w5500_stm32h5.c`, `platform/bsp/w5500_sim.c` | Done; the driver against the simulated chip (registers, commands, wrapping buffers, UDP, refused and closed connections), every I/O bus test also run over driver, transport and simulated chip (`tests/test_iobus.c`, `tests/test_w5500.c`), commissioning over the web API, and netsim end to end (`iob_test.py`, browser included) on the I/O port. Compiled and linked for the H5, not yet run on a W5500 |
 | Third-party instruments (docs/MODBUS_ROLES.md role 2): Modbus TCP master for gas analysers and other devices on the I/O port, beside the boards; 8 instruments, 32 points (function, address, type, word order, scaling, range), quality from the instrument's status word, register explorer for commissioning; a simulated analyser | `inst.h`, `platform/core/inst.c`, `inst_w5500.h/.c`, `platform/bsp/inst_sim.c`; parameters 500-621; `/api/inst`, `/api/inst/explore` | Done; host-tested (`tests/test_inst.c`: decoding, grouping, quality, gateways, connection sharing, explorer, the full path over the simulated W5500) and end to end over netsim (`tests/integration/inst_test.py`, 24 checks). Not yet run on hardware |
 | 24 V supply monitoring, SUPPLY alarm and power-fail write hold (CIP-07) | `plat_power.h`, `platform/core/plat_power.c`, `port/stm32h5/supply_stm32h5.c` | Done, host-tested; ADC read compiled and linked |
@@ -192,7 +192,7 @@ mode; 06 queue full. Up to 4 clients; when full, the client silent longest makes
 allowed client IP. TCP keepalive notices a vanished client in about 50 s.
 
 **The platform's block (CIP-01.6, 14.4, 15.1, 15.2).** Whatever the application maps, the
-platform adds its own read-only block at input registers 9000-9089 (9000-9199 reserved), the
+platform adds its own read-only block at input registers 9000-9090 (9000-9199 reserved), the
 same in every product, so a PLC or DAHS can identify and supervise any CEMS instrument the same
 way: block layout version (9000), the application's map version (9001, `mb_ident_t.map_version`),
 a heartbeat that counts every 100 ms (9002), the instrument state (9003), seconds since the last
@@ -200,7 +200,8 @@ Modbus or web request (9004), alarms active and the common alarm word (9005-9006
 revision, serial number and firmware version (9007-9012), web API version (9013), uptime
 (9014-9015), the supply voltage (9016-9017), when the state was entered (9018-9019), the quality
 of each measurement (9020-9051), and product, vendor and firmware as text (9052-9083); layout 2 adds the
-clock and its quality (9084-9089: the clock, synchronised, source, when last set or confirmed).
+clock and its quality (9084-9089: the clock, synchronised, source, when last set or confirmed);
+layout 3 adds the count of values forced for commissioning (9090, `mb_force_*`, MODBUS.md 7).
 Registers are only ever added, never moved, and each addition raises the layout version. The full
 layout is in `modbus.h`. An application map entry in that range of the input registers stops the
 start-up ("modbus map"). Function 43/14 (device identification) gives vendor, product and firmware
@@ -272,6 +273,104 @@ is polled at its normal rate; a closed tab's is asked for at most every 30 s (en
 whether its section exists), and opening a tab asks for its data at once. Values, alarms and
 the unit's information are polled on every tab (the header, trends and the connection check
 use them). Screenshots: `docs/web_ui.png`, `docs/web_phone_tabs.png`.
+
+**Closing the page logs out.** The login cookie lasts until the browser exits, and a browser
+can keep running after its window is closed (Edge does). So a page opened in a new tab or window,
+while no other page of this instrument is open in that browser, ends a login it finds left over
+(`BroadcastChannel` asks the other pages; `sessionStorage` marks a page that is already open). A
+reload, and a second tab next to an open one, keep the login, and so does a login made on the page
+before that check has finished (a quick login right after opening). The instrument still ends a login 10
+minutes after the last change (`AUTH_IDLE_MS`). Decided by this thread on 29 Oct as the default,
+since Gary asked whether closing the browser logged out (`tests/integration/session_health_test.py`).
+
+**Board test** (Service tab, factory login): Run board test starts the firmware's factory
+board test (`POST /api/service/boardtest`, CIP-23.3) and the page polls every second while it
+runs, filling a table of the 12 results (pass, fail, "not checked") with their detail. When it
+finishes it is the manufacturing test record (station "board"), which then shows its tests by
+name. A refused start (409: one running, or the start-up self-test not finished) is explained.
+`tests/integration/boardtest_web_test.py` uses the firmware's board test when the build has it,
+and otherwise simulates the agreed API in the browser.
+Before the first run the firmware already lists every test as skipped, so the page shows results
+only once `running` or `done` is set.
+
+**Bootloader line** (Administration, Firmware panel): from `GET /api/fw` "bootloader" the page adds
+"Bootloader v1: image ok", with "banks swapped", "rolled back" and the other bank's state when the
+firmware reports them, or "No bootloader ran at this start" when the field is null.
+
+**Modbus TCP panel** (Service tab, no login needed): from `GET /api/info` "modbus" it shows
+whether the server is listening and on which port, control systems connected (of the maximum),
+requests with the time of the last one, refused requests (Modbus exceptions), writes accepted,
+whether Modbus writes are allowed, the allowed client address, and connections accepted, refused
+and dropped. Malformed frames show in amber when there are any. Modbus settings opens the
+Settings tab filtered to the modbus_* parameters. `tests/integration/modbus_web_test.py` sends a
+real Modbus request to netsim and checks the panel; firmware without the block gets it simulated.
+Screenshot: `docs/web_modbus.png`.
+
+**Forcing Modbus values** (Service tab, admin login, any mode; Gary 29 Oct): for commissioning,
+an administrator picks a forceable value (`GET /api/modbus/force` "forceable": numeric or on/off
+values that are read-only to Modbus, never settings) and forces it for 30 s
+(`POST /api/modbus/force`, form fields id, index for arrays, v). Forcing again restarts the 30 s.
+Only what Modbus serves changes: the page, touchscreen, alarms and logging keep the real value,
+so the table shows both, with the time left, and the Settings row adds "(Modbus: forced to X,
+n s left)". On/off values without an index are test bits, one button each: forced on, forced
+off, released. Release and Clear all end forces (`POST /api/modbus/force/clear`). While any value
+is forced the header shows an amber MODBUS FORCED n on every tab (`/api/info` "modbus"."forced").
+A refused force says why (16 already forced, not forceable, bad value). Test:
+`tests/integration/modbus_force_web_test.py` (against firmware PR #14 it also reads the forced
+register back over Modbus; the API is simulated in the browser for builds without it).
+Screenshot: `docs/web_modbus_force.png`.
+
+**Modbus handover file** (Service tab, any login): **Modbus handover file (Excel)** writes an
+`.xlsx` in the browser from `GET /api/modbus/map`, `/api/info` and `/api/alarms/config`, with no
+library: a stored (uncompressed) zip of SpreadsheetML with inline strings, a bold frozen header
+row and filters. Sheets, as agreed with the standard-map thread: Cover (product, serial,
+firmware, map version, IP, port, unit ID, addressing, word order, when and at which login it was
+made, integrator sign-off), Standard values (registers 7000-7999, once products have them),
+Project map (every entry: table, 0-based and Modicon address, function codes, format, word and
+byte order, name, description, unit, min/max, scaling, access, write login and mode, a "Checked
+by integrator" column), Platform block, Codes (the map's "codes" when it has them, alarm IDs,
+Modbus exceptions) and Commissioning (how forcing works, the forceable entries). **CSV** beside
+it gives the project map. `tests/integration/modbus_map_web_test.py` opens the file with
+openpyxl and checks it against the map (19 checks on the sim, 17 against the firmware's map).
+
+**Instruments tab** (third-party devices over Modbus TCP, firmware PR #16, `docs/MODBUS_ROLES.md`
+role 2): shown when `GET /api/inst` exists and a device is enabled, and always at admin login.
+The list shows each device's state, poll counts, last error and reply time, with a tile per point
+(quality marked as everywhere else). The editor (admin, REMOTE: the 500-621 parameters are not
+any-mode) reads every setting with `/api/values?ids=`, writes changes with `/api/write` six items
+per request (arrays with "o"), retries "busy", and waits until the values read back before it
+reloads. A setting that reads `null` (the settings task was writing it at that moment) is asked
+for again, never taken as empty: an empty `pt_inst` would make used points look free. New points take the first free point numbers; the device is enabled last. The register
+explorer posts `/api/inst/explore`, polls it until `busy` is false, and decodes the words 16
+ways (u16, i16 and their byte swap; f32, u32, i32 in ABCD, CDAB, BADC, DCBA); **Find value**
+marks the readings within 0.5 % of what the device displays, and a click fills a new point.
+The Flags column writes `pt_qrole` (543: none, fault, calibration, maintenance; hidden when the
+firmware has no parameter 543), for analysers that report each state as its own discrete input.
+Profiles are JSON (`"kind": "cems-instrument-profile"`, version 1): device settings, status
+point (by its place in the list) and bits, and the points, never the IP. Each point carries
+`qrole` by name. Import replaces the
+instrument's points after a confirmation. Test: `tests/integration/inst_web_test.py` against
+netsim's simulated analyser (22 checks: explorer, find, pick, save, live value, status word to
+maintenance, export, import into a second instrument, viewer view); without the firmware it only
+checks the tab stays hidden. Screenshot: `docs/web_instruments.png`.
+
+**Digital input alarms** (Alarm setup tab, admin; firmware parameters 340-345 and labels
+350-373): 24 slots, alarm IDs 30-53. Each row picks a digital input (1-64 or unused), whether the
+alarm is raised when it is on or off, the delay (0-3600 s), latch, severity (warning, alarm,
+fault) and a label, and shows the slot's live state from `dia_status` (polled every 2 s while the
+tab is open). Save writes only the elements that changed, six per request, and waits until they
+read back. The label is the one place the alarm is named: the firmware uses it as the alarm text
+in `/api/alarms`, the HMI alarm page and the Modbus map's description for discrete input 7000 +
+slot, so the Excel handover file (Codes and Standard values sheets) carries it with no extra step.
+Labels are ASCII, up to 32 characters. Firmware without parameter 340 keeps the panel hidden.
+Test: `tests/integration/dia_web_test.py`.
+
+**System health** (Service tab, no login needed) shows what `/api/info` reports about the unit
+itself: memory free now and at its lowest, each task's stack never used so far (in bytes; under
+512 bytes is red), logic scans with the longest scan, overruns and late starts, secure connections
+(handshakes, resumed, failed) and the TLS memory peak, the FRAM size, an IP address conflict, and
+the last fault with its program counter, LR, CFSR, HFSR and fault address. "LOW" and its reason
+come from the firmware (`plat_health_low`). Screenshot `docs/web_health.png`.
 
 **One request at a time.** The page sends its requests through one queue, one at a time, with
 writes ahead of polls; a poll already waiting for the same path is shared, and each timeout

@@ -1,10 +1,13 @@
 /* test_selftest.c - the start-up self-test list (CIP-11.1): every check's pass, fail and
  * skip, the running-image hash against its bank header, the deferred checks, a product's
- * own checks, the failed bits (parameter 333), the event and alarm 23. */
+ * own checks, the failed bits (parameter 333), the event and alarm 23. And the factory board
+ * test built on it (CIP-23.3, plat_boardtest.h). */
 #include <string.h>
 #include <math.h>
 #include "tst.h"
 #include "plat_selftest.h"
+#include "plat_boardtest.h"
+#include "plat_service.h"
 #include "plat_alarm.h"
 #include "plat_log.h"
 #include "log_csv.h"
@@ -224,8 +227,79 @@ static void t_skips(void) {
     CHECK_EQ(strcmp(plat_selftest_result_name(PLAT_STR_SKIP), "skipped"), 0);
 }
 
+/* ---------------- the factory board test (CIP-23.3) ---------------- */
+static int (*real_read)(nvm_dev_t *, uint32_t, void *, uint32_t);
+static int (*real_write)(nvm_dev_t *, uint32_t, const void *, uint32_t);
+static int alias_read(nvm_dev_t *d, uint32_t a, void *p, uint32_t n) { return real_read(d, a & 0xFFFFu, p, n); }
+static int alias_write(nvm_dev_t *d, uint32_t a, const void *p, uint32_t n) { return real_write(d, a & 0xFFFFu, p, n); }
+
+static void run_bt(uint32_t ms) {
+    for (uint32_t t = 0; t < ms; t += 20u) {
+        bsp_host_advance_ms(20);
+        if (bsp_host.ms % 1000u == 0) bsp_host.rtc.seconds = (uint8_t)((bsp_host.rtc.seconds + 1u) % 60u);
+        plat_selftest_poll(bsp_host.ms);
+        plat_boardtest_poll(bsp_host.ms);
+    }
+}
+
+static void t_boardtest(void) {
+    static uint8_t before[sizeof fram];
+    plat_bt_status_t st;
+    setup(true, true);
+    running_image("1.0.0", false);
+    plat_boardtest_reset_for_test();
+    plat_service_reset_for_test();
+    CHECK_EQ(plat_selftest_init(NULL, 0, bsp_host.ms), 0);
+    CHECK_EQ(plat_boardtest_start(PLAT_SRC_WEB, PLAT_LVL_FACTORY), -1);   /* the start-up checks first */
+    plat_selftest_report(PLAT_STEST_NET_PHY, true);
+    run_bt(PLAT_STEST_DEFER_MS + 100u);
+    CHECK(plat_selftest_done());
+    CHECK_EQ(plat_boardtest_start(PLAT_SRC_WEB, PLAT_LVL_ADMIN), -3);
+    bsp_host.supply_mv = 24100; bsp_host.straps_fitted = true; bsp_host.hw_straps = 2;
+    memcpy(before, fram, sizeof fram);
+    CHECK_EQ(plat_boardtest_start(PLAT_SRC_WEB, PLAT_LVL_FACTORY), 0);
+    CHECK_EQ(plat_boardtest_start(PLAT_SRC_WEB, PLAT_LVL_FACTORY), -1);   /* once at a time */
+    plat_boardtest_status(&st); CHECK(st.running);
+    run_bt(40);
+    CHECK(memcmp(before, fram, sizeof fram) == 0);           /* the settings memory is as it was */
+    run_bt(3000);
+    plat_boardtest_status(&st);
+    CHECK(!st.running); CHECK(st.done); CHECK_EQ(st.saved, 0);
+    CHECK_EQ(st.result[PLAT_BT_FRAM], PLAT_TEST_PASS); CHECK(!strcmp(st.detail[PLAT_BT_FRAM], "128 KB, 1 chip"));
+    CHECK_EQ(st.result[PLAT_BT_RAM], PLAT_TEST_PASS);
+    CHECK_EQ(st.result[PLAT_BT_RTC], PLAT_TEST_PASS);
+    CHECK_EQ(st.result[PLAT_BT_IMAGE], PLAT_TEST_PASS);
+    CHECK_EQ(st.result[PLAT_BT_LOG_FLASH], PLAT_TEST_PASS);
+    CHECK_EQ(st.result[PLAT_BT_NET_PHY], PLAT_TEST_PASS);
+    CHECK_EQ(st.result[PLAT_BT_NET_LINK], PLAT_TEST_NOT_RUN);   /* not known on the PC */
+    CHECK_EQ(st.result[PLAT_BT_IO_PORT], PLAT_TEST_NOT_RUN); CHECK(!strcmp(st.detail[PLAT_BT_IO_PORT], "not used"));
+    CHECK_EQ(st.result[PLAT_BT_DISPLAY], PLAT_TEST_NOT_RUN);
+    CHECK_EQ(st.result[PLAT_BT_SUPPLY], PLAT_TEST_PASS); CHECK(!strcmp(st.detail[PLAT_BT_SUPPLY], "24.1 V"));
+    CHECK_EQ(st.result[PLAT_BT_HW_REV], PLAT_TEST_PASS); CHECK(!strcmp(st.detail[PLAT_BT_HW_REV], "rev 2"));
+    CHECK(!strcmp(plat_boardtest_name(PLAT_BT_IO_LINK), "io_link")); CHECK(plat_boardtest_name(PLAT_BT_N) == NULL);
+    for (int k = 0; k < 3; ++k) { plat_service_scan(bsp_host.ms); param_store_poll(bsp_host.ms + 2000u * (uint32_t)(k + 1)); }
+    plat_test_record_t rec;
+    CHECK(plat_service_test_record(&rec));
+    CHECK(!strcmp(rec.station, "board")); CHECK_EQ(rec.n, PLAT_BT_N); CHECK_EQ(rec.result[PLAT_BT_SUPPLY], PLAT_TEST_PASS);
+
+    /* faults: two addresses landing on one cell (a missing chip select / address line),
+     * a low supply, the clock stopped */
+    real_read = dev.read; real_write = dev.write;
+    dev.read = alias_read; dev.write = alias_write;
+    bsp_host.supply_mv = 18500;
+    CHECK_EQ(plat_boardtest_start(PLAT_SRC_WEB, PLAT_LVL_FACTORY), 0);
+    for (uint32_t t = 0; t < 3000u; t += 20u) { bsp_host_advance_ms(20); plat_boardtest_poll(bsp_host.ms); }
+    plat_boardtest_status(&st);
+    CHECK(st.done);
+    CHECK_EQ(st.result[PLAT_BT_FRAM], PLAT_TEST_FAIL); CHECK(!strcmp(st.detail[PLAT_BT_FRAM], "address/data test"));
+    CHECK_EQ(st.result[PLAT_BT_SUPPLY], PLAT_TEST_FAIL);
+    CHECK_EQ(st.result[PLAT_BT_RTC], PLAT_TEST_FAIL); CHECK(!strcmp(st.detail[PLAT_BT_RTC], "not running"));
+    dev.read = real_read; dev.write = real_write;
+    bsp_host.supply_mv = 0; bsp_host.straps_fitted = false;
+}
+
 void test_selftest_all(void) {
-    RUN(t_march); RUN(t_all_pass); RUN(t_failures); RUN(t_skips);
+    RUN(t_march); RUN(t_all_pass); RUN(t_failures); RUN(t_skips); RUN(t_boardtest);
     plat_selftest_reset_for_test();
     plat_log_reset_for_test();
     fw_reset_for_test();

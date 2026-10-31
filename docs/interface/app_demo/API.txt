@@ -35,6 +35,7 @@ GET /api/cal .channels[].name string
 GET /api/cal .channels[].overdue bool
 GET /api/cal .due bool
 GET /api/cal .history[] empty
+GET /api/fw .bootloader null
 GET /api/fw .build string
 GET /api/fw .history[] empty
 GET /api/fw .last_error string
@@ -84,6 +85,21 @@ GET /api/info .last_fault.name string
 GET /api/info .link_lost bool
 GET /api/info .log_status number
 GET /api/info .login_locked_s number
+GET /api/info .modbus.accepted number
+GET /api/info .modbus.allow_ip null
+GET /api/info .modbus.clients number
+GET /api/info .modbus.evicted number
+GET /api/info .modbus.exceptions number
+GET /api/info .modbus.forced number
+GET /api/info .modbus.last_request_s null
+GET /api/info .modbus.listening bool
+GET /api/info .modbus.max_clients number
+GET /api/info .modbus.port number
+GET /api/info .modbus.protocol_errors number
+GET /api/info .modbus.read_only bool
+GET /api/info .modbus.refused_ip number
+GET /api/info .modbus.requests number
+GET /api/info .modbus.writes_queued number
 GET /api/info .mode string
 GET /api/info .product string
 GET /api/info .run_hours number
@@ -220,6 +236,62 @@ GET /api/mail .queued number
 GET /api/mail .sent number
 GET /api/mail .server_fp null
 GET /api/mail .tries number
+GET /api/modbus/force .forceable[].count null
+GET /api/modbus/force .forceable[].count number
+GET /api/modbus/force .forceable[].id number
+GET /api/modbus/force .forceable[].name string
+GET /api/modbus/force .forceable[].type string
+GET /api/modbus/force .forceable[].unit null
+GET /api/modbus/force .forceable[].unit string
+GET /api/modbus/force .forces[] empty
+GET /api/modbus/force .max number
+GET /api/modbus/force .max_s number
+GET /api/modbus/map .addressing string
+GET /api/modbus/map .block_layout number
+GET /api/modbus/map .codes.clock_source[].code number
+GET /api/modbus/map .codes.clock_source[].name string
+GET /api/modbus/map .codes.common_bits[].bit number
+GET /api/modbus/map .codes.common_bits[].name string
+GET /api/modbus/map .codes.exceptions[].code number
+GET /api/modbus/map .codes.exceptions[].name string
+GET /api/modbus/map .codes.input_alarm_status[].code number
+GET /api/modbus/map .codes.input_alarm_status[].name string
+GET /api/modbus/map .codes.quality[].code number
+GET /api/modbus/map .codes.quality[].key string
+GET /api/modbus/map .codes.quality[].name string
+GET /api/modbus/map .codes.state[].code number
+GET /api/modbus/map .codes.state[].key string
+GET /api/modbus/map .codes.state[].name string
+GET /api/modbus/map .codes.std_status_bits[].bit number
+GET /api/modbus/map .codes.std_status_bits[].name string
+GET /api/modbus/map .entries[].access string
+GET /api/modbus/map .entries[].addr number
+GET /api/modbus/map .entries[].block bool
+GET /api/modbus/map .entries[].byte_order string
+GET /api/modbus/map .entries[].core string
+GET /api/modbus/map .entries[].count number
+GET /api/modbus/map .entries[].description string
+GET /api/modbus/map .entries[].elem string
+GET /api/modbus/map .entries[].fc_read number
+GET /api/modbus/map .entries[].fc_write null
+GET /api/modbus/map .entries[].fc_write[] number
+GET /api/modbus/map .entries[].forceable bool
+GET /api/modbus/map .entries[].format string
+GET /api/modbus/map .entries[].id null
+GET /api/modbus/map .entries[].id number
+GET /api/modbus/map .entries[].max number
+GET /api/modbus/map .entries[].min number
+GET /api/modbus/map .entries[].name string
+GET /api/modbus/map .entries[].scale_dec number
+GET /api/modbus/map .entries[].table string
+GET /api/modbus/map .entries[].unit null
+GET /api/modbus/map .entries[].unit string
+GET /api/modbus/map .entries[].word_order string
+GET /api/modbus/map .entries[].write_any_mode bool
+GET /api/modbus/map .entries[].write_level string
+GET /api/modbus/map .fw string
+GET /api/modbus/map .map_version number
+GET /api/modbus/map .product string
 GET /api/params [].def bool
 GET /api/params [].def number
 GET /api/params [].elem string
@@ -238,6 +310,12 @@ GET /api/record
 GET /api/serial .key bool
 GET /api/serial .serial number
 GET /api/serial .uid string
+GET /api/service .boardtest.done bool
+GET /api/service .boardtest.running bool
+GET /api/service .boardtest.saved bool
+GET /api/service .boardtest.tests[].detail string
+GET /api/service .boardtest.tests[].name string
+GET /api/service .boardtest.tests[].result string
 GET /api/service .config_crc string
 GET /api/service .log[] empty
 GET /api/service .run_hours number
@@ -301,10 +379,13 @@ POST /api/login
 POST /api/logout
 POST /api/mail/test
 POST /api/mail/trust
+POST /api/modbus/force
+POST /api/modbus/force/clear
 POST /api/password
 POST /api/record
 POST /api/restore
 POST /api/serial
+POST /api/service/boardtest
 POST /api/service/log
 POST /api/service/test
 POST /api/time
@@ -320,6 +401,7 @@ param 11 net_ip uint - level=2 flags=persist,any_mode,no_modbus
 param 12 net_mask uint - level=2 flags=persist,any_mode,no_modbus
 param 13 net_gw uint - level=2 flags=persist,any_mode,no_modbus
 param 14 net_status uint - level=0 flags=ro
+param 15 net_link_mode uint - level=2 flags=persist,any_mode,no_modbus
 param 20 restore_defaults bool - level=2 flags=any_mode,no_modbus
 param 30 log_interval uint s level=2 flags=persist,any_mode
 param 40 alarm_ack uint - level=0 flags=any_mode
@@ -467,6 +549,91 @@ param 330 run_hours uint 0.1 h level=0 flags=ro
 param 331 service_hours uint 0.1 h level=0 flags=ro
 param 332 config_crc uint - level=0 flags=ro
 param 333 selftest_fail uint - level=0 flags=ro
+param 334 mb_forced uint - level=0 flags=ro
+param 335 mb_std_words uint - level=2 flags=persist,any_mode,no_modbus
+param 340 dia_input array - level=2 flags=persist,any_mode,no_modbus
+param 341 dia_when array - level=2 flags=persist,any_mode,no_modbus
+param 342 dia_delay array s level=2 flags=persist,any_mode,no_modbus
+param 343 dia_latch array - level=2 flags=persist,any_mode,no_modbus
+param 344 dia_sev array - level=2 flags=persist,any_mode,no_modbus
+param 345 dia_status array - level=0 flags=ro
+param 350 dia1_label text - level=2 flags=persist,any_mode,no_modbus
+param 351 dia2_label text - level=2 flags=persist,any_mode,no_modbus
+param 352 dia3_label text - level=2 flags=persist,any_mode,no_modbus
+param 353 dia4_label text - level=2 flags=persist,any_mode,no_modbus
+param 354 dia5_label text - level=2 flags=persist,any_mode,no_modbus
+param 355 dia6_label text - level=2 flags=persist,any_mode,no_modbus
+param 356 dia7_label text - level=2 flags=persist,any_mode,no_modbus
+param 357 dia8_label text - level=2 flags=persist,any_mode,no_modbus
+param 358 dia9_label text - level=2 flags=persist,any_mode,no_modbus
+param 359 dia10_label text - level=2 flags=persist,any_mode,no_modbus
+param 360 dia11_label text - level=2 flags=persist,any_mode,no_modbus
+param 361 dia12_label text - level=2 flags=persist,any_mode,no_modbus
+param 362 dia13_label text - level=2 flags=persist,any_mode,no_modbus
+param 363 dia14_label text - level=2 flags=persist,any_mode,no_modbus
+param 364 dia15_label text - level=2 flags=persist,any_mode,no_modbus
+param 365 dia16_label text - level=2 flags=persist,any_mode,no_modbus
+param 366 dia17_label text - level=2 flags=persist,any_mode,no_modbus
+param 367 dia18_label text - level=2 flags=persist,any_mode,no_modbus
+param 368 dia19_label text - level=2 flags=persist,any_mode,no_modbus
+param 369 dia20_label text - level=2 flags=persist,any_mode,no_modbus
+param 370 dia21_label text - level=2 flags=persist,any_mode,no_modbus
+param 371 dia22_label text - level=2 flags=persist,any_mode,no_modbus
+param 372 dia23_label text - level=2 flags=persist,any_mode,no_modbus
+param 373 dia24_label text - level=2 flags=persist,any_mode,no_modbus
+param 400 emis_enable bool - level=2 flags=persist,no_modbus
+param 401 emis_t_ref float K level=2 flags=persist,no_modbus
+param 402 emis_p_ref float kPa level=2 flags=persist,no_modbus
+param 403 emis_diluent uint - level=2 flags=persist,no_modbus
+param 404 emis_ref_pct float % level=2 flags=persist,no_modbus
+param 405 emis_o2_max float % level=2 flags=persist,no_modbus
+param 406 emis_only_above bool - level=2 flags=persist,no_modbus
+param 407 emis_ch_o2 uint - level=2 flags=persist,no_modbus
+param 408 emis_h2o_mode uint - level=2 flags=persist,no_modbus
+param 409 emis_ch_h2o uint - level=2 flags=persist,no_modbus
+param 410 emis_h2o_fixed float % level=2 flags=persist,no_modbus
+param 411 emis_ch_t uint - level=2 flags=persist,no_modbus
+param 412 emis_ch_p uint - level=2 flags=persist,no_modbus
+param 413 emis_t_fixed float degC level=2 flags=persist,no_modbus
+param 414 emis_p_fixed float kPa level=2 flags=persist,no_modbus
+param 415 emis_ch_flow uint - level=2 flags=persist,no_modbus
+param 416 emis_period_s uint s level=2 flags=persist,no_modbus
+param 417 emis_min_avail uint % level=2 flags=persist,no_modbus
+param 418 emis_max_discard uint - level=2 flags=persist,no_modbus
+param 419 emis_ci_subtract bool - level=2 flags=persist,no_modbus
+param 420 emis_clamp_zero bool - level=2 flags=persist,no_modbus
+param 421 emis_cal_ext float % level=2 flags=persist,no_modbus
+param 422 emis_operating bool - level=1 flags=any_mode
+param 423 emis_cfg_error uint - level=0 flags=ro
+param 430 emis_src array - level=2 flags=persist,no_modbus
+param 431 emis_unit array - level=2 flags=persist,no_modbus
+param 432 emis_wet array - level=2 flags=persist,no_modbus
+param 433 emis_ref array - level=2 flags=persist,no_modbus
+param 434 emis_add array - level=2 flags=persist,no_modbus
+param 435 emis_molar_mass array - level=2 flags=persist,no_modbus
+param 437 emis_qal2_a array - level=2 flags=persist,no_modbus
+param 438 emis_qal2_b array - level=2 flags=persist,no_modbus
+param 439 emis_ys_max array - level=2 flags=persist,no_modbus
+param 440 emis_elv array - level=2 flags=persist,no_modbus
+param 441 emis_ci_pct array - level=2 flags=persist,no_modbus
+param 450 emis_raw array - level=0 flags=ro
+param 451 emis_std array - level=0 flags=ro
+param 452 emis_ref_o2 array - level=0 flags=ro
+param 453 emis_mass array - level=0 flags=ro
+param 454 emis_run array - level=0 flags=ro
+param 455 emis_avg array - level=0 flags=ro
+param 456 emis_val array - level=0 flags=ro
+param 457 emis_day array - level=0 flags=ro
+param 460 emis_q_in array - level=0 flags=ro
+param 461 emis_q_calc array - level=0 flags=ro
+param 462 emis_q_mass array - level=0 flags=ro
+param 463 emis_q_avg array - level=0 flags=ro
+param 464 emis_q_day array - level=0 flags=ro
+param 465 emis_q_run array - level=0 flags=ro
+param 466 emis_status array - level=0 flags=ro
+param 467 emis_discarded array - level=0 flags=ro
+param 468 emis_days_invalid array - level=0 flags=ro
+param 469 emis_weeks_above array - level=0 flags=ro
 param 500 inst_enable array - level=2 flags=persist
 param 501 inst_ip array - level=2 flags=persist
 param 502 inst_port array - level=2 flags=persist

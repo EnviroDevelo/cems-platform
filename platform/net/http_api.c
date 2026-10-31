@@ -8,9 +8,13 @@
 #include "iobus.h"
 #include "inst.h"
 #include "mb_rtu.h"
+#include "mbtcp.h"
+#include "modbus.h"
 #include "param.h"
 #include "param_store.h"
 #include "plat_diag.h"
+#include "plat_boardtest.h"
+#include "boot.h"
 #include "bsp.h"
 #include "log_csv.h"
 #include "fw_update.h"
@@ -26,6 +30,7 @@
 #include "plat_service.h"
 #include "plat_selftest.h"
 #include "plat_version.h"
+#include "plat_net.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -201,6 +206,42 @@ static void level_name_json(http_out_t *o, uint8_t l) {
     json_str(o, l <= 3 ? n[l] : "view");
 }
 
+static void json_ip(http_out_t *o, uint32_t ip);
+
+extern bool plat_eth_diag(plat_eth_diag_t *d) __attribute__((weak));   /* the H5 port only */
+
+static void get_eth(http_out_t *o) {
+    plat_eth_diag_t d;
+    if (!plat_eth_diag || !plat_eth_diag(&d)) return;
+    out_str(o, ",\"eth\":{\"link\":"); json_bool(o, d.link_up);
+    out_str(o, ",\"phy_mbps\":"); json_uint(o, d.phy_mbps);
+    out_str(o, ",\"phy_full\":"); json_bool(o, d.phy_full);
+    out_str(o, ",\"mac_mbps\":"); json_uint(o, d.mac_mbps);
+    out_str(o, ",\"mac_full\":"); json_bool(o, d.mac_full);
+    out_str(o, ",\"phy_symbol_errors\":"); json_uint(o, d.phy_symbol_errors);
+    out_str(o, ",\"rx_good_unicast\":"); json_uint(o, d.rx_good_unicast);
+    out_str(o, ",\"tx_good\":"); json_uint(o, d.tx_good);
+    out_str(o, ",\"rx_crc_errors\":"); json_uint(o, d.rx_crc_errors);
+    out_str(o, ",\"rx_align_errors\":"); json_uint(o, d.rx_align_errors);
+    out_str(o, ",\"rx_missed\":"); json_uint(o, d.rx_missed);
+    out_str(o, ",\"rx_overflow\":"); json_uint(o, d.rx_overflow);
+    out_str(o, ",\"rx_pool_empty\":"); json_uint(o, d.rx_pool_empty);
+    out_str(o, ",\"rx_kicks\":"); json_uint(o, d.rx_kicks);
+    out_str(o, ",\"link_mode\":"); json_uint(o, d.link_mode);
+    out_str(o, ",\"fallback\":"); json_bool(o, d.fallback);       /* auto mode dropped to 10 Mbit: 100 lost data */
+    out_str(o, ",\"fallbacks\":"); json_uint(o, d.fallbacks);
+    out_str(o, ",\"tcp_segs\":"); json_uint(o, d.tcp_segs);
+    out_str(o, ",\"tcp_rexmits\":"); json_uint(o, d.tcp_rexmits);
+    out_str(o, ",\"link_drops\":"); json_uint(o, d.link_drops);
+    out_str(o, ",\"resyncs\":"); json_uint(o, d.resyncs);
+    out_str(o, ",\"anar\":"); json_uint(o, d.phy_anar);       /* PHY registers 4-6, raw */
+    out_str(o, ",\"anlpar\":"); json_uint(o, d.phy_anlpar);
+    out_str(o, ",\"aner\":"); json_uint(o, d.phy_aner);
+    out_str(o, ",\"partner_autoneg\":"); json_bool(o, (d.phy_aner & 0x0001u) != 0);   /* 0: the switch didn't negotiate (we guessed its mode) */
+    out_str(o, ",\"parallel_fault\":"); json_bool(o, (d.phy_aner & 0x0010u) != 0);
+    out_str(o, "}");
+}
+
 static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     plat_val_t v;
     uint32_t left = 0;
@@ -239,6 +280,27 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"resumed\":"); json_uint(o, t.resumed);
       out_str(o, ",\"failed\":"); json_uint(o, t.failed);
       out_str(o, ",\"pool_peak\":"); json_uint(o, t.pool_peak); out_str(o, "}"); }
+    {   const mbtcp_server_t *m = mbtcp_main();      /* the web Service tab's Modbus panel */
+        mb_stats_t st = mb_stats();
+        out_str(o, ",\"modbus\":{\"listening\":"); json_bool(o, m != NULL);
+        out_str(o, ",\"port\":"); if (m) json_uint(o, m->port); else out_str(o, "null");
+        out_str(o, ",\"clients\":"); json_uint(o, m ? (unsigned)mbtcp_clients(m) : 0u);
+        out_str(o, ",\"max_clients\":"); json_uint(o, MBTCP_MAX_CLIENTS);
+        out_str(o, ",\"requests\":"); json_uint(o, st.requests);
+        out_str(o, ",\"exceptions\":"); json_uint(o, st.exceptions);
+        out_str(o, ",\"writes_queued\":"); json_uint(o, st.writes_queued);
+        out_str(o, ",\"read_only\":"); json_bool(o, !(param_read(PARAM_ID_MODBUS_WRITE_EN, &v) && v.b));
+        out_str(o, ",\"allow_ip\":");                  /* null: any client */
+        if (param_read(PARAM_ID_MODBUS_ALLOW_IP, &v) && v.u) json_ip(o, v.u); else out_str(o, "null");
+        out_str(o, ",\"accepted\":"); json_uint(o, m ? m->accepted : 0u);
+        out_str(o, ",\"refused_ip\":"); json_uint(o, m ? m->refused_ip : 0u);
+        out_str(o, ",\"evicted\":"); json_uint(o, m ? m->evicted : 0u);
+        out_str(o, ",\"protocol_errors\":"); json_uint(o, m ? m->protocol_errors : 0u);
+        out_str(o, ",\"forced\":"); json_uint(o, mb_force_count());
+        out_str(o, ",\"last_request_s\":");
+        if (m && m->frames) json_uint(o, (uint32_t)(bsp_ms() - m->last_frame_ms) / 1000u); else out_str(o, "null");
+        out_str(o, "}"); }
+    get_eth(o);
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     { alarm_summary_t s; alarm_summary(&s);
@@ -795,6 +857,20 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"not_safe\":"); json_str(o, st.not_safe);
     { plat_val_t v; out_str(o, ",\"min_version\":"); json_uint(o, param_read(PARAM_ID_FW_MIN_VERSION, &v) ? v.u : 0); }
     out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error));
+    /* the first-stage bootloader at this start (boot.h): null = none ran */
+    {   boot_action_t ba; boot_report_t br; unsigned bv;
+        out_str(o, ",\"bootloader\":");
+        if (boot_report_decode(st.boot_report, &ba, &br, &bv)) {
+            out_str(o, "{\"version\":"); json_uint(o, bv);
+            out_str(o, ",\"image\":"); json_str(o, boot_img_name(br.mapped));
+            out_str(o, ",\"swapped\":"); json_bool(o, br.after_swap);
+            out_str(o, ",\"rollback\":"); json_bool(o, br.rollback);
+            if (br.rollback || br.mapped != BOOT_IMG_OK) {   /* only then did it look at the other bank */
+                out_str(o, ",\"other\":"); json_str(o, boot_img_name(br.other));
+            }
+            out_str(o, "}");
+        } else out_str(o, "null");
+    }
     /* the update history (FRAM), newest first */
     fw_hist_t h[FW_HIST_MAX];
     size_t n = fw_history(h, FW_HIST_MAX);
@@ -899,6 +975,208 @@ static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- Modbus: forced values and the register map (modbus.h) ---------------- */
+static const char *const src_names[] = { "touchscreen", "web", "modbus", "internal" };
+
+static void json_num_pt(http_out_t *o, uint8_t pt, double x) {
+    if (pt == PT_BOOL) json_bool(o, x != 0.0);
+    else if (pt == PT_FLOAT) json_float(o, (float)x);
+    else { char b[24]; snprintf(b, sizeof b, "%.0f", x); out_str(o, b); }
+}
+
+static void get_mb_force(http_out_t *o, uint32_t now) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"max_s\":"); json_uint(o, PLAT_MB_FORCE_MS / 1000u);
+    out_str(o, ",\"max\":"); json_uint(o, MB_FORCE_MAX);
+    out_str(o, ",\"forces\":[");
+    mb_force_t f;
+    for (unsigned i = 0; mb_force_get(i, &f, now); ++i) {
+        const param_def_t *d = param_find(f.id);
+        if (!d) continue;
+        out_str(o, i ? ",{\"id\":" : "{\"id\":"); json_uint(o, f.id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        out_str(o, ",\"index\":"); if (f.index == MB_FORCE_SCALAR) out_str(o, "null"); else json_uint(o, f.index);
+        out_str(o, ",\"v\":"); json_num_pt(o, elem_pt(d->ctype), f.v);
+        out_str(o, ",\"left_s\":"); json_uint(o, (f.left_ms + 999u) / 1000u);
+        out_str(o, ",\"by\":"); json_str(o, src_names[f.src & 3u]); out_str(o, "}");
+    }
+    out_str(o, "],\"forceable\":[");
+    bool first = true;
+    for (size_t i = 0; i < param_count(); ++i) {
+        const param_def_t *d = param_at(i);
+        if (!mb_forceable(d->id)) continue;
+        out_str(o, first ? "{\"id\":" : ",{\"id\":"); first = false;
+        json_uint(o, d->id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        static const char *const t[] = { "bool", "int", "uint", "float" };
+        out_str(o, ",\"type\":"); json_str(o, t[elem_pt(d->ctype)]);
+        out_str(o, ",\"count\":");
+        if (d->ptype == PT_ARRAY) json_uint(o, d->size / param_ctype_size(d->ctype)); else out_str(o, "null");
+        out_str(o, ",\"unit\":"); if (d->unit) json_str(o, d->unit); else out_str(o, "null");
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+static bool form_ulong(const http_req_t *r, const char *k, unsigned long *v) {
+    char b[16], *e;
+    if (!form_get((const char *)r->body, r->body_len, k, b, sizeof b) || !b[0]) return false;
+    *v = strtoul(b, &e, 10);
+    return *e == 0;
+}
+
+/* POST /api/modbus/force id, [index], v | /api/modbus/force/clear id, [index] or all=1. Admin. */
+static void post_mb_force(const http_req_t *r, http_out_t *o, uint8_t lvl, uint32_t now, bool clear) {
+    unsigned long id = 0, index = MB_FORCE_SCALAR;
+    char vb[24];
+    int e;
+    if (clear && form_get((const char *)r->body, r->body_len, "all", vb, sizeof vb) && strcmp(vb, "0") && strcmp(vb, "false"))
+        e = mb_force_clear_all(PLAT_SRC_WEB, lvl);
+    else {
+        if (!form_ulong(r, "id", &id) || id > 0xFFFFu) { json_error(o, 400, "id", -1); return; }
+        if (form_get((const char *)r->body, r->body_len, "index", vb, sizeof vb) && vb[0] && strcmp(vb, "null")) {
+            if (!form_ulong(r, "index", &index) || index >= MB_FORCE_SCALAR) { json_error(o, 400, "index", (int)id); return; }
+        }
+        if (clear) e = mb_force_clear((uint16_t)id, (uint16_t)index, PLAT_SRC_WEB, lvl);
+        else {
+            if (!form_get((const char *)r->body, r->body_len, "v", vb, sizeof vb) || !vb[0]) { json_error(o, 400, "v", (int)id); return; }
+            char *end; double x = !strcmp(vb, "true") ? 1.0 : !strcmp(vb, "false") ? 0.0 : strtod(vb, &end);
+            if (strcmp(vb, "true") && strcmp(vb, "false") && *end) { json_error(o, 400, "v", (int)id); return; }
+            e = mb_force_set((uint16_t)id, (uint16_t)index, x, PLAT_SRC_WEB, lvl, now);
+        }
+    }
+    if (e != PERR_OK) {
+        json_error(o, e == PERR_BUSY ? 409 : perr_status((param_err_t)e),
+                   e == PERR_BUSY ? "too many forced values" : e == PERR_NO_ID ? (clear ? "not forced" : "not forceable")
+                                                                                   : perr_name((param_err_t)e), (int)id);
+        return;
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"forced\":"); json_uint(o, mb_force_count()); out_str(o, "}");
+}
+
+/* GET /api/modbus/map: the register map in force, for the integrator's handover file */
+static void get_mb_map(http_out_t *o) {
+    static const char *const tab[] = { "coil", "discrete", "holding", "input" };
+    static const uint8_t fc_rd[] = { 1, 2, 3, 4 };
+    static const char *const fmt[] = { "bit", "u16", "i16", "u32", "i32", "f32", "bytes", "array" };
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"product\":"); json_str(o, cfg.product);
+    out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    plat_val_t v;
+    out_str(o, ",\"map_version\":"); json_uint(o, param_read(PARAM_ID_MB_MAP_VERSION, &v) ? v.u : 0u);
+    out_str(o, ",\"block_layout\":"); json_uint(o, PLAT_MB_BLOCK_VERSION);
+    out_str(o, ",\"addressing\":\"0-based\",\"entries\":[");
+    for (size_t i = 0; i < mb_entry_count(); ++i) {
+        uint16_t span;
+        const mb_map_t *m = mb_entry_at(i, &span);
+        const param_def_t *d = param_find(m->id);
+        if (!d) continue;
+        bool rw = (m->table == MB_COILS || m->table == MB_HOLDING) && !(d->flags & (PF_RO | PF_DEV | PF_NO_MODBUS));
+        out_str(o, i ? ",{\"table\":" : "{\"table\":"); json_str(o, tab[m->table & 3u]);
+        out_str(o, ",\"fc_read\":"); json_uint(o, fc_rd[m->table & 3u]);
+        out_str(o, ",\"fc_write\":");
+        if (!rw) out_str(o, "null"); else out_str(o, m->table == MB_COILS ? "[5,15]" : "[6,16]");
+        out_str(o, ",\"addr\":"); json_uint(o, m->addr);
+        out_str(o, ",\"count\":"); json_uint(o, span);
+        out_str(o, ",\"format\":"); json_str(o, m->fmt <= MBF_ARRAY ? fmt[m->fmt] : "?");
+        if (m->fmt == MBF_ARRAY) { out_str(o, ",\"elem\":"); json_str(o, ctype_name(d->ctype)); }
+        out_str(o, ",\"word_order\":"); json_str(o, (m->flags & MBF_WORD_LO_FIRST) ? "low_first" : "high_first");
+        out_str(o, ",\"byte_order\":"); json_str(o, (m->flags & MBF_BYTE_LO_FIRST) ? "low_first" : "high_first");
+        out_str(o, ",\"scale_dec\":"); json_int(o, m->dec);
+        out_str(o, ",\"id\":"); json_uint(o, d->id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        out_str(o, ",\"unit\":"); if (d->unit) json_str(o, d->unit); else out_str(o, "null");
+        uint8_t pt = d->ptype == PT_ARRAY ? elem_pt(d->ctype) : d->ptype;
+        if (pt <= PT_FLOAT && pt != PT_BOOL) {
+            out_str(o, ",\"min\":"); json_val(o, pt, d->vmin);
+            out_str(o, ",\"max\":"); json_val(o, pt, d->vmax);
+        }
+        out_str(o, ",\"access\":"); json_str(o, rw ? "read/write" : "read");
+        if (rw) {
+            static const char *const lv[] = { "view", "operator", "admin", "factory" };
+            out_str(o, ",\"write_any_mode\":"); json_bool(o, (d->flags & PF_ANY_MODE) != 0);
+            out_str(o, ",\"write_level\":"); json_str(o, lv[d->level & 3u]);
+        }
+        out_str(o, ",\"block\":"); json_bool(o, m->table == MB_INPUT && m->addr >= PLAT_MB_BLOCK_ADDR && m->addr <= PLAT_MB_BLOCK_END);
+        out_str(o, ",\"forceable\":"); json_bool(o, mb_forceable(d->id));
+        out_str(o, "}");
+    }
+    /* the digital input alarms' discrete inputs (plat_alarm.h), named live by their labels */
+    {
+        static const char *const what[3] = { "active", "waiting for an acknowledge", "input unreliable" };
+        static const char *const key[3] = { "active", "unacked", "unreliable" };
+        alarm_view_t av;
+        char nm[24], desc[96];
+        bool first = mb_entry_count() == 0;
+        for (unsigned g = 0; g < 4u; ++g)
+            for (unsigned i = 0; i < (g < 3u ? PLAT_DIA_SLOTS : (unsigned)PLAT_DI_MAX); ++i) {
+                uint16_t addr = (uint16_t)(g < 3u ? PLAT_DIA_MB_ADDR + 32u * g + i : PLAT_DIA_MB_ADDR + 100u + i);
+                if (g < 3u) {
+                    snprintf(nm, sizeof nm, "dia%u_%s", i + 1u, key[g]);
+                    const char *t = alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + i), &av) ? av.text : "";
+                    snprintf(desc, sizeof desc, "%s: %s", t, what[g]);
+                } else {
+                    snprintf(nm, sizeof nm, "di%u", i + 1u);
+                    snprintf(desc, sizeof desc, "Digital input %u", i + 1u);
+                    for (unsigned s2 = 0; s2 < PLAT_DIA_SLOTS; ++s2) {   /* the first slot bound to it names it */
+                        uint8_t b = 0;
+                        if (param_read_blob(PARAM_ID_DIA_INPUT, (uint16_t)s2, &b, 1) != PERR_OK || b != i + 1u) continue;
+                        if (alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + s2), &av)) snprintf(desc, sizeof desc, "%s", av.text);
+                        break;
+                    }
+                }
+                out_str(o, first ? "{\"table\":\"discrete\"" : ",{\"table\":\"discrete\"");
+                first = false;
+                out_str(o, ",\"fc_read\":2,\"fc_write\":null,\"addr\":"); json_uint(o, addr);
+                out_str(o, ",\"count\":1,\"format\":\"bit\",\"id\":null,\"name\":"); json_str(o, nm);
+                out_str(o, ",\"description\":"); json_str(o, desc);
+                out_str(o, ",\"unit\":null,\"access\":\"read\",\"block\":false,\"core\":\"input_alarms\",\"forceable\":false}");
+            }
+    }
+    /* the codes the values use (MODBUS.md 6), for the handover file's Codes sheet */
+    out_str(o, "],\"codes\":{\"quality\":[");
+    for (uint8_t q = 0; q < PLAT_Q_COUNT; ++q) {
+        out_str(o, q ? ",{\"code\":" : "{\"code\":"); json_uint(o, q);
+        out_str(o, ",\"key\":"); json_str(o, plat_quality_code(q));
+        out_str(o, ",\"name\":"); json_str(o, q ? plat_quality_name(q) : "valid"); out_str(o, "}");
+    }
+    out_str(o, "],\"state\":[");
+    for (uint8_t s = 0; s < PLAT_ST_COUNT; ++s) {
+        out_str(o, s ? ",{\"code\":" : "{\"code\":"); json_uint(o, s);
+        out_str(o, ",\"key\":"); json_str(o, plat_state_key(s));
+        out_str(o, ",\"name\":"); json_str(o, plat_state_name(s)); out_str(o, "}");
+    }
+    out_str(o, "],\"common_bits\":[{\"bit\":0,\"name\":\"a Modbus-routed alarm is active\"},"
+               "{\"bit\":1,\"name\":\"a Modbus-routed alarm waits for an acknowledge\"},"
+               "{\"bit\":2,\"name\":\"any alarm is active\"},{\"bit\":3,\"name\":\"any alarm waits for an acknowledge\"},"
+               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"}");
+    for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
+        char b[64]; snprintf(b, sizeof b, ",{\"bit\":%u,\"name\":\"alarm relay %u in alarm\"}", 8u + k, k + 1u);
+        out_str(o, b);
+    }
+    /* the standard block's status word (docs/MODBUS_STANDARD_BLOCK.md section 3) and input alarm states */
+    out_str(o, "],\"std_status_bits\":[{\"bit\":0,\"name\":\"failure\"},{\"bit\":1,\"name\":\"maintenance (function check)\"},"
+               "{\"bit\":2,\"name\":\"maintenance request\"},{\"bit\":3,\"name\":\"out of specification\"},"
+               "{\"bit\":4,\"name\":\"test / simulation value transmitted\"},{\"bit\":16,\"name\":\"forced from the web page or touchscreen\"},"
+               "{\"bit\":17,\"name\":\"no QAL2 calibration function\"},{\"bit\":18,\"name\":\"above the valid calibration range\"},"
+               "{\"bit\":19,\"name\":\"analyser over-range\"},{\"bit\":20,\"name\":\"O2 too high to correct\"},"
+               "{\"bit\":21,\"name\":\"calculation input missing\"},{\"bit\":22,\"name\":\"average incomplete\"},"
+               "{\"bit\":23,\"name\":\"day invalid\"},{\"bit\":24,\"name\":\"confidence interval not applied\"},"
+               "{\"bit\":25,\"name\":\"fixed H2O used\"},{\"bit\":26,\"name\":\"below range\"},"
+               "{\"bit\":27,\"name\":\"QAL2 review due\"}],"
+               "\"input_alarm_status\":[{\"code\":0,\"name\":\"not used\"},{\"code\":1,\"name\":\"normal\"},"
+               "{\"code\":2,\"name\":\"active, acknowledged\"},{\"code\":3,\"name\":\"active, not acknowledged\"},"
+               "{\"code\":4,\"name\":\"cleared, not acknowledged\"},{\"code\":5,\"name\":\"input unreliable\"}");
+    out_str(o, "],\"clock_source\":[{\"code\":0,\"name\":\"none\"},{\"code\":1,\"name\":\"SNTP\"},"
+               "{\"code\":2,\"name\":\"touchscreen\"},{\"code\":3,\"name\":\"web\"},{\"code\":4,\"name\":\"Modbus\"}],"
+               "\"exceptions\":[{\"code\":1,\"name\":\"illegal function, writes disabled, or level too low\"},"
+               "{\"code\":2,\"name\":\"illegal address, read-only, or half a 32-bit value\"},"
+               "{\"code\":3,\"name\":\"illegal value: range, type or length\"},"
+               "{\"code\":4,\"name\":\"refused in this mode (LOCAL) or by an interlock\"},"
+               "{\"code\":6,\"name\":\"busy: write queue full, retry\"}]}}");
+}
+
 /* ---------------- calibration records (plat_cal.h) ---------------- */
 static void cal_record(http_out_t *o, const plat_cal_record_t *c) {
     static const char *const kind[] = { "", "factory", "field" };
@@ -990,9 +1268,30 @@ static void get_service(http_out_t *o) {
         out_str(o, ",\"passed\":"); json_bool(o, t.passed);
         out_str(o, ",\"results\":[");
         for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_uint(o, t.result[k]); }
-        out_str(o, "]}");
+        out_str(o, "]");
+        if (!strncmp(t.station, "board", sizeof t.station)) {   /* made by the board test: its names */
+            out_str(o, ",\"names\":[");
+            for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_str(o, plat_boardtest_name(k) ? plat_boardtest_name(k) : ""); }
+            out_str(o, "]");
+        }
+        out_str(o, "}");
     } else out_str(o, "null");
-    out_str(o, "}");
+    /* the factory board test (CIP-23.3): the last or running one */
+    static const char *const res[] = { "skipped", "pass", "fail" };
+    plat_bt_status_t bt;
+    plat_boardtest_status(&bt);
+    out_str(o, ",\"boardtest\":{\"running\":"); json_bool(o, bt.running);
+    out_str(o, ",\"done\":"); json_bool(o, bt.done);
+    out_str(o, ",\"saved\":"); json_bool(o, bt.done && bt.saved == 0);
+    out_str(o, ",\"tests\":[");
+    for (unsigned k = 0; k < PLAT_BT_N; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"name\":"); json_str(o, plat_boardtest_name(k));
+        out_str(o, ",\"result\":"); json_str(o, bt.done || bt.running ? res[bt.result[k] % 3u] : "skipped");
+        out_str(o, ",\"detail\":"); json_strn(o, bt.detail[k], blen(bt.detail[k], sizeof bt.detail[k]));
+        out_str(o, "}");
+    }
+    out_str(o, "]}}");
 }
 
 static void service_result(http_out_t *o, int r) {
@@ -1824,6 +2123,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/auth/reset")) get_auth_reset(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
     else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
+    else if (get && !strcmp(r->path, "/api/modbus/force")) get_mb_force(o, now);
+    else if (get && !strcmp(r->path, "/api/modbus/map")) get_mb_map(o);
     else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
     else if (get && !strcmp(r->path, "/api/iob/net")) get_iob_net(o);
     else if (get && !strcmp(r->path, "/api/inst")) get_inst(o);
@@ -1848,11 +2149,18 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/restore")) post_restore(r, o, lvl);
         else if (!strcmp(r->path, "/api/fw/activate")) post_fw_activate(o, lvl);
         else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
+        else if (!strcmp(r->path, "/api/modbus/force")) post_mb_force(r, o, lvl, now, false);
+        else if (!strcmp(r->path, "/api/modbus/force/clear")) post_mb_force(r, o, lvl, now, true);
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
         else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
         else if (!strcmp(r->path, "/api/cal")) post_cal(r, o, lvl);
         else if (!strcmp(r->path, "/api/service/log")) post_service_log(r, o, lvl);
         else if (!strcmp(r->path, "/api/service/test")) post_service_test(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/boardtest")) {
+            int e = plat_boardtest_start(PLAT_SRC_WEB, lvl);
+            if (e == -1) json_error(o, 409, "running, or the start-up self-test not finished", -1);
+            else service_result(o, e);
+        }
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);

@@ -7,6 +7,7 @@ void test_cmdq_all(void);
 void test_seqlock_all(void);
 void test_monitor_all(void);
 void test_diag_all(void);
+void test_role_all(void);
 void test_param_all(void);
 void test_store_all(void);
 void test_blob_all(void);
@@ -31,6 +32,7 @@ void test_service_all(void);
 void test_selftest_all(void);
 void test_contract_all(void);
 void test_boot_all(void);
+void test_emis_all(void);
 
 int main(void) {
     test_scan_all();
@@ -38,6 +40,7 @@ int main(void) {
     test_seqlock_all();
     test_monitor_all();
     test_diag_all();
+    test_role_all();
     test_param_all();
     test_store_all();
     test_blob_all();
@@ -61,6 +64,7 @@ int main(void) {
     test_selftest_all();
     test_contract_all();
     test_boot_all();
+    test_emis_all();
     test_tls_all();
     printf("\n%d checks passed, %d failed\n", tst_pass, tst_fail);
     return tst_fail ? 1 : 0;

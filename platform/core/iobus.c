@@ -77,6 +77,7 @@ typedef struct {
     uint16_t sent_timeout;
     uint8_t  sent_filter;
     bool     ident_ok;
+    bool     answered;                  /* replied at least once since power-up */
     uint8_t  map, temps, pwm;           /* the board's map version and what it has (map 2) */
     uint32_t temp_at;                   /* the temperatures are read next at */
     bool     temp_cfg_sent;
@@ -125,7 +126,7 @@ int iob_fault_lines(const iob_view_t *v, uint8_t ol, uint8_t wbm, char lines[][I
     int n = 0;
     if (max <= 0) return 0;
     switch (v->state) {
-    case IOB_S_LOST:         snprintf(lines[0], IOB_LINE, "No reply: outputs off after the hold"); return 1;
+    case IOB_S_LOST:         snprintf(lines[0], IOB_LINE, "No reply: board switches off after hold"); return 1;
     case IOB_S_WRONG_TYPE:   snprintf(lines[0], IOB_LINE, "Not a CEMS I/O board"); return 1;
     case IOB_S_BAD_SETTINGS: snprintf(lines[0], IOB_LINE, "Channels or address overlap"); return 1;
     case IOB_S_RUN: break;
@@ -237,7 +238,7 @@ static void set_state(unsigned b, uint8_t s, uint32_t now) {
     uint8_t was = x->state;
     x->state = s;
     switch (s) {
-    case IOB_S_RUN:          ev(b, "online"); break;
+    case IOB_S_RUN:          ev(b, "online"); x->answered = true; break;
     case IOB_S_LOST:         ev(b, "not responding"); x->next_try = now + PLAT_IOB_RETRY_MS; break;
     case IOB_S_WRONG_TYPE:   ev(b, "wrong type"); x->next_try = now + PLAT_IOB_RETRY_MS; break;
     case IOB_S_BAD_SETTINGS: ev(b, "settings conflict"); break;
@@ -253,7 +254,10 @@ static void set_state(unsigned b, uint8_t s, uint32_t now) {
 static void failed(unsigned b, uint32_t now) {
     bstate_t *x = &B[b];
     if (x->state == IOB_S_LOST || x->state == IOB_S_WRONG_TYPE) { x->next_try = now + PLAT_IOB_RETRY_MS; return; }
-    if ((uint32_t)(now - x->last_ok) >= PLAT_IOB_LOST_MS) set_state(b, IOB_S_LOST, now);
+    /* After power-up the network and the board need a few seconds: not "lost" (no alarm, outputs
+     * stay off as in any state but online) until it has had PLAT_IOB_START_MS to answer once. */
+    uint32_t lost_ms = x->answered ? PLAT_IOB_LOST_MS : PLAT_IOB_START_MS;
+    if ((uint32_t)(now - x->last_ok) >= lost_ms) set_state(b, IOB_S_LOST, now);
 }
 
 static bool ident(unsigned b, uint8_t addr) {

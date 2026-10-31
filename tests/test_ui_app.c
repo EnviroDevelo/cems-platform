@@ -423,7 +423,7 @@ static void t_editor_table(void) {
     tap("Cancel"); CHECK_EQ(ui_screen(), UI_APP); CHECK(!strcmp(ui_toast(), "Not saved"));
     /* the record is also reached from the Settings list */
     tap("Settings");
-    for (int k = 0; k < 80 && !shows("Sequence1"); ++k) tap("Down");   /* the list grew with the instruments (inst.h) */
+    for (int k = 0; k < 160 && !shows("Sequence1"); ++k) tap("Down");   /* the list grew with the instruments (inst.h) */
     tap("Sequence1"); CHECK_EQ(ui_screen(), UI_REC);
     tap("Close"); CHECK_EQ(ui_screen(), UI_PARAMS);
 }

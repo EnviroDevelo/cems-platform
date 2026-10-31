@@ -608,8 +608,9 @@ void inst_scan(uint32_t now_ms) {
 bool inst_point(unsigned p, float *value, uint8_t *q) {
     if (p >= INST_POINTS) return false;
     PLAT_CRIT_ENTER();
-    if (value) *value = inst_pt.value[p];
-    if (q) *q = inst_pt.q[p];
+    bool set = sh.valid && sh.cfg.p_inst[p] != 0u;   /* not set up, or before the first scan */
+    if (value) *value = set ? inst_pt.value[p] : NAN;
+    if (q) *q = set ? inst_pt.q[p] : (uint8_t)PLAT_Q_UNAVAILABLE;
     PLAT_CRIT_EXIT();
     return true;
 }

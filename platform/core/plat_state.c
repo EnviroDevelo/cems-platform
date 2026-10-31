@@ -198,3 +198,5 @@ void plat_state_reset_for_test(void) {
     memset(plat_meas_q, PLAT_Q_UNAVAILABLE, sizeof plat_meas_q);
     refusal = "";
 }
+
+float plat_meas_value(size_t i) { return i < n_meas ? value_of(i) : NAN; }

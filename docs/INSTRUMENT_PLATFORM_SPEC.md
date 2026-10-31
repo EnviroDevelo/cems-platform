@@ -56,8 +56,8 @@ These hold across every item below and override any item where they conflict.
 | 6 | Non-volatile storage | M | Done | Not yet proved on the real FRAM and NOR | Firmware |
 | 7 | Power management | M | Done | Supply sense and shutdown built; not yet proved on the core board | Firmware, PCB |
 | 8 | Watchdog and fault recovery | M | Done | None at platform level (safe mode after a reboot loop) | Firmware |
-| 9 | Instrument operating states | M | Partial | State shown on the touchscreen and web header (HMI, HTTPS pull requests) | Firmware (+ HMI, HTTPS) |
-| 10 | Measurement validity and quality flags | M | Partial | Quality shown on every value on the touchscreen and web (HMI, HTTPS) | Firmware (+ HMI, HTTPS) |
+| 9 | Instrument operating states | M | Partial | State shown in the touchscreen and web headers (done) | Firmware (+ HMI, HTTPS) |
+| 10 | Measurement validity and quality flags | M | Partial | Quality shown on every value on the touchscreen and web (done) | Firmware (+ HMI, HTTPS) |
 | 11 | Diagnostics and self-tests | M | Done | None at platform level (self-test list, published code list) | Firmware |
 | 12 | Alarm management | M | Done | None at platform level | Firmware |
 | 13 | Communications framework | M (interfaces O) | Done | No written framework document for new interfaces | Firmware |
@@ -68,14 +68,14 @@ These hold across every item below and override any item where they conflict.
 | 18 | Calibration framework | M | Done | The procedure itself is per product | Firmware |
 | 19 | User and service access | M | Done | None at platform level (calibration permission, token recovery) | Firmware, HMI, HTTPS |
 | 20 | Cybersecurity | M | Partial | Debug lock, secure boot (4-character passwords accepted by Gary) | Firmware, PCB |
-| 21 | User interface conventions | M (screen O) | Partial | No written convention; quality and comms health not on every value | HMI, HTTPS |
+| 21 | User interface conventions | M (screen O) | Done | `docs/UI_CONVENTIONS.md`, checked by `tests/integration/ui_conventions_test.py` in `make test` | HMI, HTTPS |
 | 22 | Service and maintenance support | S | Partial | Diagnostic package download; service manual | Firmware, HTTPS |
 | 23 | Factory provisioning and testing | S | Partial | No provisioning procedure or board test (test results are stored) | Firmware, PCB |
 | 24 | Electrical and environmental robustness | M | Partial | No written design basis (EMC levels, IP, humidity) or test plan | PCB |
 | 25 | Version control and traceability | M | Partial | Release notes and the supported-combinations matrix | Firmware |
 | 26 | Verification and documentation | M | Partial | Nothing run on hardware; no operator, service or comms manuals | All |
 
-Score: 16 Done, 10 Partial, 0 Missing (refreshed 26 Oct after the section 8 firmware work).
+Score: 17 Done, 9 Partial, 0 Missing (refreshed 29 Oct: item 21, UI conventions, done in the HMI work).
 
 ## 4. Requirements
 
@@ -108,7 +108,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-03.1 | Documented local update method | M | Partial | Web upload by factory login (`PLATFORM.md` 5b). **Gap:** no technician's procedure document |
+| CIP-03.1 | Documented local update method | M | Done | Web upload by factory login (`PLATFORM.md` 5b); technician's procedure `docs/SERVICE_PROCEDURES.md` 1 |
 | CIP-03.2 | Compatibility check before install | M | Done | Product, size, minimum version, and in header v2 the board revision range and settings layout (FW_E_HARDWARE at upload and activation) |
 | CIP-03.3 | Integrity verification | M | Done | SHA-256 while streaming and again after flash read-back |
 | CIP-03.4 | Authenticity verification | M | Done | ECDSA P-256 signature (D14). Production key still to be generated |
@@ -123,7 +123,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-04.1 | Protected bootloader that cannot be overwritten by an application update | M | Partial | Own first stage (`docs/BOOTLOADER.md`, Gary 29 Oct): 32 KB at the start of both banks, write protected, never written by an update; trial counter for images that never reach `fw_boot()`. Host-tested (`test_boot.c`). **Gap:** DK bench test; production lock level |
 | CIP-04.2 | Recovery of corrupted application firmware | M | Partial | Bank rollback covers a bad update; the bootloader swaps away from a damaged running image (`test_boot.c`). **Gap:** DK bench test |
 | CIP-04.3 | Physical service/programming interface | S | Done | SWD 10-pin, BOOT0 jumper, service UART (`CORE_PCB.md` J5, J6) |
-| CIP-04.4 | Recovery possible when normal communications fail | S | Partial | SWD and the ST ROM bootloader through BOOT0 work without Ethernet. **Gap:** a written recovery procedure, and the production debug lock (RDP / product state) chosen so this still works |
+| CIP-04.4 | Recovery possible when normal communications fail | S | Partial | SWD and the ST ROM bootloader through BOOT0 work without Ethernet; procedure `docs/SERVICE_PROCEDURES.md` 2. **Gap:** the production debug lock (RDP / product state) chosen so this still works |
 
 ### 4.5 Configuration management
 
@@ -174,7 +174,7 @@ Each table lists the requirements for one item, its class, the CORE status and w
 | CIP-09.1 | One shared state model: STARTING, INITIALISING, WARMING_UP, READY, MEASURING, MAINTENANCE, CALIBRATION, FAULT (and SAFE_MODE from CIP-08.5) | M | Done | `plat_state.h`: the agreed states (section 7), parameter, Modbus, `/api/info` `state` |
 | CIP-09.2 | Defined data permitted in each state (which quality flag readings get) | M | Done | The state forces each value's quality (warming up, maintenance, calibration, fault) |
 | CIP-09.3 | Defined actions permitted in each state | M | Done | State/action rules in `plat_state.h` (update, calibrate, restore defaults); `fw_safe()` |
-| CIP-09.4 | State shown on every interface | M | Partial | Modbus block and `/api/info`; touchscreen and web headers in the HMI and HTTPS pull requests |
+| CIP-09.4 | State shown on every interface | M | Done | Modbus block, `/api/info`, the touchscreen header state pill and the web header |
 | CIP-09.5 | State changes logged | M | Done | `state` event on every change |
 The agreed state/action matrix is in section 7.
 
@@ -215,7 +215,7 @@ The agreed state/action matrix is in section 7.
 | CIP-13.2 | Device addressing and connection settings | M | Done | IP/DHCP, Modbus allowed client, I/O network addresses |
 | CIP-13.3 | Timeouts and error handling | M | Done | Modbus exceptions, keepalive, client eviction, HTTPS limits, I/O bus retries |
 | CIP-13.4 | Physical interfaces chosen per product with common behaviour | O | Done | Client Ethernet, I/O Ethernet (W5500), RS-485 setting kept in firmware |
-| CIP-13.5 | Written framework for adding an interface | M | Missing | **Gap:** a short guide (where a new transport plugs in, which checks it must use) |
+| CIP-13.5 | Written framework for adding an interface | M | Done | `docs/INTERFACES.md` 1: where a transport plugs in, the rules it must follow, a PR checklist |
 
 ### 4.14 Common data model
 
@@ -225,7 +225,7 @@ The agreed state/action matrix is in section 7.
 | CIP-14.2 | Scaling and byte/word order defined per value | M | Done | `mb_map_t` flags and `dec` |
 | CIP-14.3 | Shared status definitions | M | Done | The state and quality enums are shared by every interface (CIP-09, CIP-10) |
 | CIP-14.4 | Versioned register map and API | M | Done | Map version (input register 9001), block layout version, `/api/info` `api`; interface snapshots in `docs/interface/` |
-| CIP-14.5 | Compatibility policy | M | Missing | Proposal: addresses never move within a major version; new values only added; removed values read as "unavailable" for one major version |
+| CIP-14.5 | Compatibility policy | M | Done | `docs/INTERFACES.md` 2: addresses and fields never move within a major version; only additions in a minor; removed values read as unavailable/null until the next major; enforced by the interface snapshots |
 | CIP-14.6 | Platform parameters 1-999 the same in every product; product parameters from 1000 | M | Done | Already the numbering rule |
 
 ### 4.15 Communications health
@@ -298,19 +298,19 @@ The agreed state/action matrix is in section 7.
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-21.1 | Readings shown with units | M | Done | Units in the table; own fonts for ° ³ µ (D24) |
-| CIP-21.2 | Instrument state always visible | M | Partial | LOCAL/REMOTE and alarms in the header. **Gap:** the CIP-09 state |
+| CIP-21.2 | Instrument state always visible | M | Done | State pill, LOCAL/REMOTE and alarms in the header of every screen (`t_state_quality`) |
 | CIP-21.3 | Alarms always visible | M | Done | Alarm pill / badge on every screen |
-| CIP-21.4 | Quality shown on every value | M | Missing | **Gap:** a non-valid value is greyed or marked with its status on the touchscreen and web |
-| CIP-21.5 | Communications health visible | M | Partial | Web "Connection lost" banner; LINK LOST in the header; I/O boards screen. **Gap:** a common indicator for the supervisory link on the touchscreen |
+| CIP-21.4 | Quality shown on every value | M | Done | Greyed with the quality word on tiles, settings rows, widgets and per grid cell (`t_state_quality`, `app_grid_quality`); web `"q"` |
+| CIP-21.5 | Communications health visible | M | Done | LINK OK / LINK LOST / NO LINK in the touchscreen header; web "Connection lost" banner and live/offline badge; I/O boards screen |
 | CIP-21.6 | Version information | M | Done | System screen, web Administration |
-| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Missing | **Gap:** one page every product's screens follow |
+| CIP-21.7 | Written UI convention (colours, severity, units, status wording) | M | Done | `docs/UI_CONVENTIONS.md`; `tests/integration/ui_conventions_test.py` (run by `make test`) checks the touchscreen and web colours, the quality words and touch-target sizes against it |
 | CIP-21.8 | A local screen | O | Done | RVT70 touchscreen; a product may ship with web only |
 
 ### 4.22 Service and maintenance support
 
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
-| CIP-22.1 | Exportable diagnostic package | S | Missing | **Gap:** one download (zip or JSON) with `/api/info`, settings (no secrets), event log, last fault, firmware history, I/O board status |
+| CIP-22.1 | Exportable diagnostic package | S | Done | Web Event log tab, **Diagnostic package**: one JSON file from `/api/info` (last fault, health, self-test), settings without passwords, alarms, `/api/fw`, `/api/iob` and the event log. Service manual: `SERVICE_PROCEDURES.md` 5 |
 | CIP-22.2 | Operating-hours counters | S | Done | Total and since-service hours (0.1 h), parameters 330/331, kept over updates and restore defaults |
 | CIP-22.3 | Fault history | S | Done | Event log; last fault; firmware history |
 | CIP-22.4 | Service records | S | Done | Service log (8 entries) at factory level, `/api/service` |
@@ -320,8 +320,8 @@ The agreed state/action matrix is in section 7.
 | ID | Requirement | Class | Status | Where / gap |
 |---|---|---|---|---|
 | CIP-23.1 | Controlled assignment of identity | S | Done | Serial token tool (D25) |
-| CIP-23.2 | Loading of firmware and defaults | S | Partial | SWD for first programming. **Gap:** a written provisioning sequence (program, sign, set serial, set hw_rev, calibrate, test) |
-| CIP-23.3 | Hardware test procedures | S | Missing | **Gap:** a board test (FRAM, NOR, RTC, both PHYs, display, supply sense) runnable from the service UART or the web at factory level |
+| CIP-23.2 | Loading of firmware and defaults | S | Done | SWD for first programming (bank image with the bootloader, `mkfwimage.py --factory`); provisioning sequence `docs/SERVICE_PROCEDURES.md` 3 |
+| CIP-23.3 | Hardware test procedures | S | Partial | Board test at factory login (`plat_boardtest.h`, `POST /api/service/boardtest`): settings memory address/data per chip, RAM, RTC, image, log flash, both PHYs and links, display, supply, straps; saved as the test record (`test_selftest.c` t_boardtest). Web button and results: Service tab (PR #12); display part: touchscreen System > Display test with `HMI_BENCH_TEST.md` (PR #13). **Gap:** the DK run |
 | CIP-23.4 | Retained manufacturing test results | S | Done | Manufacturing test record in the FACTORY region (`POST /api/service/test`) |
 | CIP-23.5 | Factory-only settings protected | S | Done | `PF_FACTORY`, factory level, never restored from a user-level backup |
 
@@ -342,8 +342,8 @@ The agreed state/action matrix is in section 7.
 | CIP-25.1 | Traceable firmware revisions | M | Done | Version, build ID (git hash) in the image header and on `/api/info`; core version (`plat_version.h`) |
 | CIP-25.2 | Traceable hardware revisions | M | Done (host) | Board straps and the factory `hw_rev` (CIP-01.3); schematic in git |
 | CIP-25.3 | Traceable configuration and calibration revisions | M | Done | Configuration checksum (CIP-05.4) and calibration history (CIP-18.2) |
-| CIP-25.4 | Release notes | M | Missing | **Gap:** `CHANGELOG.md` and a release note per version |
-| CIP-25.5 | Supported combinations identified | M | Missing | **Gap:** a matrix of firmware × core hardware revision × I/O board register map version |
+| CIP-25.4 | Release notes | M | Partial | `CHANGELOG.md` (per core version: added, changed, interfaces, tested on) with `SUPPORTED.md`. **Gap:** the first tagged release note (core-0.9.0 after the DK bench) |
+| CIP-25.5 | Supported combinations identified | M | Partial | `docs/SUPPORTED.md`: firmware × core hardware × I/O board map, with what each was tested on. **Gap:** kept up at each release (from the first one) |
 
 ### 4.26 Verification and documentation
 
@@ -354,8 +354,8 @@ The agreed state/action matrix is in section 7.
 | CIP-26.3 | Shared test: corrupted settings | M | Done (host) | `t_blank_fram`, `t_both_factory_copies_bad` |
 | CIP-26.4 | Shared test: communications loss | M | Done (host) | Remote-link watchdog, connection-lost banner, I/O board lost |
 | CIP-26.5 | Shared test: update failure and recovery | M | Done (host) | `fw_test.py` rollback |
-| CIP-26.6 | The same tests on hardware | M | Missing | DK bring-up, then the core board; 72-hour soak |
-| CIP-26.7 | Operator, service and communications documentation with each release | M | Missing | **Gap:** operator manual, service manual, Modbus register map document. `PLATFORM.md` is a developer document |
+| CIP-26.6 | The same tests on hardware | M | Partial | DK: start-up, scan, FRAM, Ethernet, HTTPS, Modbus TCP verified 28 Oct. Bench plan (`BENCH_TEST_PLAN_DK.md`) and `tools/dk_soak.py` (read-only load, 72 h). **Gap:** the network update, bootloader and soak runs on the DK, then the core board |
+| CIP-26.7 | Operator, service and communications documentation with each release | M | Done | Operator manual `OPERATOR_MANUAL.md` (touchscreen, HMI thread, PR #13); service manual `SERVICE_PROCEDURES.md` (update, recovery, provisioning, board test, fault finding) with `FAULT_CODES.md`; communications `MODBUS.md` (integrator's guide and platform block) with the generated per-product map `interface/<app>/MODBUS_MAP.md`. Updated with each release (CHANGELOG.md) |
 
 ## 5. What an update or reset keeps (principle P3)
 
@@ -445,9 +445,9 @@ after Gary's review.
 2. Core version tags and the core version shown beside the product version; `PROFILE.md` template.
 
 **Documentation (any thread)**
-1. Operator manual, service manual, Modbus register map document (CIP-26.7).
+1. Operator manual, service manual, Modbus register map document (CIP-26.7). Done.
 2. `CHANGELOG.md`, release notes, supported-combinations matrix (CIP-25.4, 25.5).
-3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5); UI convention page (CIP-21.7).
+3. Firmware update and recovery procedures (CIP-03.1, 04.4); interface framework guide (CIP-13.5).
 
 ## 9. Keeping the core common across the product family
 

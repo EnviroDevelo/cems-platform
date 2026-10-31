@@ -123,13 +123,17 @@ static int make_cert(void) {
     return rc;
 }
 
+void (*tls_alive_hook)(void);
+
 static int send_cb(void *ctx, const unsigned char *p, size_t n) {
     (void)ctx;
+    if (tls_alive_hook) tls_alive_hook();
     ssize_t w = send(sock[cur], p, n, 0);
     return w > 0 ? (int)w : -0x004E /* MBEDTLS_ERR_NET_SEND_FAILED */;
 }
 static int recv_cb(void *ctx, unsigned char *p, size_t n) {
     (void)ctx;
+    if (tls_alive_hook) tls_alive_hook();
     ssize_t r = recv(sock[cur], p, n, 0);
     if (r > 0) return (int)r;
     return r == 0 ? MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY : MBEDTLS_ERR_SSL_TIMEOUT;
