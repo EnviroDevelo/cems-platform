@@ -1589,11 +1589,15 @@ function showEth(e) {
   const grew = ethLast && (errs > ethLast.errs || e.link_drops > ethLast.drops);
   ethLast = { errs, drops: e.link_drops };
   b.style.display = "";
-  b.textContent = e.link ? `ETH ${e.phy_mbps} ${e.phy_full ? "FD" : "HD"}` : "ETH DOWN";
+  b.textContent = e.link ? `ETH ${e.phy_mbps} ${e.phy_full ? "FD" : "HD"}${e.fallback ? " (auto)" : ""}` : "ETH DOWN";
+  b.title = e.fallback ? "100 Mbit lost data on this switch or cable, so the port dropped to 10 Mbit on its own (until a restart)"
+                       : "The Ethernet port: speed and duplex the switch agreed";
   b.className = "badge " + (!e.link ? "b-bad" : (e.phy_mbps < 100 || !e.phy_full || grew) ? "b-warn" : "b-ok");
   $("svceth").textContent = !e.link ? "No link: check the cable and the switch." :
     `Link ${e.phy_mbps} Mbit ${dup(e.phy_full)} (setting: ${LINK_MODES[e.link_mode] || e.link_mode}` +
     `${e.partner_autoneg ? "" : "; the switch did not negotiate, its mode was guessed"}). ` +
+    (e.fallback ? "100 Mbit lost data on this switch or cable, so the port dropped to 10 Mbit on its own; a restart tries 100 Mbit again. " : "") +
+    (e.tcp_segs !== undefined ? `TCP data ${e.tcp_segs} segments sent, ${e.tcp_rexmits} sent again. ` : "") +
     `Since power-up: ${e.link_drops} link drops, ${e.resyncs} renegotiations, receive errors ${e.rx_crc_errors} CRC, ` +
     `${e.rx_align_errors} alignment, ${e.phy_symbol_errors} line symbol, ${e.rx_missed + e.rx_overflow + e.rx_pool_empty} dropped by the unit. ` +
     `Frames: ${e.rx_good_unicast} received, ${e.tx_good} sent.`;
@@ -1606,7 +1610,7 @@ const EVT = { power_up: "Power-up", param: "Setting changed", mode: "Mode", rest
   restore_backup: "Backup restored", alarm: "Alarm", alarm_clear: "Alarm cleared", alarm_ack: "Alarm acknowledged",
   fw_update: "Firmware updated", fw_rollback: "Firmware rolled back", log_fault: "Log fault", store_fault: "Storage fault",
   events_lost: "Events lost", ip_conflict: "Address conflict", tls_new_key: "New HTTPS key", mail: "Alarm email",
-  serial: "Serial number" };
+  serial: "Serial number", eth_speed: "Ethernet speed" };
 const RESET = ["", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out"];
 const num = v => v === null ? "" : (Math.abs(v) >= 1e6 || Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
 function evDetail(e) {
@@ -1618,6 +1622,7 @@ function evDetail(e) {
   case "serial": return e.new === null ? `${num(e.old)}: ${e.detail}` : `${num(e.old)} → ${num(e.new)}: ${e.detail}`;
   case "time_set": return e.old === null ? "clock set" : `stepped ${num(e.new - e.old)} s`;
   case "password": return LV[e.arg] || "";
+  case "eth_speed": return `100 Mbit lost data (${e.arg} % sent again): now 10 Mbit until a restart`;
   default: return [e.detail, e.arg ? "#" + e.arg : ""].filter(Boolean).join(" ");
   }
 }

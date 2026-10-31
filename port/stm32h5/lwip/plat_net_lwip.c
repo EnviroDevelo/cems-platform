@@ -192,6 +192,8 @@ void plat_net_task_body(void) {
         plat_checkin(PLAT_TASK_NET);
         ethernetif_set_link_mode(link_mode());
         ethernetif_link_poll(&nif);
+        unsigned pct = ethernetif_link_watch(&nif);
+        if (pct) plat_log_event(LOG_EV_ETH_SPEED, PLAT_SRC_INTERNAL, 0, pct, 100.0, 10.0, NULL);
         net_cfg_t now = read_cfg();
         if (now.dhcp != cfg.dhcp || now.ip != cfg.ip || now.mask != cfg.mask || now.gw != cfg.gw) {
             cfg = now;

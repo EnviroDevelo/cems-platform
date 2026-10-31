@@ -36,6 +36,8 @@
 #include "lwip/netifapi.h"
 #include "netif/ethernet.h"
 #include "netif/etharp.h"
+#include "lwip/priv/tcp_priv.h"
+#include "lwip_hooks.h"
 #include "ethernetif.h"
 #include "lan8742.h"
 #include "plat_config.h"
@@ -66,7 +68,11 @@ static volatile uint16_t   phy_scsr, phy_secr;                      /* read by t
 static volatile uint16_t   phy_anar, phy_anlpar, phy_aner;
 static volatile uint32_t   link_drops, resyncs;
 static int32_t             applied = LAN8742_STATUS_LINK_DOWN;      /* the PHY state the MAC is set to */
-static uint8_t             link_mode = 0xFFu;                        /* none written yet */
+static uint8_t             link_mode = 0xFFu;                        /* offer in force: none written yet */
+static uint8_t             link_want;                                /* net_link_mode as set */
+static bool                fell_back;                                /* auto mode, 100 Mbit lost data: offering 10 */
+static uint32_t            fallbacks;
+static volatile uint32_t   tcp_segs, tcp_rexmits;                    /* data segments sent, of them sent again */
 static SemaphoreHandle_t   RxPktSemaphore, TxPktSemaphore;
 static StaticSemaphore_t   rx_sem_mem, tx_sem_mem;
 static StaticTask_t        rx_tcb;
@@ -151,7 +157,7 @@ void ethernetif_link_poll(struct netif *netif) {
  * against our full duplex, which loses frames without an error on either side. Written at the
  * first call (the PHY's straps may offer less than everything) and on a change; when the offer
  * really changes, the PHY renegotiates and the link drops for a moment. */
-void ethernetif_set_link_mode(unsigned mode) {
+static void write_offer(unsigned mode) {
     static const uint16_t offer[] = {
         LAN8742_ANAR_100BASE_TX_FD | LAN8742_ANAR_100BASE_TX | LAN8742_ANAR_10BASE_T_FD | LAN8742_ANAR_10BASE_T,
         LAN8742_ANAR_100BASE_TX_FD | LAN8742_ANAR_100BASE_TX,
@@ -159,7 +165,6 @@ void ethernetif_set_link_mode(unsigned mode) {
     };
     const uint32_t all = offer[0];
     uint32_t anar, bcr;
-    if (mode >= sizeof offer / sizeof offer[0]) mode = 0;
     if (mode == link_mode) return;
     if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_ANAR, &anar) != HAL_OK) return;
     if (HAL_ETH_ReadPHYRegister(&EthHandle, LAN8742.DevAddr, LAN8742_BCR, &bcr) != HAL_OK) return;
@@ -171,6 +176,52 @@ void ethernetif_set_link_mode(unsigned mode) {
                                      bcr | LAN8742_BCR_AUTONEGO_EN | LAN8742_BCR_RESTART_AUTONEGO) != HAL_OK) return;
     }
     link_mode = (uint8_t)mode;
+}
+
+void ethernetif_set_link_mode(unsigned mode) {
+    if (mode > 2u) mode = 0;
+    if (mode != link_want) fell_back = false;          /* a new setting starts again at what it asks */
+    link_want = (uint8_t)mode;
+    write_offer(mode == 0u && fell_back ? 2u : mode);
+}
+
+/* lwip_hooks.h: every TCP segment on its way out (tcpip thread). One that starts below snd_nxt
+ * was sent before: a retransmission, after a timeout or three duplicate ACKs. */
+u32_t *ethernetif_tcp_out(struct pbuf *p, struct tcp_hdr *hdr, const struct tcp_pcb *pcb, u32_t *opts) {
+    if (pcb != NULL && p->tot_len > TCPH_HDRLEN_BYTES(hdr)) {
+        tcp_segs++;
+        if (TCP_SEQ_LT(lwip_ntohl(hdr->seqno), pcb->snd_nxt)) tcp_rexmits++;
+    }
+    return opts;
+}
+
+/* Automatic 10 Mbit (net_link_mode 0 only). Some switch and cable combinations lose 100BASE-TX
+ * frames without an error at either end (the DK on Gary's switch: 14-45 %, none at 10 Mbit), so
+ * TCP retransmissions are the only sign. Two 10 s windows in a row with real traffic and 10 % or
+ * more sent again: offer 10 Mbit only until a power cycle or a net_link_mode change. Little
+ * traffic leaves the count as it was, so one vanished browser can't do it on its own. */
+#define WATCH_POLLS   40u                /* 10 s of 250 ms polls */
+#define WATCH_SEGS    40u
+#define WATCH_REXMITS 5u
+#define WATCH_PCT     10u
+#define WATCH_BAD     2u
+unsigned ethernetif_link_watch(struct netif *netif) {
+    static uint32_t polls, segs0, rex0;
+    static unsigned bad;
+    if (++polls < WATCH_POLLS) return 0;
+    polls = 0;
+    uint32_t segs = tcp_segs - segs0, rex = tcp_rexmits - rex0;
+    segs0 += segs; rex0 += rex;
+    bool at100 = applied == LAN8742_STATUS_100MBITS_FULLDUPLEX || applied == LAN8742_STATUS_100MBITS_HALFDUPLEX;
+    if (link_want != 0u || fell_back || !netif_is_link_up(netif) || !at100) { bad = 0; return 0; }
+    if (segs < WATCH_SEGS) return 0;
+    if (rex < WATCH_REXMITS || rex * 100u < segs * WATCH_PCT) { bad = 0; return 0; }
+    if (++bad < WATCH_BAD) return 0;
+    bad = 0;
+    fell_back = true;
+    fallbacks++;
+    write_offer(2u);
+    return (unsigned)(rex * 100u / segs);
 }
 
 /* ---------------- receive task ---------------- */
@@ -351,7 +402,11 @@ bool plat_eth_diag(plat_eth_diag_t *d) {
     d->rx_overflow = rx_overflow;
     d->rx_pool_empty = rx_pool_empty;
     d->rx_kicks = ethernetif_rx_kicks;
-    d->link_mode = link_mode == 0xFFu ? 0u : link_mode;
+    d->link_mode = link_want;
+    d->fallback = fell_back;
+    d->fallbacks = fallbacks;
+    d->tcp_segs = tcp_segs;
+    d->tcp_rexmits = tcp_rexmits;
     d->phy_anar = phy_anar;
     d->phy_anlpar = phy_anlpar;
     d->phy_aner = phy_aner;
