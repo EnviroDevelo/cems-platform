@@ -117,6 +117,7 @@ section.offtab{display:none!important}
       <button id="loginbtn">Log in</button>
       <span class="note">Viewing needs no login. Changes need one.</span>
       <span class="err" id="loginerr"></span>
+      <span class="err" id="loginconn">Not connected, the password can't be checked yet</span>
     </div>
     <details id="rstbox"><summary class="note">Lost passwords?</summary>
       <p class="note" id="rstnote">If every password is lost, the developer can send a one-time token that puts all of them back to the factory defaults. Send the developer the line below.</p>
@@ -534,11 +535,18 @@ function api(path, body, raw) {
 }
 /* a request made some other way (firmware upload, text download) holds the line until fn's promise settles */
 const apiExclusive = fn => apiEnqueue({ run: fn }, true);
-async function apiSend(path, body, raw) {
+/* a request that must answer within ms in all, queue wait included (a login says "no answer" rather than wait 30 s) */
+function apiTimed(path, body, ms) {
+  const end = Date.now() + ms, late = () => Object.assign(new Error("timeout"), { name: "TimeoutError" });
+  let t;
+  const job = apiEnqueue({ path, get: false, run: () => { const left = end - Date.now(); if (left < 500) throw late(); return apiSend(path, body, false, left); } }, true);
+  return Promise.race([job, new Promise((_, rej) => { t = setTimeout(() => rej(late()), ms); })]).finally(() => clearTimeout(t));
+}
+async function apiSend(path, body, raw, ms) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "X-CEMS": "1" }, body };
   if (body !== undefined && !raw) opt.headers["Content-Type"] = "application/x-www-form-urlencoded";
   /* a hung poll counts as lost, not as live; a hung write must not hold the queue for ever */
-  opt.signal = AbortSignal.timeout(body === undefined ? 5000 : raw ? 120000 : 30000);
+  opt.signal = AbortSignal.timeout(ms || (body === undefined ? 5000 : raw ? 120000 : 30000));
   const r = await fetch(path, opt);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.error || r.status), { status: r.status, info: j });
@@ -1371,10 +1379,10 @@ async function pollValues() {
         `to ${typeof a.v === "boolean" ? (a.v ? "on" : "off") : a.v}, ${Math.max(0, a.left_s - gone)} s left`).join("; ") + ")";
     } }
     document.body.classList.remove("stale");
-    $("conn").textContent = "live"; $("conn").className = "badge b-ok";
+    $("conn").textContent = "live"; $("conn").className = "badge b-ok"; $("loginconn").style.display = "none";
   } catch (e) {
     document.body.classList.add("stale");
-    $("conn").textContent = "offline"; $("conn").className = "badge b-bad";
+    $("conn").textContent = "offline"; $("conn").className = "badge b-bad"; $("loginconn").style.display = "";
     $("lasttime").textContent = lastOk ? new Date(lastOk).toLocaleTimeString() : "never";
   }
   setTimeout(pollValues, 500);
@@ -2467,9 +2475,17 @@ async function pollEvents(once) {
 
 let loginHere = false;                                /* a login made on this page is never "left over" */
 $("loginbtn").onclick = async () => {
-  $("loginerr").textContent = ""; loginHere = true;
-  try { await api("/api/login", form({ level: $("lvl").value, password: $("pw").value })); $("pw").value = ""; await refreshInfo(); }
-  catch (e) { $("loginerr").textContent = e.message === "locked" ? "Too many attempts, wait 30 s" : "Wrong password"; }
+  const btn = $("loginbtn");
+  if (btn.disabled) return;
+  $("loginerr").textContent = "";
+  if (!$("pw").value) { $("loginerr").textContent = "Enter the password"; $("pw").focus(); return; }
+  loginHere = true; btn.disabled = true; btn.textContent = "Logging in…";
+  try { await apiTimed("/api/login", form({ level: $("lvl").value, password: $("pw").value }), 10000); $("pw").value = ""; await refreshInfo(); }
+  catch (e) {
+    $("loginerr").textContent = e.message === "locked" || e.status === 429 ? "Too many attempts, wait 30 s"
+      : e.status === 401 || e.status === 403 ? "Wrong password"
+      : e.status ? explain(e) : "No answer from the unit, check the connection";   /* timeout or network error: the password was not checked */
+  } finally { btn.disabled = false; btn.textContent = "Log in"; }
 };
 /* credential recovery (CIP-19.3): a developer token signed over this chip's ID and its reset count */
 async function loadReset() {

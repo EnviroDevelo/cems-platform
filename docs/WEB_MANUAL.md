@@ -52,6 +52,9 @@ log in with the level's password:
 
 - Each setting's row in Settings says which level it needs.
 - Five wrong passwords in a row lock logins for 30 seconds.
+- While a login is being checked the button says "Logging in…". "Wrong password" means the unit
+  checked it; "No answer from the unit, check the connection" (after 10 seconds at most) means the
+  password never reached it. While the page has no connection, a note by the login box says so.
 - A login ends after 10 minutes with no change; the header shows the minutes left.
 - **Closing the page logs out.** When every tab of this unit has been closed, the next page you
   open starts logged out. A reload, or a second tab next to one that is open, keeps the login.
