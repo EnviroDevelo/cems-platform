@@ -310,15 +310,27 @@ static void t_standard_block(void) {
     CHECK_EQ(mb_init(bad4, 1, NULL), 1);
 }
 
+static unsigned n_items, n_slot3; static uint16_t last_addr; static bool items_ordered;
+static void count_item(const mb_std_item_t *it, void *ctx) {
+    (void)ctx;
+    if (n_items && it->addr <= last_addr) items_ordered = false;
+    last_addr = it->addr; n_items++;
+    if (it->slot == 3) n_slot3++;
+}
+
 /* Rev C (MODBUS_STANDARD_BLOCK.md 8): second-period averages and QAL3 on a fitted slot */
 static void t_standard_block_c(void) {
     setup();
+    n_items = 0; items_ordered = true; mb_std_each(count_item, NULL);
+    CHECK_EQ(n_items, 15u);                       /* nothing fitted: BasisR and the globals */
     emis_set.ch.unit[3] = 1;                      /* slot 3 (CO) fitted */
     emis_res.v2[3] = 42.5f; emis_res.q2[3] = PLAT_Q_VALID;
     emis_res.n2[3] = 140; emis_res.n2_above[3] = 3; emis_res.n2_day[3] = 144; emis_res.n2_above_day[3] = 8;
     emis_q3.zero_dev[3] = -1.5f; emis_q3.span_dev[3] = 2.25f; emis_q3.last[3] = 0x6543210Fu;
     emis_q3.status[3] = EMIS_Q3_ON | EMIS_Q3_ZERO_WARN | EMIS_Q3_SPAN_OUT | EMIS_Q3_DUE;
     scan();                                       /* published to the readers */
+    n_items = n_slot3 = 0; items_ordered = true; mb_std_each(count_item, NULL);
+    CHECK_EQ(n_items, 15u + 27u); CHECK_EQ(n_slot3, 27u); CHECK(items_ordered);   /* the map lists it, in address order */
     float f; uint32_t u;
     rd(4, 8006, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == 42.5f);
     rd(3, 8006, 2); CHECK_EQ((uint32_t)reg(0) << 16 | reg(1), u);   /* holding mirror */
@@ -333,7 +345,7 @@ static void t_standard_block_c(void) {
     rd(4, 8419, 1); CHECK_EQ(reg(0), 0x33);
     rd(4, 8416, 1); CHECK_EQ(reg(0), 0);          /* slot 0 not fitted */
     rd(4, 7014, 2); u = (uint32_t)reg(0) << 16 | reg(1);   /* slot 3's status word */
-    CHECK(u & 1u << 28); CHECK(u & 1u << 29); CHECK(u & 1u << 30); CHECK(u & 1u << 3);
+    CHECK(u & 1u << 28); CHECK(u & 1u << 29); CHECK(u & 1u << 30); CHECK(u & 1u << 3); CHECK(u & 1u << 2);
     emis_q3.status[3] = EMIS_Q3_ON; scan();
     rd(4, 7014, 2); u = (uint32_t)reg(0) << 16 | reg(1);
     CHECK(!(u & (7u << 28)));

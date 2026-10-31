@@ -293,8 +293,10 @@ GET /api/modbus/map .entries[].id null
 GET /api/modbus/map .entries[].id number
 GET /api/modbus/map .entries[].max number
 GET /api/modbus/map .entries[].min number
+GET /api/modbus/map .entries[].mirror string
 GET /api/modbus/map .entries[].name string
 GET /api/modbus/map .entries[].scale_dec number
+GET /api/modbus/map .entries[].slot null
 GET /api/modbus/map .entries[].table string
 GET /api/modbus/map .entries[].unit null
 GET /api/modbus/map .entries[].unit string

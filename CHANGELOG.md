@@ -17,6 +17,9 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
   drivers (node/drivers) on SPI4, shared with the W5500 (`spi4_bus.c`), and the output gate (GATE_EN,
   WDI kick on each healthy pass, GATE_FB). plat_node.h gains the port hooks `bsp_node_chips` and
   `bsp_node_pass` (weak defaults: the platform's pins, as before). CubeMX steps: CUBEMX_SETUP.md 3l.
+- `/api/modbus/map` lists the standard block (`"core":"standard"`, `"mirror":"holding"`): every item of
+  each fitted slot plus BasisR and the globals, in address order, so the Excel handover file carries it.
+  The status word's bit 2 is now also set by bits 28 and 30, as section 3 says.
 - `/api/params`: `meas` gives a measured parameter's position in plat_meas.
 - Interface snapshots brought up to date with the alarm tiers, emissions and instrument
   parameters merged since 0.9.0.

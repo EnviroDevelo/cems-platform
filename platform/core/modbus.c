@@ -346,7 +346,8 @@ static uint32_t std_status(unsigned n) {
     if (q == PLAT_Q_MAINT || q == PLAT_Q_CAL || q == PLAT_Q_WARMUP) w |= 1u << 1;
     double q3d = std_elem(STD_Q3_STATUS, (uint16_t)n);
     uint32_t q3 = isfinite(q3d) ? (uint32_t)q3d : 0u;
-    if (alarm_active(ALARM_ID_CAL_DUE) || alarm_active(ALARM_ID_QAL3) || (es & STD_EMIS_ST_QAL2_REVIEW)) w |= 1u << 2;
+    if (alarm_active(ALARM_ID_CAL_DUE) || alarm_active(ALARM_ID_QAL3) || (es & STD_EMIS_ST_QAL2_REVIEW) ||
+        (q3 & (STD_Q3_WARN | STD_Q3_DUE))) w |= 1u << 2;            /* section 3: also bits 27, 28, 30 */
     if (q == PLAT_Q_RANGE || q == PLAT_Q_STALE || (es & (STD_EMIS_ST_ABOVE_CAL | STD_EMIS_ST_OVER_RANGE)) || (q3 & STD_Q3_OUT))
         w |= 1u << 3;
     if (frc) w |= 1u << 4 | 1u << 16;
@@ -449,6 +450,50 @@ static uint16_t std_reg(uint16_t a) {
     case 7956: return std_u16(std_elem(STD_CFG_ERROR, MB_FORCE_SCALAR));
     default:   return 0;                                 /* reserved */
     }
+}
+
+void mb_std_each(void (*fn)(const mb_std_item_t *it, void *ctx), void *ctx) {
+    static const char *const bank[8] = { "value as measured (BasisM)", "QAL2-calibrated, dry, normalised (bank 1)",
+        "corrected to the reference diluent (bank 2)", "mass emission (bank 3)", "running short-term average (bank 4)",
+        "last short-term average (bank 5)", "last validated short-term average (bank 6)", "last validated daily average (bank 7)" };
+    static const char *const qual[4] = { "quality, measured value", "quality, instantaneous calculated",
+        "quality, short-term averages", "quality, daily average" };
+    static const char *const cnt2[4] = { "valid second-period averages today", "second-period averages above the limit today",
+        "valid second-period averages, last day", "second-period averages above the limit, last day" };
+    mb_std_item_t it;
+#define STD_ITEM(A, C, F, N, I, U) do { it = (mb_std_item_t){ (uint16_t)(A), (C), (F), (uint8_t)(N), \
+        (N) < STD_SLOTS ? std_name[N] : NULL, (I), (U) }; fn(&it, ctx); } while (0)
+#define FIT_EACH(body) for (unsigned n = 0; n < STD_SLOTS; ++n) if (std_fitted(n)) { body; }
+    const char *u0 = NULL;
+    FIT_EACH(STD_ITEM(7000u + 4u * n, 2, MBF_F32, n, bank[0], std_unit[n]);
+             STD_ITEM(7002u + 4u * n, 2, MBF_U32, n, "status (NE 107, section 3)", u0))
+    FIT_EACH(STD_ITEM(7128u + 4u * n, 2, MBF_F32, n, "simulation value (BasisS)", std_unit[n]);
+             STD_ITEM(7130u + 4u * n, 2, MBF_U32, n, "simulation request (BasisS)", u0))
+    STD_ITEM(7256u, 2, MBF_U32, 0xFFu, "reference material status (BasisR, 0 until defined)", u0);
+    STD_ITEM(7258u, 2, MBF_U32, 0xFFu, "reference material initiate (BasisR, 0 until defined)", u0);
+    for (unsigned k = 1; k < 8u; ++k)
+        FIT_EACH(STD_ITEM(7300u + 64u * (k - 1u) + 2u * n, 2, MBF_F32, n, bank[k], k == 3u ? "kg/h" : std_unit[n]))
+    for (unsigned g = 0; g < 4u; ++g) FIT_EACH(STD_ITEM(7748u + 32u * g + n, 1, MBF_U16, n, qual[g], u0))
+    FIT_EACH(STD_ITEM(7876u + n, 1, MBF_U16, n, "short-term averages discarded today", u0))
+    FIT_EACH(STD_ITEM(7908u + n, 1, MBF_U16, n, "days invalid this year", u0))
+    static const struct { uint16_t a; uint8_t c, f; const char *i, *u; } glob[] = {
+        { 7940, 1, MBF_U16, "block version", NULL }, { 7941, 2, MBF_U32, "slots fitted, bit n = slot n", NULL },
+        { 7943, 1, MBF_U16, "values forced now", NULL }, { 7944, 1, MBF_U16, "word order: 0 high word first, 1 low word first", NULL },
+        { 7945, 1, MBF_U16, "stream on line (0 = single stream)", NULL }, { 7946, 1, MBF_U16, "plant operating", NULL },
+        { 7947, 1, MBF_U16, "reference diluent: 0 none, 1 O2, 2 CO2", NULL }, { 7948, 2, MBF_F32, "reference diluent", "%" },
+        { 7950, 2, MBF_F32, "normalisation temperature", "K" }, { 7952, 2, MBF_F32, "normalisation pressure", "kPa" },
+        { 7954, 1, MBF_U16, "short-term averaging period", "s" }, { 7955, 1, MBF_U16, "emissions engine enabled", NULL },
+        { 7956, 1, MBF_U16, "emissions engine configuration error", NULL } };
+    for (size_t k = 0; k < sizeof glob / sizeof glob[0]; ++k) STD_ITEM(glob[k].a, glob[k].c, glob[k].f, 0xFFu, glob[k].i, glob[k].u);
+    FIT_EACH(STD_ITEM(8000u + 2u * n, 2, MBF_F32, n, "last validated second-period average", std_unit[n]))
+    FIT_EACH(STD_ITEM(8064u + n, 1, MBF_U16, n, "quality, second-period average", u0))
+    for (unsigned g = 0; g < 4u; ++g) FIT_EACH(STD_ITEM(8096u + 32u * g + n, 1, MBF_U16, n, cnt2[g], u0))
+    FIT_EACH(STD_ITEM(8224u + 2u * n, 2, MBF_F32, n, "QAL3 last zero check deviation", std_unit[n]))
+    FIT_EACH(STD_ITEM(8288u + 2u * n, 2, MBF_F32, n, "QAL3 last span check deviation", std_unit[n]))
+    FIT_EACH(STD_ITEM(8352u + 2u * n, 2, MBF_U32, n, "QAL3 time of the last check (local s since 1970)", "s"))
+    FIT_EACH(STD_ITEM(8416u + n, 1, MBF_U16, n, "QAL3 status bits", u0))
+#undef FIT_EACH
+#undef STD_ITEM
 }
 
 void mb_block_scan(uint32_t now_ms) {
