@@ -605,3 +605,5 @@ and a small analog output board is added only where a site needs it.
   boost converters fed by an ITX2405SA, keyed 8-way 3.5 mm output plug (coding keys at
   pins 2 and 6, checked against J19-J25). The circuit was drafted on the core first (commit
   04adb9f) and moves to its own board. The AD5755-1 symbol is in tools/project_symbols.py.
+- Deferred (Gary 31 Oct): build it later, styled like the I/O breakout: a DIN board with terminal
+  strips on top and the small amount of circuitry on the underside.
