@@ -759,7 +759,7 @@ static void tap(uint8_t t, uint32_t now) {
             if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to change alarm tiers"); break; }
             int64_t p = pv(PARAM_ID_ALARM_PRIO, d->id, 0);
             uint8_t v = (uint8_t)(p >= AL_PRIO_DEFAULT && p < AL_PRIO_OFF ? p + 1 : AL_PRIO_DEFAULT);
-            if (v == AL_PRIO_OFF && (d->flags & AL_STOPS)) v = AL_PRIO_DEFAULT;   /* says why measurement stopped */
+            if (v == AL_PRIO_OFF && !alarm_can_switch_off(d)) v = AL_PRIO_DEFAULT;   /* AL_STOPS, AL_NO_OFF */
             param_err_t e = param_blob_post(PARAM_ID_ALARM_PRIO, d->id, &v, 1, false, PLAT_SRC_LOCAL, U.level);
             if (e != PERR_OK) toast(true, now, "%s", perr_text(e));
             U.dirty = true;

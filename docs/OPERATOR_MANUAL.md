@@ -115,7 +115,7 @@ A coloured bar on the left gives the severity.
 - **Tap an alarm** to see "What to check" for it. Tap it again to close that.
 - Each row's status line starts with the alarm's **priority tier**: Critical, High, Medium, Low or Info (or the names set for your site). The list is sorted by tier, most urgent first.
 - **Actions** (admin) sets each alarm's tier and what it does: email, Modbus, and relays 1 to 4.
-  - **The tier button**: each tap moves to the next tier: Critical, High, Medium, Low, Info, Off, then back to the alarm's own default. A star (*) means the alarm is on its default tier. Off takes the alarm out of the list, the counts and the actions. Alarms that stop measurement can't be switched off.
+  - **The tier button**: each tap moves to the next tier: Critical, High, Medium, Low, Info, Off, then back to the alarm's own default. A star (*) means the alarm is on its default tier. Off takes the alarm out of the list, the counts and the actions. Alarms that stop measurement, and a few that protect the data (such as no valid calibration), can't be switched off: the button skips Off for them.
   - **The action buttons** (green = on): changing one gives the alarm its own actions. Until then it follows its tier's actions, if the tier has any, or its built-in default.
   - **Tiers** opens the tier page. Each tier shows how many of its alarms are active and how many are not acknowledged. Tap a tier's name to rename it, up to 16 characters. The action buttons set what that tier's alarms do when they have no actions of their own, and **Use defaults** clears them.
 

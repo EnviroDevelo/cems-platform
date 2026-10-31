@@ -25,7 +25,7 @@
 #include "plat_alarm.h"
 #include "plat_clock.h"
 
-extern uint8_t plat_alarm_tier_route[AL_TIERS];
+extern uint8_t plat_alarm_tier_route[AL_TIERS], plat_alarm_prio[ALARM_ID_MAX + 1];
 #include "iobus.h"
 #include "iob_node_sim.h"
 #include "plat_state.h"
@@ -473,10 +473,10 @@ static void t_ui(void) {
     CHECK(shows("High"));
     dump("alarm_actions");
     for (int k = 0; k < 4; ++k) press((uint8_t)eve_sim_tag_of(&sim, alarm_prio_name(alarm_prio(ALARM_ID_CAL_INVALID))));
-    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_OFF);           /* Medium, Low, Info, Off */
-    CHECK(tap("Off"));                                                 /* and round to the default again */
-    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);          /* Medium, Low, Info, then Off skipped: */
+    CHECK_EQ(plat_alarm_prio[ALARM_ID_CAL_INVALID], AL_PRIO_DEFAULT);  /* CAL_INVALID can't be switched off */
     CHECK(shows("High*"));
+    CHECK(!shows("Off"));
     CHECK(tap("Tiers")); CHECK_EQ(ui_screen(), UI_TIERS);
     CHECK(shows("1  Critical")); CHECK(shows("5  Info")); CHECK(shows("alarm defaults"));
     CHECK(tap("Email"));                                               /* tier 1: email for alarms with no actions of their own */
