@@ -126,6 +126,7 @@ int main(void) {
     boot_report_t rep;
     boot_action_t a = boot_decide(&io, &trial, &rep);
     BOOT_TRIAL_REG = trial;
+    BOOT_REPORT_REG = boot_report_word(a, &rep);         /* for the application's /api/fw */
     if (a == BOOT_JUMP) start_app();
     if (a == BOOT_SWAP) swap_banks();
     halt();

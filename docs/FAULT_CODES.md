@@ -34,6 +34,30 @@ Active alarms are in the Modbus registers 10-25 (one bit per ID) and on `/api/al
 | 21 | `CAL_DUE` | warning | email, Modbus | Calibration due | A calibrated channel is past its calibration interval. Calibrate it (Calibration page or screen). |
 | 22 | `HW_REV` | warning | Modbus | Board revision differs from the factory record | The board's revision straps differ from the hardware revision in the factory record. Check that the core board was not swapped; update the record at factory login. |
 | 23 | `SELFTEST` | warning | email, Modbus | Start-up self-test failed: see System information | A start-up self-test failed (System information lists which). See docs/FAULT_CODES.md, self-test checks. |
+| 30 | `DI_ALARM_1` | alarm | on after 2.0 s, Modbus | Input alarm 1: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 31 | `DI_ALARM_2` | alarm | on after 2.0 s, Modbus | Input alarm 2: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 32 | `DI_ALARM_3` | alarm | on after 2.0 s, Modbus | Input alarm 3: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 33 | `DI_ALARM_4` | alarm | on after 2.0 s, Modbus | Input alarm 4: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 34 | `DI_ALARM_5` | alarm | on after 2.0 s, Modbus | Input alarm 5: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 35 | `DI_ALARM_6` | alarm | on after 2.0 s, Modbus | Input alarm 6: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 36 | `DI_ALARM_7` | alarm | on after 2.0 s, Modbus | Input alarm 7: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 37 | `DI_ALARM_8` | alarm | on after 2.0 s, Modbus | Input alarm 8: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 38 | `DI_ALARM_9` | alarm | on after 2.0 s, Modbus | Input alarm 9: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 39 | `DI_ALARM_10` | alarm | on after 2.0 s, Modbus | Input alarm 10: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 40 | `DI_ALARM_11` | alarm | on after 2.0 s, Modbus | Input alarm 11: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 41 | `DI_ALARM_12` | alarm | on after 2.0 s, Modbus | Input alarm 12: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 42 | `DI_ALARM_13` | alarm | on after 2.0 s, Modbus | Input alarm 13: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 43 | `DI_ALARM_14` | alarm | on after 2.0 s, Modbus | Input alarm 14: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 44 | `DI_ALARM_15` | alarm | on after 2.0 s, Modbus | Input alarm 15: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 45 | `DI_ALARM_16` | alarm | on after 2.0 s, Modbus | Input alarm 16: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 46 | `DI_ALARM_17` | alarm | on after 2.0 s, Modbus | Input alarm 17: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 47 | `DI_ALARM_18` | alarm | on after 2.0 s, Modbus | Input alarm 18: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 48 | `DI_ALARM_19` | alarm | on after 2.0 s, Modbus | Input alarm 19: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 49 | `DI_ALARM_20` | alarm | on after 2.0 s, Modbus | Input alarm 20: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 50 | `DI_ALARM_21` | alarm | on after 2.0 s, Modbus | Input alarm 21: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 51 | `DI_ALARM_22` | alarm | on after 2.0 s, Modbus | Input alarm 22: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 52 | `DI_ALARM_23` | alarm | on after 2.0 s, Modbus | Input alarm 23: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
+| 53 | `DI_ALARM_24` | alarm | on after 2.0 s, Modbus | Input alarm 24: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
 
 ## Start-up self-test checks
 
@@ -113,6 +137,8 @@ Event log codes (`/api/log/events`, the event CSV). Codes from 100 are the produ
 | 27 | `service` | Service |
 | 28 | `cal` | Calibration |
 | 29 | `selftest` | Self-test |
+| 30 | `force` | Modbus force |
+| 31 | `eth_speed` | Ethernet speed |
 
 ## Firmware update refusals
 

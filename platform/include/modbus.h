@@ -86,8 +86,14 @@ typedef struct {
  *   layout 2 (added; nothing above moved):
  *   9084-9085 clock (U32, local s since 1970; 0 = not set)   9086 clock synchronised (0/1)
  *   9087 clock source (PLAT_CLK_SRC_*)  9088-9089 clock last set or confirmed (U32)
+ *   layout 3 (added): 9090 values forced on Modbus now (mb_force_*; 0 = none)
  * 32-bit values high word first; text two bytes per register, first byte high, NUL padded. */
-#define MB_BLOCK_REGS 90u
+#define MB_BLOCK_REGS 91u
+/* The standard CEMS block (VDI 4201-3, docs/MODBUS_STANDARD_BLOCK.md): input registers 7000-7999
+ * (PLAT_MB_STD_ADDR), the same in the holding registers, read-only (writes: exception 02), built
+ * from the emissions engine's parameters on each read; slots without one read NaN. Word order:
+ * param 335 mb_std_words. Its forceable values are the engine's banks (450-457). 43/14 gives
+ * its self-description (conformity 0x83). A product's map may not use 7000-7999. */
 void mb_block_scan(uint32_t now_ms);     /* scan task: heartbeat, link age, uptime */
 
 /* Build the map index: the platform's block plus the application's map. Checks that every ID
@@ -108,5 +114,33 @@ typedef struct { uint32_t requests, exceptions, writes_queued; } mb_stats_t;
 size_t mb_entry_count(void);
 const mb_map_t *mb_entry_at(size_t i, uint16_t *span);   /* NULL past the end */
 mb_stats_t mb_stats(void);
+
+/* Forced values (commissioning, Gary 29 Oct): at admin login, from the touchscreen or the web, a
+ * value the PLC reads can be forced for PLAT_MB_FORCE_MS, so the control system can be checked
+ * against known values; then it reverts by itself. A force changes ONLY what Modbus serves:
+ * the screens, alarms, logs and control keep the real value. Test bits are forced bools.
+ *  - Forceable (mb_forceable): a numeric or bool parameter (or array element) on Modbus that is
+ *    read-only to Modbus (input registers or discrete inputs only, or a PF_RO parameter); never a
+ *    setting, a text, the block's versions, the identity (serial, revisions) or the clock.
+ *  - Any LOCAL/REMOTE mode. Setting it again restarts the time. Not kept over a restart.
+ *  - The master can tell: input register 9090 counts the forces, common alarm bit ACOM_FORCED.
+ *  - Every set, clear and expiry is in the event log (LOG_EV_FORCE).
+ * Any task: set/clear from the web or touchscreen task, expiry in mb_block_scan (scan task). */
+#ifndef PLAT_MB_FORCE_MS
+#define PLAT_MB_FORCE_MS 30000u
+#endif
+#define MB_FORCE_MAX     16u
+#define MB_FORCE_SCALAR  0xFFFFu        /* index of a value that is not an array */
+typedef struct { uint16_t id, index; double v; uint32_t left_ms; uint8_t src, level; } mb_force_t;
+bool     mb_forceable(uint16_t id);
+/* param_err_t: OK; PERR_ACCESS below admin or from Modbus; PERR_NO_ID not forceable; PERR_RANGE bad
+ * index, or v not a value of the parameter's type (range limits do not apply: an out-of-range value
+ * can be simulated); PERR_BUSY MB_FORCE_MAX values forced already. Bools: v != 0. */
+int      mb_force_set(uint16_t id, uint16_t index, double v, uint8_t src, uint8_t level, uint32_t now_ms);
+int      mb_force_clear(uint16_t id, uint16_t index, uint8_t src, uint8_t level);   /* PERR_NO_ID: not forced */
+int      mb_force_clear_all(uint8_t src, uint8_t level);
+unsigned mb_force_count(void);
+bool     mb_force_active(uint16_t id, uint16_t index);   /* index MB_FORCE_SCALAR for a scalar */
+bool     mb_force_get(unsigned i, mb_force_t *f, uint32_t now_ms);   /* i < mb_force_count() */
 
 #endif

@@ -4,6 +4,7 @@
 #include "plat_power.h"
 #include "plat_cal.h"
 #include "plat_selftest.h"
+#include "modbus.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -103,6 +104,32 @@ static const alarm_def_t core_defs[] = {
 };
 #define N_CORE (sizeof core_defs / sizeof core_defs[0])
 
+/* ---- digital input alarms: their settings (param.c binds them) and definitions ----
+ * The definitions are not const: the scan task copies the slot's severity, latch and delay into
+ * its definition each scan (byte and word stores; readers take a copy). */
+uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS], plat_dia_status[PLAT_DIA_SLOTS];
+bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static alarm_def_t dia_defs[PLAT_DIA_SLOTS];
+static char dia_names[PLAT_DIA_SLOTS][16], dia_texts[PLAT_DIA_SLOTS][32];
+static uint8_t dia_text_for[PLAT_DIA_SLOTS];         /* the input the default text names (0xFF: not built) */
+static uint32_t dia_di_lo, dia_di_hi, dia_fault_lo, dia_fault_hi;   /* last inputs, for Modbus */
+static uint32_t dia_unreliable;                      /* bit s: slot s's input unreliable */
+static void dia_status_update(void);
+
+static void dia_defs_build(void) {
+    for (unsigned s = 0; s < PLAT_DIA_SLOTS; ++s) {
+        snprintf(dia_names[s], sizeof dia_names[s], "DI_ALARM_%u", s + 1u);
+        snprintf(dia_texts[s], sizeof dia_texts[s], "Input alarm %u: not used", s + 1u);
+        dia_text_for[s] = 0xFFu;
+        dia_defs[s] = (alarm_def_t){ .id = (uint16_t)(ALARM_ID_DIA_FIRST + s), .severity = AL_SEV_ALARM, .flags = AL_NOTIFY,
+            .route = AR_MODBUS, .name = dia_names[s], .text = dia_texts[s], .on_delay_ms = 2000,
+            .text_param = (uint16_t)(PARAM_ID_DIA_LABEL_FIRST + s),
+            .help = "A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input." };
+    }
+}
+
 typedef struct {
     bool     active, unacked, enabled;
     bool     range_hi;          /* alarm_set_range: which side it went out on (deadband) */
@@ -156,6 +183,8 @@ int alarm_init(const alarm_def_t *app_defs, size_t n_app, uint8_t reset_cause) {
     memset(idx_of, 0xFF, sizeof idx_of);
     n_defs = 0;
     for (size_t k = 0; k < N_CORE; ++k) { int e = add(&core_defs[k], false); if (e) return e; }
+    dia_defs_build();
+    for (size_t k = 0; k < PLAT_DIA_SLOTS; ++k) { int e = add(&dia_defs[k], false); if (e) return e; }
     for (size_t k = 0; k < n_app; ++k) { int e = add(&app_defs[k], true); if (e) return e; }
     alarm_reset_for_test();
     if (reset_cause == BSP_RESET_IWDG || reset_cause == BSP_RESET_WWDG || reset_cause == BSP_RESET_BROWNOUT)
@@ -281,7 +310,9 @@ static void publish(void) {
     }
     for (unsigned k = 0; k < ALARM_RELAYS; ++k) if (rel & (1u << k)) com |= ACOM_RELAY(k);
     relay_on = rel;
+    if (mb_force_count()) com |= ACOM_FORCED;
     plat_alarm_common = com;
+    dia_status_update();
     plat_alarm_active_count = na; plat_alarm_unack_count = nu;
     memcpy(plat_alarm_active_bits, ab, sizeof ab);
     memcpy(plat_alarm_unack_bits, ub, sizeof ub);
@@ -365,6 +396,77 @@ void alarm_io_out(plat_io_out_t *out) {
     }
 }
 uint8_t alarm_relays(void) { return relay_on; }
+
+/* ---------------- digital input alarms ---------------- */
+void alarm_io_in(const plat_io_in_t *in) {
+    uint32_t unrel = 0;
+    for (unsigned s = 0; s < PLAT_DIA_SLOTS; ++s) {
+        alarm_def_t *d = &dia_defs[s];
+        unsigned n = plat_dia_input[s];
+        uint8_t sev = plat_dia_sev[s];
+        d->severity = sev >= AL_SEV_WARNING && sev <= AL_SEV_FAULT ? sev : AL_SEV_ALARM;
+        d->flags = (uint8_t)(AL_NOTIFY | (plat_dia_latch[s] ? AL_LATCH : 0u));
+        d->on_delay_ms = (uint32_t)(plat_dia_delay[s] > 3600u ? 3600u : plat_dia_delay[s]) * 1000u;
+        if (dia_text_for[s] != n) {                    /* the description when there is no label */
+            if (n >= 1 && n <= PLAT_DI_MAX) snprintf(dia_texts[s], sizeof dia_texts[s], "Digital input %u", n);
+            else snprintf(dia_texts[s], sizeof dia_texts[s], "Input alarm %u: not used", s + 1u);
+            dia_text_for[s] = (uint8_t)n;
+        }
+        bool c = false;
+        if (n >= 1 && n <= PLAT_DI_MAX) {
+            if (plat_di_fault(in, n - 1u)) unrel |= 1u << s;        /* no alarm from an input we can't trust */
+            else c = plat_di(in, n - 1u) != plat_dia_when[s];
+        }
+        alarm_set((uint16_t)(ALARM_ID_DIA_FIRST + s), c);
+    }
+    PLAT_CRIT_ENTER();
+    dia_di_lo = (uint32_t)in->di; dia_di_hi = (uint32_t)(in->di >> 32);
+    dia_fault_lo = (uint32_t)in->di_fault; dia_fault_hi = (uint32_t)(in->di_fault >> 32);
+    dia_unreliable = unrel;
+    PLAT_CRIT_EXIT();
+}
+
+/* slot statuses (parameter 345), after the states moved (alarm_scan) */
+static void dia_status_update(void) {
+    for (unsigned s = 0; s < PLAT_DIA_SLOTS; ++s) {
+        int i = idx((uint16_t)(ALARM_ID_DIA_FIRST + s));
+        uint8_t v = DIA_ST_UNUSED;
+        if (i >= 0 && plat_dia_input[s] >= 1 && plat_dia_input[s] <= PLAT_DI_MAX) {
+            const al_state_t *a = &st[i];
+            v = a->active ? (a->unacked ? DIA_ST_ACTIVE_UNACKED : DIA_ST_ACTIVE_ACKED)
+              : a->unacked ? DIA_ST_CLEARED_UNACKED : (dia_unreliable >> s) & 1u ? DIA_ST_UNRELIABLE : DIA_ST_NORMAL;
+        }
+        plat_dia_status[s] = v;
+    }
+}
+
+bool plat_dia_mb_bit(uint16_t a) {
+    if (a >= PLAT_DIA_MB_ADDR + 100u && a < PLAT_DIA_MB_ADDR + 100u + PLAT_DI_MAX) {
+        unsigned i = a - (PLAT_DIA_MB_ADDR + 100u);
+        PLAT_CRIT_ENTER(); uint32_t w = i < 32u ? dia_di_lo : dia_di_hi; PLAT_CRIT_EXIT();
+        return (w >> (i % 32u)) & 1u;
+    }
+    if (a < PLAT_DIA_MB_ADDR || a >= PLAT_DIA_MB_ADDR + 96u) return false;   /* reserved */
+    unsigned g = (a - PLAT_DIA_MB_ADDR) / 32u, s = (a - PLAT_DIA_MB_ADDR) % 32u;
+    if (s >= PLAT_DIA_SLOTS) return false;
+    int i = idx((uint16_t)(ALARM_ID_DIA_FIRST + s));
+    if (i < 0) return false;
+    switch (g) {
+    case 0:  return st[i].active;
+    case 1:  return st[i].unacked;
+    default: { PLAT_CRIT_ENTER(); uint32_t u = dia_unreliable; PLAT_CRIT_EXIT(); return (u >> s) & 1u; }
+    }
+}
+
+void plat_dia_input_name(unsigned n, char *buf, size_t cap) {
+    for (unsigned k = 0; k < 3u; ++k) {               /* IOB_BOARDS: an enabled I/O board's inputs */
+        plat_val_t en, f;
+        if (!param_read((uint16_t)(PARAM_ID_IOB_FIRST + 10u * k), &en) || !en.b) continue;
+        if (!param_read((uint16_t)(PARAM_ID_IOB_FIRST + 10u * k + 3u), &f)) continue;
+        if (n >= f.u && n < f.u + 8u) { snprintf(buf, cap, "I/O board %u input %u", k + 1u, (unsigned)(n - f.u + 1u)); return; }
+    }
+    snprintf(buf, cap, "Input %u", n);
+}
 
 /* ---------------- readers ---------------- */
 static void text_of(const alarm_def_t *d, char *out, size_t cap) {

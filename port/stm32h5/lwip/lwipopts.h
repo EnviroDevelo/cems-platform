@@ -54,6 +54,9 @@
 #define TCP_SND_BUF                     (4 * TCP_MSS)
 #define TCP_SND_QUEUELEN                ((4 * TCP_SND_BUF) / TCP_MSS)
 #define TCP_LISTEN_BACKLOG              1
+/* first retransmit after 1 s, not lwIP's 3 s (RFC 6298's value): on a lossy link a lost SYN or a
+ * lost first segment costs a second, not three, before round-trip samples take over */
+#define LWIP_TCP_RTO_TIME               1000
 #define LWIP_TCP_KEEPALIVE              1
 /* a PLC that disappears without closing is noticed in about 50 s */
 #define TCP_KEEPIDLE_DEFAULT            30000
@@ -87,6 +90,9 @@
 #define CHECKSUM_CHECK_UDP              0
 #define CHECKSUM_CHECK_TCP              0
 #define CHECKSUM_CHECK_ICMP             0
+
+/* ---- hooks ---- */
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"   /* TCP retransmission count (ethernetif.c) */
 
 /* ---- diagnostics ---- */
 #define LWIP_STATS                      0

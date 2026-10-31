@@ -115,8 +115,10 @@ void http_drop_kept(http_server_t *s) {
     for (unsigned k = 0; k < HTTP_KEPT; k++) drop_one(s, k);
 }
 
+/* Each socket wait stays well under the task monitor's PLAT_SILENCE_HTTP_MS (5 s): the task checks
+ * in between waits (alive, tls_alive_hook), never during one. */
 static void set_timeouts(int fd) {
-    struct timeval rt = { .tv_sec = 2, .tv_usec = 0 }, wt = { .tv_sec = 5, .tv_usec = 0 };
+    struct timeval rt = { .tv_sec = 2, .tv_usec = 0 }, wt = { .tv_sec = 2, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rt, sizeof rt);
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wt, sizeof wt);
 }

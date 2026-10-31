@@ -485,7 +485,9 @@ nvm_dev_t *bsp_param_nvm(void) {
 #if !defined(FRAM_CS_Pin) && !defined(FRAM_I2C_HANDLE)
     /* No FRAM in this hardware configuration: RAM stand-in with the same map, so the
      * store logic runs; nothing survives power-off (PSTAT_NVM_VOLATILE). Only as long
-     * as the map's last area (META, 1 KB): the part above it is reserved, unused. */
+     * as the map's last area (META, 1 KB): the part above it is reserved, unused. Build a
+     * bare DK with PLAT_FRAM_SIZE=32768u like the DK with its breakout: the stand-in is then
+     * 23 KB instead of 91 KB (the 128 KB map), which the RAM budget needs. */
     static uint8_t   mem[STORE_META_ADDR + 1024u];
     static nvm_ram_t ram;
     nvm_ram_init(&dev, &ram, mem, sizeof mem, false);
@@ -559,4 +561,25 @@ void bsp_chip_uid(uint8_t uid[12]) {
         uint32_t v = ((const volatile uint32_t *)UID_BASE)[w];
         for (unsigned k = 0; k < 4u; ++k) uid[4u * w + k] = (uint8_t)(v >> (8u * k));
     }
+}
+
+/* The NODE role's backup words (plat_node.h): TAMP BKP0R..BKP15R, kept over a reset, lost at
+ * power-off (no battery on VBAT). BKP30R/BKP31R are the bootloader's (boot.h). */
+static void backup_open(void) {
+    RCC->APB3ENR |= RCC_APB3ENR_RTCAPBEN;      /* TAMP sits behind the RTC's bus clock */
+    (void)RCC->APB3ENR;
+    PWR->DBPCR |= PWR_DBPCR_DBP;               /* the backup domain is write protected */
+}
+
+uint32_t bsp_backup_read(unsigned idx) {
+    if (idx >= 16u) return 0;
+    backup_open();
+    return (&TAMP->BKP0R)[idx];
+}
+
+bool bsp_backup_write(unsigned idx, uint32_t v) {
+    if (idx >= 16u) return false;
+    backup_open();
+    (&TAMP->BKP0R)[idx] = v;
+    return (&TAMP->BKP0R)[idx] == v;
 }

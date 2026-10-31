@@ -35,6 +35,7 @@ GET /api/cal .channels[].name string
 GET /api/cal .channels[].overdue bool
 GET /api/cal .due bool
 GET /api/cal .history[] empty
+GET /api/fw .bootloader null
 GET /api/fw .build string
 GET /api/fw .history[] empty
 GET /api/fw .last_error string
@@ -84,6 +85,21 @@ GET /api/info .last_fault.name string
 GET /api/info .link_lost bool
 GET /api/info .log_status number
 GET /api/info .login_locked_s number
+GET /api/info .modbus.accepted number
+GET /api/info .modbus.allow_ip null
+GET /api/info .modbus.clients number
+GET /api/info .modbus.evicted number
+GET /api/info .modbus.exceptions number
+GET /api/info .modbus.forced number
+GET /api/info .modbus.last_request_s null
+GET /api/info .modbus.listening bool
+GET /api/info .modbus.max_clients number
+GET /api/info .modbus.port number
+GET /api/info .modbus.protocol_errors number
+GET /api/info .modbus.read_only bool
+GET /api/info .modbus.refused_ip number
+GET /api/info .modbus.requests number
+GET /api/info .modbus.writes_queued number
 GET /api/info .mode string
 GET /api/info .product string
 GET /api/info .run_hours number
@@ -193,6 +209,55 @@ GET /api/mail .queued number
 GET /api/mail .sent number
 GET /api/mail .server_fp null
 GET /api/mail .tries number
+GET /api/modbus/force .forceable[].count null
+GET /api/modbus/force .forceable[].count number
+GET /api/modbus/force .forceable[].id number
+GET /api/modbus/force .forceable[].name string
+GET /api/modbus/force .forceable[].type string
+GET /api/modbus/force .forceable[].unit null
+GET /api/modbus/force .forceable[].unit string
+GET /api/modbus/force .forces[] empty
+GET /api/modbus/force .max number
+GET /api/modbus/force .max_s number
+GET /api/modbus/map .addressing string
+GET /api/modbus/map .block_layout number
+GET /api/modbus/map .codes.clock_source[].code number
+GET /api/modbus/map .codes.clock_source[].name string
+GET /api/modbus/map .codes.common_bits[].bit number
+GET /api/modbus/map .codes.common_bits[].name string
+GET /api/modbus/map .codes.exceptions[].code number
+GET /api/modbus/map .codes.exceptions[].name string
+GET /api/modbus/map .codes.quality[].code number
+GET /api/modbus/map .codes.quality[].key string
+GET /api/modbus/map .codes.quality[].name string
+GET /api/modbus/map .codes.state[].code number
+GET /api/modbus/map .codes.state[].key string
+GET /api/modbus/map .codes.state[].name string
+GET /api/modbus/map .entries[].access string
+GET /api/modbus/map .entries[].addr number
+GET /api/modbus/map .entries[].block bool
+GET /api/modbus/map .entries[].byte_order string
+GET /api/modbus/map .entries[].count number
+GET /api/modbus/map .entries[].elem string
+GET /api/modbus/map .entries[].fc_read number
+GET /api/modbus/map .entries[].fc_write null
+GET /api/modbus/map .entries[].fc_write[] number
+GET /api/modbus/map .entries[].forceable bool
+GET /api/modbus/map .entries[].format string
+GET /api/modbus/map .entries[].id number
+GET /api/modbus/map .entries[].max number
+GET /api/modbus/map .entries[].min number
+GET /api/modbus/map .entries[].name string
+GET /api/modbus/map .entries[].scale_dec number
+GET /api/modbus/map .entries[].table string
+GET /api/modbus/map .entries[].unit null
+GET /api/modbus/map .entries[].unit string
+GET /api/modbus/map .entries[].word_order string
+GET /api/modbus/map .entries[].write_any_mode bool
+GET /api/modbus/map .entries[].write_level string
+GET /api/modbus/map .fw string
+GET /api/modbus/map .map_version number
+GET /api/modbus/map .product string
 GET /api/params [].def bool
 GET /api/params [].def number
 GET /api/params [].elem string
@@ -211,6 +276,12 @@ GET /api/record
 GET /api/serial .key bool
 GET /api/serial .serial number
 GET /api/serial .uid string
+GET /api/service .boardtest.done bool
+GET /api/service .boardtest.running bool
+GET /api/service .boardtest.saved bool
+GET /api/service .boardtest.tests[].detail string
+GET /api/service .boardtest.tests[].name string
+GET /api/service .boardtest.tests[].result string
 GET /api/service .config_crc string
 GET /api/service .log[] empty
 GET /api/service .run_hours number
@@ -273,10 +344,13 @@ POST /api/login
 POST /api/logout
 POST /api/mail/test
 POST /api/mail/trust
+POST /api/modbus/force
+POST /api/modbus/force/clear
 POST /api/password
 POST /api/record
 POST /api/restore
 POST /api/serial
+POST /api/service/boardtest
 POST /api/service/log
 POST /api/service/test
 POST /api/time
@@ -439,6 +513,7 @@ param 330 run_hours uint 0.1 h level=0 flags=ro
 param 331 service_hours uint 0.1 h level=0 flags=ro
 param 332 config_crc uint - level=0 flags=ro
 param 333 selftest_fail uint - level=0 flags=ro
+param 334 mb_forced uint - level=0 flags=ro
 param 1001 start_delay uint ms level=1 flags=persist
 param 1002 run_seconds uint s level=0 flags=ro,persist
 param 1003 valve_out bool - level=0 flags=ro
