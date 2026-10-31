@@ -17,6 +17,7 @@
 #include "bsp.h"
 #include "ul_system.h"
 #include "plat_health.h"
+#include "emis_qal3.h"
 
 plat_health_t plat_health;
 
@@ -30,6 +31,9 @@ bool plat_health_low(const plat_health_t *h, char *why, unsigned cap) {
         }
     return false;
 }
+
+/* No QAL3 chart out of control or due: emis_qal3.c provides the real one. */
+__attribute__((weak)) bool emis_qal3_alarm(void) { return false; }
 
 /* Display working, or none fitted. The UI task provides the real one. */
 __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
@@ -62,6 +66,9 @@ static const alarm_def_t core_defs[] = {
     { .id = ALARM_ID_CAL_DUE, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_DUE",
       .text = "Calibration due",
       .help = "A calibrated channel is past its calibration interval. Calibrate it (Calibration page or screen)." },
+    { .id = ALARM_ID_QAL3, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "QAL3",
+      .text = "QAL3: analyser drift out of control or check due",
+      .help = "An analyser's zero or span check (EN 14181 QAL3) is out of control, or a check is overdue. Maintain or adjust it, record a new check, then reset its chart." },
     { .id = ALARM_ID_HW_REV, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "HW_REV",
       .text = "Board revision differs from the factory record",
       .help = "The board's revision straps differ from the hardware revision in the factory record. Check that the core board was not swapped; update the record at factory login." },
@@ -312,6 +319,7 @@ static void poll_platform(void) {
     alarm_set(ALARM_ID_CAL_INVALID, !param_store_calibration_valid());
     alarm_set(ALARM_ID_SAFE_MODE, plat_state() == PLAT_ST_SAFE_MODE);
     alarm_set(ALARM_ID_CAL_DUE, plat_cal_any_due());
+    alarm_set(ALARM_ID_QAL3, emis_qal3_alarm());
     alarm_set(ALARM_ID_SELFTEST, (plat_selftest_failed() & ~PLAT_STEST_OWN_ALARM) != 0);
     { plat_val_t hw;                      /* only once there is a factory record to compare with */
       alarm_set(ALARM_ID_HW_REV, fw_board_rev() >= 0 && param_store_calibration_valid() &&

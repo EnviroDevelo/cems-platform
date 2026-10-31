@@ -98,6 +98,8 @@ typedef enum {
     LOG_EV_FORCE,            /* Modbus force (modbus.h): arg = id | index << 16 (index 65535: not an array), old = real
                                 value, new = forced value (NaN: ended), text = name and "set" / "cleared" / "ended" */
     LOG_EV_ETH_SPEED,        /* Ethernet dropped to 10 Mbit on its own: arg = % of TCP data sent again at 100 Mbit */
+    LOG_EV_QAL3,             /* EN 14181 QAL3 check (emis_qal3.h): arg = channel, old = zero deviation, new = span deviation
+                                (NaN: chart reset), text = the outcome */
     LOG_EV_APP = 100
 } log_event_code_t;
 

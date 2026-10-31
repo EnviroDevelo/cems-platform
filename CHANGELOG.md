@@ -74,6 +74,12 @@ Emissions calculation engine (29 Oct, before release; `docs/EMISSIONS_MATH.md`):
 - Parameters 400-441 (settings, admin, persisted, not from Modbus), 450-469 (results), retained
   block 910. Off by default (400): a product that does not use it is unchanged. 4.4 KB RAM.
 - `plat_meas_value()` in plat_state.h.
+- 31 Oct: a second averaging period (424, 600 s for waste-plant CO: IED Annex VI Pt 3 1.5 (c),
+  Pt 8 1.1 (d)(i)), validated, with daily counts of valid averages and of those above the
+  10-minute ELV (442; results 470-475). QAL3 (`emis_qal3.h`): Shewhart zero and span charts per
+  channel from s_AMS and the gas values (425, 426, 444-446), checks entered through 447/448 and
+  427, chart reset 428, results 476-480, retained block 911, alarm 24 QAL3 (warning), event
+  LOG_EV_QAL3. 8.2 KB RAM in all.
 
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,

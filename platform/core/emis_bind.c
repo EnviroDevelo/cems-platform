@@ -1,12 +1,14 @@
-/* emis_bind.c - the emissions engine (emis.h) in the platform: settings from parameters 400-443,
- * inputs from the declared measurements (plat_state.h), results to parameters 450-469, the
- * periods in progress kept across a power cycle (retained block 910).
+/* emis_bind.c - the emissions engine (emis.h) in the platform: settings from parameters 400-442,
+ * inputs from the declared measurements (plat_state.h), results to parameters 450-475, the
+ * periods in progress kept across a power cycle (retained block 910); the QAL3 charts
+ * (emis_qal3.h: parameters 425-429, 444-448, 476-480, retained block 911).
  *
  * Scan task, every scan, after plat_state_scan (the measurement qualities are this scan's). A
  * change to any setting is checked with emis_check; a good one restarts the engine (the periods in
  * progress are forgotten, so an average never mixes two configurations; the change itself is in
  * the event log as a parameter change). A bad one stops it: every result UNAVAILABLE, parameter
  * 423 says which channel. */
+#include <math.h>
 #include <string.h>
 #include "emis.h"
 #include "emis_bind.h"
@@ -17,6 +19,7 @@
 #include "plat_power.h"
 #include "nvm.h"
 #include "plat_config.h"
+#include "plat_log.h"
 
 #define N EMIS_CH_MAX
 #define S emis_set
@@ -31,16 +34,23 @@ emis_set_t emis_set = {
 bool     emis_p_operating = true;      /* 422: written by the application or a PLC, not a setting */
 uint16_t emis_p_cfg_error;             /* 423 */
 
+/* QAL3 */
+emis_q3_set_t emis_q3set = { .k = 2.0f, .interval_d = 14u };
+uint8_t emis_p_q3_record, emis_p_q3_reset, emis_p_q3_result;
+float   emis_p_q3_zero[EMIS_CH_MAX], emis_p_q3_span[EMIS_CH_MAX];
+
 /* defaults of the arrays */
 #define X4(v)  v, v, v, v
 #define X32(v) X4(v), X4(v), X4(v), X4(v), X4(v), X4(v), X4(v), X4(v)
 _Static_assert(EMIS_CH_MAX == 32u, "the defaults below are written for 32 channels");
 const uint8_t emis_dflt_none[N] = { X32(EMIS_NONE) };
 
-/* retained: the engine's periods in progress */
+/* retained: the engine's periods in progress, the QAL3 charts */
 #if PLAT_FRAM_SIZE >= 131072u
 static uint64_t keep[(EMIS_SAVE_SIZE + 7u) / 8u];
-static const retain_def_t blocks[] = { RETAIN(PARAM_ID_EMIS_BLOCK, "emis_state", keep, RF_UNIT, NULL) };
+static uint32_t q3keep[(EMIS_Q3_SAVE_SIZE + 3u) / 4u];
+static const retain_def_t blocks[] = { RETAIN(PARAM_ID_EMIS_BLOCK, "emis_state", keep, RF_UNIT, NULL),
+                                       RETAIN(PARAM_ID_EMIS_Q3_BLOCK, "emis_qal3", q3keep, RF_UNIT, NULL) };
 const retain_def_t *plat_emis_blocks(size_t *n) { *n = sizeof blocks / sizeof blocks[0]; return blocks; }
 #define KEEP 1
 #else
@@ -56,7 +66,7 @@ __attribute__((weak)) bool emis_inst_point(unsigned p, float *value, uint8_t *q)
 /* the plant settings in force (the engine keeps a pointer; the channels it reads from emis_set.ch in
  * place: a change there is seen by the checksum below before the next step, and restarts the engine) */
 static emis_cfg_t    cur_g;
-static bool          have_cfg, running, loaded;
+static bool          have_cfg, running, loaded, q3_loaded;
 static uint32_t      set_crc, last_ms, save_ms;
 
 static void build(emis_cfg_t *g) {
@@ -67,12 +77,59 @@ static void build(emis_cfg_t *g) {
     g->ch_t = S.ch_t; g->ch_p = S.ch_p; g->t_fixed_c = S.t_fixed; g->p_fixed_kpa = S.p_fixed;
     g->ch_flow = S.ch_flow; g->period_s = S.period_s; g->min_avail = (float)S.min_avail / 100.0f;
     g->max_discard = S.max_discard; g->ci_subtract = S.ci_subtract; g->clamp_zero = S.clamp_zero;
-    g->cal_ext_pct = S.cal_ext;
+    g->cal_ext_pct = S.cal_ext; g->period2_s = S.period2_s;
+}
+
+/* QAL3: the check entries and resets (parameters 427, 428), every scan whether or not the engine runs */
+static void qal3_scan(uint32_t clk) {
+    bool changed = false;
+    if (!q3_loaded) {
+        q3_loaded = true;
+        emis_qal3_init();
+#if KEEP
+        emis_qal3_load(q3keep);
+#endif
+    }
+    if (emis_p_q3_record) {
+        unsigned ch = emis_p_q3_record - 1u;
+        emis_p_q3_record = 0u;
+        int r = emis_qal3_record(&emis_q3set, ch, ch < EMIS_CH_MAX ? emis_p_q3_zero[ch] : NAN,
+                                 ch < EMIS_CH_MAX ? emis_p_q3_span[ch] : NAN, clk);
+        emis_p_q3_result = (uint8_t)(r < 0 ? -r : 0);
+        if (r == 0) {
+            uint8_t st = emis_q3.status[ch];
+            const char *t = (st & (EMIS_Q3_ZERO_OUT | EMIS_Q3_SPAN_OUT)) ? "out of control" :
+                            (st & (EMIS_Q3_ZERO_WARN | EMIS_Q3_SPAN_WARN)) ? "beyond action limit" : "in control";
+            plat_log_event(LOG_EV_QAL3, PLAT_SRC_INTERNAL, 0, ch, emis_q3.zero_dev[ch], emis_q3.span_dev[ch], t);
+            changed = true;
+        }
+    }
+    if (emis_p_q3_reset) {
+        unsigned ch = emis_p_q3_reset - 1u;
+        emis_p_q3_reset = 0u;
+        if (ch < EMIS_CH_MAX) {
+            emis_qal3_reset(ch);
+            plat_log_event(LOG_EV_QAL3, PLAT_SRC_INTERNAL, 0, ch, NAN, NAN, "chart reset");
+            changed = true;
+        }
+    }
+    uint8_t before[EMIS_CH_MAX];
+    memcpy(before, emis_q3.status, sizeof before);
+    emis_qal3_tick(&emis_q3set, clk);              /* a settings change starts a chart again; DUE */
+    if (memcmp(before, emis_q3.status, sizeof before)) changed = true;
+#if KEEP
+    if (changed) emis_qal3_save(q3keep);
+#else
+    (void)changed;
+#endif
 }
 
 void emis_bind_scan(uint32_t now_ms) {
     uint32_t dt = have_cfg ? now_ms - last_ms : 0u;
     last_ms = now_ms;
+    uint32_t clk = 0u;
+    if (!plat_clock_now(&clk)) clk = 0u;          /* never set: no averages */
+    qal3_scan(clk);
     if (!S.enable) {
         if (running || !have_cfg) emis_clear();
         running = false; have_cfg = true; emis_p_cfg_error = 0; set_crc = 0u;
@@ -114,8 +171,6 @@ void emis_bind_scan(uint32_t now_ms) {
             }
         } else { in[i].x = 0.0f; in[i].q = PLAT_Q_UNAVAILABLE; }
     }
-    uint32_t clk = 0u;
-    if (!plat_clock_now(&clk)) clk = 0u;          /* never set: no averages */
     emis_step(in, emis_p_operating, clk, dt);
 #if KEEP
     if (now_ms - save_ms >= SAVE_MS || plat_power_failing()) { emis_save(keep, set_crc); save_ms = now_ms; }
@@ -123,9 +178,11 @@ void emis_bind_scan(uint32_t now_ms) {
 }
 
 void emis_bind_reset_for_test(void) {
-    have_cfg = running = loaded = false;
+    have_cfg = running = loaded = q3_loaded = false;
     last_ms = save_ms = 0u;
+    emis_p_q3_record = emis_p_q3_reset = emis_p_q3_result = 0u;
 #if KEEP
     memset(keep, 0, sizeof keep);
+    memset(q3keep, 0, sizeof q3keep);
 #endif
 }
