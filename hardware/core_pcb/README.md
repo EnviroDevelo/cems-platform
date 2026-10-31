@@ -7,7 +7,7 @@ decisions: [`docs/CORE_PCB.md`](../../docs/CORE_PCB.md).
 |---|---|
 | `cems_core.pdf` | All sheets, for review without KiCad |
 | `cems_core.kicad_pro`, `cems_core.kicad_sch` | KiCad project and root sheet |
-| `power`, `mcu`, `eth_client`, `eth_io`, `periph`, `io_dig`, `io_pwr`, `io_ana` `.kicad_sch` | The eight sheets (rev 0.2: 422 parts, 306 nets) |
+| `power`, `mcu`, `eth_client`, `eth_io`, `periph`, `io_dig`, `io_pwr`, `io_ana` `.kicad_sch` | The eight sheets (rev 0.2: 434 parts, 314 nets) |
 | `cems_core.kicad_sym`, `sym-lib-table` | Project symbols (the MB85RC1MT FRAM) |
 | `bom.csv` | Grouped bill of materials |
 | `tools/design.py` | **The circuit, as data: edit this, not the sheets** |

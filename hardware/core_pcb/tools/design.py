@@ -159,7 +159,7 @@ mcu = {
     15: "V24_SENSE", 59: "LED_RUN", 60: "LED_FAULT", 38: "HWREV0", 39: "HWREV1",
     4: "ROLE_A", 5: "ROLE_B",
     # I/O node section (sheets io_dig, io_pwr, io_ana): chip selects on the shared SPI4
-    1: "CS_A", 2: "CS_B", 3: "CS_IN", 46: "CS_T", 97: "CS_AI", 84: "CS_AO",
+    1: "CS_A", 2: "CS_B", 3: "CS_IN", 46: "CS_T", 97: "CS_AI", 84: "CS_EXP", 88: "EXP_INT",
     82: "A_ERR", 7: "IN_ERR", 61: "B_FAULT", 62: "B_PGOOD",
     95: "GATE_EN", 96: "WDI", 55: "GATE_FB",
     67: "PUMP_PWM", 23: "PUMP_TACH", 63: "PUMP_DIR", 64: "PUMP_EN", 90: "REL1_N", 91: "REL2_N",
@@ -532,8 +532,30 @@ part("J10", "Connector_Generic:Conn_02x20_Odd_Even", "DIGITAL I/O IDC40", IDC40,
 part("F10", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RIB"},
      mpn="Bourns MF-MSMF075-2", note="ribbon +24 V: sensor supply and breakout LEDs")
 
+# SPI expansion header (Gary 31 Oct): add-on modules such as a 4 x 4-20 mA analog output board
+# plug in here. The module carries its own isolation and isolated supply; the core gives it
+# 24 V and 3.3 V (each behind a PTC), SPI4 through series resistors, its own chip select and
+# an interrupt. Its MISO enters SPI4 only through a buffer enabled by CS_EXP, so a faulty or
+# missing module can never hold the shared bus. Latched, polarised 10-way header: cannot be
+# reversed, and no other cable in the system has 10 ways.
+part("J26", "Connector_Generic:Conn_02x05_Odd_Even", "SPI EXPANSION", "Connector_IDC:IDC-Header_2x05_P2.54mm_Latch_Vertical", S,
+     {1: "+24V_EXP", 2: "GND", 3: "+3V3_EXP", 4: "GND", 5: "EXP_SCK", 6: "GND", 7: "EXP_MOSI", 8: "EXP_MISO",
+      9: "EXP_CS", 10: "EXP_INT"},
+     mpn="Wurth 61201021621 (WR-BHD 10-way latched) CHECK MPN",
+     note="module: 1 +24 V (0.5 A), 3 +3.3 V (0.1 A, logic side of its isolator only), 5 SCK, 7 MOSI, 8 MISO, 9 CS, 10 INT (open drain, low = attention)")
+part("F23", "Device:Polyfuse", "0.5A", PTC1206, S, {1: "+24V", 2: "+24V_EXP"}, mpn="Bourns MF-NSMF050-2")
+part("F24", "Device:Polyfuse", "0.1A", PTC1206, S, {1: "+3V3", 2: "+3V3_EXP"}, mpn="Bourns MF-NSMF010-2")
+nr("100R", S, "SPI4_SCK", "EXP_SCK", note="series: limits a shorted module line, damps the cable")
+nr("100R", S, "SPI4_MOSI", "EXP_MOSI")
+nr("100R", S, "CS_EXP", "EXP_CS")
+part("U39", "74xGxx:74LVC1G125", "74LVC1G125", SOT23_5, S, {1: "CS_EXP", 2: "EXP_MISO", 3: "GND", 4: "SPI4_MISO", 5: "+3V3"},
+     mpn="SN74LVC1G125DBVR", note="module MISO onto SPI4 only while CS_EXP is low")
+nc("100n", S, "+3V3", "GND")
+nr("100k", S, "EXP_MISO", "GND", note="defined level with no module")
+nr("10k", S, "+3V3", "EXP_INT")
+nc("100n", S, "+24V_EXP", "GND", fp=C0805)
 # CS pull-ups: every chip stays deselected while the MCU is in reset
-for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI", "CS_AO"):
+for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI", "CS_EXP"):
     nr("10k", S, "+3V3", cs)
 
 # ---------------------------------------------------------------- field power, pump, relays, USB
@@ -768,46 +790,3 @@ mcv("J25", S, ["+5V_LVL", "LVL_SIG", "GND_AI", "+10V_FLOW", "FLOW_SIG", "GND_AI"
     key=5, pitch="3.5",
     note="level (DFRobot SEN0205): 5 V, SIG, 0 V; mass flow (AWM5104VN): +10 V, OUT, 0 V")
 
-# Analog outputs (fit-optional, Gary 31 Oct: not a general AU CEMS requirement, fitted when a
-# site licence or PLC needs hard-wired 4-20 mA). Every part below is DNP on the standard build.
-# AD5755-1 on the analog island (GND_AI): its own ISOW7741 for SPI (CS_AO on PD3), AVCC from an
-# ITX2405SA (the boost converters draw up to about 3 W at 5 V), AVDD from the 24 V loop supply.
-# Internal reference and internal RSET; voltage-output and HART pins unused.
-AO = dict(dnp=True)
-_n["R"], _n["C"] = max(_n["R"], 300), max(_n["C"], 300)  # C200-C203 are taken: AO parts use R301+/C301+
-isow("U39", "U40", "CS_AO", ("+5V_AOD", "GND_AI"), "+5V_AOD", "VSEL to VISOOUT = 5 V out (DVDD)", pre="AO", **AO)
-part("U41", "Converter_DCDC:ITX2405SA", "ITX2405SA", "Converter_DCDC:Converter_DCDC_XP_POWER-ITXxxxxSA_THT", S,
-     {2: "+24V", 1: "GND", 6: "+5V_AO", 7: "GND_AI"}, mpn="XP Power ITX2405SA (6 W, 1.6 kV)",
-     note="AVCC for the four boost converters", **AO)
-nc("10u 50V", S, "+24V", "GND", fp=C1210, **AO)
-nc("22u", S, "+5V_AO", "GND_AI", fp=C1210, **AO)
-nc("100n", S, "+5V_AO", "GND_AI", **AO)
-ao = {11: "+5V_AOD", 12: "GND_AI", 45: "+5V_AO", 19: "+24V_AI", 27: "GND_AI", 40: "GND_AI", 53: "GND_AI",
-      35: "GND_AI", 3: "GND_AI", 4: "GND_AI", 65: "GND_AI", 7: "AO_CS", 8: "AO_SCLK", 9: "AO_DIN", 10: "AO_DOUT",
-      5: "GND_AI", 6: "GND_AI", 13: "GND_AI", 14: "GND_AI", 17: "GND_AI", 18: "AO_RST", 15: "AO_ALERT",
-      16: "AO_FAULT", 61: "AO_REF", 62: "AO_REF"}
-sw = {"A": (39, 38, 24, 23, 26), "B": (36, 37, 34, 32, 33), "C": (44, 43, 46, 48, 47), "D": (41, 42, 56, 57, 54)}
-for k, (ch, (p_sw, p_gsw, p_vb, p_comp, p_iout)) in enumerate(sw.items(), 1):
-    ao.update({p_sw: f"AO_SW{k}", p_gsw: "GND_AI", p_vb: f"AO_VB{k}", p_comp: f"AO_COMP{k}", p_iout: f"AO_IOUT{k}"})
-    part(f"L{3 + k}", "Device:L", "10uH", "Inductor_SMD:L_Coilcraft_XAL4040-XXX", S, {1: "+5V_AO", 2: f"AO_SW{k}"},
-         mpn="Coilcraft XAL4040-103", note="boost inductor, as the datasheet test circuit" if k == 1 else "", **AO)
-    part(f"D{50 + k}", "Device:D_Schottky", "PMEG4010", "Diode_SMD:D_SOD-323F", S, {2: f"AO_SW{k}", 1: f"AO_VB{k}"},
-         mpn="Nexperia PMEG4010CEJ (40 V, 1 A)", **AO)
-    nc("4u7 50V", S, f"AO_VB{k}", "GND_AI", fp=C1210, **AO)
-    nc("100n 50V", S, f"AO_VB{k}", "GND_AI", **AO)
-    nc("10n", S, f"AO_COMP{k}", "GND_AI", note="COMPDCDC" if k == 1 else "", **AO)
-    part(f"D{54 + k}", "Device:D_Zener", "SMAJ33A", "Diode_SMD:D_SMA", S, {1: f"AO_IOUT{k}", 2: "GND_AI"},
-         mpn="SMAJ33A", note="output clamp. CHECK what IOUT survives when 24 V is wired onto it" if k == 1 else "", **AO)
-    nc("4n7 50V", S, f"AO_IOUT{k}", "GND_AI", **AO)
-part("U42", "cems_core:AD5755-1", "AD5755-1", "Package_CSP:LFCSP-64-1EP_9x9mm_P0.5mm_EP5.21x5.21mm", S, ao,
-     mpn="ADI AD5755-1ACPZ",
-     note="4 x 4-20 mA, short and open-loop detect. Pin numbers from Table 5 (31 Oct). VOUT/+VSENSE/COMPLV/CHART/RSET "
-          "unconnected for current-only use: CHECK the datasheet's unused-pin advice", **AO)
-nc("100n", S, "+5V_AOD", "GND_AI", **AO)
-nc("10u", S, "+5V_AO", "GND_AI", fp=C0805, **AO)
-nc("100n 50V", S, "+24V_AI", "GND_AI", **AO)
-nc("100n", S, "AO_REF", "GND_AI", note="REFOUT to REFIN, 100n to REFGND", **AO)
-for net in ("AO_RST", "AO_ALERT", "AO_FAULT"):
-    nr("10k", S, "+5V_AOD", net, **AO)
-mcv("J26", S, sum(([f"AO_IOUT{k}", "GND_AI"] for k in range(1, 5)), []), "AO 1-4", key=(2, 6), pitch="3.5",
-    note="4-20 mA out: OUTn+, 0 V per channel (active, board powers the loop)", **AO)

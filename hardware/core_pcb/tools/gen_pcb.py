@@ -42,14 +42,14 @@ GAP = 0.3                        # gap between courtyards when packing (mm); cou
 # their isolated islands. The IDC header stands on the board face, set back from the top edge
 # (second tier), so the ribbon leaves through the top cover.
 TOP_EDGE = ["J1", "J2", "J3", "J18", "J13", "J15", "J17", "J11"]
-BOTTOM_EDGE = ["J19", "J20", "J21", "J25", "J22", "J23", "J24", "J26"]  # right-aligned, under io_ana
-TIER2 = ["J10"]
+BOTTOM_EDGE = ["J19", "J20", "J21", "J25", "J22", "J23", "J24"]  # right-aligned, under io_ana
+TIER2 = ["J10", "J26"]
 
 # Blocks, left to right across the band between the two connector rows; each block's width
 # is set from its parts' courtyard area at FILL. io_dig starts below the two IDC headers.
 ORDER = {"power": ["power"], "core": ["eth_client", "eth_io", "mcu", "periph"], "io_dig": ["io_dig"],
          "io_pwr": ["io_pwr"], "io_ana": ["io_ana"]}
-WEIGHT = {"io_ana": 1.0, "core": 1.18, "power": 1.2, "io_pwr": 0.9, "io_dig": 0.95}  # extra width where the parts are small and many
+WEIGHT = {"io_ana": 1.12, "core": 1.1}  # extra width where the parts are small and many
 BAND = (20.0, 76.0)              # y range between the connector rows (mm)
 FILL = 0.62
 
@@ -58,14 +58,14 @@ ISO_CLASSES = {
               "+5V_P", "PUMP_PWR", "A_IADJ", "A_OLADJ", "A_VDDIO", "A_VCORE", "A_LEDX", "A_LEDY",
               "IN_TS", "IN_WB", "FA_LED_A", "FB_LED_A"),
     "ISO_T": ("GND_T", "+3V3_T", "+3V3_TA"),
-    "ISO_AI": ("GND_AI", "+5V_AI", "+5V_AIA", "+24V_AI", "+5V_AO", "+5V_AOD", "+13V_AI", "+5V_LVL", "+10V_FLOW", "REF10", "REF10_NR",
+    "ISO_AI": ("GND_AI", "+5V_AI", "+5V_AIA", "+24V_AI", "+13V_AI", "+5V_LVL", "+10V_FLOW", "REF10", "REF10_NR",
                "V10_MON", "LVL_SIG", "FLOW_SIG", "FLOW_ILIM"),
 }
 FIELD_PREFIXES = ("A_OUT", "B_OUT", "B_CL", "DI", "P_", "REL1_OUT", "REL2_OUT")
 FIELD_IN = tuple(f"IN{n}_" for n in range(1, 9))
 T_PREFIXES = ("T1_", "T2_", "T3_", "T4_", "T5_", "T6_", "T_SCLK", "T_DIN", "T_CS", "T_DOUT", "T_RST", "T_REF",
               "T_AINCOM", "T_RTN")
-AI_PREFIXES = ("AO_", "AI_SCLK", "AI_DIN", "AI_CS", "AI_DOUT", "AI_ERR", "AI_REG", "AI_REF", "AI_ADJ", "LOOP",
+AI_PREFIXES = ("AI_SCLK", "AI_DIN", "AI_CS", "AI_DOUT", "AI_ERR", "AI_REG", "AI_REF", "AI_ADJ", "LOOP",
                "AI1_", "AI2_", "AI3_", "AI4_", "AI5_", "AI6_")
 POWER = ("+24V", "+24V_IN", "+24V_F", "+24V_D", "0V_IN", "+5V", "+3V3", "GND", "BUCK5_SW", "BUCK3_SW")
 
