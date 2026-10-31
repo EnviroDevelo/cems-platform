@@ -1161,6 +1161,29 @@ static void post_mb_force(const http_req_t *r, http_out_t *o, uint8_t lvl, uint3
     out_str(o, "{\"ok\":true,\"forced\":"); json_uint(o, mb_force_count()); out_str(o, "}");
 }
 
+struct std_ctx { http_out_t *o; bool first; };
+static void std_entry(const mb_std_item_t *it, void *ctx) {
+    static const char *const fmt[] = { "bit", "u16", "i16", "u32", "i32", "f32", "bytes", "array" };
+    struct std_ctx *c = ctx;
+    http_out_t *o = c->o;
+    char nm[24], desc[112];
+    if (it->slot < 0xFFu) snprintf(nm, sizeof nm, "std%u_%u", (unsigned)it->slot, (unsigned)it->addr);
+    else snprintf(nm, sizeof nm, "std_%u", (unsigned)it->addr);
+    if (it->slot_name) snprintf(desc, sizeof desc, "%s - %s", it->slot_name, it->item);
+    else snprintf(desc, sizeof desc, "%s", it->item);
+    out_str(o, c->first ? "{\"table\":\"input\"" : ",{\"table\":\"input\"");
+    c->first = false;
+    out_str(o, ",\"mirror\":\"holding\",\"fc_read\":4,\"fc_write\":null,\"addr\":"); json_uint(o, it->addr);
+    out_str(o, ",\"count\":"); json_uint(o, it->count);
+    out_str(o, ",\"format\":"); json_str(o, it->fmt <= MBF_ARRAY ? fmt[it->fmt] : "?");
+    if (it->count == 2u) { out_str(o, ",\"word_order\":"); json_str(o, plat_mb_std_words == 1u ? "low_first" : "high_first"); }
+    out_str(o, ",\"id\":null,\"name\":"); json_str(o, nm);
+    out_str(o, ",\"description\":"); json_str(o, desc);
+    out_str(o, ",\"unit\":"); if (it->unit && *it->unit) json_str(o, it->unit); else out_str(o, "null");
+    out_str(o, ",\"slot\":"); if (it->slot < 0xFFu) json_uint(o, it->slot); else out_str(o, "null");
+    out_str(o, ",\"access\":\"read\",\"block\":false,\"core\":\"standard\",\"forceable\":false}");
+}
+
 /* GET /api/modbus/map: the register map in force, for the integrator's handover file */
 static void get_mb_map(http_out_t *o) {
     static const char *const tab[] = { "coil", "discrete", "holding", "input" };
@@ -1208,13 +1231,16 @@ static void get_mb_map(http_out_t *o) {
         out_str(o, ",\"forceable\":"); json_bool(o, mb_forceable(d->id));
         out_str(o, "}");
     }
+    /* the standard CEMS block (docs/MODBUS_STANDARD_BLOCK.md): fitted slots and the globals */
+    struct std_ctx sc = { o, mb_entry_count() == 0 };
+    mb_std_each(std_entry, &sc);
     /* the digital input alarms' discrete inputs (plat_alarm.h), named live by their labels */
     {
         static const char *const what[3] = { "active", "waiting for an acknowledge", "input unreliable" };
         static const char *const key[3] = { "active", "unacked", "unreliable" };
         alarm_view_t av;
         char nm[24], desc[96];
-        bool first = mb_entry_count() == 0;
+        bool first = sc.first;
         for (unsigned g = 0; g < 4u; ++g)
             for (unsigned i = 0; i < (g < 3u ? PLAT_DIA_SLOTS : (unsigned)PLAT_DI_MAX); ++i) {
                 uint16_t addr = (uint16_t)(g < 3u ? PLAT_DIA_MB_ADDR + 32u * g + i : PLAT_DIA_MB_ADDR + 100u + i);

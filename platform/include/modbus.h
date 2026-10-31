@@ -96,6 +96,17 @@ typedef struct {
  * its self-description (conformity 0x83). A product's map may not use 7000-8999 (input, holding) or coils 8000-8099. */
 void mb_block_scan(uint32_t now_ms);     /* scan task: heartbeat, link age, uptime */
 
+/* The standard block's registers as documented items, for /api/modbus/map and the handover file:
+ * every item of a fitted slot, then the block's globals once, in address order (input registers;
+ * the holding registers mirror them). fmt is MBF_U16, MBF_U32 or MBF_F32; slot 0xFF = global. */
+typedef struct {
+    uint16_t addr;
+    uint8_t  count, fmt, slot;
+    const char *slot_name, *item, *unit;  /* unit NULL: none */
+} mb_std_item_t;
+extern uint8_t plat_mb_std_words;        /* param 335: the block's word order */
+void mb_std_each(void (*fn)(const mb_std_item_t *it, void *ctx), void *ctx);
+
 /* Build the map index: the platform's block plus the application's map. Checks that every ID
  * exists, the format suits the entry, and no two entries in a table overlap (an application
  * entry in 9000-9199 of the input registers overlaps the block). Returns 0, or the index of the
