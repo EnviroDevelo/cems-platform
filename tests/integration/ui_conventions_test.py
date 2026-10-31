@@ -3,7 +3,8 @@
 follow it: the colour table (section 1) must match the touchscreen's #defines in
 platform/ui/ui.c and the web page's CSS variables, and the quality words (section 4) must match
 the core's names (platform/core/plat_state.c) and the web page's QTXT, with the same word
-colours. A change to one side without the other, or to the page without the convention, fails
+colours. Every button(...) in ui.c with literal sizes must be at least 56 x 56 px (the
+convention's touch-target rule). A change to one side without the other, or to the page without the convention, fails
 here. Reads files only: no build, no browser. make test runs it."""
 import os, re, sys
 
@@ -86,6 +87,15 @@ for q, c in colour.items():
     got = "qbad" if code in bad else "qgrey" if code in greyq else "warn"
     check(want == got, f"web colours \"{words[q]}\" as {c} ({got})")
 check("\"----\"" in mq and "unavailable" in mq, "web shows ---- for an unavailable value")
+
+# --- touch targets: every button(...) in ui.c with literal sizes is at least 56 x 56 px ---
+nb = 0
+for m in re.finditer(r"\bbutton\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*(\d+)\s*,\s*(\d+)\s*,", UI):
+    nb += 1
+    w, h = int(m.group(1)), int(m.group(2))
+    if w < 56 or h < 56:
+        check(False, f"ui.c line {UI[:m.start()].count(chr(10)) + 1}: a {w} x {h} px button (minimum 56 x 56)")
+check(nb >= 50, f"touch targets: {nb} buttons with literal sizes checked")
 
 print(f"UI CONVENTIONS (CIP-21.7): {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

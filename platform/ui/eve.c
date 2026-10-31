@@ -53,6 +53,7 @@ void eve_wr32(eve_t *e, uint32_t a, uint32_t v) {
 }
 
 /* ---------------- start-up ---------------- */
+#define EVE_REG_CLOCK 0x302008u   /* system clock cycles since reset */
 int eve_init(eve_t *e, eve_bus_t *bus, const eve_panel_t *p) {
     memset(e, 0, sizeof *e);
     e->bus = bus;
@@ -68,6 +69,14 @@ int eve_init(eve_t *e, eve_bus_t *bus, const eve_panel_t *p) {
     for (k = 0; k < 100 && (eve_rd8(e, REG_CPURESET) & 7u) != 0u; ++k) bus->delay_ms(10);
     if (k == 100) return -2;
     eve_wr32(e, REG_FREQUENCY, 72000000u);                    /* as Riverdi's library does for this module */
+    {   /* Check it: REG_FREQUENCY only tells the chip its clock, it doesn't set it. If the
+         * BT817 is on its 60 MHz default (no CLKSEL is sent, as in Riverdi's library), say so,
+         * so PWM, timers and REG_CLOCK users stay right (HMI_BENCH_TEST.md 3.4). */
+        uint32_t c0 = eve_rd32(e, EVE_REG_CLOCK);
+        bus->delay_ms(50);
+        uint32_t mhz = (eve_rd32(e, EVE_REG_CLOCK) - c0) / 50000u;
+        if (mhz >= 54u && mhz <= 66u) eve_wr32(e, REG_FREQUENCY, 60000000u);
+    }
     eve_wr16(e, REG_PWM_HZ, 4000);
     eve_wr8(e, REG_PWM_DUTY, 0);                               /* backlight off until the first frame */
     eve_wr16(e, REG_PCLK_FREQ, p->pclk_freq);
