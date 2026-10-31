@@ -4,6 +4,7 @@
 #include "tls.h"
 #include "plat_net.h"
 #include "bsp.h"
+#include "plat_config.h"
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/platform_time.h"
@@ -19,7 +20,10 @@
 
 #define KEY_MAGIC 0x4B534C54u   /* "TLSK" */
 
-static uint8_t pool[TLS_POOL_SIZE];
+#ifndef TLS_POOL_PLACE
+#define TLS_POOL_PLACE PLAT_EXTRAM          /* external PSRAM when the board has it (plat_config.h) */
+#endif
+static uint8_t pool[TLS_POOL_SIZE] TLS_POOL_PLACE;
 static mbedtls_entropy_context ent;
 static mbedtls_ctr_drbg_context drbg;
 static mbedtls_pk_context key;

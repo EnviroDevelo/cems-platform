@@ -3,15 +3,17 @@
  * analyser with a zirconia O2 probe, quality propagation, the O2 limit and "correct only above",
  * the CO2 reference, the short-term average 2/3 rule, confidence interval subtraction, daily
  * validity (5 discards), periods outside operating time, the clock, the valid calibration range,
- * and the configuration check. */
+ * the configuration check, the second (10-minute) period and the QAL3 charts. */
 #include <math.h>
 #include <string.h>
 #include "tst.h"
 #include "emis.h"
 #include "plat_state.h"
 #include "emis_bind.h"
+#include "emis_qal3.h"
 #include "param.h"
 #include "bsp_host.h"
+#include "plat_clock.h"
 
 #define NEAR(a, b, tol) CHECK(fabs((double)(a) - (double)(b)) <= (tol))
 
@@ -333,6 +335,124 @@ static void t_retain(void) {
     NEAR(emis_out(3).v[EMIS_B_AVG], 40.0, 1e-4);
 }
 
+/* Vector 16: the second period, IED Annex VI Part 3 1.5 (c), Part 8 1.1 (d)(i) and 1.2 (waste CO,
+ * 10-minute averages from the validated values, ELV 150) */
+static void t_period2(void) {
+    static uint8_t buf[EMIS_SAVE_SIZE];
+    avg_cfg(); G.period2_s = 600u; C.elv2[3] = 150.0f; emis_init(&G, &C);
+    CHECK_EQ(emis_check(&G, &C, NULL, 0), 0);
+    run(0, 10, 40.0f, PLAT_Q_VALID, true);
+    CHECK_EQ(emis_out(3).q_avg2, PLAT_Q_UNAVAILABLE);           /* none complete yet */
+    run(10, 20, 160.0f, PLAT_Q_VALID, true);                      /* minute 10 closes 00:00-00:10 */
+    CHECK_EQ(emis_out(3).q_avg2, PLAT_Q_VALID);
+    NEAR(emis_out(3).avg2, 35.0, 1e-4);                          /* 40 minus the CI, 10 % of the daily ELV 50 */
+    CHECK_EQ(emis_out(3).n2_today, 1); CHECK_EQ(emis_out(3).n2_above_today, 0);
+    run(20, 24, 160.0f, PLAT_Q_CAL, true);                        /* 00:20-00:30: 4 of 10 min calibrating */
+    CHECK_EQ(emis_out(3).n2_today, 2); CHECK_EQ(emis_out(3).n2_above_today, 1);   /* 155 > 150 */
+    NEAR(emis_out(3).avg2, 155.0, 1e-3);
+    run(24, 30, 40.0f, PLAT_Q_VALID, true);
+    run(30, 31, 40.0f, PLAT_Q_VALID, true);
+    CHECK_EQ(emis_out(3).q_avg2, PLAT_Q_CAL);                     /* 6 of 10 valid: below 2/3, discarded */
+    CHECK_EQ(emis_out(3).n2_today, 2);
+    CHECK_EQ(emis_out(3).discarded_today, 0);                     /* the half-hour itself was 26 of 30: kept */
+    /* a power cycle keeps today's counts */
+    emis_save(buf, 7u); emis_init(&G, &C); CHECK(emis_load(buf, 7u));
+    CHECK_EQ(emis_out(3).n2_today, 2); CHECK_EQ(emis_out(3).n2_above_today, 1);
+    /* the day: 144 periods, one discarded */
+    run(31, 1440, 40.0f, PLAT_Q_VALID, true);
+    run(1440, 1441, 40.0f, PLAT_Q_VALID, true);
+    CHECK_EQ(emis_out(3).n2_day, 143); CHECK_EQ(emis_out(3).n2_above_day, 1);
+    CHECK_EQ(emis_out(3).n2_today, 0);
+    /* off: no second-period results */
+    avg_cfg();
+    run(0, 21, 40.0f, PLAT_Q_VALID, true);
+    CHECK_EQ(emis_out(3).q_avg2, PLAT_Q_UNAVAILABLE); CHECK_EQ(emis_out(3).n2_today, 0);
+    /* a period that does not divide the day is refused */
+    G.period2_s = 700u;
+    CHECK_EQ(emis_check(&G, &C, NULL, 0), (int)EMIS_CH_MAX + 1);
+    G.period2_s = 0u; C.elv2[3] = -1.0f;
+    CHECK_EQ(emis_check(&G, &C, NULL, 0), 4);
+}
+
+/* Vector 17: QAL3 Shewhart charts (emis_qal3.h): s_AMS 1, limits 2 (action) and 3 (one point) */
+static void t_qal3(void) {
+    static emis_q3_set_t s;
+    static uint32_t buf[(EMIS_Q3_SAVE_SIZE + 3u) / 4u];
+    memset(&s, 0, sizeof s);
+    s.k = 2.0f; s.interval_d = 14u; s.s_ams[3] = 1.0f; s.zero_ref[3] = 0.0f; s.span_ref[3] = 100.0f;
+    emis_qal3_init();
+    emis_qal3_tick(&s, T0);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_DUE);      /* configured, never checked */
+    CHECK_EQ(emis_q3.status[4], 0);
+    CHECK(emis_qal3_alarm());
+    CHECK_EQ(emis_qal3_record(&s, 3, 0.5f, 100.5f, T0), 0);
+    emis_qal3_tick(&s, T0 + 60u);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON);
+    CHECK(!emis_qal3_alarm());
+    NEAR(emis_q3.zero_dev[3], 0.5, 1e-6); NEAR(emis_q3.span_dev[3], 0.5, 1e-5);
+    CHECK_EQ(emis_q3.last[3], T0); CHECK_EQ(emis_q3.n[3], 1);
+    /* zero beyond the action limit: a warning; three in a row: out of control */
+    CHECK_EQ(emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 1u), 0);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_ZERO_WARN);
+    emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 2u);
+    CHECK(!(emis_q3.status[3] & EMIS_Q3_ZERO_OUT));
+    emis_qal3_record(&s, 3, 2.2f, 100.0f, T0 + 3u);
+    CHECK(emis_q3.status[3] & EMIS_Q3_ZERO_OUT);
+    emis_qal3_record(&s, 3, 0.0f, 100.0f, T0 + 4u);               /* latched until reset */
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_ZERO_OUT);
+    CHECK(emis_qal3_alarm());
+    emis_qal3_reset(3);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON); CHECK_EQ(emis_q3.n[3], 0);
+    /* beyond opposite limits do not make a run */
+    emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 5u);
+    emis_qal3_record(&s, 3, -2.5f, 100.0f, T0 + 6u);
+    emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 7u);
+    CHECK(!(emis_q3.status[3] & EMIS_Q3_ZERO_OUT));
+    emis_qal3_reset(3);
+    /* span: 8 in a row on the same side, inside the limits */
+    for (unsigned k = 0; k < 7u; ++k) emis_qal3_record(&s, 3, 0.0f, 100.4f, T0 + 10u + k);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON);
+    emis_qal3_record(&s, 3, 0.0f, 100.4f, T0 + 20u);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_SPAN_OUT);
+    emis_qal3_reset(3);
+    /* one point beyond 3 s_AMS */
+    emis_qal3_record(&s, 3, 0.0f, 96.9f, T0 + 30u);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_SPAN_WARN | EMIS_Q3_SPAN_OUT);
+    emis_qal3_reset(3);
+    /* due after the interval */
+    emis_qal3_record(&s, 3, 0.0f, 100.0f, T0 + 40u);
+    emis_qal3_tick(&s, T0 + 40u + 14u * 86400u);
+    CHECK(!(emis_q3.status[3] & EMIS_Q3_DUE));
+    emis_qal3_tick(&s, T0 + 41u + 14u * 86400u);
+    CHECK(emis_q3.status[3] & EMIS_Q3_DUE);
+    /* power cycle: the chart carries on */
+    emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 100u);
+    emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 101u);
+    emis_qal3_save(buf);
+    emis_qal3_init();
+    CHECK(emis_qal3_load(buf));
+    emis_qal3_tick(&s, T0 + 102u);
+    CHECK_EQ(emis_q3.n[3], 3);
+    emis_qal3_record(&s, 3, 2.5f, 100.0f, T0 + 102u);
+    CHECK(emis_q3.status[3] & EMIS_Q3_ZERO_OUT);
+    /* a new span gas starts the chart again */
+    s.span_ref[3] = 90.0f;
+    emis_qal3_tick(&s, T0 + 200u);
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_DUE); CHECK_EQ(emis_q3.n[3], 0);
+    /* refused entries */
+    CHECK_EQ(emis_qal3_record(&s, 40, 0.0f, 90.0f, T0), -1);
+    CHECK_EQ(emis_qal3_record(&s, 4, 0.0f, 90.0f, T0), -2);
+    CHECK_EQ(emis_qal3_record(&s, 3, NAN, 90.0f, T0), -3);
+    CHECK_EQ(emis_qal3_record(&s, 3, 0.0f, 90.0f, 0u), -4);
+    CHECK_EQ(emis_q3.n[3], 0);
+    /* QAL3 off for the channel */
+    s.s_ams[3] = 0.0f;
+    emis_qal3_tick(&s, T0 + 300u);
+    CHECK_EQ(emis_q3.status[3], 0);
+    CHECK(!emis_qal3_alarm());
+    emis_qal3_init();
+}
+
 /* the platform binding: parameters in, parameters out */
 static float m_co, m_o2;
 static const param_def_t bdefs[] = {
@@ -381,12 +501,26 @@ static void t_bind(void) {
     emis_bind_scan(bsp_ms());
     CHECK_EQ(emis_res.q[EMIS_Q_IN][3], PLAT_Q_UNAVAILABLE);
     emis_set.src[3] = 0;
+    /* a QAL3 entry through the parameters: refused without QAL3 on the channel, then without a clock */
+    CHECK(param_find(PARAM_ID_EMIS_Q3_RECORD) != NULL && param_find(PARAM_ID_EMIS_Q3_N) != NULL);
+    emis_p_q3_zero[3] = 0.1f; emis_p_q3_span[3] = 99.0f; emis_p_q3_record = 4;
+    emis_bind_scan(bsp_ms());
+    CHECK_EQ(emis_p_q3_record, 0); CHECK_EQ(emis_p_q3_result, EMIS_Q3R_OFF);
+    emis_q3set.s_ams[3] = 1.0f; emis_q3set.span_ref[3] = 100.0f;
+    emis_p_q3_record = 4;
+    emis_bind_scan(bsp_ms());
+    CHECK_EQ(emis_q3.status[3], EMIS_Q3_ON | EMIS_Q3_DUE);
+    uint32_t clk;
+    if (!plat_clock_now(&clk)) CHECK_EQ(emis_p_q3_result, EMIS_Q3R_CLOCK);
+    else { CHECK_EQ(emis_p_q3_result, EMIS_Q3R_OK); CHECK_EQ(emis_q3.n[3], 1); }
+    emis_q3set.s_ams[3] = 0.0f; emis_q3set.span_ref[3] = 0.0f;
     emis_set.enable = false;
     emis_bind_scan(bsp_ms());
+    CHECK_EQ(emis_q3.status[3], 0);
     plat_state_reset_for_test(); emis_bind_reset_for_test();
 }
 
 void test_emis_all(void) {
-    RUN(t_formulas); RUN(t_chain); RUN(t_diluent); RUN(t_short); RUN(t_day); RUN(t_clock); RUN(t_cal_range); RUN(t_check); RUN(t_retain); RUN(t_bind);
+    RUN(t_formulas); RUN(t_chain); RUN(t_diluent); RUN(t_short); RUN(t_day); RUN(t_clock); RUN(t_cal_range); RUN(t_check); RUN(t_retain); RUN(t_period2); RUN(t_qal3); RUN(t_bind);
     emis_reset_for_test();
 }

@@ -241,6 +241,33 @@ Properties > C/C++ Build > Settings > MCU GCC Compiler > Preprocessor), for exam
 pre-build step; it shows as `/api/info` `build` and goes in the image header with
 `tools/mkfwimage.py --build-id`. Without it the build says "dev".
 
+## 3k. External PSRAM: APS6404L on OCTOSPI1 (CORE PCB only, Gary 29 Oct)
+
+The CORE PCB carries an 8 MB QSPI PSRAM (U10, AP Memory APS6404L-3SQR). The DK has none: leave
+all of this out of the DK project, and the firmware keeps every buffer on chip.
+
+| CubeMX | Setting |
+|---|---|
+| OCTOSPI1 | Mode **Quad SPI**, Port 1, chip select NCS1. Pins **PB2** CLK (AF9), **PB10** NCS (AF9), **PB1** IO0 (AF6), **PB0** IO1 (AF6), **PC2** IO2 (AF9), **PA6** IO3 (AF6), speed Very High. Parameters: any (the driver sets them) |
+| DCACHE1 | Activated (caches the PSRAM region; nothing else uses it) |
+| Clock | OCTOSPI1 kernel clock = HCLK (250 MHz); the driver divides by 4 |
+| main.h (USER CODE) | `#define PSRAM_XSPI_HANDLE hospi1` |
+| Preprocessor | `PLAT_PSRAM=1` |
+
+Linker script (`STM32H573VITX_FLASH.ld`): add to MEMORY
+`PSRAM (rw) : ORIGIN = 0x90000000, LENGTH = 8M`, and paste `port/stm32h5/extram_section.ld`
+just before `._user_heap_stack`, after the `.noinit` block (the compile check does the same).
+
+What happens: `bsp_init` maps the chip (`psram_stm32h5.c`), reads its ID, tests every address and
+data line, and zeroes the `.extram` section. The TLS pool (80 KB) and the settings store's
+staging block (45 KB) are placed there (`PLAT_EXTRAM`), so the MCU keeps about 300 KB free. If the
+check fails, the unit stops at start-up with outputs safe and fault "psram" in the fault record.
+**Before the PCB:** the same chip on a SOIC-8 breakout wired to a NUCLEO-H563ZI on the same pins
+(the DK's OCTOSPI1 belongs to its own flash) runs this code unchanged (H563 and H573 share the
+OCTOSPI). On flying leads add `PSRAM_CLK_PRESCALER=24u` (10 MHz) to the defines, and open the
+Nucleo's solder bridge to the LED on PB0. Bench checks on the first board: an HTTPS handshake time against the DK's (the TLS pool is in the
+PSRAM; `TLS_POOL_PLACE=` empty puts it back on chip), and a backup/restore.
+
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 
 The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the

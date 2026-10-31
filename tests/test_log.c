@@ -484,6 +484,17 @@ static void t_web(void) {
     CHECK(strstr(out, "{\"events\":[{\"seq\":151,") != NULL);
     CHECK_EQ(count(out, "\"seq\":"), 3);
     CHECK(strstr(out, "\"seq\":149") != NULL);
+    /* more events than the scratch buffer holds: read in chunks, still newest first and complete */
+    c.scratch_size = 32u * LOG_SLOT; http_api_init(&c);
+    CHECK_EQ(get("/api/log/events?n=80"), 200);
+    CHECK_EQ(count(out, "\"seq\":"), 80);
+    {
+        const char *p = out; long prev = 152; bool desc = true;
+        while ((p = strstr(p, "\"seq\":")) != NULL) { long q = strtol(p + 6, NULL, 10); if (q != prev - 1) desc = false; prev = q; p += 6; }
+        CHECK(desc); CHECK_EQ(prev, 72);
+    }
+    CHECK(strstr(out, "]}") != NULL);
+    c.scratch_size = sizeof scratch; http_api_init(&c);
     CHECK_EQ(get("/api/log/events.csv"), 200);
     CHECK(strstr(out, "Content-Type: text/csv") != NULL);
     CHECK(strstr(out, "Content-Disposition: attachment; filename=\"cems-0-events.csv\"") != NULL);

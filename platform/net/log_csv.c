@@ -100,7 +100,7 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         [LOG_EV_IP_CONFLICT] = "Address conflict", [LOG_EV_TLS_KEY] = "New HTTPS key",
         [LOG_EV_MAIL] = "Alarm email", [LOG_EV_SERIAL] = "Serial number", [LOG_EV_IOB] = "I/O board",
         [LOG_EV_STATE] = "State", [LOG_EV_POWER_FAIL] = "Power failing", [LOG_EV_POWER_RESTORED] = "Power restored",
-        [LOG_EV_SERVICE] = "Service", [LOG_EV_CAL] = "Calibration", [LOG_EV_SELFTEST] = "Self-test", [LOG_EV_FORCE] = "Modbus force", [LOG_EV_ETH_SPEED] = "Ethernet speed" };
+        [LOG_EV_SERVICE] = "Service", [LOG_EV_CAL] = "Calibration", [LOG_EV_SELFTEST] = "Self-test", [LOG_EV_FORCE] = "Modbus force", [LOG_EV_ETH_SPEED] = "Ethernet speed", [LOG_EV_QAL3] = "QAL3 check" };
     static const char *const reset[] = { "", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out" };
     const char *w = e->code < sizeof nm / sizeof nm[0] && nm[e->code] ? nm[e->code] : (e->code >= LOG_EV_APP ? "Application" : "Event");
     snprintf(what, wcap, "%s", w);
@@ -134,6 +134,10 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         break;
     case LOG_EV_ETH_SPEED:
         snprintf(detail, dcap, "100 Mbit lost data (%lu %% sent again): now 10 Mbit until a restart", (unsigned long)e->arg);
+        break;
+    case LOG_EV_QAL3:
+        if (isfinite(e->new_v)) snprintf(detail, dcap, "channel %lu: zero %s, span %s: %s", (unsigned long)e->arg, a, b, e->text);
+        else snprintf(detail, dcap, "channel %lu: %s", (unsigned long)e->arg, e->text);
         break;
     case LOG_EV_MAIL:
         snprintf(detail, dcap, "%s, %lu alarm event%s", e->text, (unsigned long)e->arg, e->arg == 1 ? "" : "s");

@@ -284,6 +284,16 @@ def main():
     bad = bytearray(backup); bad[-1] ^= 1
     st, body, _ = web.req("/api/restore", raw=bytes(bad))
     check(st == 400, "damaged backup refused")
+    # the file is received straight into the settings store's buffer (not the web server's):
+    # one larger than any backup is refused without breaking the connection
+    st, body, _ = web.req("/api/restore", raw=b"CEMX" + bytes(64 * 1024))
+    check(st == 413, f"oversized backup refused ({st})")
+    st, backup2, _ = web.req("/api/backup")
+    check(st == 200 and backup2[:4] == b"CEMX", "backup still works after the refusal (buffer returned)")
+    web.json("/api/write", {"id": 1001, "v": 1234})
+    time.sleep(1.5)                                   # saved: the store got its buffer back
+    st, body, _ = web.req("/api/restore", raw=backup)
+    check(st == 200, "restore again")
 
     # ---------------- HTTPS ----------------
     import hashlib, socket, http.client

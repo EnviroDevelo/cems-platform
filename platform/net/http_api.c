@@ -698,6 +698,17 @@ static void post_password(const http_req_t *r, http_out_t *o, uint8_t lvl, uint3
     out_str(o, "{\"ok\":true}");
 }
 
+/* Read and drop the rest of a refused upload, so the client gets the answer instead
+ * of a broken connection (with TLS, closing on unread data resets the connection). */
+static void drain(http_read_fn rd, void *ctx, uint32_t left) {
+    if (left > 2u * 1024u * 1024u || !cfg.scratch) return;   /* not for absurd lengths */
+    while (left) {
+        int n = rd(ctx, cfg.scratch, left < cfg.scratch_size ? left : cfg.scratch_size);
+        if (n <= 0) return;
+        left -= (uint32_t)n;
+    }
+}
+
 static bool wait_job(int32_t *result) {
     for (int k = 0; k < 500; ++k) {                       /* up to ~5 s */
         if (param_store_job_done(result)) return true;
@@ -706,29 +717,67 @@ static bool wait_job(int32_t *result) {
     return false;
 }
 
+/* The backup file lives in the settings store's staging buffer, lent to us between saves
+ * (param_store_lease): the web server keeps no 45 KB buffer of its own. */
+static uint8_t *lease(uint32_t *cap) {
+    int32_t n;
+    if (param_store_lease_start() != 0) return NULL;
+    if (!wait_job(&n)) return NULL;                       /* a late grant is reclaimed by the next job */
+    uint8_t *b = n > 0 ? param_store_lease_buf() : NULL;
+    if (b) *cap = (uint32_t)n;
+    return b;
+}
+
 static void get_backup(http_out_t *o, uint8_t lvl) {
     if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
-    if (!cfg.scratch || param_store_job_start(true, cfg.scratch, cfg.scratch_size, lvl) != 0) { json_error(o, 503, "busy", -1); return; }
+    uint32_t cap = 0;
+    uint8_t *buf = lease(&cap);
+    if (!buf) { json_error(o, 503, "busy", -1); return; }
     int32_t n;
-    if (!wait_job(&n)) { json_error(o, 503, "timeout", -1); return; }  /* (a late job finishes harmlessly) */
-    if (n <= 0) { json_error(o, 500, "nothing stored", -1); return; }
+    if (param_store_job_start(true, buf, cap, lvl) != 0) { param_store_lease_end(); json_error(o, 503, "busy", -1); return; }
+    if (!wait_job(&n)) { param_store_lease_end(); json_error(o, 503, "timeout", -1); return; }  /* (a late job finishes harmlessly) */
+    if (n <= 0) { param_store_lease_end(); json_error(o, 500, "nothing stored", -1); return; }
     plat_val_t s;
     char extra[160];
     snprintf(extra, sizeof extra, "Content-Length: %ld\r\nContent-Disposition: attachment; filename=\"cems-%lu.bkp\"\r\n",
              (long)n, (unsigned long)(param_read(PARAM_ID_SERIAL, &s) ? s.u : 0));
     head(o, 200, "application/octet-stream", extra);
-    out_bytes(o, cfg.scratch, (size_t)n);
+    out_bytes(o, buf, (size_t)n);
+    param_store_lease_end();
 }
 
-static void post_restore(const http_req_t *r, http_out_t *o, uint8_t lvl) {
-    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
-    if (param_store_job_start(false, (uint8_t *)(uintptr_t)r->body, r->body_len, lvl) != 0) { json_error(o, 503, "busy", -1); return; }
+/* A backup file: the part already received (first), then the rest read with rd (streamed
+ * upload) straight into the store's buffer. rd may be NULL when first holds the whole body. */
+static void restore(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint8_t lvl) {
+    uint32_t cap = 0, got = r->body_len;
+    uint8_t *buf = r->content_length <= STORE_BACKUP_MAX ? lease(&cap) : NULL;
+    if (!buf || r->content_length > cap) {
+        if (buf) param_store_lease_end();
+        if (rd) drain(rd, ctx, r->content_length - got);
+        if (r->content_length > STORE_BACKUP_MAX) json_error(o, 413, "too large", -1);
+        else json_error(o, 503, "busy", -1);
+        return;
+    }
+    memcpy(buf, r->body, got);
+    while (got < r->content_length) {
+        int n = rd ? rd(ctx, buf + got, r->content_length - got) : -1;
+        if (n <= 0) { param_store_lease_end(); json_error(o, 400, "upload interrupted", -1); return; }
+        got += (uint32_t)n;
+    }
     int32_t rc;
-    if (!wait_job(&rc)) { json_error(o, 503, "timeout", -1); return; }
+    if (param_store_job_start(false, buf, got, lvl) != 0) { param_store_lease_end(); json_error(o, 503, "busy", -1); return; }
+    bool done = wait_job(&rc);
+    param_store_lease_end();                              /* safe even if late: the import is applied before any save */
+    if (!done) { json_error(o, 503, "timeout", -1); return; }
     if (rc != 0) { json_error(o, 400, rc == -5 ? "nothing to restore at this level" : "invalid file", -1); return; }
     plat_log_event(LOG_EV_RESTORE_BACKUP, PLAT_SRC_WEB, lvl, 0, NAN, NAN, NULL);
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true}");
+}
+
+static void post_restore(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    restore(r, NULL, NULL, o, lvl);
 }
 
 /* ---------------- logs ---------------- */
@@ -812,33 +861,42 @@ static void get_log_events(const http_req_t *r, http_out_t *o) {
     if (!cfg.scratch || !log_sync() || !plat_log_info(LOG_RING_EVENTS, &inf)) { json_error(o, 503, "log not available", -1); return; }
     if (n > 200u) n = 200u;
     if (n > inf.used) n = inf.used;
-    if (n > cfg.scratch_size / LOG_SLOT) n = cfg.scratch_size / LOG_SLOT;
-    int32_t got = 0;
-    if (n && (plat_log_read_start(LOG_RING_EVENTS, (inf.wr + inf.nslots - n) % inf.nslots, n, cfg.scratch) != 0 ||
-              !wait_log(&got) || got != (int32_t)n)) { json_error(o, 503, "busy", -1); return; }
-    head(o, 200, "application/json", NULL);
-    out_str(o, "{\"events\":[");
-    bool first = true;
-    for (uint32_t k = n; k-- > 0;) {
-        log_event_t e;
-        if (!plat_log_decode_event(cfg.scratch + k * LOG_SLOT, &e)) continue;
-        if (!first) out_str(o, ",");
-        first = false;
-        char tb[32];
-        log_fmt_time(tb, sizeof tb, e.time, e.clock_set);
-        out_str(o, "{\"seq\":"); json_uint(o, e.seq);
-        out_str(o, ",\"time\":"); json_str(o, tb);
-        out_str(o, ",\"t\":"); json_uint(o, e.time);
-        out_str(o, ",\"code\":"); json_uint(o, e.code);
-        out_str(o, ",\"event\":"); json_str(o, plat_log_event_name(e.code));
-        out_str(o, ",\"source\":"); json_str(o, log_src_name(e.src));
-        out_str(o, ",\"level\":"); json_str(o, log_level_name(e.level));
-        out_str(o, ",\"arg\":"); json_uint(o, e.arg);
-        out_str(o, ",\"detail\":"); json_str(o, e.text);
-        out_str(o, ",\"old\":"); ev_num(o, e.old_v);
-        out_str(o, ",\"new\":"); ev_num(o, e.new_v);
-        out_str(o, "}");
+    /* newest first, read in chunks of what the scratch buffer holds, newest chunk first */
+    uint32_t chunk = cfg.scratch_size / LOG_SLOT, end = n, c = 0;
+    if (!chunk) { json_error(o, 503, "log not available", -1); return; }
+    bool first = true, started = false;
+    while (end > 0) {
+        c = end < chunk ? end : chunk;
+        int32_t got = 0;
+        if (plat_log_read_start(LOG_RING_EVENTS, (inf.wr + inf.nslots - n + end - c) % inf.nslots, c, cfg.scratch) != 0 ||
+            !wait_log(&got) || got != (int32_t)c) {
+            if (!started) { json_error(o, 503, "busy", -1); return; }
+            break;                                        /* the list so far, closed properly */
+        }
+        if (!started) { head(o, 200, "application/json", NULL); out_str(o, "{\"events\":["); started = true; }
+        end -= c;
+        for (uint32_t k = c; k-- > 0;) {
+            log_event_t e;
+            if (!plat_log_decode_event(cfg.scratch + k * LOG_SLOT, &e)) continue;
+            if (!first) out_str(o, ",");
+            first = false;
+            char tb[32];
+            log_fmt_time(tb, sizeof tb, e.time, e.clock_set);
+            out_str(o, "{\"seq\":"); json_uint(o, e.seq);
+            out_str(o, ",\"time\":"); json_str(o, tb);
+            out_str(o, ",\"t\":"); json_uint(o, e.time);
+            out_str(o, ",\"code\":"); json_uint(o, e.code);
+            out_str(o, ",\"event\":"); json_str(o, plat_log_event_name(e.code));
+            out_str(o, ",\"source\":"); json_str(o, log_src_name(e.src));
+            out_str(o, ",\"level\":"); json_str(o, log_level_name(e.level));
+            out_str(o, ",\"arg\":"); json_uint(o, e.arg);
+            out_str(o, ",\"detail\":"); json_str(o, e.text);
+            out_str(o, ",\"old\":"); ev_num(o, e.old_v);
+            out_str(o, ",\"new\":"); ev_num(o, e.new_v);
+            out_str(o, "}");
+        }
     }
+    if (!started) { head(o, 200, "application/json", NULL); out_str(o, "{\"events\":["); }
     out_str(o, "]}");
 }
 
@@ -2098,18 +2156,7 @@ static void post_fw_activate(http_out_t *o, uint8_t lvl) {
 }
 
 bool http_wants_stream(const http_req_t *r) {
-    return !strcmp(r->method, "POST") && !strcmp(r->path, "/api/fw/upload");
-}
-
-/* Read and drop the rest of a refused upload, so the client gets the answer instead
- * of a broken connection (with TLS, closing on unread data resets the connection). */
-static void drain(http_read_fn rd, void *ctx, uint32_t left) {
-    if (left > 2u * 1024u * 1024u || !cfg.scratch) return;   /* not for absurd lengths */
-    while (left) {
-        int n = rd(ctx, cfg.scratch, left < cfg.scratch_size ? left : cfg.scratch_size);
-        if (n <= 0) return;
-        left -= (uint32_t)n;
-    }
+    return !strcmp(r->method, "POST") && (!strcmp(r->path, "/api/fw/upload") || !strcmp(r->path, "/api/restore"));
 }
 
 void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now) {
@@ -2117,6 +2164,13 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
     uint32_t rest = r->content_length - r->body_len;
     if (!r->csrf) { drain(rd, ctx, rest); json_error(o, 403, "missing X-CEMS header", -1); out_end(o); return; }
     if (lvl == 0) { drain(rd, ctx, rest); json_error(o, 401, "login", -1); out_end(o); return; }
+    if (!strcmp(r->path, "/api/restore")) {              /* a backup file: into the store's buffer */
+        if (lvl < PLAT_LVL_ADMIN) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_end(o); return; }
+        restore(r, rd, ctx, o, lvl);
+        if (!o->err) auth_touch(r->sid, now);
+        out_end(o);
+        return;
+    }
     if (lvl < PLAT_LVL_FACTORY) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_end(o); return; }   /* tech level (D14) */
     fw_err_t e = fw_upload_begin(r->content_length);
     if (e == FW_OK) e = fw_upload_data(r->body, r->body_len);

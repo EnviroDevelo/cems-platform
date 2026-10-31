@@ -299,7 +299,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
                PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
-    /* emissions calculation (emis_bind.c, 400-469): admin, persisted, never from Modbus (a PLC must not
+    /* emissions calculation (emis_bind.c, 400-480): admin, persisted, never from Modbus (a PLC must not
      * re-tune a compliance calculation); the plant-operating flag is the exception */
 #define EMF (PF_PERSIST | PF_NO_MODBUS)
 #define EM_ARR(ID, NAME, VAR, CT, LO, HI, DFLT) \
@@ -308,6 +308,9 @@ static const param_def_t plat_defs[] = {
 #define EM_ARRF(ID, NAME, VAR, LO, HI, DFLT) \
     { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = EMF, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
       .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME), .vmin.f = (LO), .vmax.f = (HI) }
+#define EM_ARRF_IN(ID, NAME, VAR) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_NO_MODBUS, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.f = -1e7f, .vmax.f = 1e7f }
 #define EM_RO(ID, NAME, VAR, CT, HI) \
     { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
       .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.u = 0u, .vmax.u = (HI) }
@@ -338,6 +341,12 @@ static const param_def_t plat_defs[] = {
     PARAM_REAL(PARAM_ID_EMIS_CAL_EXT, "emis_cal_ext", emis_set.cal_ext, 0.0f, 100.0f, 10.0f, "%", PLAT_LVL_ADMIN, EMF),
     PARAM_BIT_D(PARAM_ID_EMIS_OPERATING, "emis_operating", emis_p_operating, true, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_UINT(PARAM_ID_EMIS_CFG_ERROR, "emis_cfg_error", emis_p_cfg_error, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_PERIOD2_S, "emis_period2_s", emis_set.period2_s, CT_U16, 0, 3600, 0, PLAT_LVL_ADMIN, EMF, "s"),
+    PARAM_REAL(PARAM_ID_EMIS_Q3_K, "emis_q3_k", emis_q3set.k, 1.0f, 5.0f, 2.0f, NULL, PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_INTERVAL, "emis_q3_interval", emis_q3set.interval_d, CT_U16, 1, 366, 14, PLAT_LVL_ADMIN, EMF, "d"),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_RECORD, "emis_q3_record", emis_p_q3_record, CT_U8, 0, EMIS_CH_MAX, 0, PLAT_LVL_ADMIN, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_RESET, "emis_q3_reset", emis_p_q3_reset, CT_U8, 0, EMIS_CH_MAX, 0, PLAT_LVL_ADMIN, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_RESULT, "emis_q3_result", emis_p_q3_result, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     EM_ARR(PARAM_ID_EMIS_SRC, "emis_src", emis_set.src, CT_U8, 0, 255, emis_dflt_none),
     EM_ARR(PARAM_ID_EMIS_UNIT, "emis_unit", emis_set.ch.unit, CT_U8, 0, EMIS_U_COUNT - 1, NULL),
     EM_ARR(PARAM_ID_EMIS_WET, "emis_wet", emis_set.ch.wet, CT_BOOL, 0, 1, NULL),
@@ -349,6 +358,12 @@ static const param_def_t plat_defs[] = {
     EM_ARRF(PARAM_ID_EMIS_YS_MAX, "emis_ys_max", emis_set.ch.ys_max, 0.0f, 1e7f, NULL),
     EM_ARRF(PARAM_ID_EMIS_ELV, "emis_elv", emis_set.ch.elv, 0.0f, 1e7f, NULL),
     EM_ARRF(PARAM_ID_EMIS_CI_PCT, "emis_ci_pct", emis_set.ch.ci_pct, 0.0f, 100.0f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_ELV2, "emis_elv2", emis_set.ch.elv2, 0.0f, 1e7f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_Q3_SAMS, "emis_q3_sams", emis_q3set.s_ams, 0.0f, 1e6f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_Q3_ZERO_REF, "emis_q3_zero_ref", emis_q3set.zero_ref, -1e6f, 1e6f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_Q3_SPAN_REF, "emis_q3_span_ref", emis_q3set.span_ref, -1e6f, 1e7f, NULL),
+    EM_ARRF_IN(PARAM_ID_EMIS_Q3_ZERO_RD, "emis_q3_zero_rd", emis_p_q3_zero),
+    EM_ARRF_IN(PARAM_ID_EMIS_Q3_SPAN_RD, "emis_q3_span_rd", emis_p_q3_span),
     EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 0, "emis_raw", emis_res.v[0]),
     EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 1, "emis_std", emis_res.v[1]),
     EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 2, "emis_ref_o2", emis_res.v[2]),
@@ -367,6 +382,17 @@ static const param_def_t plat_defs[] = {
     EM_RO(PARAM_ID_EMIS_DISCARDED, "emis_discarded", emis_res.discarded, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_DAYS_INVALID, "emis_days_invalid", emis_res.days_invalid, CT_U16, 0xFFFFu),
     EM_RO(PARAM_ID_EMIS_WEEKS_ABOVE, "emis_weeks_above", emis_res.weeks_above, CT_U16, 0xFFFFu),
+    EM_ROF(PARAM_ID_EMIS_AVG2, "emis_avg2", emis_res.v2),
+    EM_RO(PARAM_ID_EMIS_Q_AVG2, "emis_q_avg2", emis_res.q2, CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_N2, "emis_n2", emis_res.n2, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_N2_ABOVE, "emis_n2_above", emis_res.n2_above, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_N2_DAY, "emis_n2_day", emis_res.n2_day, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_N2_ABOVE_DAY, "emis_n2_above_day", emis_res.n2_above_day, CT_U16, 0xFFFFu),
+    EM_ROF(PARAM_ID_EMIS_Q3_ZERO_DEV, "emis_q3_zero_dev", emis_q3.zero_dev),
+    EM_ROF(PARAM_ID_EMIS_Q3_SPAN_DEV, "emis_q3_span_dev", emis_q3.span_dev),
+    EM_RO(PARAM_ID_EMIS_Q3_LAST, "emis_q3_last", emis_q3.last, CT_U32, 0xFFFFFFFFu),
+    EM_RO(PARAM_ID_EMIS_Q3_STATUS, "emis_q3_status", emis_q3.status, CT_U8, 0xFFu),
+    EM_RO(PARAM_ID_EMIS_Q3_N, "emis_q3_n", emis_q3.n, CT_U8, 0xFFu),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
     INST_DEFS,
 };
