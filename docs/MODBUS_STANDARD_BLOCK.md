@@ -1,6 +1,6 @@
 # Standard CEMS Modbus block (VDI 4201-3)
 
-Rev A, 30 Oct 2026. Build specification for the core's fixed Modbus block at registers
+Rev B, 31 Oct 2026 (Rev A 30 Oct; Rev B adds the as-built parameter IDs). Build specification for the core's fixed Modbus block at registers
 7000-7999. Background, research and the decision trail are in the design doc
 "CEMS Modbus standard map and Excel handover" (https://claude.ai/artifact/NiAsZJC428qVbjdHsoVVTR).
 
@@ -30,6 +30,11 @@ units (ABB).
 
 An application entry overlapping 7000-7999 in the input or holding registers stops start-up,
 as for the platform block.
+
+**As built (main, 31 Oct).** Implemented in `modbus.c` / `plat_alarm.c` (`PLAT_MB_STD_ADDR`,
+`ALARM_ID_DIA_FIRST`). The word-order setting at 7944 is parameter 335 `mb_std_words`. Digital
+input alarm settings: 340 input, 341 when, 342 delay, 343 latch, 344 severity (arrays of 24),
+345 status (RO, `DIA_ST_*`), 350 + s label of slot s.
 
 **Holding mirror rule.** Function 03 on holding registers 7000-7999 returns exactly what function
 04 returns on the same input registers. A write (06, 16) anywhere in holding 7000-7999 answers
