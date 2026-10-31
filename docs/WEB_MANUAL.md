@@ -208,6 +208,15 @@ The emissions engine turns analyser readings into the values an emission limit i
   a and b, ys,max, the daily limit (ELV) and the confidence interval. **Save** writes only what you
   changed. Any change restarts the periods in progress. If the engine rejects the setup, a red line
   says which channel or that the plant settings don't fit together.
+- **10-minute averages** (waste incineration CO): with the second averaging period on, the table adds
+  the last validated 10-minute average and, for today and yesterday, how many there were and how
+  many were above the 10-minute ELV (amber when more than 5 %: 95 % must be within it).
+- **QAL3** (EN 14181): for each channel with an s_AMS, the zero and span checks go on a control chart.
+  The table shows the last check, the zero and span deviations, the number of checks and the state
+  (in control, warning, OUT OF CONTROL, check due). To record a check (admin login, REMOTE), enter the
+  zero and span readings as the analyser shows them and press **Record check**. After maintenance or
+  an adjustment, **Restart chart**. Each check is in the event log; a channel out of control or due
+  raises the QAL3 alarm.
 - For an NSW licence: confidence interval subtraction off, QAL2 b left at 0 ("no QAL2" is then
   expected), period and validity as the licence says.
 

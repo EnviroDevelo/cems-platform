@@ -366,7 +366,11 @@ for the read-back; a ppm channel needs a molar mass and plant numbers must be in
 range before anything is sent. A new row gets the slot's usual unit, molar mass, O2 reference and the
 IED confidence interval. Sources: the declared measurements (the parameters marked `q`, in table
 order, or by a parameter's `meas` index when the firmware gives it) and instrument points 200 + p
-named from 550 + p. Test: `tests/integration/emis_web_test.py` (16 checks against netsim's engine).
+named from 550 + p. With PR #23 (shown only when its parameters exist): the 10-minute period (424) and
+10-minute ELV (442) in the setup, results 470-475 as three extra columns; QAL3 settings 425, 426 and per
+channel 444-446, a QAL3 table from 476-480 for channels with s_AMS > 0, and Record check (447/448 for
+the channel, read back, then 427 = channel + 1; waits for 427 to read 0 and shows 429) and Restart chart
+(428). Test: `tests/integration/emis_web_test.py` (16 checks against netsim's engine, 25 with PR #23).
 
 **Alarm priority tiers** (Alarm setup tab, admin; firmware PR #19): shown when
 `/api/alarms/config` has `tiers`. The tiers table writes the names (90-94, whole text, empty for the
