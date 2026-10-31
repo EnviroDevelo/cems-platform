@@ -262,11 +262,12 @@ sensor. The PWM is 0 unless the safe-state gate is open, like every other output
 the rest on the hold timeout. Builds without the hardware (`NODE_TEMP_PWM` 0, the G0 port) report
 0 temperature channels and 0 PWM outputs, and the supervisor treats them as before.
 
-**`ADS124S08_CONFIRMED` is 0**: the register layout was cross-checked against the Zephyr ads1x4s0x
-driver, but the SYS register fields, the data CRC (CRC-8 0x07, seed 0xFF), the internal sensor
-(129 mV at 25 degC, 403 uV/degC), the burn-out current code and the conversion times are from memory
-of datasheet SBAS660. Check them against a copy, then set it to 1; until then the driver does
-nothing and every configured channel reads ADC failed, and a product build stops with `#error`.
+**`ADS124S08_CONFIRMED` is 1** (31 Oct 2026): SBAS660, the Zephyr ads1x4s0x driver and the
+variegated-ads124s08 crate confirm the SYS fields, SYS_MON codes, burn-out currents, STATUS,
+DATARATE, PGA, REF, SPI mode 1 and the internal sensor (129 mV at 25 degC, 403 uV/degC); see
+IO_CHIPS_DATASHEET_CHECK.md. Not in any copy read: the data CRC seed (0xFF) and coverage, and the
+DEV_ID code (000). Either wrong fails every frame or the ID check, so every channel reads ADC
+failed (safe): the first bench read confirms them.
 Host tests build it with the macro at 1 against a frame-level model of the chip
 (`tests/sim_ads124s08.c`, `tests/test_temp.c`).
 
@@ -321,7 +322,7 @@ re-configures once a second. `tests/node/test_drv.c` t_ad4112 runs it on a simul
 5. The RS-485 RX pin needs a pull-up (on the board or the pin's own).
 6. ISO2H823 datasheet inconsistency: GLERR.MV is "1 = no missing voltage" in table 5.1.4 but "1 =
    missing" in 3.2.3 and the reset value; the driver does not use MV (UV at 16 V trips first).
-7. ADS124S08 constants against datasheet SBAS660 (above), then `ADS124S08_CONFIRMED` 1. On the
+7. ADS124S08 (above): confirmed except the CRC seed and DEV_ID, seen on the first bench read. On the
    bench: thermocouple burn-out threshold (0.98 of full scale), the 10M bias on AIN7/9/11, the
    PT100/PT1000/NTC excitation currents against the 5.11k reference, the tach input.
 8. NTC accuracy rests on the supervisor's per-channel offset and span (no IDAC self-calibration).

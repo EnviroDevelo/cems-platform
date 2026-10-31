@@ -4,8 +4,11 @@
  * Sources: register layout and command codes cross-checked against the Zephyr ads1x4s0x driver
  * (drivers/adc/adc_ads1x4s0x.c, Apache-2.0); the SYS register (SYS_MON, CRC, SENDSTAT), the data CRC
  * (CRC-8, x^8 + x^2 + x + 1, seed 0xFF, over STATUS and the three data bytes) and the internal
- * temperature sensor (129 mV at 25 degC, 403 uV/degC) are from the ADS124S08 datasheet (SBAS660) as
- * recalled, not yet checked against a copy: ADS124S08_CONFIRMED stays 0 until they are (drivers.h).
+ * temperature sensor (129 mV at 25 degC, 403 uV/degC) are from the ADS124S08 datasheet (SBAS660).
+ * Checked 31 Oct 2026 against SBAS660 and two independent drivers (IO_CHIPS_DATASHEET_CHECK.md): SYS,
+ * SYS_MON codes, burn-out currents, STATUS, DATARATE, PGA, REF, SPI mode 1 and the sensor constants
+ * are right. Not seen in any copy: the CRC seed/coverage and the DEV_ID code. A wrong one fails every
+ * frame or the ID check, which reports IOB_TS_ADC (safe) on the first bench read: check it there.
  *
  * Board wiring: three connectors TEMP 1-3, connector c on AIN4c..AIN4c+3 = A+, A-, B+, B-; the RTN pins
  * through 100R to REFP0, and REFP0 through 5.11k 0.1 % to GND_T (REFN0), so an IDAC's current sets the
