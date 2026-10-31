@@ -151,8 +151,10 @@
 #define PLAT_MB_BLOCK_VERSION     3u     /* the layout of the platform's Modbus block (2: clock quality, 26 Oct; 3: forced count, 29 Oct) */
 #define PLAT_MB_BLOCK_ADDR        9000u  /* input registers 9000-9199 belong to the platform in every product */
 #define PLAT_MB_BLOCK_END         9199u
-#define PLAT_MB_STD_ADDR          7000u  /* input and holding 7000-7999: the standard CEMS block (VDI 4201-3) */
-#define PLAT_MB_STD_END           7999u
+#define PLAT_MB_STD_ADDR          7000u  /* input and holding 7000-8999: the standard CEMS block (VDI 4201-3); */
+#define PLAT_MB_STD_END           8999u  /* 8000-8999 its Rev C extension (second period, QAL3) */
+#define PLAT_MB_STD_COIL_ADDR     8000u  /* coils 8000-8099: reserved for the standard block */
+#define PLAT_MB_STD_COIL_END      8099u
 
 #ifndef PLAT_MEAS_MAX
 #define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */

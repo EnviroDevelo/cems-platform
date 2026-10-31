@@ -4,6 +4,19 @@ The core platform's releases (`plat_version.h`, git tags `core-MAJOR.MINOR.PATCH
 `docs/INSTRUMENT_PLATFORM_SPEC.md` section 9.1, R4). Each entry says what a product has to do to
 take it (usually nothing). Product releases keep their own notes in their directory.
 
+## core-0.10.0 (unreleased)
+
+Additions only; a product needs nothing unless its own Modbus map used the new reserved ranges.
+
+- Modbus standard block Rev C (docs/MODBUS_STANDARD_BLOCK.md section 8): input registers
+  8000-8999 and the read-only holding mirror carry the emissions engine's second-period averages,
+  their counts and the QAL3 charts (params 470-479). The status word gains bit 2 from alarm 24
+  QAL3 and maker bits 28 (QAL3 warning), 29 (chart out of control, also bit 3) and 30 (check due).
+  A product map may no longer use input or holding 8000-8999, nor coils 8000-8099 (reserved).
+- `/api/params`: `meas` gives a measured parameter's position in plat_meas.
+- Interface snapshots brought up to date with the alarm tiers, emissions and instrument
+  parameters merged since 0.9.0.
+
 ## core-0.9.0 (unreleased: first version, not yet run on hardware)
 
 The CORE platform as built against the Common Instrument Platform Specification Rev 0.3:
