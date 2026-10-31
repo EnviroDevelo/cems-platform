@@ -27,7 +27,9 @@
 #define MEM_ALIGNMENT                   4
 #define MEM_SIZE                        (16 * 1024)   /* TX data (zero-copy RX has its own pool) */
 #define MEMP_NUM_PBUF                   16
-#define PBUF_POOL_SIZE                  8
+#define PBUF_POOL_SIZE                  0             /* unused: received frames are RX_POOL custom pbufs (ethernetif.c),
+                                                         and nothing else in lwIP or the platform allocates PBUF_POOL
+                                                         (lwIP 2.2.1 core/api checked, 29 Oct). Was 8 = 12 KB idle */
 #define PBUF_POOL_BUFSIZE               1536
 #define LWIP_SUPPORT_CUSTOM_PBUF        1             /* zero-copy RX in ethernetif.c */
 #define MEMP_NUM_TCP_PCB                16            /* 4 Modbus + 5 HTTP + 3 I/O boards + mail + spare */

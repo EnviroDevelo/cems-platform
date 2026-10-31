@@ -323,6 +323,7 @@ void bsp_init(void) {
 #ifdef HAL_IWDG_MODULE_ENABLED
     wdg_set_prescaler(IWDG_PRESCALER_256);    /* about 8 s until the tasks run: see bsp_wdg_kick */
 #endif
+    bsp_psram_init();                          /* before anything uses a PLAT_EXTRAM buffer */
 }
 
 /* ---------------- HAL timebase ----------------

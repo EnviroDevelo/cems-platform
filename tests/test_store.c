@@ -326,6 +326,75 @@ static void t_export_import(void) {
     CHECK_EQ(s_cal, 600);
 }
 
+/* the web server's backup/restore buffer is the store's staging area, lent between saves:
+ * no save starts while it is lent, a save under way finishes first, a lease nobody
+ * collected is reclaimed by the next job, and changes made meanwhile are saved after */
+static void t_lease(void) {
+    fresh(); boot();
+    plat_val_t v;
+    v.i = 7; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);
+    save_cycle();
+    int32_t r = 0;
+
+    now += STORE_SAVE_PERIOD_MS;
+    param_store_poll(now);                         /* a save under way: snapshot requested */
+    CHECK_EQ(param_store_lease_start(), 0);
+    CHECK_EQ(param_store_lease_start(), -1);       /* one job at a time */
+    param_store_scan_service();
+    param_store_poll(now);                         /* the save finishes first */
+    CHECK(!param_store_job_done(&r));
+    CHECK(param_store_lease_buf() == NULL);
+    param_store_poll(now);                         /* now lent */
+    CHECK(param_store_job_done(&r));
+    CHECK_EQ(r, (int32_t)STORE_BACKUP_MAX);
+    uint8_t *buf = param_store_lease_buf();
+    CHECK(buf != NULL);
+
+    CHECK_EQ(param_store_job_start(true, buf, (uint32_t)r, PLAT_LVL_ADMIN), 0);
+    param_store_poll(now);
+    int32_t n = 0;
+    CHECK(param_store_job_done(&n));
+    CHECK(n > 40); CHECK(!memcmp(buf, "CEMX", 4));
+
+    uint32_t saves = param_store_stats().saves_usr;
+    v.i = -3; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);
+    for (int k = 0; k < 5; ++k) save_cycle();     /* no save while lent: the file stays intact */
+    CHECK_EQ(param_store_stats().saves_usr, saves);
+    CHECK(!memcmp(buf, "CEMX", 4));
+
+    CHECK_EQ(param_store_job_start(false, buf, (uint32_t)n, PLAT_LVL_ADMIN), 0);
+    param_store_poll(now);                         /* checked, waits for the scan */
+    CHECK(!param_store_job_done(&r));
+    param_store_scan_service();                    /* applied from the lent buffer */
+    param_store_poll(now);
+    CHECK(param_store_job_done(&r));
+    CHECK_EQ(r, 0);
+    CHECK_EQ(s_i16, 7);
+    v.i = 11; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);   /* a change while still lent */
+    save_cycle();
+    CHECK_EQ(param_store_stats().saves_usr, saves);
+    param_store_lease_end();
+    CHECK(param_store_lease_buf() == NULL);
+    save_cycle();                                  /* saved once returned */
+    CHECK_EQ(param_store_stats().saves_usr, saves + 1u);
+    boot();
+    CHECK_EQ(s_i16, 11);
+
+    /* abandoned: granted but never collected (the caller timed out) */
+    CHECK_EQ(param_store_lease_start(), 0);
+    param_store_poll(now);
+    CHECK(param_store_lease_buf() != NULL);
+    static uint8_t file[64 * 1024];
+    CHECK_EQ(param_store_job_start(true, file, sizeof file, PLAT_LVL_ADMIN), 0);   /* reclaimed */
+    CHECK(param_store_lease_buf() == NULL);
+    param_store_poll(now);
+    CHECK(param_store_job_done(&r));
+    CHECK(r > 40);
+    v.i = 9; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);
+    save_cycle(); boot();
+    CHECK_EQ(s_i16, 9);
+}
+
 /* secrets (password hashes, the mail password) never leave in a backup file, and a
  * restore never changes them */
 static void t_backup_secrets(void) {
@@ -401,6 +470,7 @@ void test_store_all(void) {
     RUN(t_out_of_range_stored);
     RUN(t_restore_defaults_cmd);
     RUN(t_export_import);
+    RUN(t_lease);
     RUN(t_backup_secrets);
     RUN(t_volatile_and_table_errors);
 }

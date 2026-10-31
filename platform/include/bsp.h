@@ -31,6 +31,8 @@ typedef enum {
 } bsp_reset_cause_t;
 
 void     bsp_init(void);                 /* after the CubeMX MX_*_Init calls */
+void     bsp_psram_init(void);           /* bsp_init calls it: external PSRAM (PLAT_PSRAM builds) */
+bool     bsp_psram_ok(void);             /* false = the PSRAM failed its check: PLAT_EXTRAM buffers unusable */
 uint32_t bsp_ms(void);                   /* free-running ms, wraps at 2^32   */
 uint32_t bsp_cycles(void);               /* free-running CPU cycle count, wraps; differences only */
 uint32_t bsp_cycles_per_us(void);        /* e.g. 250 at 250 MHz */

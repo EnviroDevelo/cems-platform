@@ -21,6 +21,8 @@ void bsp_host_advance_ms(uint32_t ms) {
 }
 
 void     bsp_init(void) { }
+void     bsp_psram_init(void) { }
+bool     bsp_psram_ok(void) { return true; }
 uint32_t bsp_ms(void) { return bsp_host.ms; }
 uint32_t bsp_cycles(void) { return bsp_host.cycles; }
 uint32_t bsp_cycles_per_us(void) { return bsp_host.cycles_per_us; }
