@@ -6,8 +6,8 @@
 
   (title_block
     (title "CEMS core board")
-    (date "2026-10-25")
-    (rev "0.1")
+    (date "2026-10-31")
+    (rev "0.2")
     (company "EnviroDevelo")
     (comment 1 "Generated from hardware/core_pcb/tools/design.py; do not edit by hand")
     (comment 2 "Design spec: docs/CORE_PCB.md")
@@ -101,6 +101,57 @@
     (instances
       (project "cems_core"
         (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "6"))
+      )
+    )
+  )
+
+  (sheet (at 20 85) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 6e0e6d03-f39f-55a0-81fa-cfe9e7b5fa43)
+    (property "Sheetname" "Field digital I/O" (id 0) (at 20 84.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "io_dig.kicad_sch" (id 1) (at 20 110.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "7"))
+      )
+    )
+  )
+
+  (sheet (at 72 85) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 32edba21-9f7c-581b-bd25-c99414627e19)
+    (property "Sheetname" "Field power, pump, relays, USB" (id 0) (at 72 84.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "io_pwr.kicad_sch" (id 1) (at 72 110.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "8"))
+      )
+    )
+  )
+
+  (sheet (at 124 85) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 541796c9-2cb4-573c-b424-fcb5fbb3fa13)
+    (property "Sheetname" "Analog inputs and temperatures" (id 0) (at 124 84.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "io_ana.kicad_sch" (id 1) (at 124 110.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_core"
+        (path "/4503b035-ec93-58ad-a08a-2d339f99cb7b" (page "9"))
       )
     )
   )

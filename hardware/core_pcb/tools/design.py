@@ -17,6 +17,9 @@ SHEETS = [
     ("eth_client", "Ethernet client port", "LAN8742A on RMII, client RJ45 (J2)"),
     ("eth_io", "Ethernet I/O port", "W5500 on SPI4, I/O RJ45 (J3), I/O boards only"),
     ("periph", "Memories and display", "NOR flash, FRAM, RVT70 display FFC (J4)"),
+    ("io_dig", "Field digital I/O", "Output gate, bank A 8 x 0.6 A (ISO2H823V2.5), bank B 8 x 1 A (ISO808A-1), 8 inputs (ISO1I813T)"),
+    ("io_pwr", "Field power, pump, relays, USB", "Field supplies A and B, pump switch / PWM / DIR / tacho, 2 relay coil outputs, USB-C"),
+    ("io_ana", "Analog inputs and temperatures", "Isolated: 6 x 4-20 mA, level and mass-flow ports (AD4112); 6 temperatures (ADS124S08)"),
 ]
 
 PARTS = []
@@ -142,7 +145,7 @@ mcu = {
     # display, SPI3
     78: "EVE_SCK_MCU", 79: "EVE_MISO", 80: "EVE_MOSI_MCU", 77: "EVE_CS", 83: "EVE_PD", 81: "EVE_INT",
     # W5500, SPI4
-    43: "W5500_SCK_MCU", 44: "W5500_MISO", 45: "W5500_MOSI_MCU", 42: "W5500_CS",
+    43: "SPI4_SCK_MCU", 44: "SPI4_MISO", 45: "SPI4_MOSI_MCU", 42: "W5500_CS",
     40: "W5500_INT", 41: "W5500_RST",
     # NOR, SPI2
     52: "NOR_SCK_MCU", 53: "NOR_MISO", 18: "NOR_MOSI", 57: "NOR_CS",
@@ -155,6 +158,12 @@ mcu = {
     # misc
     15: "V24_SENSE", 59: "LED_RUN", 60: "LED_FAULT", 38: "HWREV0", 39: "HWREV1",
     4: "ROLE_A", 5: "ROLE_B",
+    # I/O node section (sheets io_dig, io_pwr, io_ana): chip selects on the shared SPI4
+    1: "CS_A", 2: "CS_B", 3: "CS_IN", 46: "CS_T", 97: "CS_AI",
+    82: "A_ERR", 7: "IN_ERR", 61: "B_FAULT", 62: "B_PGOOD",
+    95: "GATE_EN", 96: "WDI", 55: "GATE_FB",
+    67: "PUMP_PWM", 23: "PUMP_TACH", 63: "PUMP_DIR", 64: "PUMP_EN", 90: "REL1_N", 91: "REL2_N",
+    65: "USB_VBUS_SNS", 70: "USB_DM", 71: "USB_DP",
 }
 part("U3", "MCU_ST_STM32H5:STM32H573VITx", "STM32H573VIT6", "Package_QFP:LQFP-100_14x14mm_P0.5mm",
      S, mcu, mpn="STM32H573VIT6", note="STM32H563VIT6 is pin-compatible")
@@ -259,8 +268,8 @@ w = {1: "ETH2_TXN", 2: "ETH2_TXP", 3: "GND", 4: "+3V3_WA", 5: "ETH2_RXN", 6: "ET
      8: "+3V3_WA", 9: "GND", 10: "W5500_EXRES", 11: "+3V3_WA", 14: "GND", 15: "+3V3_WA",
      16: "GND", 17: "+3V3_WA", 19: "GND", 20: "W5500_TOCAP", 21: "+3V3_WA", 22: "W5500_1V2O",
      23: "GND", 25: "W5500_LINKLED", 27: "W5500_ACTLED", 28: "+3V3", 29: "GND",
-     30: "W5500_XI", 31: "W5500_XO", 32: "W5500_CS", 33: "W5500_SCK", 34: "W5500_MISO",
-     35: "W5500_MOSI", 36: "W5500_INT", 37: "W5500_RST", 48: "GND"}
+     30: "W5500_XI", 31: "W5500_XO", 32: "W5500_CS", 33: "SPI4_SCK", 34: "SPI4_MISO",
+     35: "SPI4_MOSI", 36: "W5500_INT", 37: "W5500_RST", 48: "GND"}
 part("U6", "Interface_Ethernet:W5500", "W5500", "Package_QFP:LQFP-48_7x7mm_P0.5mm", S, w,
      mpn="W5500 (-40 to 85 C)",
      note="PMODE[2:0] internal pull-ups = all capable, auto-negotiation; RSVD pin 23 to ground, RSVD 38-42 NC; VBG open. "
@@ -280,8 +289,8 @@ c("C60", "18p", S, "W5500_XI", "GND", note="W5500 reference circuit")
 c("C61", "18p", S, "W5500_XTAL2", "GND")
 r("R62", "1M", S, "W5500_XI", "W5500_XO", note="W5500 reference circuit")
 r("R63", "0R", S, "W5500_XO", "W5500_XTAL2", note="drive-level option, W5500 reference circuit")
-r("R51", "33R", S, "W5500_SCK_MCU", "W5500_SCK", note="series, at the MCU")
-r("R52", "33R", S, "W5500_MOSI_MCU", "W5500_MOSI", note="series, at the MCU")
+r("R51", "33R", S, "SPI4_SCK_MCU", "SPI4_SCK", note="series, at the MCU")
+r("R52", "33R", S, "SPI4_MOSI_MCU", "SPI4_MOSI", note="series, at the MCU")
 r("R53", "10k", S, "+3V3", "W5500_CS")
 r("R54", "10k", S, "+3V3", "W5500_INT")
 r("R55", "10k", S, "+3V3", "W5500_RST")
@@ -342,3 +351,387 @@ c("C72", "10u", S, "+3V3", "GND", fp=C0805, note="at J4")
 c("C73", "100n", S, "+3V3", "GND", note="at J4")
 c("C74", "10u", S, "+5V", "GND", fp=C0805, note="at J4, backlight")
 c("C75", "100n", S, "+5V", "GND", note="at J4")
+
+
+# ================================================================ I/O node section (rev 0.2)
+# The same board is a CORE or an I/O node (role jumper J7, CORE_PCB.md 12). Every field
+# chip sits on the shared SPI4 (with the W5500) at 4 MHz, one chip select each. Field
+# grounds: FIELD_0V (supplies A and B, banks, inputs, pump) is isolated from GND by the
+# ISOFACE / ISO808A / ISO7741 parts; GND_T (temperatures) and GND_AI (analog) are each
+# their own isolated island. Refs from here: R101+, C101+, U11+, J10+, F10+, D20+, Q1+.
+_n = {"R": 100, "C": 100}
+
+
+def nr(value, sheet, a, b, fp=R0603, **kw):
+    _n["R"] += 1
+    r(f"R{_n['R']}", value, sheet, a, b, fp=fp, **kw)
+
+
+def nc(value, sheet, a, b, fp=C0603, **kw):
+    _n["C"] += 1
+    c(f"C{_n['C']}", value, sheet, a, b, fp=fp, **kw)
+
+
+R0805 = "Resistor_SMD:R_0805_2012Metric"
+R1206 = "Resistor_SMD:R_1206_3216Metric"
+SOT23_5 = "Package_TO_SOT_SMD:SOT-23-5"
+MCV = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_{n}-G-3.81_1x{n:02d}_P3.81mm_Vertical"
+MSTBVA2 = "Connector_Phoenix_MSTB:PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical"
+IDC26 = "Connector_IDC:IDC-Header_2x13_P2.54mm_Latch_Vertical"
+NANO2 = "Fuse:Fuseholder_Littelfuse_Nano2_157x"
+PTC1206 = "Fuse:Fuse_1206_3216Metric"
+PTC1812 = "Fuse:Fuse_1812_4532Metric"
+
+
+def mcv(ref, sheet, nets, value, **kw):
+    n = len(nets)
+    part(ref, f"Connector_Generic:Conn_01x{n:02d}", value, MCV.format(n=n), sheet,
+         {i + 1: net for i, net in enumerate(nets)},
+         mpn=kw.pop("mpn", f"Phoenix MCV 1,5/{n}-G-3,81 (or Degson / Dinkle equivalent) + mating plug"), **kw)
+
+
+def gate_and(ref, sheet, a, b, y, note=""):
+    part(ref, "74xGxx:74LVC1G08", "74LVC1G08", SOT23_5, sheet, {1: a, 2: b, 3: "GND", 4: y, 5: "+3V3"},
+         mpn="SN74LVC1G08DBVR", note=note)
+    nc("100n", sheet, "+3V3", "GND")
+
+
+def inverter(ref, sheet, a, y, vcc="+3V3", gnd="GND", sym="74xGxx:74LVC1G04", note=""):
+    part(ref, sym, sym.split(":")[1], SOT23_5, sheet, {2: a, 3: gnd, 4: y, 5: vcc},
+         mpn=f"SN{sym.split(':')[1]}DBVR", note=note)
+    nc("100n", sheet, vcc, gnd)
+
+
+# ---------------------------------------------------------------- field digital I/O
+S = "io_dig"
+# Hardware output gate: all field outputs off within one watchdog period if the firmware
+# stops kicking WDI, and off from reset until the firmware sets GATE_EN.
+part("U11", "Power_Supervisor:MAX6369", "MAX6369", "Package_TO_SOT_SMD:SOT-23-8", S,
+     {1: "WDI", 2: "GND", 4: "GND", 5: "+3V3", 6: "GND", 7: "WDO_N", 8: "+3V3"},
+     mpn="MAX6369KA+T",
+     note="SET2..0 = 010: 30 ms watchdog (outputs off within 50 ms). CHECK the SET table and startup delay")
+nc("100n", S, "+3V3", "GND")
+nr("10k", S, "+3V3", "WDO_N")
+nr("100k", S, "GATE_EN", "GND", note="gate shut while the MCU is in reset")
+gate_and("U12", S, "GATE_EN", "WDO_N", "GATE", note="GATE = GATE_EN and watchdog OK")
+nr("1k", S, "GATE", "GATE_FB", note="firmware reads the gate back (PD8)")
+inverter("U13", S, "GATE", "GATE_N",
+         note="ODIS of the ISO2H823V2.5. CHECK ODIS polarity: if it is active low, link GATE instead")
+
+# Bank A: 8 x 0.6 A, ISO2H823V2.5, to the valve breakout over IDC26 J10
+a = {37: "+3V3", 36: "+3V3", 41: "+3V3", 40: "GATE_N", 43: "GND", 44: "+3V3", 45: "+3V3",
+     38: "A_CLKADJ", 48: "CS_A", 54: "SPI4_SCK", 49: "SPI4_MOSI", 56: "SPI4_MISO", 57: "A_ERR",
+     28: "A_OLADJ", 29: "A_IADJ", 30: "A_VDDIO", 31: "A_VCORE"}
+a.update({n: "GND" for n in (33, 34, 35, 39, 46, 47, 58, 59, 60)})
+a.update({n: "+24V_FA" for n in (2, 3, 6, 11, 12, 17, 20, 21, 26)})
+a.update({n: "FIELD_0V" for n in (1, 22, 27, 32, 61)})
+for ch, pins in enumerate(((24, 25), (18, 19), (15, 16), (13, 14), (9, 10), (7, 8), (4, 5), (68, 69))):
+    for p in pins:
+        a[p] = f"A_OUT{ch + 1}"
+a.update({62: "A_LEDX", 63: "A_LEDX", 64: "A_LEDX", 65: "A_LEDY", 66: "A_LEDY", 67: "A_LEDY"})
+part("U14", "cems_core:ISO2H823V2.5", "ISO2H823V2.5", "cems_core:Infineon_PG-VQFN-70_12x12mm_P0.5mm", S, a,
+     mpn="Infineon ISO2H823V25XUMA1",
+     note="serial mode: SEL high, MS0/MS1 high, ALE/RST low. No LED matrix: X pins tied, Y pins tied. "
+          "CHECK pinout, mode pins and OLADJ against the datasheet; footprint is a project footprint to draw")
+nc("2u2", S, "+3V3", "GND", fp=C0805)
+nc("100n", S, "+3V3", "GND")
+nr("10k", S, "A_CLKADJ", "GND", note="CLKADJ, CHECK")
+nr("6k81 1%", S, "A_IADJ", "FIELD_0V", note="IADJ, CHECK")
+nr("DNF", S, "A_OLADJ", "FIELD_0V", dnp=True, note="open-load threshold option, CHECK")
+nc("1u 50V", S, "A_VDDIO", "FIELD_0V", fp=C0805)
+nc("470n", S, "A_VCORE", "FIELD_0V")
+nc("2u2 50V", S, "+24V_FA", "FIELD_0V", fp=C1210)
+nc("100n 50V", S, "+24V_FA", "FIELD_0V")
+nr("10k", S, "+3V3", "A_ERR")
+for ch in range(1, 9):
+    nc("12n 100V", S, f"A_OUT{ch}", "FIELD_0V", note="per output, datasheet application circuit" if ch == 1 else "")
+idc = {}
+for i in range(8):
+    idc[2 * i + 1], idc[2 * i + 2] = f"A_OUT{i + 1}", "FIELD_0V"
+for p in range(17, 27):
+    idc[p] = "+24V_RA" if p % 2 else "FIELD_0V"
+part("J10", "Connector_Generic:Conn_02x13_Odd_Even", "BANK A IDC26", IDC26, S, idc,
+     mpn="26-way shrouded latched box header, same as the breakout (hardware/io_breakout)",
+     note="same pinout as the breakout J1, straight-through ribbon")
+part("F10", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RA"},
+     mpn="Bourns MF-MSMF075-2", note="ribbon +24 V (breakout LEDs)")
+
+# Bank B: 8 x 1 A, ISO808A-1, on a 10-way 3.81 mm pluggable J11
+b = {2: "+3V3", 15: "GND", 3: "GATE", 4: "CS_B", 5: "SPI4_SCK", 6: "SPI4_MOSI", 13: "SPI4_MISO",
+     14: "B_FAULT", 7: "B_PGOOD", 37: "+24V_FB", 19: "FIELD_0V"}
+for ch, pins in enumerate(((35, 36), (33, 34), (31, 32), (29, 30), (27, 28), (25, 26), (23, 24), (21, 22))):
+    for p in pins:
+        b[p] = f"B_OUT{ch + 1}"
+part("U15", "cems_core:ISO808A-1", "ISO808A-1", "Package_SO:HSOP-36-1EP_11.0x15.9mm_P0.65mm_SlugDown", S, b,
+     mpn="ST ISO808A-1TR", note="tab = VCC (+24V_FB): copper pour on the field side only. CHECK pinout")
+nc("100n", S, "+3V3", "GND")
+nc("1u", S, "+3V3", "GND")
+nc("100n 50V", S, "+24V_FB", "FIELD_0V")
+part("C200", "Device:C_Polarized", "100u 50V", "Capacitor_SMD:CP_Elec_10x10", S, {1: "+24V_FB", 2: "FIELD_0V"},
+     note="bank B bulk")
+nr("10k", S, "+3V3", "B_FAULT")
+nr("10k", S, "+3V3", "B_PGOOD")
+mcv("J11", S, [f"B_OUT{n}" for n in range(1, 9)] + ["FIELD_0V", "FIELD_0V"], "BANK B",
+    note="8 A return over 2 contacts: CHECK the plug rating (8 A per contact)")
+for ch in range(1, 9):
+    # Same flyback options as the breakout board: D + RZ = plain clamp, Z instead of RZ = fast release
+    part(f"D{30 + ch}", "Device:D", "S1M", "Diode_SMD:D_SMA", S, {1: f"B_OUT{ch}", 2: f"B_CL{ch}"},
+         note="flyback at the terminal, as on the breakout" if ch == 1 else "")
+    nr("0R", S, f"B_CL{ch}", "FIELD_0V", fp=R1206)
+    part(f"D{40 + ch}", "Device:D_Zener", "24V 1.5W", "Diode_SMD:D_SMB", S, {1: "FIELD_0V", 2: f"B_CL{ch}"},
+         mpn="1SMB5934BT3", dnp=True, note="fast-release option (remove the 0R)" if ch == 1 else "")
+
+# 8 digital inputs: ISO1I813T, type 1/3, to the input breakout over IDC26 J12
+d = {5: "+3V3", 2: "+3V3", 3: "+3V3", 19: "+3V3", 20: "+3V3", 21: "GND", 4: "IN_ROSC",
+     16: "CS_IN", 13: "SPI4_SCK", 8: "SPI4_MOSI", 15: "SPI4_MISO", 14: "GND", 6: "IN_ERR",
+     26: "+24V_FA", 36: "IN_TS", 38: "IN_WB"}
+d.update({n: "GND" for n in (1, 7, 10, 11, 18, 24)})
+d.update({n: "FIELD_0V" for n in (25, 31, 37, 43, 48)})
+for ch, (h, l) in enumerate(((28, 27), (30, 29), (33, 32), (35, 34), (40, 39), (42, 41), (45, 44), (47, 46))):
+    d[h], d[l] = f"IN{ch + 1}_H", f"IN{ch + 1}_L"
+part("U16", "cems_core:ISO1I813T", "ISO1I813T", "Package_SO:TSSOP-48_6.1x12.5mm_P0.5mm", S, d,
+     mpn="Infineon ISO1I813TXUMA1",
+     note="serial mode; internal DC/DC off (DC_ENA low), field side from VBB. Values from Infineon's "
+          "ISO1I813T evaluation board. CHECK pinout and SEL/MS levels")
+nc("100n", S, "+3V3", "GND")
+nc("10u", S, "+3V3", "GND", fp=C0805)
+nc("470n 50V", S, "+24V_FA", "FIELD_0V", fp=C0805)
+nc("470n 50V", S, "+24V_FA", "FIELD_0V", fp=C0805)
+nr("22k 1%", S, "IN_ROSC", "GND", note="500 kHz")
+nr("33R", S, "IN_TS", "FIELD_0V", note="type 1/3 (eval board RTS). CHECK")
+nr("33k", S, "IN_WB", "FIELD_0V", note="wire-break threshold (eval board). CHECK")
+nr("10k", S, "+3V3", "IN_ERR")
+for ch in range(1, 9):
+    nr("12k 1%", S, f"DI{ch}", f"IN{ch}_H", fp=R1206, note="RIN, eval board" if ch == 1 else "")
+    nr("2k 1%", S, f"IN{ch}_L", "FIELD_0V", note="RLED (no LED here; the breakout has them)" if ch == 1 else "")
+idc = {}
+for i in range(8):
+    idc[2 * i + 1], idc[2 * i + 2] = f"DI{i + 1}", "FIELD_0V"
+for p in range(17, 27):
+    idc[p] = "+24V_RI" if p % 2 else "FIELD_0V"
+part("J12", "Connector_Generic:Conn_02x13_Odd_Even", "INPUTS IDC26", IDC26, S, idc,
+     mpn="26-way shrouded latched box header, same as J10", note="same pinout as the breakout J1")
+part("F11", "Device:Polyfuse", "0.75A", PTC1812, S, {1: "+24V_FA", 2: "+24V_RI"},
+     mpn="Bourns MF-MSMF075-2", note="sensor supply down the input ribbon")
+
+# CS pull-ups: every chip stays deselected while the MCU is in reset
+for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI"):
+    nr("10k", S, "+3V3", cs)
+
+# ---------------------------------------------------------------- field power, pump, relays, USB
+S = "io_pwr"
+# Field supplies come in on their own terminals, never through the core's 2 A input.
+# Reverse polarity: each fuse is followed by a unidirectional TVS that conducts and blows it.
+part("J13", "Connector_Generic:Conn_01x02", "FIELD A 24V", MSTBVA2, S, {1: "FA_IN", 2: "FIELD_0V"},
+     mpn="Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)", note="bank A, inputs, pump: about 10 A")
+part("J14", "Connector_Generic:Conn_01x02", "FIELD B 24V", MSTBVA2, S, {1: "FB_IN", 2: "FIELD_0V"},
+     mpn="Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)", note="bank B and relays: about 8 A")
+for ref, src, dst, val, note in (("F12", "FA_IN", "+24V_FA", "6.3A T", "bank A, inputs, ribbons"),
+                                 ("F13", "FA_IN", "+24V_FP", "5A T", "pump"),
+                                 ("F14", "FB_IN", "+24V_FB", "10A T", "bank B, relays")):
+    part(ref, "Device:Fuse", val, NANO2, S, {1: src, 2: dst},
+         mpn=f"Littelfuse 0453 {val} NANO2 in a 157 series holder", note=note)
+for i, net in enumerate(("+24V_FA", "+24V_FP", "+24V_FB")):
+    part(f"D{21 + i}", "Device:D_Zener", "SMCJ33A", "Diode_SMD:D_SMC", S, {1: net, 2: "FIELD_0V"},
+         mpn="SMCJ33A", note="unidirectional TVS: surge clamp, and blows the fuse on reverse polarity" if i == 0 else "")
+    part(f"C{201 + i}", "Device:C_Polarized", "100u 50V", "Capacitor_SMD:CP_Elec_10x10", S, {1: net, 2: "FIELD_0V"})
+for i, net in enumerate(("+24V_FA", "+24V_FB")):
+    nr("10k", S, net, f"F{'AB'[i]}_LED_A", fp=R0805)
+    part(f"D{24 + i}", "Device:LED", f"green FIELD {'AB'[i]}", LED0603, S, {2: f"F{'AB'[i]}_LED_A", 1: "FIELD_0V"})
+
+# Pump: switched supply (IPS7091 smart high-side switch, current limit, behind the gate),
+# PWM and DIR as 24 V push-pull outputs, tacho comparator; signals through an ISO7741.
+part("U17", "Regulator_Linear:L78L05_SOT89", "L78L05", "Package_TO_SOT_SMD:SOT-89-3", S,
+     {3: "+24V_FA", 2: "FIELD_0V", 1: "+5V_P"}, mpn="L78L05ACUTR", note="pump logic 5 V, field side")
+nc("330n 50V", S, "+24V_FA", "FIELD_0V")
+nc("1u", S, "+5V_P", "FIELD_0V")
+gate_and("U19", S, "PUMP_PWM", "GATE", "PUMP_PWM_G")
+gate_and("U20", S, "PUMP_EN", "GATE", "PUMP_EN_G")
+nr("100k", S, "PUMP_EN", "GND")
+nr("100k", S, "PUMP_PWM", "GND")
+part("U18", "cems_core:ISO7741", "ISO7741", "Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm", S,
+     {1: "+3V3", 2: "GND", 8: "GND", 7: "+3V3", 3: "PUMP_PWM_G", 4: "PUMP_DIR", 5: "PUMP_EN_G", 6: "PUMP_TACH",
+      16: "+5V_P", 9: "FIELD_0V", 15: "FIELD_0V", 10: "+5V_P", 14: "P_PWM_F", 13: "P_DIR_F", 12: "P_EN_F",
+      11: "P_TACH_F"},
+     mpn="TI ISO7741FDWR (F: outputs low when side 1 is unpowered)", note="CHECK pinout and the F suffix")
+nc("100n", S, "+3V3", "GND")
+nc("100n", S, "+5V_P", "FIELD_0V")
+part("U21", "Power_Management:IPS7091SPBF", "IPS7091S", "Package_TO_SOT_SMD:TO-263-5_TabPin3", S,
+     {1: "FIELD_0V", 2: "P_EN_F", 3: "+24V_FP", 4: "P_DG", 5: "PUMP_PWR"},
+     mpn="Infineon IPS7091SPBF", note="about 4 A pump supply with current limit; can PWM a brushed motor to 1 kHz. "
+                                      "CHECK rating once the 107Z current is known")
+nr("10k", S, "+5V_P", "P_DG", note="diagnostic, test point only")
+part("D26", "Device:D_Schottky", "SS56", "Diode_SMD:D_SMC", S, {1: "PUMP_PWR", 2: "FIELD_0V"},
+     mpn="SS56 (60 V, 5 A)", note="motor freewheel")
+nc("100n 50V", S, "+24V_FP", "FIELD_0V")
+part("J15", "Connector_Generic:Conn_01x02", "PUMP POWER", MSTBVA2, S, {1: "PUMP_PWR", 2: "FIELD_0V"},
+     mpn="Phoenix MSTBVA 2,5/2-G-5,08 + plug")
+# 24 V push-pull: Schmitt inverter, 2N7002, 10k pull-up, BC817/BC807 emitter followers
+for sig, name, u, q in (("PWM", "P_PWM", "U22", 1), ("DIR", "P_DIR", "U23", 4)):
+    inverter(u, S, f"{name}_F", f"{name}_N", vcc="+5V_P", gnd="FIELD_0V", sym="74xGxx:74LVC1G14")
+    part(f"Q{q}", "Transistor_FET:2N7002", "2N7002", "Package_TO_SOT_SMD:SOT-23", S,
+         {1: f"{name}_N", 2: "FIELD_0V", 3: f"{name}_B"})
+    nr("10k", S, "+24V_FA", f"{name}_B", fp=R0805)
+    part(f"Q{q + 1}", "Transistor_BJT:BC817", "BC817", "Package_TO_SOT_SMD:SOT-23", S,
+         {1: f"{name}_B", 3: "+24V_FA", 2: f"{name}_E"})
+    part(f"Q{q + 2}", "Transistor_BJT:BC807", "BC807", "Package_TO_SOT_SMD:SOT-23", S,
+         {1: f"{name}_B", 3: "FIELD_0V", 2: f"{name}_E"})
+    nr("47R", S, f"{name}_E", f"{name}_OUT", fp=R0805, note=f"pump {sig}: 24 V push-pull, 20 Hz-25 kHz")
+# Tacho: 30 V tolerant, 1.5 V threshold, optional pull-up for open-collector tachos
+nr("10k", S, "P_TACH_IN", "P_TACH_C", fp=R0805)
+part("D27", "Diode:BAT54S", "BAT54S", "Package_TO_SOT_SMD:SOT-23", S,
+     {1: "FIELD_0V", 2: "+5V_P", 3: "P_TACH_C"}, note="clamp to the 5 V rail")
+nc("1n", S, "P_TACH_C", "FIELD_0V")
+nr("10k", S, "+5V_P", "P_TREF")
+nr("4k3", S, "P_TREF", "FIELD_0V", note="1.5 V threshold")
+part("U24", "Comparator:LMV331", "LMV331", SOT23_5, S,
+     {1: "P_TACH_C", 3: "P_TREF", 2: "FIELD_0V", 5: "+5V_P", 4: "P_TACH_F"}, mpn="LMV331IDBVR",
+     note="CHECK pin order for the SOT-23-5 variant")
+nc("100n", S, "+5V_P", "FIELD_0V")
+nr("10k", S, "+5V_P", "P_TACH_F")
+nr("1M", S, "P_TACH_F", "P_TACH_C", note="hysteresis")
+nr("4k7", S, "+5V_P", "P_TACH_PU")
+part("JP2", "Connector_Generic:Conn_01x02", "TACH PULL-UP", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+     S, {1: "P_TACH_PU", 2: "P_TACH_IN"}, note="fit for an open-collector tacho")
+mcv("J16", S, ["P_PWM_OUT", "P_DIR_OUT", "P_TACH_IN", "FIELD_0V"], "PUMP SIGNALS",
+    note="Thomas 107Z: signal ground must be field 0 V")
+
+# Relay coil outputs for DIN-socket relays (Finder 40.52 24 V, about 21 mA): PhotoMOS
+# switches, LED anodes fed from GATE so the gate drops them too; MCU pin low = on.
+part("F15", "Device:Polyfuse", "0.2A", PTC1206, S, {1: "+24V_FB", 2: "+24V_REL"}, mpn="Bourns MF-NSMF020-2")
+for k in (1, 2):
+    nr("330R", S, "GATE", f"REL{k}_A")
+    part(f"U{24 + k}", "Relay_SolidState:CPC1017N", "CPC1017N", "Package_SO:SOP-4_3.8x4.1mm_P2.54mm", S,
+         {1: f"REL{k}_A", 2: f"REL{k}_N", 3: "+24V_REL", 4: f"REL{k}_OUT"}, mpn="IXYS CPC1017NTR",
+         note="60 V, 100 mA PhotoMOS" if k == 1 else "")
+    part(f"D{27 + k}", "Device:D", "S1M", "Diode_SMD:D_SMA", S, {1: f"REL{k}_OUT", 2: "FIELD_0V"})
+mcv("J17", S, ["REL1_OUT", "FIELD_0V", "REL2_OUT", "FIELD_0V"], "RELAY COILS")
+
+# USB-C service port (ST USB bootloader, address, serial number). Self-powered: VBUS only sensed.
+part("J18", "Connector:USB_C_Receptacle_USB2.0_16P", "USB-C",
+     "Connector_USB:USB_C_Receptacle_HCTL_HC-TYPE-C-16P-01A", S,
+     {"A4": "VBUS_USB", "B4": "VBUS_USB", "A9": "VBUS_USB", "B9": "VBUS_USB",
+      "A1": "GND", "A12": "GND", "B1": "GND", "B12": "GND", "A5": "USB_CC1", "B5": "USB_CC2",
+      "A6": "USB_DP", "B6": "USB_DP", "A7": "USB_DM", "B7": "USB_DM", "S1": "CHASSIS"},
+     mpn="HCTL HC-TYPE-C-16P-01A (or GCT USB4105)")
+nr("5k1", S, "USB_CC1", "GND")
+nr("5k1", S, "USB_CC2", "GND")
+part("U27", "Power_Protection:USBLC6-2SC6", "USBLC6-2SC6", "Package_TO_SOT_SMD:SOT-23-6", S,
+     {1: "USB_DP", 6: "USB_DP", 3: "USB_DM", 4: "USB_DM", 2: "GND", 5: "VBUS_USB"}, mpn="USBLC6-2SC6")
+nr("33k", S, "VBUS_USB", "USB_VBUS_SNS")
+nr("68k", S, "USB_VBUS_SNS", "GND", note="5 V -> 3.4 V")
+
+# ---------------------------------------------------------------- analog inputs and temperatures
+S = "io_ana"
+
+
+def isow(ref, inv, cs, side, vsel_net, note):
+    """ISOW7741 (isolator + isolated supply) for one SPI chip. Its side-1 MISO output is
+    enabled only while that chip's CS is low (EN_IO1 = not CS), so it can share SPI4_MISO."""
+    v, g = side
+    pre = "T" if g == "GND_T" else "AI"
+    inverter(inv, S, cs, f"{pre}_EN1")
+    part(ref, "Isolator:ISOW7741", "ISOW7741", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", S,
+         {1: "+3V3", 6: "GND", 9: "+5V", 10: "GND", 2: "SPI4_SCK", 3: "SPI4_MOSI", 4: cs, 5: "SPI4_MISO",
+          7: f"{pre}_EN1", 8: f"{pre}_ENFLT", 12: v, 20: v, 11: g, 15: g, 13: vsel_net, 14: v,
+          19: f"{pre}_SCLK", 18: f"{pre}_DIN", 17: f"{pre}_CS", 16: f"{pre}_DOUT"},
+         mpn="TI ISOW7741DFMR", note=note)
+    nr("10k", S, "+5V", f"{pre}_ENFLT")
+    nc("10u", S, "+5V", "GND", fp=C0805)
+    nc("100n", S, "+5V", "GND")
+    nc("100n", S, "+3V3", "GND")
+    nc("10u", S, v, g, fp=C0805)
+    nc("100n", S, v, g)
+
+
+# Temperatures: ADS124S08, 3 connectors x 2 channels (TC, RTD or NTC), as io-node today
+isow("U28", "U29", "CS_T", ("+3V3_T", "GND_T"), "GND_T", "VSEL low = 3.3 V out. CHECK")
+fb("FB10", "600R@100MHz", S, "+3V3_T", "+3V3_TA")
+t = {15: "+3V3_T", 16: "+3V3_T", 14: "GND_T", 9: "T_CS", 11: "T_SCLK", 10: "T_DIN", 12: "T_DOUT",
+     8: "GND_T", 18: "T_RST", 17: "GND_T", 26: "+3V3_TA", 27: "GND_T", 28: "GND_T", 23: "T_REFOUT",
+     24: "GND_T", 30: "T_REFP", 29: "GND_T", 1: "T_AINCOM"}
+ain = {0: 7, 1: 6, 2: 5, 3: 4, 4: 3, 5: 2, 6: 32, 7: 31, 8: 22, 9: 21, 10: 20, 11: 19}
+for k in range(6):
+    t[ain[2 * k]], t[ain[2 * k + 1]] = f"T{k + 1}_P", f"T{k + 1}_N"
+part("U30", "cems_core:ADS124S08", "ADS124S08", "Package_QFP:TQFP-32_7x7mm_P0.8mm", S, t,
+     mpn="TI ADS124S08IPBSR",
+     note="internal clock (CLK low), START low (conversions by command), DOUT/DRDY on one pin. CHECK pinout")
+nc("100n", S, "+3V3_T", "GND_T")
+nc("1u", S, "+3V3_TA", "GND_T")
+nc("100n", S, "+3V3_TA", "GND_T")
+nc("1u", S, "T_REFOUT", "GND_T", note="REFOUT to REFCOM")
+nr("10k", S, "+3V3_T", "T_RST")
+nr("5k11 0.1%", S, "T_REFP", "GND_T", note="RTD reference resistor, 10 ppm/K")
+nc("100n", S, "T_REFP", "GND_T")
+nc("100n", S, "T_AINCOM", "GND_T", note="CHECK AINCOM and the TC bias against the io-node schematic")
+for k in range(1, 7):
+    nc("10n C0G", S, f"T{k}_P", f"T{k}_N", note="differential filter" if k == 1 else "")
+    nr("10M", S, f"T{k}_N", "T_AINCOM", note="open-TC bias" if k == 1 else "")
+for j in range(3):
+    nr("100R", S, f"T_RTN{j + 1}", "T_REFP", note="RTD return to the reference resistor" if j == 0 else "")
+    mcv(f"J{19 + j}", S, [f"T{2 * j + 1}_P", f"T{2 * j + 1}_N", f"T{2 * j + 2}_P", f"T{2 * j + 2}_N", f"T_RTN{j + 1}"],
+        f"TEMP{j + 1}", note=f"T{2 * j + 1} +/-, T{2 * j + 2} +/-, RTD return")
+
+# Analog: AD4112 on its own isolated island (ISOW7741 for SPI, ITX2424SA for 24 V loop power)
+isow("U31", "U32", "CS_AI", ("+5V_AI", "GND_AI"), "+5V_AI", "VSEL high = 5 V out. CHECK")
+part("U33", "Converter_DCDC:ITX2424SA", "ITX2424SA", "Converter_DCDC:Converter_DCDC_XP_POWER-ITXxxxxSA_THT", S,
+     {2: "+24V", 1: "GND", 6: "+24V_AI", 7: "GND_AI"}, mpn="XP Power ITX2424SA (6 W, 1.6 kV)",
+     note="loop power 6 x 22 mA + level + mass-flow supply, about 4 W")
+nc("10u 50V", S, "+24V", "GND", fp=C1210)
+nc("10u 50V", S, "+24V_AI", "GND_AI", fp=C1210)
+fb("FB11", "600R@100MHz", S, "+5V_AI", "+5V_AIA")
+ai = {20: "+5V_AI", 21: "GND_AI", 22: "AI_REGCAPD", 17: "AI_CS", 16: "AI_SCLK", 15: "AI_DIN", 14: "AI_DOUT",
+      18: "AI_ERR", 19: "+5V_AI", 9: "+5V_AIA", 8: "GND_AI", 41: "GND_AI", 7: "AI_REGCAPA", 6: "AI_REF",
+      40: "AI_REF", 39: "GND_AI", 11: "GND_AI",
+      2: "AI5_IN", 3: "AI6_IN", 4: "LVL_SIG", 5: "FLOW_SIG", 26: "V10_MON", 27: "+5V_LVL", 1: "GND_AI",
+      34: "AI1_IN", 35: "AI2_IN", 36: "AI3_IN", 37: "AI4_IN", 33: "GND_AI", 32: "GND_AI", 31: "GND_AI", 30: "GND_AI"}
+part("U34", "cems_core:AD4112", "AD4112", "Package_CSP:LFCSP-40-1EP_6x6mm_P0.5mm_EP3.9x3.9mm", S, ai,
+     mpn="ADI AD4112BCPZ",
+     note="internal oscillator and 2.5 V reference. VIN0/1: 4-20 mA ch 5/6 on shunts; VIN2 level; VIN3 mass flow; "
+          "VIN4 10 V monitor; VIN5 5 V monitor. CHECK pinout and exposed pad size")
+nc("100n", S, "+5V_AI", "GND_AI")
+nc("1u", S, "+5V_AIA", "GND_AI")
+nc("100n", S, "+5V_AIA", "GND_AI")
+nc("1u", S, "AI_REGCAPA", "GND_AI")
+nc("100n", S, "AI_REGCAPA", "GND_AI")
+nc("1u", S, "AI_REGCAPD", "GND_AI")
+nc("100n", S, "AI_REF", "GND_AI")
+nr("10k", S, "+5V_AI", "AI_ERR")
+for ch in (5, 6):
+    nr("250R 0.1%", S, f"AI{ch}_IN", "GND_AI", fp=R0805, mpn="10 ppm/K thin film", note="4-20 mA shunt -> 1-5 V")
+for ch in range(1, 7):
+    part(f"F{15 + ch}", "Device:Polyfuse", "50mA", PTC1206, S, {1: "+24V_AI", 2: f"LOOP{ch}"},
+         mpn="Bourns MF-NSMF005-2 (or a 30 mA current limiter)", note="loop supply limit" if ch == 1 else "")
+for j in range(3):
+    a1, a2 = 2 * j + 1, 2 * j + 2
+    mcv(f"J{22 + j}", S, [f"LOOP{a1}", f"AI{a1}_IN", "GND_AI", f"LOOP{a2}", f"AI{a2}_IN", "GND_AI"], f"AI {a1}-{a2}",
+        note="per channel: 24 V loop, IN, 0 V (2-wire or 4-wire transmitters)")
+# Sensor supplies: 5 V level port; precision 10 V for the mass-flow sensor (REF5010 drives
+# the LT3045's SET pin, so the output is the reference +/- a few mV, about 0.05 %)
+part("U35", "Regulator_Linear:L78L05_SOT89", "L78L05", "Package_TO_SOT_SMD:SOT-89-3", S,
+     {3: "+24V_AI", 2: "GND_AI", 1: "+5V_LVL"}, mpn="L78L05ACUTR", note="level sensor 5 V, internal current limit")
+nc("330n 50V", S, "+24V_AI", "GND_AI")
+nc("1u", S, "+5V_LVL", "GND_AI")
+nr("100k", S, "LVL_SIG", "GND_AI", note="defined level when unplugged")
+part("U36", "Regulator_Linear:LM317L_SO8", "LM317L", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", S,
+     {1: "+24V_AI", 2: "+13V_AI", 3: "+13V_AI", 6: "+13V_AI", 7: "+13V_AI", 4: "AI_ADJ"},
+     mpn="LM317LDR", note="13 V pre-regulator, about 0.5 W: copper on the VO pins")
+nr("240R 1%", S, "+13V_AI", "AI_ADJ")
+nr("2k26 1%", S, "AI_ADJ", "GND_AI", note="1.25 x (1 + 2260/240) = 13.0 V")
+nc("1u 25V", S, "+13V_AI", "GND_AI", fp=C0805)
+part("U37", "Reference_Voltage:REF5010AD", "REF5010", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", S,
+     {2: "+13V_AI", 4: "GND_AI", 6: "REF10", 5: "REF10_NR"}, mpn="REF5010AIDR (0.05 %, 3 ppm/K)")
+nc("1u", S, "REF10_NR", "GND_AI")
+nc("1u 25V", S, "REF10", "GND_AI", fp=C0805)
+part("U38", "Regulator_Linear:LT3045xMSE", "LT3045", "Package_SO:MSOP-12-1EP_3x4mm_P0.65mm_EP1.65x2.85mm", S,
+     {1: "+13V_AI", 2: "+13V_AI", 3: "+13V_AI", 4: "+13V_AI", 6: "FLOW_ILIM", 7: "+13V_AI", 8: "REF10",
+      9: "GND_AI", 13: "GND_AI", 10: "+10V_FLOW", 11: "+10V_FLOW", 12: "+10V_FLOW"},
+     mpn="LT3045EMSE#PBF", note="SET driven by the REF5010 (no RSET). CHECK PGFB tie when PG is unused")
+nr("3k", S, "FLOW_ILIM", "GND_AI", note="about 50 mA current limit")
+nc("4u7 25V", S, "+13V_AI", "GND_AI", fp=C0805)
+nc("10u 25V", S, "+10V_FLOW", "GND_AI", fp=C0805)
+nr("100k 0.1%", S, "+10V_FLOW", "V10_MON", note="10 V monitor for ratiometric correction")
+nr("100k 0.1%", S, "V10_MON", "GND_AI")
+nr("1M", S, "FLOW_SIG", "GND_AI")
+mcv("J25", S, ["+5V_LVL", "LVL_SIG", "GND_AI", "+10V_FLOW", "FLOW_SIG", "GND_AI"], "SENSORS",
+    note="level (DFRobot SEN0205): 5 V, SIG, 0 V; mass flow (AWM5104VN): +10 V, OUT, 0 V")

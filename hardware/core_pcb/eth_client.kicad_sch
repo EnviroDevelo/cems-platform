@@ -6,8 +6,8 @@
 
   (title_block
     (title "CEMS core board: Ethernet client port")
-    (date "2026-10-25")
-    (rev "0.1")
+    (date "2026-10-31")
+    (rev "0.2")
     (company "EnviroDevelo")
     (comment 1 "LAN8742A on RMII, client RJ45 (J2)")
     (comment 2 "Generated from design.py")

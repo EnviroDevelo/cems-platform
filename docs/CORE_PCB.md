@@ -1,9 +1,10 @@
 # Core PCB: design specification (draft)
 
-Rev 0.1, 25 Oct 2026. The CEMS main ("core") board: the STM32H5, its memories, the two
-Ethernet ports, and the RVT70 touch display plugged straight onto it by FFC (no separate
-HMI board). The field I/O is on the separate I/O boards (`PLATFORM.md` 5k) and is not part
-of this board. What the firmware needs from the board is in `HARDWARE.md` (H1-H11); this
+Rev 0.2, 31 Oct 2026 (rev 0.1, 25 Oct). The CEMS main ("core") board: the STM32H5, its
+memories, the two Ethernet ports, and the RVT70 touch display plugged straight onto it by
+FFC (no separate HMI board). Since rev 0.2 the same board also carries the I/O node section
+(Gary, 30 Oct: one PCB for CORE and I/O node, role set by jumper J7, section 12); the field
+I/O is described in section 14. What the firmware needs from the board is in `HARDWARE.md` (H1-H11); this
 document turns that into a schematic-ready plan. Items marked **(check)** must be confirmed
 against the part's datasheet before layout.
 
@@ -88,7 +89,7 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | Display CS | PA15 (GPIO out, initial high) | `EVE_CS` |
 | Display PD_N | PD2 (GPIO out, initial high) | `EVE_PD` |
 | Display INT_N | PD0 (EXTI0) | `EVE_INT` (routed; the driver polls today). The module has its own 47 kΩ pull-up |
-| W5500 SPI4 SCK / MISO / MOSI | PE12 / PE13 / PE14 (AF5) | own bus, not shared (I/O timing) |
+| SPI4 SCK / MISO / MOSI | PE12 / PE13 / PE14 (AF5) | shared by the W5500 and the five I/O chips (section 14); I/O chips at 4 MHz, the firmware sets the prescaler per device |
 | W5500 SCSn | PE11 (GPIO out, initial high) | `W5500_CS` |
 | W5500 INTn | PE9 (EXTI9, pull-up) | `W5500_INT` (routed; the driver polls today) |
 | W5500 RSTn | PE10 (GPIO out, initial low → high) | `W5500_RST` |
@@ -105,8 +106,14 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | Hardware revision straps | PE7, PE8 | read once at boot |
 | Board role jumper (J7) | PE5, PE6 (inputs, 10 kΩ pull-ups) | read once at boot; section 12 |
 
-Free for later: PA0, PA3, PA4, PA8, PA11, PA12, PB4, PB5, PB8, PB9, PB11,
-PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE4, PE15.
+| I/O chip selects (SPI4) | PE2 bank A, PE3 bank B, PE4 inputs, PE15 temperatures, PE0 analog (GPIO out, initial high, 10 kΩ pull-ups) | `CS_A`, `CS_B`, `CS_IN`, `CS_T`, `CS_AI` |
+| I/O status inputs | PD1 bank A ERR, PC13 inputs ERR, PD14 bank B FAULT, PD15 bank B PGOOD (pull-ups) | all active low except PGOOD |
+| Output gate | PB8 `GATE_EN` (out, 100 kΩ pull-down), PB9 `WDI` (out, kick every < 30 ms), PD8 `GATE_FB` (in) | section 14 |
+| Pump | PA8 TIM1_CH1 PWM (AF1), PA0 TIM2_CH1 tacho capture (AF1), PC6 DIR, PC7 EN | PWM and EN pass through the gate |
+| Relay coil outputs | PB4, PB5 (open-drain out, low = on) | `REL1_N`, `REL2_N`; the gate also drops them |
+| USB (service) | PA11 / PA12 (USB FS), PC8 VBUS sense | ST USB bootloader, address, serial number |
+
+Free for later: PA3, PA4, PB11, PC9, PD3-PD7, PD9 (PD4-PD6 kept for a USART2 RS-485 option).
 
 ## 5. Power
 
@@ -170,6 +177,18 @@ Everything before 16 V is extra: from 24 V down to 16 V the same capacitors give
 | J6 | Service UART, 6-pin 2.54 mm (FTDI-cable order) | 3.3 V levels |
 | BT1 | CR2032 holder | |
 | SW1 | Reset button | |
+| J7 | Role jumper, 3-pin 2.54 mm | section 12 |
+| J10 | Bank A, 26-way latched IDC header | to the breakout board (`hardware/io_breakout`), straight-through ribbon |
+| J11 | Bank B, 10-way 3.81 mm pluggable | OUT1-8, 0 V, 0 V |
+| J12 | Digital inputs, 26-way latched IDC header | to a second breakout (IN build) |
+| J13, J14 | Field supply A and B, 2-way 5.08 mm pluggable | own fuses, never through J1 |
+| J15 | Pump power, 2-way 5.08 mm | switched +24 V, 0 V |
+| J16 | Pump signals, 4-way 3.81 mm | PWM, DIR, tacho, 0 V |
+| J17 | Relay coils, 4-way 3.81 mm | REL1, 0 V, REL2, 0 V (DIN-socket relays) |
+| J18 | USB-C | service |
+| J19-J21 | Temperatures, 5-way 3.81 mm each | 2 channels + RTD return |
+| J22-J24 | 4-20 mA, 6-way 3.81 mm each | 2 × (24 V loop, IN, 0 V) |
+| J25 | Sensors, 6-way 3.81 mm | level 5 V / SIG / 0 V, mass flow +10 V / OUT / 0 V |
 
 ## 6a. Display FFC (J4), from the RVT70 datasheet
 
@@ -270,6 +289,15 @@ board's -40 to 85 °C parts, sets the instrument's rating.
    firmware working RAM headroom for instrument models (RAM thread). It costs about AUD 3-5
    and uses six pins that were free. **(check: the -ZR industrial grade, -40 to 105 °C, is
    orderable in AU; the -SN part is rated -40 to 85 °C, which is enough)**.
+8. **One PCB for CORE and I/O node (Gary, 30 Oct):** the I/O node section is on this
+   board (section 14), selected by the role jumper J7 (section 12).
+9. **I/O section choices made by this thread (31 Oct, under Gary's "choose the
+   recommended option" rule; any can be reversed):** field supply A feeds bank A, the
+   inputs and the pump, supply B feeds bank B and the relay coils; reverse polarity is
+   handled by fuse + unidirectional TVS (no series FET, so no 10 A heat); relays are PhotoMOS
+   (CPC1017N) coil drivers for DIN-socket relays; the pump switch is an IPS7091S; the 10 V
+   mass-flow supply is a REF5010 driving an LT3045's SET pin; analog loop power comes from an
+   XP ITX2424SA (6 W) off the logic 24 V.
 
 ## 9. BOM summary (main parts)
 
@@ -292,6 +320,24 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 | TPD4E05U06 (or equal) | Ethernet ESD | 2 |
 | Hirose FH12-20S-0.5SH(55) | Display FFC | 1 |
 | CR2032 holder | VBAT | 1 |
+| **I/O node section (rev 0.2)** | | |
+| Infineon ISO2H823V25XUMA1 | Bank A, 8 × 0.6 A | 1 |
+| ST ISO808A-1TR | Bank B, 8 × 1 A | 1 |
+| Infineon ISO1I813TXUMA1 | 8 digital inputs | 1 |
+| TI ADS124S08IPBSR | 6 temperatures | 1 |
+| ADI AD4112BCPZ | 6 × 4-20 mA, level, mass flow | 1 |
+| TI ISOW7741DFMR | Isolated SPI + supply (temperatures, analog) | 2 |
+| TI ISO7741FDWR | Pump signal isolator | 1 |
+| XP Power ITX2424SA | Isolated 24 V loop supply, 6 W | 1 |
+| REF5010AIDR, LT3045EMSE, LM317LDR | Precision 10 V mass-flow supply | 1 each |
+| Infineon IPS7091SPBF | Pump high-side switch | 1 |
+| MAX6369KA+T, 74LVC1G08 | Output gate (watchdog) | 1, 3 |
+| IXYS CPC1017NTR | Relay coil drivers | 2 |
+| USBLC6-2SC6, USB-C 16P | Service USB | 1 each |
+| Littelfuse 0453 NANO2 6.3 A, 5 A, 10 A in 157 holders | Field fuses | 3 |
+| SMCJ33A | Field TVS | 3 |
+| 26-way latched IDC box header | J10, J12 | 2 |
+| Phoenix MCV 1,5 3.81 mm and MSTBVA 2,5 5.08 mm headers + plugs | Field terminals | 13 |
 
 ## 10. Enclosure
 
@@ -311,8 +357,9 @@ Phoenix Contact's data.)** The schematic doesn't depend on the enclosure.
 
 ## 11. Schematic
 
-`hardware/core_pcb/` holds the KiCad 7 project: a root sheet and five sheets (power, MCU,
-client Ethernet, I/O Ethernet, memories and display), 145 parts, and a PDF of all sheets
+`hardware/core_pcb/` holds the KiCad 7 project: a root sheet and eight sheets (power, MCU,
+client Ethernet, I/O Ethernet, memories and display, and from rev 0.2 field digital I/O,
+field power / pump / relays / USB, analog and temperatures), 423 parts, and a PDF of all sheets
 (`cems_core.pdf`) for review without KiCad. The schematic is generated from
 `hardware/core_pcb/tools/design.py`, the single description of the circuit, by
 `gen_schematic.py`. Each connected pin carries a net label and each unused pin a no-connect
@@ -411,4 +458,36 @@ RM0481 before the first production unit is closed.)**
   bootloader is not a route on a closed unit); BOOT0 pulled down by R20.
 - The credential is held like the firmware signing key: not in the repository, two people
   hold it.
+
+## 14. I/O node section (rev 0.2, 31 Oct)
+
+The field I/O that Gary listed on 30 Oct, laid out as in the doc
+[One PCB for CORE and I/O board](https://claude.ai/artifact/5oGgPyMKgN8YEAyrkMxLkh).
+Sheets `io_dig`, `io_pwr` and `io_ana`. Every field chip is on the shared SPI4 at 4 MHz
+with its own chip select. Four ground domains: GND (logic), FIELD_0V (field supplies A and
+B, banks, inputs, pump, relays), GND_T (temperatures) and GND_AI (analog), each crossing to
+GND only through an isolating part.
+
+| Block | Circuit | Firmware note |
+|---|---|---|
+| Output gate | MAX6369 watchdog (SET = 010, 30 ms) AND `GATE_EN` in a 74LVC1G08 = `GATE`. GATE drives ISO808A OUT_EN, ISO2H823 ODIS (through an inverter), the pump EN and PWM (AND gates) and the relay LEDs | Kick `WDI` from a timer at least every 20 ms; set `GATE_EN` only when outputs may switch; read back `GATE_FB` |
+| Bank A | ISO2H823V2.5, serial mode, 12 nF per output, IADJ 6.81 kΩ, J10 IDC26 to the breakout | as io-node |
+| Bank B | ISO808A-1, J11 10-way; flyback footprints per channel as on the breakout (S1M + 0 Ω fitted, Zener optional) | PGOOD = field B present |
+| Inputs | ISO1I813T, type 1/3, 12 kΩ RIN and 2 kΩ RLED per channel, wire-break 33 kΩ, J12 IDC26 | as io-node |
+| Pump | IPS7091S switch on +24V_FP (5 A fuse); PWM and DIR as 24 V push-pull (2N7002 + BC817/BC807); tacho comparator 1.5 V with hysteresis, 30 V tolerant, JP2 pull-up for open collector; all through an ISO7741 | PWM 100 Hz for the 107Z, 5-95 %; EN switches the supply |
+| Relay coils | 2 × CPC1017N PhotoMOS from +24V_REL (0.2 A polyfuse) with flyback diodes | `REL1_N`/`REL2_N` low = on |
+| Temperatures | ADS124S08 behind an ISOW7741 (3.3 V island), 5.11 kΩ 0.1 % RTD reference, 100 Ω RTD returns, 10 MΩ open-TC bias, 10 nF per pair | DOUT/DRDY on one pin; poll |
+| Analog | AD4112 behind an ISOW7741 (5 V island). IIN0-3 = 4-20 mA ch 1-4; VIN0/1 = ch 5/6 on 250 Ω 0.1 % shunts; VIN2 level; VIN3 mass flow; VIN4 = 10 V monitor (÷2); VIN5 = level 5 V. Loop power from an ITX2424SA through 50 mA polyfuses | Correct the mass flow ratiometrically with VIN4 |
+| USB | USB-C, USBLC6, 5.1 kΩ CC pull-downs, VBUS sensed only (board is self-powered) | ST bootloader with BOOT0 |
+
+The ISOW7741s drive SPI4_MISO only while their chip select is low (EN_IO1 = NOT CS through
+a 74LVC1G04), so they share the bus with the W5500 and the other chips.
+
+**Still to check (CHECK in the sheet notes):** every pin table of the six project symbols
+(read through a summarising web fetch, not yet compared with the PDFs): ISO2H823V2.5,
+ISO1I813T, ISO808A-1, ADS124S08, AD4112, ISO7741; the ISO2H823 ODIS polarity, OLADJ and
+mode pins; the ISO1I813T TS and WB values; the MAX6369 SET table; the ISOW7741 VSEL levels;
+the LT3045 PGFB tie; the LMV331 SOT-23-5 pin order; the IPS7091S rating once the pump current
+is known; the PG-VQFN-70 footprint (to be drawn); and whether 55 field terminals fit the
+BC 107,6 (section 10).
 
