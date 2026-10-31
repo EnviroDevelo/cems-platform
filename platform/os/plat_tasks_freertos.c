@@ -19,6 +19,7 @@
 #include "iobus.h"
 #include "iob_tcp.h"
 #include "iob_w5500.h"
+#include "inst_w5500.h"
 #include "plat_power.h"
 #include "plat_role.h"
 
@@ -31,6 +32,7 @@ static int tm_ids[PLAT_TASK_COUNT];
 static const plat_app_t *the_app;
 static iob_tcp_t iob_eth;                        /* the I/O boards on Ethernet (iobus task only) */
 static iob_w5500_t iob_io;                       /* the I/O boards on the I/O port (iobus task only) */
+static inst_w5500_t inst_io;                     /* the third-party instruments on the same port (inst.h) */
 const plat_app_t *plat_app(void) { return the_app; }
 
 void plat_checkin(plat_task_id_t id) {
@@ -278,6 +280,8 @@ void plat_start(const plat_app_t *app) {
         iob_w5500_mac(uid, mac);
         iob_w5500_init(&iob_io, bsp_w5500(), mac);
         iob_init_ioport(&iob_io.port, &iob_io.disc);
+        inst_w5500_init(&inst_io, &iob_io);      /* the instruments share the chip: sockets 4-7 */
+        inst_init(&inst_io.net);
     }
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);

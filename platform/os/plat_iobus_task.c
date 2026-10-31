@@ -7,6 +7,7 @@
 #include "plat_tasks.h"
 #include "plat_config.h"
 #include "iobus.h"
+#include "inst.h"
 #include "bsp.h"
 #include "plat_role.h"
 #include "plat_node.h"
@@ -29,6 +30,7 @@ void plat_iobus_task_body(void) {
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_IOB_PERIOD_MS));
         iob_cycle(bsp_ms());
+        inst_cycle(bsp_ms());         /* the instruments on the I/O port: never waits (inst.h) */
         plat_checkin(PLAT_TASK_IOBUS);
     }
 }

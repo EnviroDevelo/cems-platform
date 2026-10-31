@@ -205,6 +205,14 @@ For each alarm, tick what it does: **Email** sends a message, **Modbus** counts 
 common-alarm register, **Relay 1-4** switches a relay output. No tick: the alarm is only shown.
 **Default** puts the row back. The relay mode (fail-safe or not) is set here too.
 
+**Priority tiers**: every alarm belongs to one of five tiers, Critical, High, Medium, Low and Info
+(the names can be changed, up to 16 characters). The **Tier** column picks an alarm's tier, or
+**Off** for an alarm that may be switched off; "default" keeps its built-in tier. The tiers table
+gives each tier its actions, used by every alarm whose own actions are left at Default, and counts
+its active alarms and those waiting for an acknowledge. Critical alarms are marked in the alarm
+list, the header badge then starts with CRITICAL, and the control system sees bits 5 and 6 of the
+common alarm word.
+
 **Digital input alarms** (24 slots, alarms 30 to 53): tie a digital input to an alarm. For each
 slot pick the input, whether the alarm is raised when the input is **on** or **off**, the delay in
 seconds before it is raised (0 to 3600), whether it latches until acknowledged, its severity, and

@@ -33,6 +33,7 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
 .sev{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:6px;vertical-align:middle}
 .sev-fault,.sev-alarm{background:var(--bad)}.sev-warning{background:var(--warn)}.sev-status{background:#8a94a6}
 tr.unacked td{font-weight:600}
+tr.crit td:first-child{box-shadow:inset 4px 0 var(--bad)}
 .warnbox{background:#fdecd2;color:var(--warn);border-radius:6px;padding:8px;margin-bottom:8px;display:none}
 #filter{min-width:220px}
 #tlsfp,#mailfp{overflow-wrap:anywhere}
@@ -430,13 +431,23 @@ section.offtab{display:none!important}
     <div class="row"><button id="diasave">Save</button><button class="ghost" id="diareload">Undo changes</button><span class="err" id="diaerr"></span></div>
   </section>
   <section id="actions" data-tab="alarmcfg" style="display:none">
+    <div id="tierbox" style="display:none">
+      <h2>Alarm priority tiers</h2>
+      <p class="note">Each alarm belongs to a tier (Tier column below). The tier sets the order in the alarm list, the colour,
+        and the counts here. An alarm whose own actions are left at Default does what its tier does. Critical alarms also set
+        bits 5 (active) and 6 (waiting for an acknowledge) of the Modbus common alarm word. Names are up to 16 characters;
+        an empty name puts the standard one back.</p>
+      <div style="overflow-x:auto"><table class="ptab" id="tiertab">
+        <thead><tr><th>Tier</th><th>Name</th><th>Email</th><th>Modbus</th><th>Relay 1</th><th>Relay 2</th><th>Relay 3</th><th>Relay 4</th>
+          <th>Active</th><th>To acknowledge</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
     <h2>Alarm actions</h2>
     <p class="note">What each alarm does when it is raised. <b>Email</b>: sends an email (set up below).
       <b>Modbus</b>: counts in the common-alarm register for the control system (every alarm's own state is
       always readable over Modbus). <b>Relay</b>: switches an alarm relay output. No tick: shown here, on the
       touchscreen and in the event log only. Changes need an admin login.</p>
     <table>
-      <thead><tr><th>Alarm</th><th>Email</th><th>Modbus</th><th>Relay 1</th><th>Relay 2</th><th>Relay 3</th><th>Relay 4</th><th></th></tr></thead>
+      <thead><tr><th>Alarm</th><th class="tiercol">Tier</th><th>Email</th><th>Modbus</th><th>Relay 1</th><th>Relay 2</th><th>Relay 3</th><th>Relay 4</th><th></th></tr></thead>
       <tbody id="actrows"></tbody>
     </table>
     <h2 style="margin-top:14px">Alarm relays</h2>
@@ -1331,10 +1342,14 @@ async function mbHandoverData() {
   const GRP = { quality: "Quality", state: "State", common_bits: "Common alarm bit", clock_source: "Clock source", exceptions: "Modbus exception",
                 std_status_bits: "Standard status bit", input_alarm_status: "Digital input alarm state" };
   const exc = Object.fromEntries(MB_EXC.map(([c, , t]) => [c, t]));
-  for (const [g, list] of Object.entries(m.codes || {})) for (const c of list)
+  const mcodes = { ...(m.codes || {}) };
+  if (al.tiers && mcodes.common_bits && !mcodes.common_bits.some(c => c.bit === 5))      /* firmware with tiers, map without their bits */
+    mcodes.common_bits = [...mcodes.common_bits, { bit: 5, name: "a Critical alarm is active" }, { bit: 6, name: "a Critical alarm waits for an acknowledge" }].sort((a, b) => a.bit - b.bit);
+  for (const [g, list] of Object.entries(mcodes)) for (const c of list)
     codes.push([GRP[g] || g, c.code ?? c.bit ?? "", c.name || c.key || "", c.text || c.meaning || (g === "exceptions" ? exc[c.code] || "" : c.key && c.key !== c.name ? c.key : "")]);
   /* the alarm's label as set now (a digital input alarm's label typed on the touchscreen or here), then its code name */
-  for (const a of al.alarms || []) codes.push(["Alarm ID", a.id, a.text || a.name, `${a.name}, ${a.severity}`]);
+  const tierName = p => p === PRIO_OFF ? "switched off" : (al.tiers || [])[p - 1]?.name || "";
+  for (const a of al.alarms || []) codes.push(["Alarm ID", a.id, a.text || a.name, `${a.name}, ${a.priority ? tierName(a.priority) + " (" + a.severity + ")" : a.severity}`]);
   if (!(m.codes && m.codes.exceptions)) for (const [c, n, t] of MB_EXC) codes.push(["Modbus exception", c, n, t]);
   const comm = [["Commissioning: forcing values", ""],
     ["What it does", "At admin login, the web page (Service tab) can force a value below for 30 s: the control system reads the forced value, then the real one again. Forcing again restarts the 30 s."],
@@ -1446,6 +1461,7 @@ function showAlarmBadge(a) {
   b.style.display = n ? "" : "none";
   b.textContent = `${a.active} ALARM${a.active === 1 ? "" : "S"}` + (a.unacked ? `, ${a.unacked} TO ACKNOWLEDGE` : "");
   b.className = "badge " + (a.worst === "fault" || a.worst === "alarm" ? "b-bad" : "b-warn");
+  if (a.worst_priority === 1) b.textContent = "CRITICAL: " + b.textContent;
 }
 let alarmSig = "";
 async function pollAlarms() {
@@ -1466,7 +1482,8 @@ async function pollAlarms() {
         td(since);
         const name = td(""); const dot = document.createElement("span"); dot.className = "sev sev-" + a.severity;
         name.append(dot, `${a.text} `); const small = document.createElement("span"); small.className = "note";
-        small.textContent = `${a.severity}, ${a.name} (${a.id})`; name.appendChild(small);
+        small.textContent = `${a.tier || a.severity}, ${a.name} (${a.id})`; name.appendChild(small);
+        if (a.priority === 1) tr.classList.add("crit");
         if (a.help) { const h = document.createElement("div"); h.className = "note alhelp"; h.textContent = "What to check: " + a.help; name.appendChild(h); }
         td(state + (a.latch && a.active && a.unacked ? " (latched)" : ""));
         const act = td("");
@@ -1490,10 +1507,60 @@ async function ackAlarm(id) {
 $("ackall").onclick = () => ackAlarm("all");
 /* ---- alarm actions, relays, email (admin) ---- */
 const AR = { email: 1, modbus: 2, relay: k => 4 << k, set: 0x80 };
+const AR_BITS = [AR.email, AR.modbus, AR.relay(0), AR.relay(1), AR.relay(2), AR.relay(3)];
+/* priority tiers (firmware plat_alarm.h): 52 alarm_prio per alarm ID (0 default, 1-5 tier, 6 off),
+   53 alarm_tier_route per tier, 90-94 tier names (empty: the standard name) */
+const TIER = { prio: 52, route: 53, name: 90 }, PRIO_OFF = 6;
+const TIER_STD = ["Critical", "High", "Medium", "Low", "Info"];
+let tierNames = TIER_STD.slice();
+function drawTiers(tiers) {
+  $("tierbox").style.display = tiers ? "" : "none";
+  for (const x of document.querySelectorAll("#actions .tiercol")) x.style.display = tiers ? "" : "none";
+  if (!tiers) return;
+  tierNames = tiers.map((t, k) => t.name || TIER_STD[k]);
+  const tb = $("tiertab").tBodies[0]; tb.textContent = "";
+  for (const t of tiers) {
+    const k = t.priority - 1, tr = document.createElement("tr");
+    const cell = el => { const td = document.createElement("td"); td.append(el); tr.appendChild(td); return td; };
+    cell(String(t.priority));
+    const nm = document.createElement("input"); nm.maxLength = 16; nm.size = 12; nm.value = t.name; nm.placeholder = TIER_STD[k];
+    nm.onchange = () => {
+      const v = nm.value.trim();
+      if (/[^\x20-\x7e]/.test(v)) { $("acterr").textContent = "Tier names: plain letters, digits and punctuation only"; return; }
+      writeAct([["id", TIER.name + k], ["v", v === TIER_STD[k] ? "" : v]]);
+    };
+    cell(nm);
+    const boxes = AR_BITS.map(b => {
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = (t.route & b) !== 0;
+      cb.onchange = () => writeAct([["id", TIER.route], ["o", k], ["v", AR.set | boxes.reduce((s, x, i) => s | (x.checked ? AR_BITS[i] : 0), 0)]]);
+      cell(cb).className = "c"; return cb;
+    });
+    cell(String(t.active)).className = "c"; cell(String(t.unacked)).className = "c";
+    const td = cell("");
+    if (t.configured) {
+      const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Default";
+      b.title = "Back to this tier's built-in actions"; b.onclick = () => writeAct([["id", TIER.route], ["o", k], ["v", 0]]);
+      td.appendChild(b);
+    }
+    tb.appendChild(tr);
+  }
+}
+function tierPicker(a) {                              /* the alarm's tier: default (its built-in one), 1-5, or off */
+  const sel = document.createElement("select");
+  sel.add(new Option(`default (${tierNames[(a.default_priority || 3) - 1]})`, 0));
+  tierNames.forEach((n, k) => sel.add(new Option(n, k + 1)));
+  if (a.can_switch_off) sel.add(new Option("Off (not raised)", PRIO_OFF));
+  sel.value = a.prio_set ?? (a.priority === a.default_priority ? 0 : a.priority);
+  sel.onchange = () => writeAct([["id", TIER.prio], ["o", a.id], ["v", sel.value]]);
+  return sel;
+}
 const RMODE = ["while active", "until acknowledged (horn)", "until cleared and acknowledged (lamp)"];
 async function loadActions() {
   try {
     const c = await api("/api/alarms/config");
+    drawTiers(c.tiers);
+    let prio = null;                                  /* what is set (0 = default), not only what is in force */
+    if (c.tiers) try { prio = (await paramsGet([TIER.prio]))[TIER.prio]; } catch (e) { }
     const tb = $("actrows"); tb.textContent = "";
     for (const a of c.alarms) {
       const tr = document.createElement("tr");
@@ -1501,7 +1568,8 @@ async function loadActions() {
       const dot = document.createElement("span"); dot.className = "sev sev-" + a.severity;
       name.append(dot, a.text + " "); const sm = document.createElement("span"); sm.className = "note";
       sm.textContent = `${a.name} (${a.id})`; name.appendChild(sm); tr.appendChild(name);
-      const bits = [AR.email, AR.modbus, AR.relay(0), AR.relay(1), AR.relay(2), AR.relay(3)];
+      if (c.tiers) { if (prio) a.prio_set = prio[a.id]; const tt = document.createElement("td"); tt.appendChild(tierPicker(a)); tr.appendChild(tt); }
+      const bits = AR_BITS;
       const boxes = bits.map(b => {
         const td = document.createElement("td"); td.className = "c";
         const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = (a.route & b) !== 0;

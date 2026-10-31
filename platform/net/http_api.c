@@ -6,6 +6,7 @@
 #include <string.h>
 #include "http_api.h"
 #include "iobus.h"
+#include "inst.h"
 #include "mb_rtu.h"
 #include "mbtcp.h"
 #include "modbus.h"
@@ -1864,6 +1865,107 @@ static bool parse_uid(const char *s, uint16_t uid[6]) {
     return true;
 }
 
+/* Third-party instruments (inst.h): each instrument's state and statistics, each point's value,
+ * quality and raw bits. The settings themselves are ordinary parameters (500-621). */
+static void get_inst(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"instruments\":[");
+    for (unsigned k = 0; k < INST_MAX; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"name\":"); json_str(o, inst_tags.name[k]);
+        out_str(o, ",\"enabled\":"); json_bool(o, inst_tags.enable[k]);
+        out_str(o, ",\"ip\":"); json_ip(o, inst_tags.ip[k]);
+        out_str(o, ",\"port\":"); json_uint(o, inst_tags.port[k]);
+        out_str(o, ",\"unit\":"); json_uint(o, inst_tags.unit[k]);
+        out_str(o, ",\"state\":"); json_str(o, inst_state_name(inst_tags.state[k]));
+        out_str(o, ",\"good\":"); json_uint(o, inst_tags.good[k]);
+        out_str(o, ",\"errors\":"); json_uint(o, inst_tags.errors[k]);
+        out_str(o, ",\"last_error\":"); json_str(o, inst_err_name(inst_tags.last_err[k]));
+        out_str(o, ",\"last_exception\":"); json_uint(o, inst_tags.last_exc[k]);
+        out_str(o, ",\"resp_ms\":"); json_uint(o, inst_tags.resp_ms[k]);
+        out_str(o, "}");
+    }
+    out_str(o, "],\"points\":[");
+    bool first = true;
+    for (unsigned p = 0; p < INST_POINTS; ++p) {
+        if (!inst_pt.inst[p]) continue;
+        if (!first) out_str(o, ",");
+        first = false;
+        char b[12];
+        snprintf(b, sizeof b, "%08lX", (unsigned long)inst_pt.raw[p]);
+        out_str(o, "{\"n\":"); json_uint(o, p + 1u);
+        out_str(o, ",\"inst\":"); json_uint(o, inst_pt.inst[p]);
+        out_str(o, ",\"name\":"); json_str(o, inst_pt.name[p]);
+        char u8[3 * INST_UNIT_LEN];
+        out_str(o, ",\"unit\":");
+        if (utf16le_to_utf8(inst_pt.unit[p], INST_UNIT_LEN / 2u, u8, sizeof u8) < 0) out_str(o, "null"); else json_str(o, u8);
+        out_str(o, ",\"fc\":"); json_uint(o, inst_pt.fc[p]);
+        out_str(o, ",\"addr\":"); json_uint(o, inst_pt.addr[p]);
+        out_str(o, ",\"type\":"); json_str(o, inst_type_name(inst_pt.type[p]));
+        out_str(o, ",\"order\":"); json_str(o, inst_order_name(inst_pt.order[p]));
+        out_str(o, ",\"value\":"); json_float(o, inst_pt.value[p]);
+        out_str(o, ",\"q\":"); json_str(o, plat_quality_code(inst_pt.q[p]));
+        out_str(o, ",\"raw\":"); json_str(o, b);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+/* The register explorer: the last read, its raw bytes as hex (registers high byte first; coils
+ * packed, first coil in bit 0) and, for registers, the words as numbers. */
+static void get_inst_ex(http_out_t *o) {
+    inst_ex_view_t v;
+    inst_ex_view(&v);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"result\":"); json_str(o, inst_ex_result_name(v.result));
+    out_str(o, ",\"busy\":"); json_bool(o, v.result == INST_EX_BUSY);
+    out_str(o, ",\"ok\":"); json_bool(o, v.result == INST_EX_OK);
+    out_str(o, ",\"exception\":"); json_uint(o, v.exception);
+    out_str(o, ",\"ip\":"); json_ip(o, v.ip);
+    out_str(o, ",\"port\":"); json_uint(o, v.port);
+    out_str(o, ",\"unit\":"); json_uint(o, v.unit);
+    out_str(o, ",\"fc\":"); json_uint(o, v.fc);
+    out_str(o, ",\"addr\":"); json_uint(o, v.addr);
+    out_str(o, ",\"count\":"); json_uint(o, v.count);
+    out_str(o, ",\"ms\":"); json_uint(o, v.ms);
+    out_str(o, ",\"seq\":"); json_uint(o, v.seq);
+    out_str(o, ",\"hex\":\"");
+    for (unsigned i = 0; i < v.nbytes && i < sizeof v.data; ++i) {
+        char b[3];
+        snprintf(b, sizeof b, "%02X", v.data[i]);
+        out_str(o, b);
+    }
+    out_str(o, "\",\"words\":[");
+    if (v.result == INST_EX_OK && v.fc >= INST_FC_HOLDING)
+        for (unsigned i = 0; i + 1u < v.nbytes; i += 2) {
+            if (i) out_str(o, ",");
+            json_uint(o, (uint32_t)(v.data[i] << 8 | v.data[i + 1]));
+        }
+    out_str(o, "]}");
+}
+
+/* ip=a.b.c.d&port=502&unit=1&fc=3&addr=0&count=10. Admin; reads only. The result comes on
+ * GET /api/inst/explore. */
+static void post_inst_ex(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    char v[32] = "";
+    uint32_t ip = 0, port = 502, unit = 1, fc = 3, addr = 0, count = 1;
+    if (!form_get((const char *)r->body, r->body_len, "ip", v, sizeof v) || !parse_ipv4(v, &ip) || ip == 0) { json_error(o, 400, "ip", -1); return; }
+    static const char *const keys[] = { "port", "unit", "fc", "addr", "count" };
+    uint32_t *dst[] = { &port, &unit, &fc, &addr, &count };
+    for (unsigned i = 0; i < 5; ++i)
+        if (form_get((const char *)r->body, r->body_len, keys[i], v, sizeof v) && !parse_u32(v, dst[i])) { json_error(o, 400, keys[i], -1); return; }
+    if (port < 1 || port > 65535u || unit > 255u || fc < 1 || fc > 4 || addr > 65535u || count < 1 || count > 2000u) {
+        json_error(o, 400, "range", -1); return;
+    }
+    if (!inst_ex_start(ip, (uint16_t)port, (uint8_t)unit, (uint8_t)fc, (uint16_t)addr, (uint16_t)count)) {
+        json_error(o, 409, "busy or out of range", -1); return;
+    }
+    head(o, 202, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 /* find: no fields. set: uid=<as listed>&board=<1..IOB_BOARDS>[&ip=a.b.c.d]: the board gets that slot's
  * address and IP (ip= changes the slot's IP setting first). Admin; the result comes on GET /api/iob/net */
 static void post_iob_net(const http_req_t *r, http_out_t *o, uint8_t lvl, bool set) {
@@ -2049,6 +2151,8 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/modbus/map")) get_mb_map(o);
     else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
     else if (get && !strcmp(r->path, "/api/iob/net")) get_iob_net(o);
+    else if (get && !strcmp(r->path, "/api/inst")) get_inst(o);
+    else if (get && !strcmp(r->path, "/api/inst/explore")) get_inst_ex(o);
     else if (get && !strcmp(r->path, "/api/ui")) get_ui(o);
     else if (get && !strcmp(r->path, "/api/record")) get_record(r, o, lvl);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
@@ -2089,6 +2193,7 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
         else if (!strcmp(r->path, "/api/iob/net/find")) post_iob_net(r, o, lvl, false);
         else if (!strcmp(r->path, "/api/iob/net/set")) post_iob_net(r, o, lvl, true);
         else if (!strcmp(r->path, "/api/iob/temp/zero")) post_iob_zero(r, o, lvl);
+        else if (!strcmp(r->path, "/api/inst/explore")) post_inst_ex(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

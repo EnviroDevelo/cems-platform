@@ -72,6 +72,8 @@ enum {
     T_TAB0 = 1, T_W0 = 10, T_WMAX = 118, T_DLG_YES = 120, T_DLG_NO = 121,
     T_ROW0 = 200,           /* .. T_ROW0 + ROWS - 1 */
     T_CAL_START = 210, T_CAL_ACCEPT, T_CAL_ABORT, T_CAL_REVERT,
+    T_PRIO0 = 214,          /* .. T_PRIO0 + ROWS - 1: an alarm's tier (actions page), a tier's "Use defaults" (tiers page) */
+    T_TIERS = 236,          /* actions page: open the tiers page */
     T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
     T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE,  /* display test (bench bring-up) */
     T_FORCE = 240, T_FC_CLEAR_ALL,      /* Modbus force (commissioning) */
@@ -558,6 +560,7 @@ static void cal_tap(uint8_t cmd, uint32_t now) {
 static size_t n_params(void) { return param_count(); }
 
 static bool app_tap(uint8_t t, uint32_t now);
+static int64_t pv(uint16_t id, uint16_t idx, int64_t dflt);
 static void rec_tap(uint8_t t, uint32_t now);
 /* input alarm slot U.dia_s: toggles and the cycle write at once; numbers and the label open the editor */
 static void dia_number(uint16_t id, const char *what) {
@@ -587,6 +590,24 @@ static void dia_tap(uint8_t t, uint32_t now) {
     case T_DIA_LABEL: { const param_def_t *d = param_find((uint16_t)(PARAM_ID_DIA_LABEL_FIRST + s)); if (d) edit_begin(d, now); break; }
     default: break;
     }
+    U.dirty = true;
+}
+
+/* the tiers page: rename, actions (AR_SET | bits for alarms with none of their own), back to the defaults */
+static void tier_tap(uint8_t t, uint32_t now) {
+    static const uint8_t bit[6] = { AR_EMAIL, AR_MODBUS, AR_RELAY(0), AR_RELAY(1), AR_RELAY(2), AR_RELAY(3) };
+    if (t == T_BACK) { goto_scr(UI_ALARM_CFG); return; }
+    bool name = t >= T_ROW0 && t < T_ROW0 + AL_TIERS, dflt = t >= T_PRIO0 && t < T_PRIO0 + AL_TIERS;
+    bool act = t >= T_CFG0 && t < T_CFG0 + AL_TIERS * 6;
+    if (!name && !dflt && !act) return;
+    if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to change the tiers"); return; }
+    if (name) { const param_def_t *d = param_find((uint16_t)(PARAM_ID_ALARM_TIER_NAME_FIRST + t - T_ROW0)); if (d) edit_begin(d, now); return; }
+    unsigned k = dflt ? (unsigned)(t - T_PRIO0) : (unsigned)(t - T_CFG0) / 6u;
+    uint8_t r = (uint8_t)pv(PARAM_ID_ALARM_TIER_ROUTE, (uint16_t)k, 0), v;
+    if (dflt) v = 0;
+    else v = (uint8_t)(AR_SET | ((r & AR_SET ? r : 0u) ^ bit[(t - T_CFG0) % 6u]));
+    param_err_t e = param_blob_post(PARAM_ID_ALARM_TIER_ROUTE, (uint16_t)k, &v, 1, false, PLAT_SRC_LOCAL, U.level);
+    if (e != PERR_OK) toast(true, now, "%s", perr_text(e));
     U.dirty = true;
 }
 
@@ -731,6 +752,18 @@ static void tap(uint8_t t, uint32_t now) {
         if (t == T_BACK) goto_scr(UI_ALARMS);
         else if (t == T_PGUP) { U.cfg_first = U.cfg_first >= ROWS ? U.cfg_first - ROWS : 0; U.dirty = true; }
         else if (t == T_PGDN) { if (U.cfg_first + ROWS < alarm_count()) U.cfg_first += ROWS; U.dirty = true; }
+        else if (t == T_TIERS) goto_scr(UI_TIERS);
+        else if (t >= T_PRIO0 && t < T_PRIO0 + ROWS) {   /* the tier: default, Critical .. Info, Off, round again */
+            const alarm_def_t *d = alarm_def_at(U.cfg_first + (unsigned)(t - T_PRIO0));
+            if (!d) break;
+            if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to change alarm tiers"); break; }
+            int64_t p = pv(PARAM_ID_ALARM_PRIO, d->id, 0);
+            uint8_t v = (uint8_t)(p >= AL_PRIO_DEFAULT && p < AL_PRIO_OFF ? p + 1 : AL_PRIO_DEFAULT);
+            if (v == AL_PRIO_OFF && !alarm_can_switch_off(d)) v = AL_PRIO_DEFAULT;   /* AL_STOPS, AL_NO_OFF */
+            param_err_t e = param_blob_post(PARAM_ID_ALARM_PRIO, d->id, &v, 1, false, PLAT_SRC_LOCAL, U.level);
+            if (e != PERR_OK) toast(true, now, "%s", perr_text(e));
+            U.dirty = true;
+        }
         else if (t >= T_CFG0 && t < T_CFG0 + ROWS * 6) {
             unsigned r = (unsigned)(t - T_CFG0) / 6u, b = (unsigned)(t - T_CFG0) % 6u;
             const alarm_def_t *d = alarm_def_at(U.cfg_first + r);
@@ -743,6 +776,7 @@ static void tap(uint8_t t, uint32_t now) {
             U.dirty = true;
         }
         break;
+    case UI_TIERS: tier_tap(t, now); break;
     case UI_SYSTEM:
         if (t == T_CLOCK) {
             if (U.level < PLAT_LVL_ADMIN) { toast(true, now, "Log in as admin to set the clock"); break; }
@@ -1632,7 +1666,7 @@ static void draw_alarms(void) {
         } else {
             snprintf(t, sizeof t, "uptime %lu min", (unsigned long)(a->up_raise / 60u));
         }
-        snprintf(line, sizeof line, "%s  -  %s%s", t,
+        snprintf(line, sizeof line, "%.16s  -  %s  -  %s%s", alarm_prio_name(a->priority), t,
                  a->active ? (a->unacked ? "active, not acknowledged" : "active") : "cleared, not acknowledged",
                  a->active && a->unacked && (a->flags & AL_LATCH) ? " (latched)" : "");
         color(C_INK); text(44, (int16_t)(y + 18), F_TEXT, OPT_CENTERY, a->text);
@@ -1682,21 +1716,32 @@ static void draw_alarm_cfg(void) {
         if (!d) break;
         int16_t y = (int16_t)(BODY_Y + 4 + r * ROW_H);
         if (r) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
-        alarm_view_t v;
+        alarm_view_t v = { .severity = d->severity };
         char d7[64]; size_t k = 0;
         if (alarm_get(d->id, &v))
             for (const unsigned char *p = (const unsigned char *)v.text; *p && k + 1 < sizeof d7; ++p) {
                 d7[k++] = (char)*p;                    /* UTF-8 kept: text() shows what the font has */
             }
         d7[k] = 0;
-        if (k > 42) {                                  /* the column holds ~42 characters: cut at a word */
-            size_t c = 39;
+        if (k > 30) {                                  /* the column holds ~30 characters: cut at a word */
+            size_t c = 27;
             while (c > 20 && d7[c] != ' ') c--;
             strcpy(d7 + c, "...");
         }
-        box(24, (int16_t)(y + 8), 8, ROW_H - 16, sev_colour(d->severity), 2);
+        uint8_t pr = alarm_prio(d->id);
+        box(24, (int16_t)(y + 8), 8, ROW_H - 16, pr == AL_PRIO_OFF ? C_GREY : sev_colour(v.severity), 2);
         color(C_INK); text(40, (int16_t)(y + 20), F_SMALL, OPT_CENTERY, d7);
         color(C_MUTE); text(40, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, d->name);
+        {   /* the tier: a tap moves to the next; "(default)" when it is the definition's own */
+            char tl[32];
+            uint8_t tg = (uint8_t)(T_PRIO0 + r);
+            snprintf(tl, sizeof tl, "%.16s%s", alarm_prio_name(pr), pv(PARAM_ID_ALARM_PRIO, d->id, 0) ? "" : "*");
+            eve_tag(E, can ? tg : 0);
+            eve_fgcolor(E, U.pressed == tg ? C_PRESS : pr == AL_PRIO_OFF ? 0xB8C0CCu : 0x5B6577u);
+            color(0xFFFFFFu);
+            ebutton(300, (int16_t)(y + 6), 132, ROW_H - 12, F_SMALL, OPT_FLAT, tl);
+            eve_tag(E, 0);
+        }
         uint8_t rt = alarm_route(d->id);
         for (int b = 0; b < 6; ++b) {
             bool on = (rt & bit[b]) != 0;
@@ -1709,9 +1754,58 @@ static void draw_alarm_cfg(void) {
             eve_tag(E, 0);
         }
     }
-    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.cfg_first > 0);
-    button(T_BACK, 908, BODY_Y + 132, 100, 120, "Back", 0x5B6577u, true);
-    button(T_PGDN, 908, BODY_Y + 264, 100, 128, "Down", C_ACCENT, U.cfg_first + ROWS < n);
+    button(T_PGUP, 908, BODY_Y, 100, 92, "Up", C_ACCENT, U.cfg_first > 0);
+    button(T_PGDN, 908, BODY_Y + 100, 100, 92, "Down", C_ACCENT, U.cfg_first + ROWS < n);
+    button(T_TIERS, 908, BODY_Y + 200, 100, 92, "Tiers", 0x5B6577u, true);
+    button(T_BACK, 908, BODY_Y + 300, 100, 92, "Back", 0x5B6577u, true);
+    if (!can) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, "Green = on. * = the alarm's default tier. Log in as admin to change."); }
+}
+
+/* priority tiers: name (tap to rename), what is active, and the actions for alarms with none of their own */
+static void draw_tiers(void) {
+    static const char *const lab[6] = { "Email", "Modbus", "R1", "R2", "R3", "R4" };
+    static const uint8_t bit[6] = { AR_EMAIL, AR_MODBUS, AR_RELAY(0), AR_RELAY(1), AR_RELAY(2), AR_RELAY(3) };
+    static const uint8_t sev[AL_TIERS] = { AL_SEV_FAULT, AL_SEV_FAULT, AL_SEV_ALARM, AL_SEV_WARNING, AL_SEV_STATUS };
+    bool can = U.level >= PLAT_LVL_ADMIN;
+    box(16, BODY_Y, 880, AL_TIERS * ROW_H + 8, C_CARD, 8);
+    for (unsigned k = 0; k < AL_TIERS; ++k) {
+        int16_t y = (int16_t)(BODY_Y + 4 + (int)k * ROW_H);
+        uint8_t tg = (uint8_t)(T_ROW0 + k);
+        eve_tag(E, tg);
+        box(20, (int16_t)(y + 2), 272, ROW_H - 4, U.pressed == tg ? 0xDCE6F5u : C_CARD, 4);
+        if (k) { color(C_LINE); eve_line(E, 24, y, 888, y, 1); }
+        box(24, (int16_t)(y + 8), 8, ROW_H - 16, sev_colour(sev[k]), 2);
+        char b[64];
+        snprintf(b, sizeof b, "%u  %.16s", k + 1u, alarm_prio_name((uint8_t)(k + 1u)));
+        color(C_INK); text(40, (int16_t)(y + 20), F_TEXT, OPT_CENTERY, b);
+        snprintf(b, sizeof b, "%u active, %u not acknowledged", (unsigned)pv(PARAM_ID_ALARM_TIER_ACTIVE, (uint16_t)k, 0),
+                 (unsigned)pv(PARAM_ID_ALARM_TIER_UNACKED, (uint16_t)k, 0));
+        color(C_MUTE); text(40, (int16_t)(y + 44), F_SMALL, OPT_CENTERY, b);
+        eve_tag(E, 0);
+        uint8_t r = (uint8_t)pv(PARAM_ID_ALARM_TIER_ROUTE, (uint16_t)k, 0);
+        bool set = (r & AR_SET) != 0;
+        if (set) {                                     /* back to each alarm's own default */
+            uint8_t td = (uint8_t)(T_PRIO0 + k);
+            eve_tag(E, can ? td : 0);
+            eve_fgcolor(E, U.pressed == td ? C_PRESS : 0x5B6577u);
+            color(0xFFFFFFu);
+            ebutton(300, (int16_t)(y + 6), 132, ROW_H - 12, F_SMALL, OPT_FLAT, "Use defaults");
+            eve_tag(E, 0);
+        } else { color(C_MUTE); text(366, (int16_t)(y + 32), F_SMALL, OPT_CENTER, "alarm defaults"); }
+        for (int j = 0; j < 6; ++j) {
+            bool on = set && (r & bit[j]) != 0;
+            uint8_t tb = (uint8_t)(T_CFG0 + k * 6 + (unsigned)j);
+            eve_tag(E, can ? tb : 0);
+            eve_fgcolor(E, U.pressed == tb ? C_PRESS : on ? C_OK : 0xB8C0CCu);
+            color(0xFFFFFFu);
+            ebutton((int16_t)(440 + j * 75), (int16_t)(y + 6), 70, ROW_H - 12, F_SMALL, OPT_FLAT, lab[j]);
+            eve_tag(E, 0);
+        }
+    }
+    color(C_MUTE);
+    text(32, (int16_t)(BODY_Y + AL_TIERS * ROW_H + 30), F_SMALL, OPT_CENTERY,
+         "A tier's actions apply to alarms whose own actions were never changed. Tap a name to rename it.");
+    button(T_BACK, 908, BODY_Y, 100, 120, "Back", 0x5B6577u, true);
     if (!can) { color(C_MUTE); text(456, TOAST_Y + 22, F_SMALL, OPT_CENTER, "Green = on. Log in as admin to change."); }
 }
 
@@ -2444,6 +2538,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_SYSTEM: draw_system(now); break;
     case UI_ALARMS: draw_alarms(); break;
     case UI_ALARM_CFG: draw_alarm_cfg(); break;
+    case UI_TIERS: draw_tiers(); break;
     case UI_CLOCK: draw_clock(); break;
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;
