@@ -324,6 +324,10 @@ void bsp_init(void) {
     wdg_set_prescaler(IWDG_PRESCALER_256);    /* about 8 s until the tasks run: see bsp_wdg_kick */
 #endif
     bsp_psram_init();                          /* before anything uses a PLAT_EXTRAM buffer */
+#ifdef CS_EXP_Pin
+    CS_EXP_GPIO_Port->BSRR = CS_EXP_Pin;       /* the expansion header's CS (CORE_PCB.md 16) stays high: no module driver
+                                                * yet, and its MISO buffer would otherwise fight the W5500's on SPI4 */
+#endif
 }
 
 /* ---------------- HAL timebase ----------------

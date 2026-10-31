@@ -171,6 +171,8 @@ runs TCP/IP itself, so this traffic never enters lwIP (`iob_link` = 2, the defau
 | PE11 | GPIO output, label **W5500_CS**, initial level **high**, push-pull, speed high |
 | PE10 | GPIO output, label **W5500_RST**, initial level **high** (running), push-pull |
 | PE9 | GPIO input, label **W5500_INT**, pull-up (the chip's INTn; reserved for an interrupt-driven wait, not used yet) |
+| PD3 | GPIO output, label **CS_EXP**, initial level **high**, push-pull: the SPI expansion header's chip select (CORE_PCB.md 16; 10k pull-up on the board). Its module's MISO joins SPI4 only while it is low, so it must stay high: no module driver yet (planned: AD5755-1, 4 x 4-20 mA out) |
+| PD7 | GPIO input, label **EXP_INT**, **no pull** (the module's open-drain attention line, low = attention; not used yet) |
 
 In `main.h` (USER CODE section), only if the handle is not `hspi4`:
 
