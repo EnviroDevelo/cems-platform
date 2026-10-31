@@ -12,7 +12,7 @@
  * CEMS_FW_PUBKEY (hex P-256 public key: acts as a signed production build).
  * Console (the touchscreen's stand-in): remote, local, set <id> <v>, fwyes / fwno (answer a held firmware restart).
  * Two simulated I/O boards sit on a simulated RS-485 bus at addresses 1 and 2 (enable
- * them with set 110 1 / set 120 1). Console: node <n> power|in|open|short|hot|wire|bfault|fielda|fieldb <value>
+ * them with set 110 1 / set 120 1). Console: node <n> power|in|open|short|hot|wire|bfault|fielda|fieldb|ai <value>
  * (n = 1 or 2; in/open/short/hot/wire take a bit mask, the rest 0 or 1), node <n> restart|wdg,
  * node <n> addr <a> (the board's own address; 0 = a new board, answering at 246).
  *
@@ -351,6 +351,11 @@ static bool node_cmd(const char *line) {
     else if (!strcmp(what, "fielda")) n->field_a = v != 0;
     else if (!strcmp(what, "fieldb")) n->field_b = v != 0;
     else if (!strcmp(what, "addr") && v <= IOB_ADDR_MAX) n->address = (uint8_t)v;
+    else if (!strcmp(what, "ai")) {                    /* map 3 analog inputs (CORE PCB as a node): 6 x 4-20 mA, level, mass flow; then "restart" */
+        n->n_ai = v ? IOB_AIS : 0u;
+        for (unsigned i = 0; i < IOB_AIS; ++i) { n->ai[i] = (uint16_t)(i < 6u ? 4000u + 2000u * i : 2500u + 500u * i); n->ai_st[i] = IOB_TS_OK; }
+        n->ai_supply[0] = 10020u; n->ai_supply[1] = 4990u;
+    }
     else if (!strcmp(what, "new")) { n->address = 0; n->ip = n->mask = n->gw = n->master_ip = 0; }   /* a new board: no address, no IP */
     else { plat_host_crit_exit(); return false; }
     plat_host_crit_exit();

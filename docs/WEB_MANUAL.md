@@ -72,7 +72,7 @@ log in with the level's password:
 | Settings | Every setting with its value, range and who may change it |
 | Calibration | Only on products with calibrated channels |
 | Service | Hours, self-test, service log, manufacturing test, board test, system health, Modbus |
-| I/O boards | Only when an I/O board is enabled |
+| I/O boards | Only when an I/O board is enabled. Each board's outputs, inputs, temperatures and, on a CORE PCB used as a node, its 8 analog inputs (4-20 mA 1-6, level, mass flow) with the 10 V and 5 V supplies; at admin login (REMOTE) **Map to AI 1-8** makes them the instrument's analog inputs |
 | Instruments | Analysers and other devices read over Modbus TCP (shown once one is set up; always at admin login) |
 | Emissions | Corrected, averaged and validated emission values, and their setup (shown once the engine is on; always at admin login) |
 | Event log | The newest events and the downloads |

@@ -988,6 +988,8 @@ converts to 0.1 °C and reports a state per channel (OK, off, waiting, open, sho
 over range, ADC failed, cold junction failed) plus front-end flags (ADC, supply, CJ,
 reference). A map 1 board still works: it simply has none of these.
 
+**Web: analog inputs (map 3).** The I/O boards card lists `/api/iob` boards[].ai (name, value in mA or V, state, AI channel) and ai_supply under the temperatures, and says whether they are mapped. At admin login, when iobN_first_ai is writable, one button writes it (1 = AI 1-8, 0 = not mapped; PLAT_AI_MAX is 8). netsim's console `node <n> ai 1` then `node <n> restart` makes a simulated board a map 3 board. Test: `tests/integration/iob_ai_web_test.py`.
+
 | Registers | Contents |
 |---|---|
 | 3-4 | PWM command 0-1000 (0.1 %), direction; written with the outputs (function 23 of 0-4) |

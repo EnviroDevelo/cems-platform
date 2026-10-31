@@ -1964,6 +1964,16 @@ async function pollIob(once) {
                    (level >= 2 && t.ok ? `<td><button class="tz" data-b="${b.n}" data-c="${t.ch}">Set to&hellip;</button></td>` : "") + "</tr>";
             h += "</table>";
           }
+          if (b.ai) {                                   /* map 3 (the CORE PCB as a node): 4-20 mA 1-6, level, mass flow */
+            const fa = defs.find(d => d.name === `iob${b.n}_first_ai`), first = fa ? lastValues[fa.id] : 0;
+            h += '<div class="note" style="margin-top:4px">Analog inputs' + (b.ai_supply ? ` (supplies ${b.ai_supply[0].toFixed(2)} V, ${b.ai_supply[1].toFixed(2)} V)` : "") +
+                 (first ? `, as AI ${first}-${first + b.ai.length - 1}` : ", not mapped to AI channels") + '</div><table class="tt">';
+            for (const a of b.ai)
+              h += `<tr><td>AI${a.ch}</td><td class="note">${esc(a.name)}</td><td>${a.v !== null ? a.v.toFixed(a.unit === "mA" ? 2 : 3) + " " + esc(a.unit) : ""}</td>` +
+                   `<td class="${a.ok ? "note" : "err"}">${a.ok ? (a.channel ? "AI " + a.channel : "") : esc(a.state)}</td></tr>`;
+            h += "</table>";
+            if (fa && writable(fa)) h += `<button class="ghost aimap" data-id="${fa.id}" data-v="${first ? 0 : 1}">${first ? "Stop mapping to AI channels" : "Map to AI 1-8"}</button>`;
+          }
           if (b.pump) h += `<div class="note">Pump: ${b.pump.duty.toFixed(1)} %, ${b.pump.rpm} rpm` +
                            (b.pump.ao ? `, from analog output ${b.pump.ao}` : " (no analog output set: held off)") + "</div>";
           h += b.faults.length ? b.faults.map(f => `<div class="err">${esc(f)}</div>`).join("")
@@ -2826,6 +2836,12 @@ $("calabort").onclick = () => calCmd({ cmd: "abort" }, "Abort this calibration? 
 pollCal();
 /* zero capture: the channel's offset is set so it reads the reference thermometer now */
 $("iobcards").onclick = async ev => {
+  const am = ev.target.closest(".aimap");
+  if (am) {                                           /* iobN_first_ai: 0 not mapped, 1 = AI 1-8 (PLAT_AI_MAX is 8) */
+    am.disabled = true;
+    try { await api("/api/write", form({ id: am.dataset.id, v: am.dataset.v })); } catch (e) { alert("Not changed: " + explain(e)); }
+    setTimeout(() => pollIob(true), 800); return;               /* lastValues has the new first_ai by then */
+  }
   const btn = ev.target.closest(".tz");
   if (!btn) return;
   const ref = prompt(`Board ${btn.dataset.b}, T${btn.dataset.c}: what does the reference thermometer read (\u00b0C)?`);
