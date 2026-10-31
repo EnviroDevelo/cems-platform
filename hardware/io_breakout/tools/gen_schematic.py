@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""Generate the I/O breakout board KiCad 7 schematic from design.py.
+
+A copy of hardware/core_pcb/tools/gen_schematic.py with the project name, titles and
+project symbols changed; keep the two in step when fixing the generator.
+
+Every connected pin gets a net label at its end (a global label when the net is used on
+more than one sheet), every unused pin a no-connect flag. Symbols come from the KiCad 7
+libraries installed with KiCad (/usr/share/kicad/symbols) plus the project library
+cems_io_breakout.kicad_sym. Run from anywhere:
+
+    python3 hardware/io_breakout/tools/gen_schematic.py
+
+then check_netlist.py to prove the result matches design.py.
+"""
+import copy
+import os
+import sys
+import uuid as uuidlib
+
+from kiutils.items.common import Effects, Font, Justify, PageSettings, Position, Property, TitleBlock
+from kiutils.items.schitems import (GlobalLabel, HierarchicalSheet, HierarchicalSheetInstance,
+                                    HierarchicalSheetProjectInstance, HierarchicalSheetProjectPath,
+                                    LocalLabel, NoConnect, SchematicSymbol, SymbolProjectInstance,
+                                    SymbolProjectPath, Text)
+from kiutils.schematic import Schematic
+from kiutils.symbol import SymbolLib
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import design  # noqa: E402
+
+KICAD_SYMBOLS = os.environ.get("KICAD7_SYMBOL_DIR", "/usr/share/kicad/symbols")
+PROJECT = "cems_io_breakout"
+REV = "0.1"
+DATE = "2026-10-30"
+GRID = 2.54
+
+_ns = uuidlib.UUID("6f1b2c3e-0000-4000-8000-0000b0eac0de")
+
+
+def uid(*parts):
+    """Stable UUIDs so a regenerated schematic diffs cleanly."""
+    return str(uuidlib.uuid5(_ns, "/".join(parts)))
+
+
+def snap(v):
+    return round(v / GRID) * GRID
+
+
+# ---------------------------------------------------------------- library symbols
+_libs = {}
+
+
+def load_lib(nick):
+    if nick not in _libs:
+        path = (os.path.join(OUT, f"{PROJECT}.kicad_sym") if nick == PROJECT
+                else os.path.join(KICAD_SYMBOLS, f"{nick}.kicad_sym"))
+        _libs[nick] = SymbolLib.from_file(path)
+    return _libs[nick]
+
+
+def lib_symbol(lib_id):
+    """The symbol, flattened (KiCad embeds derived symbols with the parent's units)."""
+    nick, name = lib_id.split(":")
+    lib = load_lib(nick)
+    sym = copy.deepcopy(next(s for s in lib.symbols if s.entryName == name))
+    if sym.extends:
+        parent = copy.deepcopy(next(s for s in lib.symbols if s.entryName == sym.extends))
+        parent.properties = sym.properties
+        parent.extends = None
+        parent.entryName = name
+        sym = parent
+    sym.libraryNickname = nick
+    sym.entryName = name
+    for u in sym.units:
+        u.entryName = name
+    return sym
+
+
+def pins_of(sym):
+    out = {}
+    for u in sym.units:
+        if u.unitId not in (0, 1):
+            continue
+        for p in u.pins:
+            out[p.number] = p
+    return out
+
+
+def body_extent(sym):
+    xs, ys = [0.0], [0.0]
+    for p in pins_of(sym).values():
+        xs.append(p.position.X)
+        ys.append(p.position.Y)
+    for u in sym.units:
+        for g in u.graphicItems:
+            for attr in ("start", "end"):
+                pt = getattr(g, attr, None)
+                if pt is not None:
+                    xs.append(pt.X)
+                    ys.append(pt.Y)
+            for pt in getattr(g, "points", []) or []:
+                xs.append(pt.X)
+                ys.append(pt.Y)
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+# ---------------------------------------------------------------- helpers
+def font(size=1.27):
+    return Font(width=size, height=size)
+
+
+def kitext(text):
+    """KiCad stores a line break in text as the two characters backslash, n."""
+    return text.replace("\n", "\\n")
+
+
+def label_len(text):
+    return len(text) * 1.05 + 3.0
+
+
+def label_angle(pin_angle):
+    # pin angle = direction from its end towards the body; the label points away from it
+    return {0: 180, 180: 0, 90: 270, 270: 90}[int(pin_angle) % 360]
+
+
+def make_label(text, x, y, angle, is_global):
+    just = Justify(horizontally="right" if angle in (180, 270) else "left")
+    eff = Effects(font=font(), justify=just)
+    pos = Position(X=x, Y=y, angle=angle)
+    if is_global:
+        lab = GlobalLabel(text=text, shape="passive", position=pos, effects=eff, uuid=uid("gl", text, str(x), str(y)))
+        lab.fieldsAutoplaced = True
+        lab.properties = [Property(key="Intersheetrefs", value="${INTERSHEET_REFS}", id=0,
+                                   position=Position(X=x, Y=y, angle=angle),
+                                   effects=Effects(font=font(), justify=just, hide=True))]
+        return lab
+    return LocalLabel(text=text, position=pos, effects=eff, uuid=uid("ll", text, str(x), str(y)))
+
+
+# ---------------------------------------------------------------- build
+def net_sheets():
+    used = {}
+    for p in design.PARTS:
+        for net in p["pins"].values():
+            used.setdefault(net, set()).add(p["sheet"])
+    return used
+
+
+PAPERS = [("A4", 297, 210), ("A3", 420, 297), ("A2", 594, 420), ("A1", 841, 594)]
+
+
+def label_room(p, sym, globals_):
+    """Space the labels take on each side of the body: left, right, up, down (mm)."""
+    left = right = up = down = 0.0
+    for num, pin in pins_of(sym).items():
+        net = p["pins"].get(num)
+        ln = label_len(net) + (2 if net in globals_ else 0) if net else 2.0
+        a = int(pin.position.angle) % 360
+        if a == 0:
+            left = max(left, ln)
+        elif a == 180:
+            right = max(right, ln)
+        elif a == 90:
+            down = max(down, ln)
+        else:
+            up = max(up, ln)
+    return left, right, up, down
+
+
+def layout(parts, syms, globals_):
+    """Shelf-pack parts in design order. Returns (paper, {ref: (x, y)})."""
+    boxes = []
+    for p in parts:
+        sym = syms[p["symbol"]]
+        x0, x1, y0, y1 = body_extent(sym)
+        left, right, up, down = label_room(p, sym, globals_)
+        w = (x1 - x0) + left + right + 8
+        h = (y1 - y0) + up + down + 12  # room for reference and value
+        boxes.append((p, w, h, x0, y1, left, up))
+    for paper, pw, ph in PAPERS:
+        margin, usable_w, usable_h = 15, pw - 30, ph - 30 - 60  # title block and notes
+        x = y = 0.0
+        shelf = 0.0
+        pos = {}
+        ok = True
+        for p, w, h, x0, y1, left, up in boxes:
+            if x + w > usable_w and x > 0:
+                x, y, shelf = 0.0, y + shelf, 0.0
+            if w > usable_w:
+                ok = False
+                break
+            # symbol origin: body's left edge at x+left, body top at y+up
+            ox = snap(margin + x + left - x0 + 4)
+            oy = snap(margin + y + up + y1 + 5)
+            pos[p["ref"]] = (ox, oy)
+            x += w
+            shelf = max(shelf, h)
+        if ok and y + shelf <= usable_h:
+            return paper, pos
+    raise SystemExit("sheet does not fit on A1")
+
+
+def build_project_files():
+    """cems_core.kicad_sym (parts missing from the KiCad 7 libraries), sym-lib-table, .kicad_pro."""
+    lib = SymbolLib(version="20220914", generator="kicad_symbol_editor")
+    lib.symbols = []  # every part comes from the KiCad 7 libraries
+    lib.to_file(os.path.join(OUT, f"{PROJECT}.kicad_sym"))
+    _libs.pop(PROJECT, None)
+    with open(os.path.join(OUT, "sym-lib-table"), "w") as f:
+        f.write('(sym_lib_table\n  (version 7)\n'
+                f'  (lib (name "{PROJECT}")(type "KiCad")(uri "${{KIPRJMOD}}/{PROJECT}.kicad_sym")(options "")(descr "CEMS I/O breakout parts"))\n)\n')
+    pro = os.path.join(OUT, f"{PROJECT}.kicad_pro")
+    if not os.path.exists(pro):
+        with open(pro, "w") as f:
+            f.write('{\n  "meta": {\n    "filename": "%s.kicad_pro",\n    "version": 1\n  },\n'
+                    '  "sheets": []\n}\n' % PROJECT)
+
+
+def build():
+    build_project_files()
+    used = net_sheets()
+    globals_ = {n for n, s in used.items() if len(s) > 1}
+    syms = {p["symbol"]: lib_symbol(p["symbol"]) for p in design.PARTS}
+
+    root_uuid = uid("root")
+    root = Schematic(version="20230121", generator="eeschema", uuid=root_uuid)
+    root.paper = PageSettings(paperSize="A4")
+    root.titleBlock = TitleBlock(title="CEMS I/O breakout (IDC26 to terminals)", date=DATE, revision=REV, company="EnviroDevelo",
+                                 comments={1: "Generated from hardware/io_breakout/tools/design.py; do not edit by hand",
+                                           2: "Design spec: hardware/io_breakout/README.md"})
+    root.sheetInstances = [HierarchicalSheetInstance(instancePath="/", page="1")]
+
+    for page, (key, title, desc) in enumerate(design.SHEETS, start=2):
+        sheet_uuid = uid("sheet", key)
+        path = f"/{root_uuid}/{sheet_uuid}"
+        parts = [p for p in design.PARTS if p["sheet"] == key]
+        paper, pos = layout(parts, syms, globals_)
+        sch = Schematic(version="20230121", generator="eeschema", uuid=uid("sch", key))
+        sch.paper = PageSettings(paperSize=paper)
+        sch.titleBlock = TitleBlock(title=f"CEMS I/O breakout: {title}", date=DATE, revision=REV,
+                                    company="EnviroDevelo", comments={1: desc, 2: "Generated from design.py"})
+        lib_ids = []
+        notes = []
+        for p in parts:
+            sym = syms[p["symbol"]]
+            if p["symbol"] not in lib_ids:
+                lib_ids.append(p["symbol"])
+            X, Y = pos[p["ref"]]
+            x0, x1, y0, y1 = body_extent(sym)
+            _, _, up, down = label_room(p, sym, globals_)
+            nick, name = p["symbol"].split(":")
+            pins = pins_of(sym)
+            unknown = set(p["pins"]) - set(pins)
+            if unknown:
+                raise SystemExit(f"{p['ref']}: no pins {sorted(unknown)} on {p['symbol']}")
+            props = [
+                Property(key="Reference", value=p["ref"], id=0, position=Position(X=X, Y=snap(Y - y1 - up - 2.54), angle=0),
+                         effects=Effects(font=font())),
+                Property(key="Value", value=p["value"], id=1, position=Position(X=X, Y=snap(Y - y0 + down + 2.54), angle=0),
+                         effects=Effects(font=font())),
+                Property(key="Footprint", value=p["footprint"], id=2, position=Position(X=X, Y=Y, angle=0),
+                         effects=Effects(font=font(), hide=True)),
+                Property(key="Datasheet", value=next((q.value for q in sym.properties if q.key == "Datasheet"), "~"),
+                         id=3, position=Position(X=X, Y=Y, angle=0), effects=Effects(font=font(), hide=True)),
+                Property(key="MPN", value=p["mpn"] or p["value"], id=4, position=Position(X=X, Y=Y, angle=0),
+                         effects=Effects(font=font(), hide=True)),
+            ]
+            ss = SchematicSymbol(libraryNickname=nick, entryName=name, position=Position(X=X, Y=Y, angle=0),
+                                 unit=1, inBom=True, onBoard=True, dnp=p["dnp"], uuid=uid("sym", p["ref"]),
+                                 properties=props, pins={n: uid("pin", p["ref"], n) for n in pins},
+                                 instances=[SymbolProjectInstance(name=PROJECT, paths=[
+                                     SymbolProjectPath(sheetInstancePath=path, reference=p["ref"], unit=1)])])
+            sch.schematicSymbols.append(ss)
+            for num, pin in pins.items():
+                ex, ey = X + pin.position.X, Y - pin.position.Y
+                net = p["pins"].get(num)
+                if net is None:
+                    sch.noConnects.append(NoConnect(position=Position(X=ex, Y=ey), uuid=uid("nc", p["ref"], num)))
+                else:
+                    sch_lab = make_label(net, ex, ey, label_angle(pin.position.angle), net in globals_)
+                    (sch.globalLabels if net in globals_ else sch.labels).append(sch_lab)
+            if p["note"] or p["dnp"]:
+                notes.append(f"{p['ref']}: {'NOT FITTED. ' if p['dnp'] else ''}{p['note']}")
+        sch.libSymbols = [syms[i] for i in lib_ids]
+        if notes:
+            pw = dict((a, b) for a, b, c in PAPERS)[paper]
+            ph = dict((a, c) for a, b, c in PAPERS)[paper]
+            import textwrap
+            cols = 2 if paper in ("A4", "A3") else 3
+            width = int(((pw - 30) / cols - 4) / 0.9)
+            notes = [w for n in notes for w in textwrap.wrap(n, width, subsequent_indent="    ")]
+            per = -(-len(notes) // cols)
+            for ci in range(cols):
+                chunk = notes[ci * per:(ci + 1) * per]
+                if not chunk:
+                    continue
+                sch.texts.append(Text(text=kitext(("Notes\n" if ci == 0 else "\n") + "\n".join(chunk)),
+                                      position=Position(X=snap(15 + ci * (pw - 30) / cols), Y=snap(ph - 72), angle=0),
+                                      effects=Effects(font=font(1.0), justify=Justify(horizontally="left", vertically="top")),
+                                      uuid=uid("notes", key, str(ci))))
+        sch.to_file(os.path.join(OUT, f"{key}.kicad_sch"))
+
+        hs = HierarchicalSheet(position=Position(X=20 + (page - 2) * 52, Y=40), width=45, height=25,
+                               uuid=sheet_uuid,
+                               sheetName=Property(key="Sheetname", value=title, id=0,
+                                                  position=Position(X=20 + (page - 2) * 52, Y=39.3, angle=0),
+                                                  effects=Effects(font=font(), justify=Justify(horizontally="left", vertically="bottom"))),
+                               fileName=Property(key="Sheetfile", value=f"{key}.kicad_sch", id=1,
+                                                 position=Position(X=20 + (page - 2) * 52, Y=65.6, angle=0),
+                                                 effects=Effects(font=font(), justify=Justify(horizontally="left", vertically="top"))),
+                               instances=[HierarchicalSheetProjectInstance(name=PROJECT, paths=[
+                                   HierarchicalSheetProjectPath(sheetInstancePath=f"/{root_uuid}", page=str(page))])])
+        hs.fieldsAutoplaced = True
+        root.sheets.append(hs)
+
+    root.texts.append(Text(
+        text=kitext("CEMS I/O breakout, rev 0.1 schematic (draft for review)\n"
+              "DIN-rail board: one 26-way latched IDC header (straight-through standard ribbon) to 24 screw terminals.\n"
+              "One design, two builds: OUT (valve bank A: flyback diodes fitted) and IN (digital inputs: no diodes).\n"
+              "Pinout, builds and parts: hardware/io_breakout/README.md. Parts marked CHECK need datasheet "
+              "confirmation before layout."),
+        position=Position(X=20, Y=90, angle=0),
+        effects=Effects(font=font(), justify=Justify(horizontally="left", vertically="top")),
+        uuid=uid("roottext")))
+    root.to_file(os.path.join(OUT, f"{PROJECT}.kicad_sch"))
+    write_bom()
+    print(f"{len(design.PARTS)} parts on {len(design.SHEETS)} sheets, {len(used)} nets "
+          f"({len(globals_)} across sheets)")
+
+
+def write_bom():
+    """bom.csv: one line per distinct part (value, footprint, MPN), fitted parts first."""
+    import csv
+    groups = {}
+    for p in design.PARTS:
+        key = (p["dnp"], p["value"], p["footprint"], p["mpn"])
+        groups.setdefault(key, []).append(p["ref"])
+
+    def refkey(ref):
+        head = ref.rstrip("0123456789")
+        return head, int(ref[len(head):] or 0)
+
+    with open(os.path.join(OUT, "bom.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["Qty", "References", "Value", "Footprint", "MPN / note", "Fitted"])
+        for (dnp, value, fp, mpn), refs in sorted(groups.items(), key=lambda kv: (kv[0][0], refkey(sorted(kv[1], key=refkey)[0]))):
+            refs = sorted(refs, key=refkey)
+            w.writerow([len(refs), " ".join(refs), value, fp.split(":")[-1], mpn, "no" if dnp else "yes"])
+
+
+if __name__ == "__main__":
+    build()

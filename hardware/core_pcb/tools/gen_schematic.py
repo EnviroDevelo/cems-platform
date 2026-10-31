@@ -220,7 +220,26 @@ def build_project_files():
             prop.value = "1 Mbit (128 KB) I2C FRAM, 3.3 V. Pin 1 NC; A1, A2 address pins"
         elif prop.key == "Footprint":
             prop.value = "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
-    lib.symbols = [fram]
+    psram = lib_symbol("Memory_RAM:ESP-PSRAM32")  # same SOIC-8 pinout as the APS6404L
+    psram.libraryNickname = None
+    psram.entryName = "APS6404L"
+    pin_types = {"1": ("~{CE}", "input"), "2": ("SO/SIO1", "bidirectional"), "3": ("SIO2", "bidirectional"),
+                 "5": ("SI/SIO0", "bidirectional"), "6": ("SCLK", "input"), "7": ("SIO3", "bidirectional")}
+    for u in psram.units:
+        u.entryName = "APS6404L"
+        for pin in u.pins:
+            if pin.number in pin_types:
+                pin.name, pin.electricalType = pin_types[pin.number]
+    for prop in psram.properties:
+        if prop.key == "Value":
+            prop.value = "APS6404L"
+        elif prop.key == "Datasheet":
+            prop.value = "https://www.apmemory.com/"
+        elif prop.key in ("ki_description", "Description"):
+            prop.value = "64 Mbit (8 MB) QSPI PSRAM, 3.3 V, SOIC-8"
+        elif prop.key == "ki_keywords":
+            prop.value = "PSRAM QSPI RAM"
+    lib.symbols = [fram, psram]
     lib.to_file(os.path.join(OUT, f"{PROJECT}.kicad_sym"))
     _libs.pop(PROJECT, None)
     with open(os.path.join(OUT, "sym-lib-table"), "w") as f:

@@ -1,0 +1,60 @@
+(kicad_sch (version 20230121) (generator eeschema)
+
+  (uuid ddd4652e-b89b-5af7-aa02-938e2046fe2a)
+
+  (paper "A4")
+
+  (title_block
+    (title "CEMS I/O breakout (IDC26 to terminals)")
+    (date "2026-10-30")
+    (rev "0.1")
+    (company "EnviroDevelo")
+    (comment 1 "Generated from hardware/io_breakout/tools/design.py; do not edit by hand")
+    (comment 2 "Design spec: hardware/io_breakout/README.md")
+  )
+  (lib_symbols)
+
+  (text "CEMS I/O breakout, rev 0.1 schematic (draft for review)\nDIN-rail board: one 26-way latched IDC header (straight-through standard ribbon) to 24 screw terminals.\nOne design, two builds: OUT (valve bank A: flyback diodes fitted) and IN (digital inputs: no diodes).\nPinout, builds and parts: hardware/io_breakout/README.md. Parts marked CHECK need datasheet confirmation before layout."
+    (at 20 90 0)
+    (effects (font (size 1.27 1.27)) (justify left top))
+    (uuid 69a1c4ec-aefe-5b0c-920b-ba3bab9b3df2)
+  )
+
+  (sheet (at 20 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 5d74f758-ceaa-5b1b-8f76-5d54062ea858)
+    (property "Sheetname" "Connectors" (id 0) (at 20 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "connectors.kicad_sch" (id 1) (at 20 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_io_breakout"
+        (path "/ddd4652e-b89b-5af7-aa02-938e2046fe2a" (page "2"))
+      )
+    )
+  )
+
+  (sheet (at 72 40) (size 45 25) (fields_autoplaced)
+    (stroke (width 0.0))
+    (fill (color 0 0 0 0))
+    (uuid 6661369a-705c-527f-88bb-d3e187f0ab08)
+    (property "Sheetname" "Channels" (id 0) (at 72 39.3 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "channels.kicad_sch" (id 1) (at 72 65.6 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "cems_io_breakout"
+        (path "/ddd4652e-b89b-5af7-aa02-938e2046fe2a" (page "3"))
+      )
+    )
+  )
+
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)

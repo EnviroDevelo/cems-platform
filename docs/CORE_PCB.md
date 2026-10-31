@@ -20,6 +20,7 @@ against the part's datasheet before layout.
  RVT70 display (BT817) ═ 20-pin FFC ═ SPI3 ══════════════│ UI task
  W25Q128JV NOR (event + data log) ═ SPI2 ════════════════│ store task
  MB85RC1MT FRAM 128 KB (settings) ═ I2C1 ════════════════│ store task
+ APS6404L PSRAM 8 MB (working RAM) ═ OCTOSPI1 (quad) ════│ memory-mapped buffers
  32.768 kHz LSE, CR2032 on VBAT (RTC) ═══════════════════│
  SWD + SWO, BOOT0, reset ════════════════════════════════│
                     └──────────────────────────────────────────────────────────┘
@@ -94,15 +95,18 @@ CubeMX uses). The SPI, I2C and UART instances are the firmware's defaults where 
 | NOR SPI2 SCK / MISO / MOSI | PB13 / PB14 / PC3 (AF5) | `hspi2`, the NOR default |
 | NOR CS | PD10 (GPIO out, initial high) | `NOR_CS`; WP# and HOLD# pulled up |
 | FRAM I2C1 SCL / SDA | PB6 / PB7 (AF4) | `hi2c1`, the FRAM default; 2.2 kΩ pull-ups |
+| PSRAM OCTOSPI1 CLK / NCS | PB2 (AF9) / PB10 (AF9) | 33 Ω series on CLK at the MCU; 10 kΩ pull-up on NCS (deselected through reset) |
+| PSRAM OCTOSPI1 IO0 / IO1 / IO2 / IO3 | PB1 (AF6) / PB0 (AF6) / PC2 (AF9) / PA6 (AF6) | quad mode, memory-mapped; the RAM thread owns the driver |
 | Service UART USART1 TX / RX | PA9 / PA10 (AF7) | 3.3 V header for bench logging |
 | SWD SWDIO / SWCLK / SWO | PA13 / PA14 / PB3 | 10-pin 1.27 mm Cortex debug header with NRST |
 | BOOT0 | BOOT0 pin | 10 kΩ pull-down, test pad / jumper to 3.3 V (H9) |
 | 24 V supply sense | PC0 (ADC1_INP10) | divider 100 k / 10 k; early power-fail warning, supply shown on the System screen |
 | Status LEDs | PD12 (run), PD13 (fault) | `DO_01`, `DO_02` (labelled outputs, active high) |
 | Hardware revision straps | PE7, PE8 | read once at boot |
+| Board role jumper (J7) | PE5, PE6 (inputs, 10 kΩ pull-ups) | read once at boot; section 12 |
 
-Free for later: PA0, PA3, PA4, PA6, PA8, PA11, PA12, PB0-PB2, PB4, PB5, PB8-PB11, PC2,
-PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
+Free for later: PA0, PA3, PA4, PA8, PA11, PA12, PB4, PB5, PB8, PB9, PB11,
+PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE4, PE15.
 
 ## 5. Power
 
@@ -111,7 +115,7 @@ PC6-PC9, PC13, PD1, PD3-PD7, PD8, PD9, PD14, PD15, PE0, PE2-PE6, PE15.
 | 24 VDC in (18-32 V) | Pluggable terminal (+, 0 V, FE) | | about 0.3 A at 24 V |
 | Input protection | Fuse 2 A time-lag (F1), series Schottky SS16 for reverse polarity (D1, 0.15 W at 0.3 A), bidirectional 3 kW TVS SMDJ33CA after it (D2), Y-capacitors to chassis (C16, C17), common-mode choke (L3), 47 µF bulk. Sized for IEC 61326-1 industrial, see `CORE_PCB_EMC.md` | | |
 | 5 V | Buck, 60 V rated input: TI TPS54360B (U1, 3.5 A, 600 kHz, 22 µH, catch diode B260A) | Display backlight BLVDD (FFC pins 17-18): 400 mA at full brightness; the 3.3 V buck about 450 mA | about 0.9 A |
-| 3.3 V | Buck from 5 V: TI TLV62569 (U2, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, NOR, FRAM | about 0.6 A |
+| 3.3 V | Buck from 5 V: TI TLV62569 (U2, 2 A) | MCU about 120 mA, display logic 240 mA max (235 typ; datasheet), W5500 130 mA, LAN8742A 50 mA, PSRAM about 40 mA, NOR, FRAM | about 0.65 A |
 | VBAT | CR2032 in a holder (H1) | RTC, backup registers | µA |
 | VDDA / VREF+ | 3.3 V through a ferrite and 1 µF + 100 nF | ADC (supply sense) | |
 
@@ -198,7 +202,32 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 - 4 layers: signal / solid ground / power / signal. RMII at 50 MHz and two 100 Ω Ethernet
   pairs need the unbroken ground under them.
 - RMII traces short and length-matched (± 5 mm is plenty at 50 MHz), the REF_CLK
-  point-to-point with a series resistor at the PHY. Keep RMII away from the SPI buses.
+  point-to-point with a series resistor at the PHY (R31 22 Ω), and 33 Ω source series
+  resistors on the other lines: TX_EN/TXD0/TXD1 at the MCU (R41-R43), CRS_DV/RXD0/RXD1 at
+  the PHY (R44-R46). Keep RMII away from the SPI buses.
+- **Any switch, 100 m of cable (Gary, 30 Oct).** Both ports are standard 100BASE-TX, which is
+  specified to 100 m of Cat5e. What makes that hold:
+  - The client PHY has its own 25 MHz crystal (Y3) and supplies the 50 MHz REF_CLK, the same
+    scheme as the Nucleo-H563ZI that works on every switch tried.
+  - The straps leave the LAN8742A in MODE 111: all modes advertised, auto-negotiation on,
+    HP auto-MDIX on. The firmware must never force speed or duplex. A forced port meets an
+    auto-negotiating switch at half duplex (parallel detection) and silently loses
+    transmitted frames.
+  - The PHY reset (PD11) is under firmware control, so the firmware can renegotiate and
+    re-sync the MAC to the result.
+  - The line side follows the Microchip reference: 49.9 Ω 1 % to the centre tap, MagJack
+    1500 Vrms.
+  - Each pair is routed as a 100 Ω differential pair, matched within 1 mm, with no vias,
+    under 25 mm from the PHY to the MagJack, over unbroken ground.
+  - Placement: R35-R38 (49.9 Ω) within 5 mm of the PHY's TX/RX pins; R30 (RBIAS 12.1 kΩ)
+    at its pin with no other trace nearby; Y3 and C46/C47 next to XTAL1/2 over solid ground;
+    FB2/C40-C42 (VDDA) and FB3/C48/C49 (centre tap) at their pins.
+  - Why it matters: the ST DK, whose PHY shares a 25 MHz oscillator, loses 14-45 % of its
+    100 Mbit TX frames through some switches (31 Oct bench, firmware thread), and none at
+    10 Mbit. Prototype acceptance test: 0 % loss at 100 Mbit through three different
+    switches, including a cheap unmanaged one, and over a 100 m Cat5e drum.
+  - The W5500 port has the same line rules. It has no auto-MDIX, but its peer (the I/O
+    node's LAN8742A) does.
 - Under each MagJack: no copper on the line side except chassis; the two ports' chassis
   areas don't touch.
 - The W5500's SPI and the display's SPI are on opposite sides of the MCU (PE and PC/PD pins),
@@ -214,6 +243,9 @@ board's -40 to 85 °C parts, sets the instrument's rating.
   15 MHz with no visible effect on the screens. Two BLVDD conductors carry the 400 mA with
   well under 0.1 V drop at that length. If the door has to be further away, a small
   buffer/adapter board at the display is the fallback (not planned).
+- PSRAM (U10): place it beside the MCU's PB0-PB2/PB10/PC2/PA6 corner. Keep the six OCTOSPI
+  traces under 30 mm and roughly equal in length, over unbroken ground; it runs at up to
+  about 100 MHz.
 - Decoupling per ST's hardware getting-started application note for the STM32H5 **(check)**: 100 nF per VDD pin,
   4.7 µF bulk, and the VCAP capacitors at the values the datasheet gives.
 
@@ -228,6 +260,10 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 5. **Ethernet: RJ45s with integrated magnetics (Gary, 25 Oct)**, shielded, with LEDs,
    1500 Vrms, -40 to 85 °C.
 6. **Enclosure (chosen 25 Oct, Gary can override):** see section 10.
+7. **8 MB PSRAM fitted (Gary, 29 Oct):** an AP Memory APS6404L on OCTOSPI1 gives the
+   firmware working RAM headroom for instrument models (RAM thread). It costs about AUD 3-5
+   and uses six pins that were free. **(check: the -ZR industrial grade, -40 to 105 °C, is
+   orderable in AU; the -SN part is rated -40 to 85 °C, which is enough)**.
 
 ## 9. BOM summary (main parts)
 
@@ -238,6 +274,7 @@ board's -40 to 85 °C parts, sets the instrument's rating.
 | W5500 (-40 to 85 °C) | I/O Ethernet controller | 1 |
 | Würth 7499010121A (RJ45 with magnetics and LEDs) | J2, J3 | 2 |
 | MB85RC1MT | 128 KB FRAM, settings | 1 |
+| APS6404L-3SQR-SN (or -ZR, industrial temperature) | 8 MB QSPI PSRAM, working RAM | 1 |
 | W25Q128JV | 16 MB NOR, event and data log | 1 |
 | 25 MHz crystals | MCU HSE, PHY, W5500 | 3 |
 | 32.768 kHz crystal | RTC | 1 |
@@ -302,6 +339,20 @@ footprint (R25, R26), and a revision fits one or the other.
 `hw_rev = (PE8 << 1) | PE7`. The firmware reports it with the firmware version (`/api/info`,
 System screen) and can refuse an image built for another revision. A fifth revision needs a
 third strap (PE15 is free and next to them).
+
+**Board role jumper, J7 on PE5 (ROLE_A) and PE6 (ROLE_B).** One board serves as the CORE
+or as an I/O node (Gary, 30 Oct), and the role comes from a removable shunt (with a pull
+tab) on a 3-pin 2.54 mm header with GND in the centre. Each pin has a 10 kΩ pull-up (R27,
+R28) and 100 nF to ground (C36, C37). Read at boot as inputs with the internal pulls off,
+beside `hw_rev`. Place J7 where it can only be reached with the housing open; silkscreen
+"1-2 CORE / 2-3 I/O NODE / none = OFF".
+
+| Shunt | PE5 | PE6 | Role |
+|---|---|---|---|
+| 1-2 | 0 | 1 | CORE |
+| 2-3 | 1 | 0 | I/O node |
+| none | 1 | 1 | invalid: outputs held off, alarm |
+| (both shorted) | 0 | 0 | invalid: outputs held off, alarm |
 
 **24 V supply sense, PC0 (ADC1_INP10).** R9 100 kΩ over R10 8.2 kΩ, both 1 %, with C13 100 nF:
 

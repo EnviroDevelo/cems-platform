@@ -3,7 +3,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,C1,47u 63V,CP_Elec_8x10,,yes
 1,C2,2u2 100V,C_1210_3225Metric,,yes
 1,C3,100n 100V,C_0603_1608Metric,,yes
-27,C4 C13 C14 C20 C21 C22 C23 C24 C25 C28 C35 C41 C42 C43 C49 C51 C52 C53 C54 C55 C56 C57 C64 C70 C71 C73 C75,100n,C_0603_1608Metric,,yes
+30,C4 C13 C14 C20 C21 C22 C23 C24 C25 C28 C35 C36 C37 C41 C42 C43 C49 C51 C52 C53 C54 C55 C56 C57 C64 C70 C71 C73 C75 C76,100n,C_0603_1608Metric,,yes
 1,C5,33n,C_0603_1608Metric,,yes
 1,C6,100p,C_0603_1608Metric,,yes
 2,C7 C8,22u 10V,C_1210_3225Metric,,yes
@@ -13,7 +13,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 3,C15 C16 C17,4n7 2kV,C_1812_4532Metric,,yes
 2,C18 C19,470u 63V,CP_Radial_D12.5mm_P5.00mm,"470 uF 63 V, 105 C, low ESR, 12.5 mm radial",yes
 2,C26 C59,4u7,C_0805_2012Metric,,yes
-3,C27 C40 C44,1u,C_0603_1608Metric,,yes
+4,C27 C40 C44 C77,1u,C_0603_1608Metric,,yes
 2,C29 C30,2u2,C_0603_1608Metric,,yes
 2,C31 C32,12p,C_0603_1608Metric,,yes
 2,C33 C34,6p8,C_0603_1608Metric,,yes
@@ -37,6 +37,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,J4,RVT70 RiBUS,Hirose_FH12-20S-0.5SH_1x20-1MP_P0.50mm_Horizontal,Hirose FH12-20S-0.5SH(55),yes
 1,J5,SWD,PinHeader_2x05_P1.27mm_Vertical_SMD,,yes
 1,J6,SERVICE UART,PinHeader_1x06_P2.54mm_Vertical,,yes
+1,J7,ROLE,PinHeader_1x03_P2.54mm_Vertical,,yes
 1,JP1,BOOT0,PinHeader_1x02_P2.54mm_Vertical,,yes
 1,L1,22uH,L_Bourns_SRN6045TA,Bourns SRN6045TA-220M,yes
 1,L2,2u2 3A,L_Wuerth_MAPI-4030,"Wurth 74438357022 (MAPI 4030, 2.2 uH)",yes
@@ -49,15 +50,15 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,R8,22k1 1%,R_0603_1608Metric,,yes
 1,R10,8k2 1%,R_0603_1608Metric,,yes
 1,R11,1M,R_1206_3216Metric,,yes
-11,R20 R23 R24 R33 R34 R53 R54 R55 R70 R71 R72,10k,R_0603_1608Metric,,yes
+14,R20 R23 R24 R27 R28 R33 R34 R53 R54 R55 R70 R71 R72 R79,10k,R_0603_1608Metric,,yes
 2,R21 R22,1k,R_0603_1608Metric,,yes
 1,R30,12k1 1%,R_0603_1608Metric,,yes
 1,R31,22R,R_0603_1608Metric,,yes
 1,R32,1k5,R_0603_1608Metric,,yes
 8,R35 R36 R37 R38 R56 R57 R58 R59,49R9 1%,R_0603_1608Metric,,yes
 4,R39 R40 R60 R61,330R,R_0603_1608Metric,,yes
+12,R41 R42 R43 R44 R45 R46 R51 R52 R73 R76 R77 R78,33R,R_0603_1608Metric,,yes
 1,R50,12k4 1%,R_0603_1608Metric,,yes
-5,R51 R52 R73 R76 R77,33R,R_0603_1608Metric,,yes
 1,R62,1M,R_0603_1608Metric,,yes
 1,R63,0R,R_0603_1608Metric,,yes
 2,R74 R75,2k2,R_0603_1608Metric,,yes
@@ -70,6 +71,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,U6,W5500,LQFP-48_7x7mm_P0.5mm,W5500 (-40 to 85 C),yes
 1,U8,W25Q128JV,SOIC-8_5.23x5.23mm_P1.27mm,W25Q128JVSIQ,yes
 1,U9,MB85RC1MT,SOIC-8_3.9x4.9mm_P1.27mm,MB85RC1MTPNF,yes
+1,U10,APS6404L,SOIC-8_3.9x4.9mm_P1.27mm,AP Memory APS6404L-3SQR-SN (-ZR for -40 to 105 C),yes
 3,Y1 Y3 Y4,25MHz,Crystal_SMD_3225-4Pin_3.2x2.5mm,,yes
 1,Y2,32.768kHz,Crystal_SMD_3215-2Pin_3.2x1.5mm,,yes
 2,R1 R2,DNF,R_0603_1608Metric,,no

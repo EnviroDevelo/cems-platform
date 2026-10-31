@@ -138,7 +138,7 @@ mcu = {
     8: "LSE_IN", 9: "LSE_OUT", 12: "HSE_IN", 13: "HSE_OUT", 14: "NRST", 94: "BOOT0",
     # RMII
     24: "ETH_REF_CLK", 25: "ETH_MDIO", 16: "ETH_MDC", 32: "ETH_CRS_DV", 33: "ETH_RXD0",
-    34: "ETH_RXD1", 30: "ETH_TX_EN", 51: "ETH_TXD0", 54: "ETH_TXD1", 58: "ETH_PHY_RST",
+    34: "ETH_RXD1", 30: "ETH_TX_EN_MCU", 51: "ETH_TXD0_MCU", 54: "ETH_TXD1_MCU", 58: "ETH_PHY_RST",
     # display, SPI3
     78: "EVE_SCK_MCU", 79: "EVE_MISO", 80: "EVE_MOSI_MCU", 77: "EVE_CS", 83: "EVE_PD", 81: "EVE_INT",
     # W5500, SPI4
@@ -148,10 +148,13 @@ mcu = {
     52: "NOR_SCK_MCU", 53: "NOR_MISO", 18: "NOR_MOSI", 57: "NOR_CS",
     # FRAM, I2C1
     92: "FRAM_SCL", 93: "FRAM_SDA",
+    # PSRAM, OCTOSPI1 (AF9: PB2 CLK, PB10 NCS, PC2 IO2; AF6: PB1 IO0, PB0 IO1, PA6 IO3)
+    37: "PSRAM_CLK_MCU", 47: "PSRAM_NCS", 36: "PSRAM_IO0", 35: "PSRAM_IO1", 17: "PSRAM_IO2", 31: "PSRAM_IO3",
     # service UART, SWD
     68: "UART_TX", 69: "UART_RX", 72: "SWDIO", 76: "SWCLK", 89: "SWO",
     # misc
     15: "V24_SENSE", 59: "LED_RUN", 60: "LED_FAULT", 38: "HWREV0", 39: "HWREV1",
+    4: "ROLE_A", 5: "ROLE_B",
 }
 part("U3", "MCU_ST_STM32H5:STM32H573VITx", "STM32H573VIT6", "Package_QFP:LQFP-100_14x14mm_P0.5mm",
      S, mcu, mpn="STM32H573VIT6", note="STM32H563VIT6 is pin-compatible")
@@ -189,13 +192,21 @@ r("R23", "10k", S, "HWREV0", "GND", note="hardware revision 0: both pulled down"
 r("R24", "10k", S, "HWREV1", "GND")
 r("R25", "10k", S, "+3V3", "HWREV0", dnp=True)
 r("R26", "10k", S, "+3V3", "HWREV1", dnp=True)
+# Board role (CORE or I/O node), read at boot beside hw_rev: CORE_PCB.md 12
+part("J7", "Connector_Generic:Conn_01x03", "ROLE", "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+     S, {1: "ROLE_A", 2: "GND", 3: "ROLE_B"},
+     note="shunt with pull tab; silkscreen 1-2 CORE / 2-3 I/O NODE / none = OFF; reachable only with the housing open")
+r("R27", "10k", S, "+3V3", "ROLE_A")
+r("R28", "10k", S, "+3V3", "ROLE_B")
+c("C36", "100n", S, "ROLE_A", "GND", note="ESD, at J7")
+c("C37", "100n", S, "ROLE_B", "GND")
 
 # ---------------------------------------------------------------- client Ethernet (LAN8742A)
 S = "eth_client"
 part("U4", "Interface_Ethernet:LAN8742A", "LAN8742A-CZ",
      "Package_DFN_QFN:VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias", S,
      {1: "+3V3_PHYA", 2: "PHY_LED2", 3: "PHY_LED1", 4: "PHY_XTAL2", 5: "PHY_XTAL1", 6: "PHY_VDDCR",
-      7: "ETH_RXD1", 8: "ETH_RXD0", 9: "+3V3", 11: "ETH_CRS_DV", 12: "ETH_MDIO",
+      7: "PHY_RXD1", 8: "PHY_RXD0", 9: "+3V3", 11: "PHY_CRS_DV", 12: "ETH_MDIO",
       13: "ETH_MDC", 14: "PHY_REFCLKO", 15: "ETH_PHY_RST", 16: "ETH_TX_EN", 17: "ETH_TXD0",
       18: "ETH_TXD1", 19: "+3V3_PHYA", 20: "ETH1_TXN", 21: "ETH1_TXP", 22: "ETH1_RXN",
       23: "ETH1_RXP", 24: "PHY_RBIAS", 25: "GND"},
@@ -215,6 +226,14 @@ part("Y3", "Device:Crystal_GND24", "25MHz", "Crystal:Crystal_SMD_3225-4Pin_3.2x2
 c("C46", "33p", S, "PHY_XTAL1", "GND", note="for CL 20 pF with about 4 pF stray")
 c("C47", "33p", S, "PHY_XTAL2", "GND")
 r("R31", "22R", S, "PHY_REFCLKO", "ETH_REF_CLK", note="series, at the PHY")
+# 33R source series terminations on the other RMII lines (as on ST's DK): TX at the MCU,
+# RX at the PHY. They tame the 50 MHz edges (reflections, EMC); the RX ones sit between the
+# PHY's MODE/strap pins and the MCU and do not change the straps (internal pull-ups,
+# MODE[2:0] = 111 = all capable with auto-negotiation).
+for ref, a_, b_, where in (("R41", "ETH_TX_EN_MCU", "ETH_TX_EN", "MCU"), ("R42", "ETH_TXD0_MCU", "ETH_TXD0", "MCU"),
+                           ("R43", "ETH_TXD1_MCU", "ETH_TXD1", "MCU"), ("R44", "PHY_CRS_DV", "ETH_CRS_DV", "PHY"),
+                           ("R45", "PHY_RXD0", "ETH_RXD0", "PHY"), ("R46", "PHY_RXD1", "ETH_RXD1", "PHY")):
+    r(ref, "33R", S, a_, b_, note=f"series, at the {where}")
 r("R32", "1k5", S, "+3V3", "ETH_MDIO")
 r("R33", "10k", S, "PHY_LED2", "GND", note="strap nINTSEL = 0 (REFCLKO mode)")
 r("R34", "10k", S, "+3V3", "ETH_PHY_RST", note="PHY runs if the firmware leaves PD11 as input")
@@ -300,6 +319,16 @@ part("U9", "cems_core:MB85RC1MT", "MB85RC1MT", "Package_SO:SOIC-8_3.9x4.9mm_P1.2
 c("C71", "100n", S, "+3V3", "GND")
 r("R74", "2k2", S, "+3V3", "FRAM_SCL")
 r("R75", "2k2", S, "+3V3", "FRAM_SDA")
+part("U10", "cems_core:APS6404L", "APS6404L", "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", S,
+     {1: "PSRAM_NCS", 2: "PSRAM_IO1", 3: "PSRAM_IO2", 4: "GND", 5: "PSRAM_IO0", 6: "PSRAM_CLK",
+      7: "PSRAM_IO3", 8: "+3V3"},
+     mpn="AP Memory APS6404L-3SQR-SN (-ZR for -40 to 105 C)",
+     note="8 MB QSPI PSRAM on OCTOSPI1, up to about 100 MHz: keep it next to the MCU, "
+          "traces under 30 mm and roughly matched")
+c("C76", "100n", S, "+3V3", "GND", note="at U10 VDD")
+c("C77", "1u", S, "+3V3", "GND")
+r("R78", "33R", S, "PSRAM_CLK_MCU", "PSRAM_CLK", note="series, at the MCU")
+r("R79", "10k", S, "+3V3", "PSRAM_NCS", note="keeps the PSRAM deselected through reset")
 part("J4", "Connector_Generic:Conn_01x20", "RVT70 RiBUS",
      "Connector_FFC-FPC:Hirose_FH12-20S-0.5SH_1x20-1MP_P0.50mm_Horizontal", S,
      {1: "+3V3", 2: "GND", 3: "EVE_SCK", 4: "EVE_MISO", 5: "EVE_MOSI", 6: "EVE_CS", 7: "EVE_INT",

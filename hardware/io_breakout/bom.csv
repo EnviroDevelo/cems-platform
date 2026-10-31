@@ -1,0 +1,12 @@
+Qty,References,Value,Footprint,MPN / note,Fitted
+8,D1 D2 D3 D4 D5 D6 D7 D8,S1M,D_SMA,"S1M (1 kV, 1 A)",yes
+1,D20,green PWR,LED_0805_2012Metric,,yes
+8,DS1 DS2 DS3 DS4 DS5 DS6 DS7 DS8,1N4148W,D_SOD-123,,yes
+4,H1 H2 H3 H4,M3,MountingHole_3.2mm_M3,,yes
+1,J1,IDC26,IDC-Header_2x13_P2.54mm_Latch_Vertical,"26-way 2.54 mm shrouded box header with ejector latches (Wurth, Amphenol or TE), 1 A per contact. CHECK MPN",yes
+2,J2 J3,12-way 5.08,"TerminalBlock_Phoenix_MKDS-1,5-12-5.08_1x12_P5.08mm_Horizontal","Degson or Dinkle 5.08 mm PCB screw terminal, 12-way, UL, 300 V, 8 A or more. CHECK MPN and footprint",yes
+8,LED1 LED2 LED3 LED4 LED5 LED6 LED7 LED8,green,LED_0805_2012Metric,,yes
+9,R1 R2 R3 R4 R5 R6 R7 R8 R20,10k,R_0805_2012Metric,,yes
+8,RZ1 RZ2 RZ3 RZ4 RZ5 RZ6 RZ7 RZ8,0R,R_1206_3216Metric,,yes
+8,RW1 RW2 RW3 RW4 RW5 RW6 RW7 RW8,DNF,R_0805_2012Metric,,no
+8,Z1 Z2 Z3 Z4 Z5 Z6 Z7 Z8,24V 1.5W,D_SMB,"1SMB5934BT3 (24 V, 1.5 W)",no
