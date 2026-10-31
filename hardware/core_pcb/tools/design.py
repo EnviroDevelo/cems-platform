@@ -376,18 +376,34 @@ R0805 = "Resistor_SMD:R_0805_2012Metric"
 R1206 = "Resistor_SMD:R_1206_3216Metric"
 SOT23_5 = "Package_TO_SOT_SMD:SOT-23-5"
 MCV = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_{n}-G-3.81_1x{n:02d}_P3.81mm_Vertical"
-MSTBVA2 = "Connector_Phoenix_MSTB:PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical"
+MSTBVA = "Connector_Phoenix_MSTB:PhoenixContact_MSTBVA_2,5_{n}-G-5,08_1x{n:02d}_P5.08mm_Vertical"
+MCV35 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_{n}-G-3.5_1x{n:02d}_P3.50mm_Vertical"
 IDC40 = "Connector_IDC:IDC-Header_2x20_P2.54mm_Latch_Vertical"
 NANO2 = "Fuse:Fuseholder_Littelfuse_Nano2_157x"
 PTC1206 = "Fuse:Fuse_1206_3216Metric"
 PTC1812 = "Fuse:Fuse_1812_4532Metric"
 
 
-def mcv(ref, sheet, nets, value, **kw):
+# Wrong-plug proofing (docs/CORE_PCB.md section 15): three pitch families that cannot mate with
+# each other (5.08 mm power and 24 V outputs, 3.81 mm bank B, 3.5 mm isolated sensors), every
+# size used once per family except the temperature and analog groups (a swap inside a group is
+# harmless), and a Phoenix coding key in each header so no plug fits a larger header shifted along.
+def mcv(ref, sheet, nets, value, key=None, pitch="3.81", **kw):
     n = len(nets)
-    part(ref, f"Connector_Generic:Conn_01x{n:02d}", value, MCV.format(n=n), sheet,
+    fp = MCV.format(n=n) if pitch == "3.81" else MCV35.format(n=n)
+    code = f"; coding key at pin {key} (header CR-MC, plug coded to match). CHECK coding parts" if key else ""
+    part(ref, f"Connector_Generic:Conn_01x{n:02d}", value, fp, sheet,
          {i + 1: net for i, net in enumerate(nets)},
-         mpn=kw.pop("mpn", f"Phoenix MCV 1,5/{n}-G-3,81 (or Degson / Dinkle equivalent) + mating plug"), **kw)
+         mpn=kw.pop("mpn", f"Phoenix MCV 1,5/{n}-G-{pitch.replace('.', ',')} + coded, labelled plug{code}"), **kw)
+
+
+def mstb(ref, sheet, nets, value, key=None, **kw):
+    n = len(nets)
+    keys = ", ".join(str(k) for k in key) if isinstance(key, tuple) else str(key)
+    part(ref, f"Connector_Generic:Conn_01x{n:02d}", value, MSTBVA.format(n=n), sheet,
+         {i + 1: net for i, net in enumerate(nets)},
+         mpn=f"Phoenix MSTBVA 2,5/{n}-G-5,08 + coded, labelled plug; coding key at pin {keys} "
+             "(header CR-MSTB, plug coded to match). CHECK coding parts", **kw)
 
 
 def gate_and(ref, sheet, a, b, y, note=""):
@@ -523,10 +539,9 @@ for cs in ("CS_A", "CS_B", "CS_IN", "CS_T", "CS_AI"):
 S = "io_pwr"
 # Field supplies come in on their own terminals, never through the core's 2 A input.
 # Reverse polarity: each fuse is followed by a unidirectional TVS that conducts and blows it.
-part("J13", "Connector_Generic:Conn_01x02", "FIELD A 24V", MSTBVA2, S, {1: "FA_IN", 2: "FIELD_0V"},
-     mpn="Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)", note="bank A, inputs, pump: about 10 A")
-part("J14", "Connector_Generic:Conn_01x02", "FIELD B 24V", MSTBVA2, S, {1: "FB_IN", 2: "FIELD_0V"},
-     mpn="Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)", note="bank B and relays: about 8 A")
+mstb("J13", S, ["FA_IN", "FIELD_0V", "FB_IN", "FIELD_0V"], "FIELD 24V A+B", key=3,
+     note="one 4-way plug for both field supplies (12 A per contact): A = bank A, inputs, pump (about 10 A); "
+          "B = bank B and relays (about 8 A). Link A and B in the plug for a single supply")
 for ref, src, dst, val, note in (("F12", "FA_IN", "+24V_FA", "6.3A T", "bank A, inputs, ribbons"),
                                  ("F13", "FA_IN", "+24V_FP", "5A T", "pump"),
                                  ("F14", "FB_IN", "+24V_FB", "10A T", "bank B, relays")):
@@ -565,8 +580,6 @@ nr("10k", S, "+5V_P", "P_DG", note="diagnostic, test point only")
 part("D26", "Device:D_Schottky", "SS56", "Diode_SMD:D_SMC", S, {1: "PUMP_PWR", 2: "FIELD_0V"},
      mpn="SS56 (60 V, 5 A)", note="motor freewheel")
 nc("100n 50V", S, "+24V_FP", "FIELD_0V")
-part("J15", "Connector_Generic:Conn_01x02", "PUMP POWER", MSTBVA2, S, {1: "PUMP_PWR", 2: "FIELD_0V"},
-     mpn="Phoenix MSTBVA 2,5/2-G-5,08 + plug")
 # 24 V push-pull: Schmitt inverter, 2N7002, 10k pull-up, BC817/BC807 emitter followers
 for sig, name, u, q in (("PWM", "P_PWM", "U22", 1), ("DIR", "P_DIR", "U23", 4)):
     inverter(u, S, f"{name}_F", f"{name}_N", vcc="+5V_P", gnd="FIELD_0V", sym="74xGxx:74LVC1G14")
@@ -577,7 +590,9 @@ for sig, name, u, q in (("PWM", "P_PWM", "U22", 1), ("DIR", "P_DIR", "U23", 4)):
          {1: f"{name}_B", 3: "+24V_FA", 2: f"{name}_E"})
     part(f"Q{q + 2}", "Transistor_BJT:BC807", "BC807", "Package_TO_SOT_SMD:SOT-23", S,
          {1: f"{name}_B", 3: "FIELD_0V", 2: f"{name}_E"})
-    nr("47R", S, f"{name}_E", f"{name}_OUT", fp=R0805, note=f"pump {sig}: 24 V push-pull, 20 Hz-25 kHz")
+    nr("1k 1W", S, f"{name}_E", f"{name}_OUT", fp="Resistor_SMD:R_2512_6332Metric", mpn="anti-surge 2512, 1 W",
+       note=f"pump {sig}: 24 V push-pull, 20 Hz-25 kHz. 1k makes the output survive a short to 0 V or 24 V "
+            "for ever (24 mA, 0.6 W). CHECK the 107Z input current (high level = 24 V - 1k x I)")
 # Tacho: 30 V tolerant, 1.5 V threshold, optional pull-up for open-collector tachos
 nr("10k", S, "P_TACH_IN", "P_TACH_C", fp=R0805)
 part("D27", "Diode:BAT54S", "BAT54S", "Package_TO_SOT_SMD:SOT-23", S,
@@ -594,19 +609,21 @@ nr("1M", S, "P_TACH_F", "P_TACH_C", note="hysteresis")
 nr("4k7", S, "+5V_P", "P_TACH_PU")
 part("JP2", "Connector_Generic:Conn_01x02", "TACH PULL-UP", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
      S, {1: "P_TACH_PU", 2: "P_TACH_IN"}, note="fit for an open-collector tacho")
-mcv("J16", S, ["P_PWM_OUT", "P_DIR_OUT", "P_TACH_IN", "FIELD_0V"], "PUMP SIGNALS",
-    note="Thomas 107Z: signal ground must be field 0 V")
+mstb("J15", S, ["PUMP_PWR", "FIELD_0V", "P_PWM_OUT", "P_DIR_OUT", "P_TACH_IN", "FIELD_0V"], "PUMP", key=(1, 3, 5),
+     note="one plug for the whole pump: power, 0 V, PWM, DIR, tacho, signal 0 V (Thomas 107Z: signal ground "
+          "must be field 0 V)")
 
 # Relay coil outputs for DIN-socket relays (Finder 40.52 24 V, about 21 mA): PhotoMOS
 # switches, LED anodes fed from GATE so the gate drops them too; MCU pin low = on.
-part("F15", "Device:Polyfuse", "0.2A", PTC1206, S, {1: "+24V_FB", 2: "+24V_REL"}, mpn="Bourns MF-NSMF020-2")
 for k in (1, 2):
+    part("F15" if k == 1 else "F22", "Device:Polyfuse", "50mA", PTC1206, S, {1: "+24V_FB", 2: f"+24V_REL{k}"},
+         mpn="Bourns MF-NSMF005-2", note="per-channel limit: a shorted coil wire trips only its own PTC" if k == 1 else "")
     nr("330R", S, "GATE", f"REL{k}_A")
     part(f"U{24 + k}", "Relay_SolidState:CPC1017N", "CPC1017N", "Package_SO:SOP-4_3.8x4.1mm_P2.54mm", S,
-         {1: f"REL{k}_A", 2: f"REL{k}_N", 3: "+24V_REL", 4: f"REL{k}_OUT"}, mpn="IXYS CPC1017NTR",
-         note="60 V, 100 mA PhotoMOS" if k == 1 else "")
+         {1: f"REL{k}_A", 2: f"REL{k}_N", 3: f"+24V_REL{k}", 4: f"REL{k}_OUT"}, mpn="IXYS CPC1014NTR",
+         note="60 V, 400 mA PhotoMOS: rides out a short until its PTC trips. CHECK with a 10 s short test" if k == 1 else "")
     part(f"D{27 + k}", "Device:D", "S1M", "Diode_SMD:D_SMA", S, {1: f"REL{k}_OUT", 2: "FIELD_0V"})
-mcv("J17", S, ["REL1_OUT", "FIELD_0V", "REL2_OUT", "FIELD_0V"], "RELAY COILS")
+mstb("J17", S, ["REL1_OUT", "REL2_OUT", "FIELD_0V"], "RELAY COILS", key=1)
 
 # USB-C service port (ST USB bootloader, address, serial number). Self-powered: VBUS only sensed.
 part("J18", "Connector:USB_C_Receptacle_USB2.0_16P", "USB-C",
@@ -671,7 +688,7 @@ for k in range(1, 7):
 for j in range(3):
     nr("100R", S, f"T_RTN{j + 1}", "T_REFP", note="RTD return to the reference resistor" if j == 0 else "")
     mcv(f"J{19 + j}", S, [f"T{2 * j + 1}_P", f"T{2 * j + 1}_N", f"T{2 * j + 2}_P", f"T{2 * j + 2}_N", f"T_RTN{j + 1}"],
-        f"TEMP{j + 1}", note=f"T{2 * j + 1} +/-, T{2 * j + 2} +/-, RTD return")
+        f"TEMP{j + 1}", key=1, pitch="3.5", note=f"T{2 * j + 1} +/-, T{2 * j + 2} +/-, RTD return")
 
 # Analog: AD4112 on its own isolated island (ISOW7741 for SPI, ITX2424SA for 24 V loop power)
 isow("U31", "U32", "CS_AI", ("+5V_AI", "GND_AI"), "+5V_AI", "VSEL to VISOOUT = 5 V out (110 mA)")
@@ -699,13 +716,19 @@ nc("1u", S, "AI_REGCAPD", "GND_AI")
 nc("100n", S, "AI_REF", "GND_AI")
 nr("10k", S, "+5V_AI", "AI_ERR")
 for ch in (5, 6):
-    nr("250R 0.1%", S, f"AI{ch}_IN", "GND_AI", fp=R0805, mpn="10 ppm/K thin film", note="4-20 mA shunt -> 1-5 V")
+    nr("250R 0.1%", S, f"AI{ch}_IN", "GND_AI", fp=R1206, mpn="Vishay PTN1206 0.4 W, 10 ppm/K thin film",
+       note="4-20 mA shunt -> 1-5 V; takes the 30 mA limit for ever (0.23 W)")
+# Loop supplies: a 30 mA two-terminal current limiter per loop, so a loop wire shorted to its
+# input or to 0 V can never push more than 30 mA into a shunt or an AD4112 IIN pin (abs max 50 mA).
 for ch in range(1, 7):
-    part(f"F{15 + ch}", "Device:Polyfuse", "50mA", PTC1206, S, {1: "+24V_AI", 2: f"LOOP{ch}"},
-         mpn="Bourns MF-NSMF005-2 (or a 30 mA current limiter)", note="loop supply limit" if ch == 1 else "")
+    part(f"F{15 + ch}", "Device:D", "CCR 30mA", "Diode_SMD:D_PowerDI-123", S, {2: "+24V_AI", 1: f"LOOP{ch}"},
+         mpn="Diodes AL5809-30P1-7 (60 V, 30 mA)",
+         note="loop current limit; shorted loop = 0.7 W: copper on the cathode. CHECK the 30 mA option, "
+              "its 2.5 V headroom and the AD4112 IIN abs max" if ch == 1 else "")
 for j in range(3):
     a1, a2 = 2 * j + 1, 2 * j + 2
     mcv(f"J{22 + j}", S, [f"LOOP{a1}", f"AI{a1}_IN", "GND_AI", f"LOOP{a2}", f"AI{a2}_IN", "GND_AI"], f"AI {a1}-{a2}",
+        key=3, pitch="3.5",
         note="per channel: 24 V loop, IN, 0 V (2-wire or 4-wire transmitters)")
 # Sensor supplies: 5 V level port; precision 10 V for the mass-flow sensor (REF5010 drives
 # the LT3045's SET pin, so the output is the reference +/- a few mV, about 0.05 %)
@@ -734,5 +757,12 @@ nc("10u 25V", S, "+10V_FLOW", "GND_AI", fp=C0805)
 nr("100k 0.1%", S, "+10V_FLOW", "V10_MON", note="10 V monitor for ratiometric correction")
 nr("100k 0.1%", S, "V10_MON", "GND_AI")
 nr("1M", S, "FLOW_SIG", "GND_AI")
-mcv("J25", S, ["+5V_LVL", "LVL_SIG", "GND_AI", "+10V_FLOW", "FLOW_SIG", "GND_AI"], "SENSORS",
+# Sensor supply clamps: a 24 V loop wire landing on a sensor supply pin is held by these TVSs
+# while the loop's 30 mA limiter carries the current, so neither regulator nor sensor sees 24 V.
+part("D49", "Device:D_Zener", "SMAJ5.0A", "Diode_SMD:D_SMA", S, {1: "+5V_LVL", 2: "GND_AI"},
+     mpn="SMAJ5.0A", note="clamps +5V_LVL")
+part("D50", "Device:D_Zener", "SMAJ11A", "Diode_SMD:D_SMA", S, {1: "+10V_FLOW", 2: "GND_AI"},
+     mpn="SMAJ11A", note="clamps +10V_FLOW (12.2 V min breakdown)")
+mcv("J25", S, ["+5V_LVL", "LVL_SIG", "GND_AI", "+10V_FLOW", "FLOW_SIG", "GND_AI", "GND_AI"], "SENSORS",
+    key=5, pitch="3.5",
     note="level (DFRobot SEN0205): 5 V, SIG, 0 V; mass flow (AWM5104VN): +10 V, OUT, 0 V")

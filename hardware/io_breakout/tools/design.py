@@ -57,14 +57,15 @@ part("J1", "Connector_Generic:Conn_02x20_Odd_Even", "IDC40", "Connector_IDC:IDC-
 # 3-wire sensors take their 0 V from J4.
 part("J2", "Connector_Generic:Conn_02x08_Odd_Even", "VALVES 1-8", TIER2x8, S,
      {**{2 * i + 1: OUT[i] for i in range(8)}, **{2 * i + 2: "0V" for i in range(8)}},
-     mpn="Phoenix MCDV 1,5/8-G-3,81 two-level header + 2 x MCVR plugs (or Degson/Dinkle equivalent). CHECK MPN and footprint",
+     mpn="Phoenix MCDV 1,5/8-G-3,81 two-level header + 2 x MCVR plugs (or Degson/Dinkle equivalent). "
+         "Coding keys: upper tier pin 1, lower tier pin 2 (plugs coded to match). CHECK MPN, footprint, coding parts",
      note="upper tier OUT1-8, lower tier 0V")
 part("J3", "Connector_Generic:Conn_02x08_Odd_Even", "INPUTS 1-8", TIER2x8, S,
      {**{2 * i + 1: IN[i] for i in range(8)}, **{2 * i + 2: "+24V" for i in range(8)}},
-     mpn="as J2", note="upper tier IN1-8, lower tier +24V")
+     mpn="as J2; coding keys: upper tier pin 3, lower tier pin 4", note="upper tier IN1-8, lower tier +24V")
 part("J4", "Connector_Generic:Conn_01x08", "SENSOR 0V",
      "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_8-G-3.81_1x08_P3.81mm_Vertical", S,
-     {n: "0V" for n in range(1, 9)}, mpn="Phoenix MCV 1,5/8-G-3,81 + plug", note="0 V for 3-wire sensors, one per input")
+     {n: "0V" for n in range(1, 9)}, mpn="Phoenix MCV 1,5/8-G-3,81 + plug; coding key at pin 5", note="0 V for 3-wire sensors, one per input")
 r("R40", "10k", S, "+24V", "PWR_LED_A", note="power LED, 2.2 mA at 24 V")
 part("D40", "Device:LED", "green PWR", LED0805, S, {2: "PWR_LED_A", 1: "0V"})
 for n in range(1, 5):

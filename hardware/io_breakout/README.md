@@ -44,6 +44,9 @@ How each field device wires in:
 - **Contact or 2-wire sensor:** both terminals of its column on J3.
 - **3-wire sensor:** as a 2-wire sensor, plus 0 V from J4.
 
+Coding keys (plugs ship coded and labelled, so no plug fits another socket, even shifted along):
+J2 upper pin 1, lower pin 2; J3 upper pin 3, lower pin 4; J4 pin 5. See docs/CORE_PCB.md section 15.
+
 ## Per channel
 
 - **Valve LED:** 10 kΩ + 1N4148W + green LED from OUTn to 0 V. The series diode protects the LED from the coil's negative turn-off spike.

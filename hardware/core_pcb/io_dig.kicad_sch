@@ -4966,7 +4966,7 @@
     (property "Datasheet" "~" (id 3) (at 106.68 154.94 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "MPN" "Phoenix MCV 1,5/10-G-3,81 (or Degson / Dinkle equivalent) + mating plug" (id 4) (at 106.68 154.94 0)
+    (property "MPN" "Phoenix MCV 1,5/10-G-3,81 + coded, labelled plug" (id 4) (at 106.68 154.94 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (pin "1" (uuid 85ca97af-6af9-5613-b171-9623b25944ff))

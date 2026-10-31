@@ -4,9 +4,9 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 8,DS1 DS2 DS3 DS4 DS5 DS6 DS7 DS8,1N4148W,D_SOD-123,,yes
 4,H1 H2 H3 H4,M3,MountingHole_3.2mm_M3,,yes
 1,J1,IDC40,IDC-Header_2x20_P2.54mm_Latch_Vertical,"Wurth 61204022821 (WR-BHD 40-way, long latches, 3 A per contact). CHECK MPN",yes
-1,J2,VALVES 1-8,"Phoenix_MCDV_1,5_8-G-3.81_2x08_P3.81mm_TwoLevel","Phoenix MCDV 1,5/8-G-3,81 two-level header + 2 x MCVR plugs (or Degson/Dinkle equivalent). CHECK MPN and footprint",yes
-1,J3,INPUTS 1-8,"Phoenix_MCDV_1,5_8-G-3.81_2x08_P3.81mm_TwoLevel",as J2,yes
-1,J4,SENSOR 0V,"PhoenixContact_MCV_1,5_8-G-3.81_1x08_P3.81mm_Vertical","Phoenix MCV 1,5/8-G-3,81 + plug",yes
+1,J2,VALVES 1-8,"Phoenix_MCDV_1,5_8-G-3.81_2x08_P3.81mm_TwoLevel","Phoenix MCDV 1,5/8-G-3,81 two-level header + 2 x MCVR plugs (or Degson/Dinkle equivalent). Coding keys: upper tier pin 1, lower tier pin 2 (plugs coded to match). CHECK MPN, footprint, coding parts",yes
+1,J3,INPUTS 1-8,"Phoenix_MCDV_1,5_8-G-3.81_2x08_P3.81mm_TwoLevel","as J2; coding keys: upper tier pin 3, lower tier pin 4",yes
+1,J4,SENSOR 0V,"PhoenixContact_MCV_1,5_8-G-3.81_1x08_P3.81mm_Vertical","Phoenix MCV 1,5/8-G-3,81 + plug; coding key at pin 5",yes
 8,LED1 LED2 LED3 LED4 LED5 LED6 LED7 LED8,green,LED_0805_2012Metric,,yes
 8,LED11 LED12 LED13 LED14 LED15 LED16 LED17 LED18,yellow,LED_0805_2012Metric,,yes
 17,R1 R2 R3 R4 R5 R6 R7 R8 R11 R12 R13 R14 R15 R16 R17 R18 R40,10k,R_0805_2012Metric,,yes

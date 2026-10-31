@@ -50,13 +50,15 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,D26,SS56,D_SMC,"SS56 (60 V, 5 A)",yes
 1,D27,BAT54S,SOT-23,,yes
 10,D28 D29 D31 D32 D33 D34 D35 D36 D37 D38,S1M,D_SMA,,yes
+1,D49,SMAJ5.0A,D_SMA,SMAJ5.0A,yes
+1,D50,SMAJ11A,D_SMA,SMAJ11A,yes
 1,F1,2A T,Fuse_1206_3216Metric,,yes
 1,F10,0.75A,Fuse_1812_4532Metric,Bourns MF-MSMF075-2,yes
 1,F12,6.3A T,Fuseholder_Littelfuse_Nano2_157x,Littelfuse 0453 6.3A T NANO2 in a 157 series holder,yes
 1,F13,5A T,Fuseholder_Littelfuse_Nano2_157x,Littelfuse 0453 5A T NANO2 in a 157 series holder,yes
 1,F14,10A T,Fuseholder_Littelfuse_Nano2_157x,Littelfuse 0453 10A T NANO2 in a 157 series holder,yes
-1,F15,0.2A,Fuse_1206_3216Metric,Bourns MF-NSMF020-2,yes
-6,F16 F17 F18 F19 F20 F21,50mA,Fuse_1206_3216Metric,Bourns MF-NSMF005-2 (or a 30 mA current limiter),yes
+2,F15 F22,50mA,Fuse_1206_3216Metric,Bourns MF-NSMF005-2,yes
+6,F16 F17 F18 F19 F20 F21,CCR 30mA,D_PowerDI-123,"Diodes AL5809-30P1-7 (60 V, 30 mA)",yes
 6,FB1 FB2 FB3 FB4 FB10 FB11,600R@100MHz,L_0603_1608Metric,,yes
 1,J1,24VDC IN,"TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal",,yes
 1,J2,CLIENT,RJ45_Wuerth_7499010121A_Horizontal,"Wurth 7499010121A (MagJack, 1500 Vrms, LEDs)",yes
@@ -66,20 +68,18 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,J6,SERVICE UART,PinHeader_1x06_P2.54mm_Vertical,,yes
 1,J7,ROLE,PinHeader_1x03_P2.54mm_Vertical,,yes
 1,J10,DIGITAL I/O IDC40,IDC-Header_2x20_P2.54mm_Latch_Vertical,"Wurth 61204022821 (WR-BHD 40-way, long latches, 3 A). CHECK MPN",yes
-1,J11,BANK B,"PhoenixContact_MCV_1,5_10-G-3.81_1x10_P3.81mm_Vertical","Phoenix MCV 1,5/10-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J13,FIELD A 24V,"PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical","Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)",yes
-1,J14,FIELD B 24V,"PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical","Phoenix MSTBVA 2,5/2-G-5,08 + plug (12 A)",yes
-1,J15,PUMP POWER,"PhoenixContact_MSTBVA_2,5_2-G-5,08_1x02_P5.08mm_Vertical","Phoenix MSTBVA 2,5/2-G-5,08 + plug",yes
-1,J16,PUMP SIGNALS,"PhoenixContact_MCV_1,5_4-G-3.81_1x04_P3.81mm_Vertical","Phoenix MCV 1,5/4-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J17,RELAY COILS,"PhoenixContact_MCV_1,5_4-G-3.81_1x04_P3.81mm_Vertical","Phoenix MCV 1,5/4-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
+1,J11,BANK B,"PhoenixContact_MCV_1,5_10-G-3.81_1x10_P3.81mm_Vertical","Phoenix MCV 1,5/10-G-3,81 + coded, labelled plug",yes
+1,J13,FIELD 24V A+B,"PhoenixContact_MSTBVA_2,5_4-G-5,08_1x04_P5.08mm_Vertical","Phoenix MSTBVA 2,5/4-G-5,08 + coded, labelled plug; coding key at pin 3 (header CR-MSTB, plug coded to match). CHECK coding parts",yes
+1,J15,PUMP,"PhoenixContact_MSTBVA_2,5_6-G-5,08_1x06_P5.08mm_Vertical","Phoenix MSTBVA 2,5/6-G-5,08 + coded, labelled plug; coding key at pin 1, 3, 5 (header CR-MSTB, plug coded to match). CHECK coding parts",yes
+1,J17,RELAY COILS,"PhoenixContact_MSTBVA_2,5_3-G-5,08_1x03_P5.08mm_Vertical","Phoenix MSTBVA 2,5/3-G-5,08 + coded, labelled plug; coding key at pin 1 (header CR-MSTB, plug coded to match). CHECK coding parts",yes
 1,J18,USB-C,USB_C_Receptacle_HCTL_HC-TYPE-C-16P-01A,HCTL HC-TYPE-C-16P-01A (or GCT USB4105),yes
-1,J19,TEMP1,"PhoenixContact_MCV_1,5_5-G-3.81_1x05_P3.81mm_Vertical","Phoenix MCV 1,5/5-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J20,TEMP2,"PhoenixContact_MCV_1,5_5-G-3.81_1x05_P3.81mm_Vertical","Phoenix MCV 1,5/5-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J21,TEMP3,"PhoenixContact_MCV_1,5_5-G-3.81_1x05_P3.81mm_Vertical","Phoenix MCV 1,5/5-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J22,AI 1-2,"PhoenixContact_MCV_1,5_6-G-3.81_1x06_P3.81mm_Vertical","Phoenix MCV 1,5/6-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J23,AI 3-4,"PhoenixContact_MCV_1,5_6-G-3.81_1x06_P3.81mm_Vertical","Phoenix MCV 1,5/6-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J24,AI 5-6,"PhoenixContact_MCV_1,5_6-G-3.81_1x06_P3.81mm_Vertical","Phoenix MCV 1,5/6-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
-1,J25,SENSORS,"PhoenixContact_MCV_1,5_6-G-3.81_1x06_P3.81mm_Vertical","Phoenix MCV 1,5/6-G-3,81 (or Degson / Dinkle equivalent) + mating plug",yes
+1,J19,TEMP1,"PhoenixContact_MCV_1,5_5-G-3.5_1x05_P3.50mm_Vertical","Phoenix MCV 1,5/5-G-3,5 + coded, labelled plug; coding key at pin 1 (header CR-MC, plug coded to match). CHECK coding parts",yes
+1,J20,TEMP2,"PhoenixContact_MCV_1,5_5-G-3.5_1x05_P3.50mm_Vertical","Phoenix MCV 1,5/5-G-3,5 + coded, labelled plug; coding key at pin 1 (header CR-MC, plug coded to match). CHECK coding parts",yes
+1,J21,TEMP3,"PhoenixContact_MCV_1,5_5-G-3.5_1x05_P3.50mm_Vertical","Phoenix MCV 1,5/5-G-3,5 + coded, labelled plug; coding key at pin 1 (header CR-MC, plug coded to match). CHECK coding parts",yes
+1,J22,AI 1-2,"PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical","Phoenix MCV 1,5/6-G-3,5 + coded, labelled plug; coding key at pin 3 (header CR-MC, plug coded to match). CHECK coding parts",yes
+1,J23,AI 3-4,"PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical","Phoenix MCV 1,5/6-G-3,5 + coded, labelled plug; coding key at pin 3 (header CR-MC, plug coded to match). CHECK coding parts",yes
+1,J24,AI 5-6,"PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical","Phoenix MCV 1,5/6-G-3,5 + coded, labelled plug; coding key at pin 3 (header CR-MC, plug coded to match). CHECK coding parts",yes
+1,J25,SENSORS,"PhoenixContact_MCV_1,5_7-G-3.5_1x07_P3.50mm_Vertical","Phoenix MCV 1,5/7-G-3,5 + coded, labelled plug; coding key at pin 5 (header CR-MC, plug coded to match). CHECK coding parts",yes
 1,JP1,BOOT0,PinHeader_1x02_P2.54mm_Vertical,,yes
 1,JP2,TACH PULL-UP,PinHeader_1x02_P2.54mm_Vertical,,yes
 1,L1,22uH,L_Bourns_SRN6045TA,Bourns SRN6045TA-220M,yes
@@ -116,7 +116,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 8,R122 R124 R126 R128 R130 R132 R134 R136,12k 1%,R_1206_3216Metric,,yes
 8,R123 R125 R127 R129 R131 R133 R135 R137,2k 1%,R_0603_1608Metric,,yes
 5,R143 R144 R148 R150 R152,10k,R_0805_2012Metric,,yes
-2,R149 R151,47R,R_0805_2012Metric,,yes
+2,R149 R151,1k 1W,R_2512_6332Metric,"anti-surge 2512, 1 W",yes
 1,R154,4k3,R_0603_1608Metric,,yes
 1,R157,4k7,R_0603_1608Metric,,yes
 2,R160 R161,5k1,R_0603_1608Metric,,yes
@@ -124,7 +124,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,R166,5k11 0.1%,R_0603_1608Metric,,yes
 6,R167 R168 R169 R170 R171 R172,10M,R_0603_1608Metric,,yes
 3,R173 R174 R175,100R,R_0603_1608Metric,,yes
-2,R178 R179,250R 0.1%,R_0805_2012Metric,10 ppm/K thin film,yes
+2,R178 R179,250R 0.1%,R_1206_3216Metric,"Vishay PTN1206 0.4 W, 10 ppm/K thin film",yes
 1,R181,240R 1%,R_0603_1608Metric,,yes
 1,R182,2k26 1%,R_0603_1608Metric,,yes
 1,R183,3k,R_0603_1608Metric,,yes
@@ -150,7 +150,7 @@ Qty,References,Value,Footprint,MPN / note,Fitted
 1,U21,IPS7091S,TO-263-5_TabPin3,Infineon IPS7091SPBF,yes
 2,U22 U23,74LVC1G14,SOT-23-5,SN74LVC1G14DBVR,yes
 1,U24,LMV331,SOT-23-5,LMV331IDBVR,yes
-2,U25 U26,CPC1017N,SOP-4_3.8x4.1mm_P2.54mm,IXYS CPC1017NTR,yes
+2,U25 U26,CPC1017N,SOP-4_3.8x4.1mm_P2.54mm,IXYS CPC1014NTR,yes
 1,U27,USBLC6-2SC6,SOT-23-6,USBLC6-2SC6,yes
 2,U28 U31,ISOW7741,SOIC-20W_7.5x12.8mm_P1.27mm,TI ISOW7741DFMR,yes
 2,U29 U32,74LVC1G04,SOT-23-5,SN74LVC1G04DBVR,yes
