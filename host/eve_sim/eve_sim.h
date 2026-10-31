@@ -14,6 +14,7 @@ typedef struct {
     uint16_t  patch_ptr;
     bool      present;              /* answers at all */
     bool      fault_next;           /* the next frame faults the co-processor */
+    uint32_t  sysclk_hz;            /* REG_CLOCK advances at this rate in delays (0 = stands still) */
     uint32_t  host_cmds, last_host_cmd;
     /* SPI transaction being decoded */
     bool      cs;
@@ -39,6 +40,7 @@ typedef struct {
 
 void eve_sim_init(eve_sim_t *s);
 void eve_sim_touch(eve_sim_t *s, uint8_t tag);            /* 0 = finger lifted */
+void eve_sim_touch_xy(eve_sim_t *s, int16_t x, int16_t y);   /* REG_TOUCH_SCREEN_XY; -32768, -32768 = no finger */
 
 /* Inspect the last frame */
 bool eve_sim_has_text(const eve_sim_t *s, const char *needle);   /* in any text/button/keys string */

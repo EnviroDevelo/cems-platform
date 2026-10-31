@@ -64,8 +64,8 @@ $(BUILD)/sim: $(CORE) app_demo/app_demo.c host/sim_main.c $(MBED_LIB) | $(BUILD)
 test: $(BUILD)/tests $(BUILD)/tests32 fault-codes-check snapshots-check node-test master-real
 	./$(BUILD)/tests
 	./$(BUILD)/tests32 | tail -1
-	python3 tests/integration/ui_conventions_test.py | tail -1
 	python3 tools/cip_coverage.py
+	python3 tests/integration/ui_conventions_test.py
 
 # The published fault and alarm code list (CIP-11.3), written from the firmware's tables.
 # make fault-codes: docs/FAULT_CODES.md (the platform's), and with APP=<dir> the product's own
