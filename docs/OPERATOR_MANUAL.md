@@ -158,6 +158,7 @@ instead of guessing. **Previous** and **Next** move between slots.
   - **Set clock** (admin). Only needed when there is no time server. "Clock, not synced" means nothing outside has confirmed the time;
   - **I/O boards**: each board's link, inputs, outputs, temperatures and faults, in words;
   - screen brightness;
+  - **Emissions** (see 8d);
   - **Instruments** (see 8c);
   - **Service** (see 9).
 
@@ -188,6 +189,15 @@ including test bits.
 - **Remove** takes the selected value off. **Restart** clears the lines and starts again.
 - A gap in a line means the value was not valid then: stale, unavailable, in maintenance and so on.
 - Trends keep recording while you use other screens. They are not saved: a restart clears them. For longer periods, download the data log from the web page.
+
+## 8d. Emissions (System, then Emissions)
+
+The emission values the limits are judged on, read only. The engine and its channels are set up on the web page (Emissions).
+
+- **The top line** says whether the plant is operating (averages only count operating time), the averaging period and the reference O2 (or CO2). If a setting doesn't fit, it says which channel and that the engine is stopped.
+- **Each channel in use** shows four values: **now, corrected** (to standard conditions, dry, and to the reference O2 where that applies), **this period** so far, the last **validated** average (after the confidence interval is subtracted), and the **last day**'s average. A greyed value has its quality word under it.
+- **The line under each channel** lists anything to act on: above the calibration range, over or below the analyser's range, input missing, last day invalid, a new QAL2 due, and averages discarded today. It also shows the QAL3 state (ok, check due, last check beyond the action limit, or OUT OF CONTROL for zero or span: adjust the analyser and reset its chart), and for a channel with a second, shorter limit (CO in waste incineration) the last 10-minute average and how many today were above it.
+- Amber means attention, red means QAL3 out of control.
 
 ## 8c. Instruments (System, then Instruments)
 

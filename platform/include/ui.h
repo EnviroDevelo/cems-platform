@@ -46,7 +46,8 @@ enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARM
        UI_TRENDS,       /* live trends: up to 4 values over the last 10 minutes */
        UI_TR_PICK,      /* choose a value to trend */
        UI_SERVICE,      /* service: self-test, board test, test record, service log, display test */
-       UI_INST };       /* third-party instruments on the I/O network: state, counters, values (inst.h), read only */
+       UI_INST,         /* third-party instruments on the I/O network: state, counters, values (inst.h), read only */
+       UI_EMIS };       /* emissions: corrected values, averages, validated and daily values, QAL3, second-period (CO) averages */
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */
