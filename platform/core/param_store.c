@@ -29,6 +29,7 @@ __attribute__((weak)) const retain_def_t *plat_store_blocks(size_t *n) { *n = 0;
 /* The calibration records (plat_cal.c) and the service records (plat_service.c), in the factory region. */
 __attribute__((weak)) const retain_def_t *plat_cal_blocks(size_t *n) { *n = 0; return NULL; }
 __attribute__((weak)) const retain_def_t *plat_service_blocks(size_t *n) { *n = 0; return NULL; }
+__attribute__((weak)) const retain_def_t *plat_emis_blocks(size_t *n) { *n = 0; return NULL; }
 #define PLAT_BLOCKS_MAX 16u
 
 /* one persisted item: a PF_PERSIST parameter or a retained block */
@@ -147,7 +148,7 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
     }
     const retain_def_t *plat[PLAT_BLOCKS_MAX];       /* the platform's own blocks, from each module */
     size_t n_plat = 0;
-    const retain_def_t *(*const providers[])(size_t *) = { plat_store_blocks, plat_cal_blocks, plat_service_blocks };
+    const retain_def_t *(*const providers[])(size_t *) = { plat_store_blocks, plat_cal_blocks, plat_service_blocks, plat_emis_blocks };
     for (size_t p = 0; p < sizeof providers / sizeof providers[0]; ++p) {
         size_t n = 0;
         const retain_def_t *b = providers[p](&n);

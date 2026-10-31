@@ -9,6 +9,7 @@
 #include "iobus.h"
 #include "plat_state.h"
 #include "plat_cal.h"
+#include "emis_bind.h"
 #include "plat_alarm.h"
 
 #ifndef PARAM_BLOB_POOL
@@ -227,6 +228,74 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
     PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
                PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
+    /* emissions calculation (emis_bind.c, 400-469): admin, persisted, never from Modbus (a PLC must not
+     * re-tune a compliance calculation); the plant-operating flag is the exception */
+#define EMF (PF_PERSIST | PF_NO_MODBUS)
+#define EM_ARR(ID, NAME, VAR, CT, LO, HI, DFLT) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = EMF, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME), .vmin.u = (LO), .vmax.u = (HI) }
+#define EM_ARRF(ID, NAME, VAR, LO, HI, DFLT) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = EMF, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME), .vmin.f = (LO), .vmax.f = (HI) }
+#define EM_RO(ID, NAME, VAR, CT, HI) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.u = 0u, .vmax.u = (HI) }
+#define EM_ROF(ID, NAME, VAR) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.f = -3.4e38f, .vmax.f = 3.4e38f }
+    PARAM_BIT (PARAM_ID_EMIS_ENABLE, "emis_enable", emis_set.enable, PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_T_REF, "emis_t_ref", emis_set.t_ref, 200.0f, 400.0f, 273.15f, "K", PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_P_REF, "emis_p_ref", emis_set.p_ref, 50.0f, 200.0f, 101.325f, "kPa", PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_DILUENT, "emis_diluent", emis_set.diluent, CT_U8, 0, 2, EMIS_DIL_O2, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_REAL(PARAM_ID_EMIS_REF_PCT, "emis_ref_pct", emis_set.ref_pct, 0.0f, 100.0f, 11.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_O2_MAX, "emis_o2_max", emis_set.o2_max, 1.0f, 20.9f, 20.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_BIT (PARAM_ID_EMIS_ONLY_ABOVE, "emis_only_above", emis_set.only_above, PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_CH_O2, "emis_ch_o2", emis_set.ch_o2, CT_U8, 0, 255, 0, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_H2O_MODE, "emis_h2o_mode", emis_set.h2o_mode, CT_U8, 0, 2, EMIS_H2O_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_CH_H2O, "emis_ch_h2o", emis_set.ch_h2o, CT_U8, 0, 255, 11, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_REAL(PARAM_ID_EMIS_H2O_FIXED, "emis_h2o_fixed", emis_set.h2o_fixed, 0.0f, 80.0f, 0.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_CH_T, "emis_ch_t", emis_set.ch_t, CT_U8, 0, 255, EMIS_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_CH_P, "emis_ch_p", emis_set.ch_p, CT_U8, 0, 255, EMIS_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_REAL(PARAM_ID_EMIS_T_FIXED, "emis_t_fixed", emis_set.t_fixed, -50.0f, 1500.0f, 0.0f, "degC", PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_P_FIXED, "emis_p_fixed", emis_set.p_fixed, 50.0f, 200.0f, 101.325f, "kPa", PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_CH_FLOW, "emis_ch_flow", emis_set.ch_flow, CT_U8, 0, 255, EMIS_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_PERIOD_S, "emis_period_s", emis_set.period_s, CT_U16, 60, 3600, 1800, PLAT_LVL_ADMIN, EMF, "s"),
+    PARAM_UINT(PARAM_ID_EMIS_MIN_AVAIL, "emis_min_avail", emis_set.min_avail, CT_U8, 0, 100, 67, PLAT_LVL_ADMIN, EMF, "%"),
+    PARAM_UINT(PARAM_ID_EMIS_MAX_DISCARD, "emis_max_discard", emis_set.max_discard, CT_U8, 0, 144, 5, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_BIT_D(PARAM_ID_EMIS_CI_SUBTRACT, "emis_ci_subtract", emis_set.ci_subtract, true, PLAT_LVL_ADMIN, EMF),
+    PARAM_BIT_D(PARAM_ID_EMIS_CLAMP_ZERO, "emis_clamp_zero", emis_set.clamp_zero, true, PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_CAL_EXT, "emis_cal_ext", emis_set.cal_ext, 0.0f, 100.0f, 10.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_BIT_D(PARAM_ID_EMIS_OPERATING, "emis_operating", emis_p_operating, true, PLAT_LVL_OPERATOR, PF_ANY_MODE),
+    PARAM_UINT(PARAM_ID_EMIS_CFG_ERROR, "emis_cfg_error", emis_p_cfg_error, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    EM_ARR(PARAM_ID_EMIS_SRC, "emis_src", emis_set.src, CT_U8, 0, 255, emis_dflt_none),
+    EM_ARR(PARAM_ID_EMIS_UNIT, "emis_unit", emis_set.ch.unit, CT_U8, 0, EMIS_U_COUNT - 1, NULL),
+    EM_ARR(PARAM_ID_EMIS_WET, "emis_wet", emis_set.ch.wet, CT_BOOL, 0, 1, NULL),
+    EM_ARR(PARAM_ID_EMIS_REF, "emis_ref", emis_set.ch.ref, CT_BOOL, 0, 1, NULL),
+    EM_ARR(PARAM_ID_EMIS_ADD, "emis_add", emis_set.ch.add, CT_U8, 0, 255, emis_dflt_none),
+    EM_ARRF(PARAM_ID_EMIS_MOLAR_MASS, "emis_molar_mass", emis_set.ch.molar_mass, 0.0f, 1000.0f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_QAL2_A, "emis_qal2_a", emis_set.ch.qal2_a, -1e6f, 1e6f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_QAL2_B, "emis_qal2_b", emis_set.ch.qal2_b, -1e3f, 1e3f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_YS_MAX, "emis_ys_max", emis_set.ch.ys_max, 0.0f, 1e7f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_ELV, "emis_elv", emis_set.ch.elv, 0.0f, 1e7f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_CI_PCT, "emis_ci_pct", emis_set.ch.ci_pct, 0.0f, 100.0f, NULL),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 0, "emis_raw", emis_res.v[0]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 1, "emis_std", emis_res.v[1]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 2, "emis_ref_o2", emis_res.v[2]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 3, "emis_mass", emis_res.v[3]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 4, "emis_run", emis_res.v[4]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 5, "emis_avg", emis_res.v[5]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 6, "emis_val", emis_res.v[6]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 7, "emis_day", emis_res.v[7]),
+    EM_RO(PARAM_ID_EMIS_Q_IN, "emis_q_in", emis_res.q[0], CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_Q_CALC, "emis_q_calc", emis_res.q[1], CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_Q_MASS, "emis_q_mass", emis_res.q[2], CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_Q_AVG, "emis_q_avg", emis_res.q[3], CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_Q_DAY, "emis_q_day", emis_res.q[4], CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_Q_RUN, "emis_q_run", emis_res.q[5], CT_U8, PLAT_Q_COUNT - 1),
+    EM_RO(PARAM_ID_EMIS_STATUS, "emis_status", emis_res.status, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_DISCARDED, "emis_discarded", emis_res.discarded, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_DAYS_INVALID, "emis_days_invalid", emis_res.days_invalid, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_WEEKS_ABOVE, "emis_weeks_above", emis_res.weeks_above, CT_U16, 0xFFFFu),
     IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])

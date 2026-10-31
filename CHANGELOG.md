@@ -58,6 +58,15 @@ One source for the CORE and the I/O node (30 Oct, Gary):
   `tests/integration/node_role_test.py` runs a CORE against it.
 - The NUCLEO-H563ZI as a node: `docs/CUBEMX_NUCLEO_NODE.md`; `tools/check_target.sh` links it (CHIP=h563).
 
+Emissions calculation engine (29 Oct, before release; `docs/EMISSIONS_MATH.md`):
+- `emis.h` / `emis.c`: EN 14181 calibration function, ppm to mg/Nm3, wet to dry, T/p
+  normalisation, O2 or CO2 reference, mass emission, clock-aligned short-term and daily averages
+  with the IED validity rules and confidence interval subtraction, the EN 14181 valid calibration
+  range; quality from the eight PLAT_Q codes, worst of the inputs.
+- Parameters 400-441 (settings, admin, persisted, not from Modbus), 450-469 (results), retained
+  block 910. Off by default (400): a product that does not use it is unchanged. 4.4 KB RAM.
+- `plat_meas_value()` in plat_state.h.
+
 DK bring-up changes (28-29 Oct, before release):
 - The I2C FRAM driver scans 0x50-0x57 at power-up and joins every Fujitsu MB85RC chip it finds,
   in address order, into one memory (sizes from each chip's Device ID). `/api/info` adds
