@@ -34,6 +34,9 @@ td.lim,td.acc{color:var(--mute);font-size:12px}
 .sev-fault,.sev-alarm{background:var(--bad)}.sev-warning{background:var(--warn)}.sev-status{background:#8a94a6}
 tr.unacked td{font-weight:600}
 tr.crit td:first-child{box-shadow:inset 4px 0 var(--bad)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px 14px}.grid2 label{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.warn{color:var(--warn)}
+#emtab td.val{white-space:nowrap}#emchtab select[data-f=src]{min-width:14em}#emchtab select[data-f=unit]{min-width:8em}#emchtab input[data-f=mm]{min-width:6em}#emtab td .note.warn{color:var(--warn)}
 .warnbox{background:#fdecd2;color:var(--warn);border-radius:6px;padding:8px;margin-bottom:8px;display:none}
 #filter{min-width:220px}
 #tlsfp,#mailfp{overflow-wrap:anywhere}
@@ -106,6 +109,7 @@ section.offtab{display:none!important}
   <button data-tab="service">Service</button>
   <button data-tab="iob">I/O boards</button>
   <button data-tab="inst">Instruments</button>
+  <button data-tab="emis">Emissions</button>
   <button data-tab="events">Event log</button>
   <button data-tab="admin">Administration</button>
   <button data-tab="alarmcfg">Alarm setup</button>
@@ -245,6 +249,55 @@ section.offtab{display:none!important}
     </div>
   </section>
 
+  <section id="emsec" data-tab="emis" style="display:none">
+    <h2>Emissions</h2>
+    <p class="note">Readings made into the values an emission limit is judged on: to the reference temperature and pressure,
+      dry, to the reference oxygen, then averaged and validated (docs/EMISSIONS_MATH.md). Averages count only time when
+      the plant is operating.</p>
+    <p id="emplant"></p>
+    <p class="err" id="emcfg" style="display:none"></p>
+    <div style="overflow-x:auto"><table class="ptab" id="emtab"><thead><tr><th>Channel</th><th>Reading</th><th>Standard, dry</th>
+      <th>At reference O<sub>2</sub></th><th>Mass</th><th>This period so far</th><th>Last average</th><th>Validated</th><th>Last day</th>
+      <th>Today discarded</th><th class="em2col">10-min validated</th><th class="em2col">10-min today (above ELV)</th><th class="em2col">10-min yesterday (above ELV)</th></tr></thead><tbody></tbody></table></div>
+    <p class="note" id="emnone" style="display:none">No channels are set up yet.</p>
+    <div id="q3box" style="display:none;margin-top:10px">
+      <h3>QAL3 zero and span checks (EN 14181)</h3>
+      <p class="note">Each analyser's zero and span readings go on a control chart, zero and span apart. Action limit: k × s<sub>AMS</sub>
+        (<span id="q3k">2</span> × the analyser's QAL1 figure). Out of control: three checks in a row beyond the same limit, eight on the same
+        side, or one beyond 1.5 × the limit. A check is due every <span id="q3int">14</span> days. Recording a check needs an admin login and REMOTE;
+        after maintenance or an adjustment, <b>Restart chart</b>.</p>
+      <div style="overflow-x:auto"><table class="ptab" id="q3tab"><thead><tr><th>Channel</th><th>Last check</th><th>Zero deviation</th><th>Span deviation</th>
+        <th>Checks</th><th>State</th><th class="q3adm">Zero reading</th><th class="q3adm">Span reading</th><th class="q3adm"></th></tr></thead><tbody></tbody></table></div>
+      <span class="err" id="q3err"></span>
+    </div>
+    <div class="row" id="emoprow" style="display:none"><label><input type="checkbox" id="emop"> Plant operating</label>
+      <span class="note">Normally written by the application or the PLC from the firing signal. Operator login.</span></div>
+    <div id="emedit" style="display:none;margin-top:10px" class="card">
+      <h3>Setup (admin)</h3>
+      <p class="note" id="emmode" style="display:none;color:var(--warn)">Changing the emissions setup needs REMOTE (set at the touchscreen) and an admin login.</p>
+      <p class="note">Any change restarts the periods in progress, so an average never mixes two setups. The change is in the event log.</p>
+      <div class="grid2" id="emplantf"></div>
+      <h3 style="margin-top:10px">Channels</h3>
+      <p class="note">One row per measured value, in its Modbus standard-block slot. <b>Source</b>: the product's own measurement or an
+        instrument point (Instruments tab). <b>Unit</b> is the reading's own. <b>Wet</b>: the reading is on a wet basis.
+        <b>O<sub>2</sub> ref</b>: correct it to the reference oxygen. <b>Plus</b>: add another channel (NOx = NO + NO<sub>2</sub>).
+        QAL2: y = a + b x (b = 0: none yet). ys,max: the highest QAL2 value (valid calibration range). ELV: the daily limit.
+        CI: the confidence interval, % of the ELV. <span class="em2set">10-min ELV: the limit for the 10-minute averages (CO 150 mg/Nm<sup>3</sup> for
+        waste incineration; 95 % of a day's must be within it).</span> <span class="q3set">QAL3: s<sub>AMS</sub> from the analyser's QAL1
+        certificate in its own unit (0 = no QAL3), the zero gas value and the span gas certified value (80-100 % of the ELV).</span></p>
+      <div style="overflow-x:auto"><table class="ptab" id="emchtab"><thead><tr><th>Slot</th><th>Source</th><th>Unit</th><th>Wet</th>
+        <th>O<sub>2</sub> ref</th><th>Plus</th><th>Molar mass</th><th>QAL2 a</th><th>QAL2 b</th><th>ys,max</th><th>ELV</th><th>CI %</th>
+        <th class="em2set">10-min ELV</th><th class="q3set">s<sub>AMS</sub></th><th class="q3set">Zero gas</th><th class="q3set">Span gas</th><th></th></tr></thead>
+        <tbody></tbody></table></div>
+      <datalist id="emmm"><option value="30.006">NO</option><option value="46.0055">NO2 (NOx as NO2)</option><option value="64.066">SO2</option>
+        <option value="28.010">CO</option><option value="36.461">HCl</option><option value="20.006">HF</option><option value="17.031">NH3</option>
+        <option value="16.043">CH4</option><option value="44.013">N2O</option><option value="34.081">H2S</option><option value="36.033">TOC as C (propane FID)</option></datalist>
+      <div class="row" style="flex-wrap:wrap;margin-top:6px">
+        <select id="emaddslot" aria-label="Slot to add"></select><button class="ghost" id="emadd">Add channel</button>
+        <button id="emsave">Save</button><button class="ghost" id="emreload">Undo changes</button><span class="err" id="emerr"></span>
+      </div>
+    </div>
+  </section>
   <section id="instsec" data-tab="inst" style="display:none">
     <h2>Instruments</h2>
     <p class="note">Analysers and other devices the instrument reads over Modbus TCP on the I/O network (it is the master; they answer).
@@ -1445,7 +1498,7 @@ async function refreshInfo() {
     if (!adm) $("diasec").style.display = "none"; else if (changed && tab === "alarmcfg") diaLoad();
     $("mailsec").style.display = adm ? "block" : "none";
     if (level >= 2) { refreshFw(); if (changed) { refreshSerial(); refreshCm(); refreshDc(); } }
-    if (changed) pollInst(true);                       /* the Instruments tab shows for admin even with none set up */
+    if (changed) { pollInst(true); if (emCfg) emDraw(); pollEmis(true); }   /* redraw for the new level or mode, keeping any edits */                       /* the Instruments tab shows for admin even with none set up */
     $("fwctl").style.display = level >= 3 ? "flex" : "none";
     $("fwlvl").style.display = level >= 3 ? "none" : "block";
     $("diag").textContent = `Scans ${i.scan.scans}, longest ${i.scan.max_exec_us} µs, overruns ${i.scan.overruns}. ` +
@@ -1941,6 +1994,295 @@ const ipNum = t => { const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(t.trim()); re
 const hexIn = t => { t = String(t).trim(); if (!t) return 0; const v = /^0x/i.test(t) ? parseInt(t, 16) : /^[01]+b$/i.test(t) ? parseInt(t, 2) : Number(t); return Number.isInteger(v) && v >= 0 && v <= 0xFFFF ? v : null; };
 const instCan = () => level >= 2 && byId[IP_.ip] && writable(byId[IP_.ip]);
 TAB_KICK.inst = () => pollInst(true);
+
+/* ---- emissions engine (firmware emis_bind.c, docs/EMISSIONS_MATH.md): parameters 400-469, 32 channels by Modbus
+   standard-block slot. Results for every viewer; the setup (admin, REMOTE) is written with /api/write like the
+   instrument editor: only what changed, six per request, then read back. ---- */
+const EM_N = 32, EM_NONE = 255;
+const EM_SLOT = ["O2 dry", "O2 wet", "CO2", "CO", "NO", "NO2", "NOx as NO2", "SO2", "HCl", "HF", "NH3", "H2O", "TOC as C", "CH4", "N2O",
+  "H2S", "Hg", "Dust", "Flue gas flow", "Flue gas velocity", "Stack temperature", "Stack pressure abs", "Sample flow", "Probe/line temperature",
+  "Cooler temperature", "Analyser cell temperature", "Cabinet temperature", "Air/cal gas pressure", "Opacity", "TRS", "spare 31", "spare 32"];
+const EM_UNITS = ["not used", "ppm", "% vol", "mg/m3 actual", "mg/m3 standard", "m3/h actual", "m3/h standard", "plain value"];
+const EM_Q = ["valid", "stale", "unavailable", "range", "warmup", "maint", "cal", "fault"];
+const EM_ST = { 0x20: "no QAL2", 0x40: "above calibration range", 0x80: "over range", 0x100: "O2 too high", 0x200: "input missing",
+  0x400: "last average discarded", 0x800: "last day invalid", 0x1000: "no CI subtracted", 0x2000: "fixed water content", 0x4000: "below range",
+  0x8000: "new QAL2 due" };
+const EM_PLANT = [                                    /* [id, label, kind, extra] */
+  [400, "Engine on", "bool"], [403, "Reference diluent", "sel", [[0, "none"], [1, "O2"], [2, "CO2"]]], [404, "Reference O2 or CO2 (%)", "num"],
+  [405, "O2 limit (%)", "num"], [406, "Correct only when O2 is above the reference", "bool"], [407, "O2 (or CO2) channel", "ch"],
+  [408, "Water content", "sel", [[0, "dried sample (no correction)"], [1, "measured"], [2, "fixed value"]]], [409, "Water channel", "ch"],
+  [410, "Fixed water content (%)", "num"], [401, "Reference temperature (K)", "num"], [402, "Reference pressure (kPa)", "num"],
+  [411, "Stack temperature channel", "chfix"], [413, "Fixed stack temperature (°C)", "num"], [412, "Stack pressure channel", "chfix"],
+  [414, "Fixed stack pressure (kPa abs)", "num"], [415, "Flow channel (mass emission)", "chnone"],
+  [416, "Averaging period", "sel", [[600, "10 minutes"], [1800, "30 minutes (waste incineration)"], [3600, "1 hour (large combustion plants)"]]],
+  [417, "Minimum valid time in a period (%)", "num"], [418, "Most averages discarded in a valid day", "num"],
+  [419, "Subtract the confidence interval (EU IED; off for NSW)", "bool"], [420, "Validated value below zero reads zero", "bool"],
+  [421, "Calibration range extension (% of ELV)", "num"],
+  [424, "Second averaging period (10-minute averages)", "sel", [[0, "off"], [600, "10 minutes (CO, waste incineration)"]]],
+  [425, "QAL3 action limit k (× s_AMS)", "num"], [426, "QAL3: days between checks", "num"]];
+const EM_CH = { src: 430, unit: 431, wet: 432, ref: 433, add: 434, mm: 435, a: 437, b: 438, ys: 439, elv: 440, ci: 441, elv2: 442, sams: 444, zref: 445, sref: 446 };
+const EM_CHX = { elv2: "10-minute ELV", sams: "s_AMS", zref: "zero gas", sref: "span gas" };   /* only with the firmware that has them (PR #23) */
+const Q3_ST = { 2: "zero warning", 4: "span warning", 8: "zero OUT OF CONTROL", 16: "span OUT OF CONTROL", 32: "check due" };
+const Q3_RES = ["Check recorded", "Not a channel", "No QAL3 on this channel (s_AMS is 0)", "Not a number", "The clock is not set"];
+const EM_RES = [450, 451, 452, 453, 454, 455, 456, 457, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 400, 416, 422, 423, 430, 431, 433,
+  424, 425, 426, 444, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479, 480];
+let emCfg = null, emRows = [], emPlantV = {}, emRes = null;
+const emIds = () => [...EM_PLANT.map(x => x[0]), ...Object.values(EM_CH), 422, ...Array.from({ length: PT_N }, (_, p) => IP_.pname + p)].filter(id => byId[id]);   /* instrument point names only with PR #16 */
+const emCan = () => level >= 2 && byId[430] && writable(byId[430]);
+const emNum = v => v === null || v === undefined || !Number.isFinite(v) ? "----" : Math.abs(v) >= 1e5 ? v.toExponential(3) : +v.toPrecision(5) + "";
+function emUnit(u, bank) {                            /* the unit a bank is in (EMISSIONS_MATH section 2) */
+  if (bank === "mass") return u === 1 || u === 3 || u === 4 ? "kg/h" : "";
+  if (u === 1 || u === 3 || u === 4) return bank === "raw" ? ["", "ppm", "", "mg/m3", "mg/Nm3"][u] : "mg/Nm3";
+  if (u === 2) return "%";
+  if (u === 5 || u === 6) return bank === "raw" ? "m3/h" : "Nm3/h";
+  return "";
+}
+function emSources() {                                /* the measurements in table order (firmware "meas" if given), then instrument points */
+  const out = [[EM_NONE, "none"]];
+  let i = 0;
+  for (const d of defs.filter(d => d.q)) {
+    const n = d.type === "array" ? d.size / ({ u8: 1, bool: 1, u16: 2, i16: 2 }[d.elem] || 4) : 1;
+    for (let k = 0; k < n; k++, i++) {
+      const at = Array.isArray(d.meas) ? d.meas[k] : d.meas !== undefined ? d.meas + k : i;
+      out.push([at, `Measurement ${at}: ${d.name}${n > 1 ? "[" + k + "]" : ""}`]);
+    }
+  }
+  for (let p = 0; p < PT_N; p++) { const nm = emCfg && emCfg[IP_.pname + p]; if (nm || (emCfg && emCfg[EM_CH.src] || []).includes(200 + p)) out.push([200 + p, `Instrument point ${p + 1}` + (nm ? ": " + nm : "")]); }
+  return out;
+}
+async function pollEmis(once) {
+  if (!once && bgSkip("emis")) { setTimeout(pollEmis, 1000); return; }
+  if (!byId[400]) { $("emsec").style.display = "none"; if (!once) setTimeout(pollEmis, 5000); return; }
+  try {
+    emRes = (await api("/api/values?ids=" + EM_RES.filter(id => byId[id]).join(","))).v;
+    $("emsec").style.display = emRes[400] || level >= 2 ? "block" : "none";
+    showEmis();
+  } catch (e) { }
+  if (!once) setTimeout(pollEmis, 2000);
+}
+function showEmis() {
+  const v = emRes; if (!v) return;
+  const A = id => v[id] || [], on = !!v[400];
+  $("emplant").textContent = !on ? "The emissions engine is off." :
+    `Plant ${v[422] ? "operating" : "NOT operating (averages paused)"}. Averaging period ${v[416] / 60} min.`;
+  $("emplant").className = on && !v[422] ? "warn" : "";
+  const ce = v[423] || 0;
+  $("emcfg").style.display = on && ce ? "" : "none";
+  if (ce) $("emcfg").textContent = ce > EM_N ? "The plant settings are not consistent: the engine is stopped. Check the setup below."
+    : `Channel ${EM_SLOT[ce - 1]} has a setting that doesn't fit (unit, molar mass, O2 reference, water or the added channel): the engine is stopped.`;
+  const used = [...Array(EM_N).keys()].filter(i => A(431)[i]), p2 = !!v[424];
+  for (const x of document.querySelectorAll("#emtab .em2col")) x.style.display = p2 ? "" : "none";
+  $("emnone").style.display = used.length ? "none" : "";
+  $("emoprow").style.display = on && level >= 1 ? "" : "none";
+  if (document.activeElement !== $("emop")) $("emop").checked = !!v[422];
+  $("emop").disabled = !(byId[422] && writable(byId[422]));
+  const cell = (tr, val, unit, q) => { const td = document.createElement("td"); td.className = "val";
+    td.textContent = val === null ? "" : emNum(val) + (unit && Number.isFinite(val) ? " " + unit : "");
+    if (val !== null) qSpan(td, EM_Q[q] || "valid"); if (EM_Q[q] === "unavailable") td.textContent = "----"; tr.appendChild(td); return td; };
+  $("emtab").tBodies[0].replaceChildren(...used.map(i => {
+    const tr = document.createElement("tr"), u = A(431)[i], conc = u === 1 || u === 3 || u === 4;
+    const name = document.createElement("td"); name.textContent = EM_SLOT[i]; tr.appendChild(name);   /* the status words go under the name */
+    cell(tr, A(450)[i], emUnit(u, "raw"), A(460)[i]);
+    cell(tr, A(451)[i], emUnit(u, "std"), A(461)[i]);
+    cell(tr, A(433)[i] ? A(452)[i] : null, emUnit(u, "ref"), A(461)[i]);
+    cell(tr, conc ? A(453)[i] : null, "kg/h", A(462)[i]);
+    cell(tr, A(454)[i], emUnit(u, "ref"), A(465)[i]);
+    cell(tr, A(455)[i], emUnit(u, "ref"), A(463)[i]);
+    cell(tr, A(456)[i], emUnit(u, "ref"), A(463)[i]);
+    cell(tr, A(457)[i], emUnit(u, "ref"), A(464)[i]);
+    const dc = document.createElement("td"); dc.className = "c"; dc.textContent = A(467)[i] ?? "";
+    if (A(468)[i]) dc.title = `${A(468)[i]} invalid days this year`; tr.appendChild(dc);
+    if (p2) {
+      cell(tr, A(470)[i], emUnit(u, "ref"), A(471)[i]);
+      for (const [n, ab] of [[472, 473], [474, 475]]) { const c2 = document.createElement("td"); c2.className = "c";
+        c2.textContent = `${A(n)[i] ?? 0} (${A(ab)[i] ?? 0})`;
+        if (A(n)[i] && A(ab)[i] / A(n)[i] > 0.05) { c2.classList.add("warn"); c2.title = "More than 5 % above the 10-minute ELV"; }
+        tr.appendChild(c2); }
+    }
+    const st = document.createElement("div"), bits = A(466)[i] || 0;
+    const words = Object.entries(EM_ST).filter(([b]) => bits & b).map(([, t]) => t);
+    if (A(468)[i]) words.push(`${A(468)[i]} invalid day${A(468)[i] === 1 ? "" : "s"} this year`);
+    if (A(469)[i]) words.push(`${A(469)[i]} week${A(469)[i] === 1 ? "" : "s"} above the calibration range`);
+    st.textContent = words.join(", ");
+    st.className = "note" + (bits & (0x40 | 0x80 | 0x100 | 0x200 | 0x800 | 0x4000 | 0x8000) ? " warn" : ""); name.appendChild(st);
+    return tr;
+  }));
+  showQal3(used);
+  $("emedit").style.display = level >= 2 ? "" : "none";
+  $("emmode").style.display = level >= 2 && !emCan() ? "" : "none";
+  if (level >= 2 && !emCfg && !emLoading) emLoad();
+}
+let emLoading = false;
+async function emLoad(cfg) {
+  emLoading = true; $("emerr").textContent = "";
+  try { emCfg = cfg || await paramsGet(emIds()); } catch (e) { $("emerr").textContent = explain(e); emLoading = false; return; }
+  emLoading = false;
+  const c = emCfg, A = id => c[id] || [];
+  emPlantV = Object.fromEntries(EM_PLANT.map(([id]) => [id, typeof c[id] === "boolean" ? +c[id] : c[id]]));
+  emRows = [...Array(EM_N).keys()].filter(i => A(431)[i] || A(430)[i] !== EM_NONE).map(i => ({ i, src: A(430)[i], unit: A(431)[i], wet: +!!A(432)[i],
+    ref: +!!A(433)[i], add: A(434)[i], mm: A(435)[i], a: A(437)[i], b: A(438)[i], ys: A(439)[i], elv: A(440)[i], ci: A(441)[i],
+    elv2: A(442)[i], sams: A(444)[i], zref: A(445)[i], sref: A(446)[i] }));
+  emDraw();
+}
+function emDraw() {
+  const can = emCan(), opt = (list, cur) => list.map(([v, t]) => `<option value="${v}"${String(v) === String(cur) ? " selected" : ""}>${esc(t)}</option>`).join("");
+  const chs = [...Array(EM_N).keys()].map(i => [i, EM_SLOT[i]]);
+  const pf = $("emplantf"); pf.textContent = "";
+  for (const [id, label, kind, extra] of EM_PLANT) {
+    if (!byId[id]) continue;
+    const lab = document.createElement("label"); lab.textContent = label + " ";
+    let el;
+    if (kind === "bool") { el = document.createElement("input"); el.type = "checkbox"; el.checked = !!emPlantV[id]; el.onchange = () => { emPlantV[id] = +el.checked; }; }
+    else if (kind === "num") { el = document.createElement("input"); el.size = 8; el.value = emPlantV[id] ?? ""; el.oninput = () => { emPlantV[id] = el.value; }; }
+    else {
+      el = document.createElement("select");
+      const list = kind === "sel" ? extra : kind === "ch" ? chs : kind === "chfix" ? [[EM_NONE, "fixed value"], ...chs] : [[EM_NONE, "none"], ...chs];
+      el.innerHTML = opt(list, emPlantV[id]); el.onchange = () => { emPlantV[id] = +el.value; };
+    }
+    el.dataset.id = id; el.disabled = !can; lab.appendChild(el); pf.appendChild(lab);
+  }
+  const srcs = emSources();
+  $("emchtab").tBodies[0].replaceChildren(...emRows.map(r => {
+    const tr = document.createElement("tr"), list = srcs.some(([v]) => v === r.src) ? srcs : [...srcs, [r.src, `source ${r.src}`]];
+    tr.innerHTML = `<td>${esc(EM_SLOT[r.i])}</td><td><select data-f="src">${opt(list, r.src)}</select></td>` +
+      `<td><select data-f="unit">${opt(EM_UNITS.map((t, k) => [k, t]).slice(1), r.unit || 1)}</select></td>` +
+      `<td class="c"><input type="checkbox" data-f="wet"></td><td class="c"><input type="checkbox" data-f="ref"></td>` +
+      `<td><select data-f="add">${opt([[EM_NONE, "-"], ...chs.filter(([i]) => i !== r.i)], r.add)}</select></td>` +
+      `<td><input data-f="mm" size="9" list="emmm"></td><td><input data-f="a" size="6"></td><td><input data-f="b" size="6"></td>` +
+      `<td><input data-f="ys" size="7"></td><td><input data-f="elv" size="7"></td><td><input data-f="ci" size="4"></td>` +
+      `<td class="em2set"><input data-f="elv2" size="6"></td><td class="q3set"><input data-f="sams" size="6"></td><td class="q3set"><input data-f="zref" size="6"></td>` +
+      `<td class="q3set"><input data-f="sref" size="6"></td><td><button class="ghost">Remove</button></td>`;
+    for (const el of tr.querySelectorAll("input")) {
+      el.disabled = !can;
+      if (el.type === "checkbox") { el.checked = !!r[el.dataset.f]; el.onchange = () => { r[el.dataset.f] = +el.checked; }; }
+      else { el.value = r[el.dataset.f] ?? ""; el.oninput = () => { r[el.dataset.f] = el.value; }; }
+    }
+    for (const el of tr.querySelectorAll("select")) { el.disabled = !can; el.onchange = () => { r[el.dataset.f] = +el.value; }; }
+    const b = tr.querySelector("button"); b.disabled = !can; b.onclick = () => { r.removed = true; tr.style.display = "none"; emAddList(); };
+    return tr;
+  }));
+  emAddList();
+  for (const x of document.querySelectorAll("#emedit .em2set")) x.style.display = byId[442] ? "" : "none";
+  for (const x of document.querySelectorAll("#emedit .q3set")) x.style.display = byId[444] ? "" : "none";
+  for (const id of ["emadd", "emsave", "emreload", "emaddslot"]) $(id).disabled = !can;
+}
+function showQal3(used) {                             /* the charts' state, and recording a check (427 with 447/448) */
+  const v = emRes, A = id => v[id] || [];
+  const rows = byId[444] ? used.filter(i => A(444)[i] > 0) : [];
+  $("q3box").style.display = rows.length ? "" : "none";
+  if (!rows.length) return;
+  $("q3k").textContent = v[425] ?? 2; $("q3int").textContent = v[426] ?? 14;
+  const adm = level >= 2, can = emCan();
+  for (const x of document.querySelectorAll("#q3tab .q3adm")) x.style.display = adm ? "" : "none";
+  const tb = $("q3tab").tBodies[0];
+  if (tb.dataset.k === rows.join() && tb.contains(document.activeElement)) { q3Fill(tb, rows); return; }   /* don't redraw under someone typing */
+  tb.dataset.k = rows.join();
+  tb.replaceChildren(...rows.map(i => {
+    const tr = document.createElement("tr"); tr.dataset.ch = i;
+    tr.innerHTML = `<td>${esc(EM_SLOT[i])}</td><td></td><td class="val"></td><td class="val"></td><td class="c"></td><td></td>` +
+      (adm ? `<td><input size="7" data-f="z" aria-label="Zero reading"></td><td><input size="7" data-f="s" aria-label="Span reading"></td>` +
+             `<td><button data-f="rec">Record check</button> <button class="ghost" data-f="rst">Restart chart</button></td>` : "");
+    if (adm) {
+      for (const el of tr.querySelectorAll("input,button")) el.disabled = !can;
+      tr.querySelector("[data-f=rec]").onclick = () => q3Record(i, tr);
+      tr.querySelector("[data-f=rst]").onclick = () => q3Reset(i);
+    }
+    return tr;
+  }));
+  q3Fill(tb, rows);
+}
+function q3Fill(tb, rows) {
+  const v = emRes, A = id => v[id] || [];
+  rows.forEach((i, k) => {
+    const c = tb.rows[k].cells, st = A(479)[i] || 0, t = A(478)[i];
+    c[1].textContent = t ? new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") : "never";   /* the clock keeps local time as seconds since 1970 */
+    c[2].textContent = A(480)[i] ? emNum(A(476)[i]) : "-"; c[3].textContent = A(480)[i] ? emNum(A(477)[i]) : "-";
+    c[4].textContent = A(480)[i] ?? 0;
+    const words = Object.entries(Q3_ST).filter(([b]) => st & b).map(([, w]) => w);
+    c[5].textContent = words.join(", ") || "in control";
+    c[5].className = st & 24 ? "err" : st & 38 ? "warn" : "";
+  });
+}
+async function q3Record(i, tr) {
+  $("q3err").textContent = "";
+  const z = Number(tr.querySelector("[data-f=z]").value), sp = Number(tr.querySelector("[data-f=s]").value);
+  if (tr.querySelector("[data-f=z]").value === "" || tr.querySelector("[data-f=s]").value === "" || !Number.isFinite(z) || !Number.isFinite(sp)) {
+    $("q3err").textContent = `Enter both the zero and the span reading of ${EM_SLOT[i]}, as the analyser shows them`; return; }
+  try {
+    const w = [{ id: 447, o: i, v: z }, { id: 448, o: i, v: sp }];
+    await instWrite(w); await instSettled(w, () => paramsGet([447, 448]));
+    await instWrite([{ id: 427, v: i + 1 }]);
+    let res = null;
+    for (let t = 0; t < 20 && res === null; t++) {      /* the engine takes the request (427 back to 0) and says what became of it in 429 */
+      await new Promise(ok => setTimeout(ok, 250));
+      const g = await paramsGet([427, 429]);
+      if (!g[427]) res = g[429];
+    }
+    $("q3err").textContent = `${EM_SLOT[i]}: ` + (res === null ? "no answer yet, look again in a moment" : Q3_RES[res] || "result " + res);
+    $("q3err").style.color = res === 0 ? "var(--ok)" : "";
+    if (res === 0) for (const el of tr.querySelectorAll("input")) el.value = "";
+  } catch (e) { $("q3err").textContent = explain(e); }
+  pollEmis(true);
+}
+async function q3Reset(i) {
+  if (!confirm(`Start the QAL3 chart of ${EM_SLOT[i]} again (after maintenance or an adjustment)? The checks on it so far are cleared.`)) return;
+  $("q3err").textContent = "";
+  try { await instWrite([{ id: 428, v: i + 1 }]); $("q3err").textContent = `${EM_SLOT[i]}: chart started again`; $("q3err").style.color = ""; }
+  catch (e) { $("q3err").textContent = explain(e); }
+  pollEmis(true);
+}
+function emAddList() {
+  const taken = new Set(emRows.filter(r => !r.removed).map(r => r.i));
+  $("emaddslot").replaceChildren(...[...Array(EM_N).keys()].filter(i => !taken.has(i)).map(i => new Option(EM_SLOT[i], i)));
+}
+$("emadd").onclick = () => {
+  const i = +$("emaddslot").value; if (!Number.isInteger(i)) return;
+  const old = emRows.find(r => r.i === i);
+  if (old) { old.removed = false; emDraw(); return; }
+  const pct = [0, 1, 2, 11].includes(i), conc = i >= 3 && i <= 17;
+  emRows.push({ i, src: EM_NONE, unit: pct ? 2 : conc ? 1 : i === 18 ? 5 : 7, wet: 0, ref: conc ? 1 : 0, add: EM_NONE,
+    mm: { 3: 28.01, 4: 30.006, 5: 46.0055, 6: 46.0055, 7: 64.066, 8: 36.461, 9: 20.006, 10: 17.031, 12: 36.033, 13: 16.043, 14: 44.013, 15: 34.081 }[i] || 0,
+    a: 0, b: 0, ys: 0, elv: 0, ci: { 3: 10, 6: 20, 7: 20, 8: 40, 9: 40, 12: 30, 17: 30 }[i] || 0, elv2: i === 3 ? 150 : 0, sams: 0, zref: 0, sref: 0, isNew: true });
+  emDraw();
+};
+function emItems() {                                  /* what changed, as parameter writes */
+  const c = emCfg, w = [], num = (t, f) => { const v = Number(t); if (t === "" || t === null || !Number.isFinite(v)) throw new Error("value:" + f); return v; };
+  const same = (a, b) => typeof b === "number" ? Math.abs(Number(a) - b) <= 1e-6 * Math.max(1, Math.abs(b)) : Number(a) === +!!b;
+  for (const [id, label, kind] of EM_PLANT) {
+    if (!byId[id]) continue;
+    const v = kind === "num" ? num(emPlantV[id], label) : +emPlantV[id];
+    const d = byId[id];
+    if (kind === "num" && d.min !== undefined && (v < d.min || v > d.max)) throw new Error(`value:${label} (${d.min} to ${d.max})`);
+    if (!same(v, c[id])) w.push({ id, v });
+  }
+  for (const r of emRows) {
+    const i = r.i, A = id => (c[id] || [])[i];
+    const want = r.removed ? { src: EM_NONE, unit: 0 } : { src: r.src, unit: r.unit, wet: r.wet, ref: r.ref, add: r.add, mm: num(r.mm || 0, "molar mass of " + EM_SLOT[i]),
+      a: num(r.a || 0, "QAL2 a of " + EM_SLOT[i]), b: num(r.b || 0, "QAL2 b of " + EM_SLOT[i]), ys: num(r.ys || 0, "ys,max of " + EM_SLOT[i]),
+      elv: num(r.elv || 0, "ELV of " + EM_SLOT[i]), ci: num(r.ci || 0, "CI of " + EM_SLOT[i]) };
+    if (!r.removed) for (const [f, t] of Object.entries(EM_CHX)) if (byId[EM_CH[f]]) want[f] = num(r[f] || 0, t + " of " + EM_SLOT[i]);
+    if (!r.removed && want.unit === 1 && !(want.mm > 0)) throw new Error("value:molar mass of " + EM_SLOT[i] + " (a ppm reading needs it)");
+    for (const [f, v] of Object.entries(want)) if (byId[EM_CH[f]] && !same(v, A(EM_CH[f]))) w.push({ id: EM_CH[f], o: i, v });
+  }
+  return w;
+}
+$("emsave").onclick = async () => {
+  $("emerr").textContent = "";
+  try {
+    const w = emItems();
+    if (!w.length) { $("emerr").textContent = "No changes"; return; }
+    await instWrite(w);
+    await emLoad(await instSettled(w, () => paramsGet(emIds())));
+    $("emerr").textContent = `Saved (${w.length} change${w.length === 1 ? "" : "s"}). The periods in progress restart.`;
+    pollEmis(true);
+  } catch (e) { $("emerr").textContent = e.message.startsWith("value:") ? "Check the " + e.message.slice(6) : explain(e); }
+};
+$("emreload").onclick = () => { emCfg = null; emLoad(); };
+$("emop").onchange = async () => {
+  try { await instWrite([{ id: 422, v: $("emop").checked ? 1 : 0 }]); } catch (e) { $("emerr").textContent = explain(e); }
+  pollEmis(true);
+};
+TAB_KICK.emis = () => pollEmis(true);
 async function pollInst(once) {
   if (!once && bgSkip("inst")) { setTimeout(pollInst, 1000); return; }
   try {
@@ -2314,6 +2656,7 @@ $("exuse").onclick = () => {
   openInst(n, { fc: exPick.fc, addr: exPick.addr, type: exPick.fc <= 2 ? 0 : exPick.type, order: exPick.fc <= 2 ? 0 : exPick.order });
 };
 pollInst();
+pollEmis();
 
 /* ---- calibration records (CIP-18, /api/cal): channels, the one calibrating, history ---- */
 const calT = t => { if (!t) return "-"; const d = new Date(t * 1000), z = n => String(n).padStart(2, "0");   /* the unit's local time */

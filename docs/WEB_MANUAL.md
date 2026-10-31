@@ -74,6 +74,7 @@ log in with the level's password:
 | Service | Hours, self-test, service log, manufacturing test, board test, system health, Modbus |
 | I/O boards | Only when an I/O board is enabled |
 | Instruments | Analysers and other devices read over Modbus TCP (shown once one is set up; always at admin login) |
+| Emissions | Corrected, averaged and validated emission values, and their setup (shown once the engine is on; always at admin login) |
 | Event log | The newest events and the downloads |
 | Administration | admin login: passwords, clock, backup, firmware, email |
 | Alarm setup | admin login: what each alarm does |
@@ -184,6 +185,40 @@ as the unit ID.
 - **Profiles**: **Export profile** saves a device's settings and points as a JSON file, without its
   IP. **Import profile** loads one into the instrument being edited, so the same analyser model is
   set up in one step on the next site.
+
+## 11a. Emissions
+
+The emissions engine turns analyser readings into the values an emission limit is judged on
+(`docs/EMISSIONS_MATH.md`). The tab shows once the engine is on, and always at admin login.
+
+- **The table**: one row per channel. **Reading** is the analyser's own value; **Standard, dry** is
+  at the reference temperature and pressure, dry (mg/Nm3 for gases); **At reference O2** is
+  corrected to the reference oxygen; **Mass** is kg/h (needs a flow channel); then the average of
+  the period so far, the last completed average, the same after subtracting the confidence interval
+  (**Validated**), and the last day's average. Values carry the usual quality words. **Status** says
+  why a value is not plain: no QAL2 yet, above the calibration range, O2 too high, a missing input,
+  an average or a day discarded, a new QAL2 due.
+- **Plant operating** (operator login): averages count only while the plant is operating. The
+  application or the PLC normally sets it from the firing signal.
+- **Setup** (admin login, REMOTE): the reference conditions and diluent, where O2, water,
+  temperature, pressure and flow come from, the averaging period and validity rules, and the
+  confidence interval. Then one row per channel, in its Modbus standard-block slot: the source (the
+  product's measurement or an instrument point), the unit, wet or dry, whether it is corrected to
+  the reference O2, an added channel (NOx = NO + NO2), the molar mass (pick from the list), the QAL2
+  a and b, ys,max, the daily limit (ELV) and the confidence interval. **Save** writes only what you
+  changed. Any change restarts the periods in progress. If the engine rejects the setup, a red line
+  says which channel or that the plant settings don't fit together.
+- **10-minute averages** (waste incineration CO): with the second averaging period on, the table adds
+  the last validated 10-minute average and, for today and yesterday, how many there were and how
+  many were above the 10-minute ELV (amber when more than 5 %: 95 % must be within it).
+- **QAL3** (EN 14181): for each channel with an s_AMS, the zero and span checks go on a control chart.
+  The table shows the last check, the zero and span deviations, the number of checks and the state
+  (in control, warning, OUT OF CONTROL, check due). To record a check (admin login, REMOTE), enter the
+  zero and span readings as the analyser shows them and press **Record check**. After maintenance or
+  an adjustment, **Restart chart**. Each check is in the event log; a channel out of control or due
+  raises the QAL3 alarm.
+- For an NSW licence: confidence interval subtraction off, QAL2 b left at 0 ("no QAL2" is then
+  expected), period and validity as the licence says.
 
 ## 12. Administration (admin login)
 
