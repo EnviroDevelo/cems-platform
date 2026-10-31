@@ -195,6 +195,14 @@ void eve_line(eve_t *e, int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t
     put32(e, DL_END);
 }
 
+void eve_strip(eve_t *e, const int16_t *xy, unsigned n, uint16_t width) {
+    if (n < 2u || !room(e, 12u + 4u * n)) return;
+    put32(e, DL_LINE_WIDTH(width * 8u));
+    put32(e, DL_BEGIN(EVE_LINE_STRIP));
+    for (unsigned k = 0; k < n; ++k) put32(e, DL_VERTEX2F(xy[2u * k], xy[2u * k + 1u]));
+    put32(e, DL_END);
+}
+
 /* co-processor fault: read the message, reset the co-processor (BT81x guide 5.7) */
 static void recover(eve_t *e) {
     uint8_t msg[32];

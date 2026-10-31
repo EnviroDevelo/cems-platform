@@ -42,7 +42,11 @@ enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARM
        UI_FORCE,    /* Modbus force for commissioning: forceable values, force for 30 s, clear (modbus.h) */
        UI_DIA,      /* input alarms: the 24 digital-input alarm slots (plat_alarm.h) */
        UI_DIA_SLOT,     /* one input alarm slot: input, when, delay, latch, severity, label */
-       UI_TIERS };      /* alarm priority tiers: names, actions, counts (plat_alarm.h) */
+       UI_TIERS,        /* alarm priority tiers: names, actions, counts (plat_alarm.h) */
+       UI_TRENDS,       /* live trends: up to 4 values over the last 10 minutes */
+       UI_TR_PICK,      /* choose a value to trend */
+       UI_SERVICE,      /* service: self-test, board test, test record, service log, display test */
+       UI_INST };       /* third-party instruments on the I/O network: state, counters, values (inst.h), read only */
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

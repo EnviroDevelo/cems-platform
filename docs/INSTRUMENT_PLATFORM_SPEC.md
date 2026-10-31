@@ -321,7 +321,7 @@ The agreed state/action matrix is in section 7.
 |---|---|---|---|---|
 | CIP-23.1 | Controlled assignment of identity | S | Done | Serial token tool (D25) |
 | CIP-23.2 | Loading of firmware and defaults | S | Done | SWD for first programming (bank image with the bootloader, `mkfwimage.py --factory`); provisioning sequence `docs/SERVICE_PROCEDURES.md` 3 |
-| CIP-23.3 | Hardware test procedures | S | Partial | Board test at factory login (`plat_boardtest.h`, `POST /api/service/boardtest`): settings memory address/data per chip, RAM, RTC, image, log flash, both PHYs and links, display, supply, straps; saved as the test record (`test_selftest.c` t_boardtest). Web button and results: Service tab (PR #12); display part: touchscreen System > Display test with `HMI_BENCH_TEST.md` (PR #13). **Gap:** the DK run |
+| CIP-23.3 | Hardware test procedures | S | Partial | Board test at factory login (`plat_boardtest.h`, `POST /api/service/boardtest`): settings memory address/data per chip, RAM, RTC, image, log flash, both PHYs and links, display, supply, straps; saved as the test record (`test_selftest.c` t_boardtest). Web button and results: Service tab (PR #12); touchscreen System > Service: board test button and results, test record, service log entry, and the display test with `HMI_BENCH_TEST.md`. **Gap:** the DK run |
 | CIP-23.4 | Retained manufacturing test results | S | Done | Manufacturing test record in the FACTORY region (`POST /api/service/test`) |
 | CIP-23.5 | Factory-only settings protected | S | Done | `PF_FACTORY`, factory level, never restored from a user-level backup |
 

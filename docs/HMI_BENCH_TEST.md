@@ -47,7 +47,7 @@ Watch `plat_ui_bringup` in the debugger (`platform/os/plat_ui_task.c`):
 | 2.2 | The backlight comes on and the Home screen appears within 2 s | Picture shown | Backlight dark but `last_init` = 0: check BLVDD, and that REG_PWM_DUTY is not 0 (see 3.1) |
 | 2.3 | Current draw at 80 % brightness, then at 100 % | 3.3 V about 235 mA; 5 V up to about 400 mA at 100 % | Write the values down, because they size the core PCB's rails |
 
-## 3. Display test page (System > Display test)
+## 3. Display test page (System > Service > Display test)
 
 The status page lists what the BT817 reports. Write down every line.
 
