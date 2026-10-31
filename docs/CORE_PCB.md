@@ -577,7 +577,7 @@ and J17 plugs cannot pass; re-run the check then.
 | 4-20 mA loop wire shorted to its input or to 0 V | 30 mA current limiter per loop: shunts and AD4112 IIN pins stay in rating |
 | 24 V loop wire on the 5 V or 10 V sensor supply | SMAJ5.0A / SMAJ11A clamps while the 30 mA limiter carries the current |
 | Ribbon +24 V shorted at the breakout | F10 0.75 A PTC |
-| RJ45 cables swapped (client and I/O) | no damage, both are isolated. Port labels and colours. Firmware flags an I/O-node reply seen on the client port, or a client address on the I/O port |
+| RJ45 cables swapped (client and I/O) | no damage, both are isolated. Port labels and colours. Firmware (PR #40): a discovery probe on the client port; any I/O board answering raises alarm 25 NET_SWAPPED and closes Modbus TCP and the web on that port (also catches joined networks) |
 
 Still to check: the AL5809 30 mA option and its headroom on long loops, the AD4112 IIN abs max,
 the 107Z input current with the 1k series resistor, the CPC1014N short test, and the Phoenix
