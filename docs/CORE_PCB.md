@@ -219,6 +219,13 @@ board's -40 to 85 °C parts, sets the instrument's rating.
     1500 Vrms.
   - Each pair is routed as a 100 Ω differential pair, matched within 1 mm, with no vias,
     under 25 mm from the PHY to the MagJack, over unbroken ground.
+  - Placement: R35-R38 (49.9 Ω) within 5 mm of the PHY's TX/RX pins; R30 (RBIAS 12.1 kΩ)
+    at its pin with no other trace nearby; Y3 and C46/C47 next to XTAL1/2 over solid ground;
+    FB2/C40-C42 (VDDA) and FB3/C48/C49 (centre tap) at their pins.
+  - Why it matters: the ST DK, whose PHY shares a 25 MHz oscillator, loses 14-45 % of its
+    100 Mbit TX frames through some switches (31 Oct bench, firmware thread), and none at
+    10 Mbit. Prototype acceptance test: 0 % loss at 100 Mbit through three different
+    switches, including a cheap unmanaged one, and over a 100 m Cat5e drum.
   - The W5500 port has the same line rules. It has no auto-MDIX, but its peer (the I/O
     node's LAN8742A) does.
 - Under each MagJack: no copper on the line side except chassis; the two ports' chassis
