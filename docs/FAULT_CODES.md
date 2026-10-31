@@ -34,6 +34,7 @@ Active alarms are in the Modbus registers 10-25 (one bit per ID) and on `/api/al
 | 21 | `CAL_DUE` | warning | email, Modbus | Calibration due | A calibrated channel is past its calibration interval. Calibrate it (Calibration page or screen). |
 | 22 | `HW_REV` | warning | Modbus | Board revision differs from the factory record | The board's revision straps differ from the hardware revision in the factory record. Check that the core board was not swapped; update the record at factory login. |
 | 23 | `SELFTEST` | warning | email, Modbus | Start-up self-test failed: see System information | A start-up self-test failed (System information lists which). See docs/FAULT_CODES.md, self-test checks. |
+| 24 | `QAL3` | warning | email, Modbus | QAL3: analyser drift out of control or check due | An analyser's zero or span check (EN 14181 QAL3) is out of control, or a check is overdue. Maintain or adjust it, record a new check, then reset its chart. |
 | 30 | `DI_ALARM_1` | alarm | on after 2.0 s, Modbus | Input alarm 1: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
 | 31 | `DI_ALARM_2` | alarm | on after 2.0 s, Modbus | Input alarm 2: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
 | 32 | `DI_ALARM_3` | alarm | on after 2.0 s, Modbus | Input alarm 3: not used | A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input. |
@@ -139,6 +140,7 @@ Event log codes (`/api/log/events`, the event CSV). Codes from 100 are the produ
 | 29 | `selftest` | Self-test |
 | 30 | `force` | Modbus force |
 | 31 | `eth_speed` | Ethernet speed |
+| 32 | `qal3` | QAL3 check |
 
 ## Firmware update refusals
 

@@ -132,6 +132,7 @@ enum {
     ALARM_ID_CAL_DUE           = 21,  /* a channel's calibration is overdue (plat_cal.h, CIP-18) */
     ALARM_ID_HW_REV            = 22,  /* the board's revision straps disagree with the factory hw_rev (CIP-01.3) */
     ALARM_ID_SELFTEST          = 23,  /* a start-up self-test failed (plat_selftest.h, CIP-11.1) */
+    ALARM_ID_QAL3              = 24,  /* an analyser's EN 14181 QAL3 chart is out of control, or a check is due (emis_qal3.h) */
     ALARM_ID_DIA_FIRST         = 30,  /* 30..53: digital input alarm slot s = ID - 30 (below) */
 };
 

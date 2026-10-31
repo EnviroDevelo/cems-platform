@@ -227,6 +227,12 @@ enum {
     PARAM_ID_EMIS_CAL_EXT     = 421, /* valid calibration range: ys,max + this % of the ELV */
     PARAM_ID_EMIS_OPERATING   = 422, /* the plant is in its effective operating time (the application or a PLC writes it) */
     PARAM_ID_EMIS_CFG_ERROR   = 423, /* RO: 0, or the emis_check result (channel + 1; 33 = plant settings) */
+    PARAM_ID_EMIS_PERIOD2_S   = 424, /* second averaging period, s: 0 off, 600 (IED waste CO 10-minute averages) */
+    PARAM_ID_EMIS_Q3_K        = 425, /* QAL3 action limit, multiples of s_AMS (2) */
+    PARAM_ID_EMIS_Q3_INTERVAL = 426, /* QAL3: days between checks before one is due (14) */
+    PARAM_ID_EMIS_Q3_RECORD   = 427, /* QAL3 check entry: channel + 1 records readings 447[ch], 448[ch] (momentary) */
+    PARAM_ID_EMIS_Q3_RESET    = 428, /* channel + 1: the chart starts again after maintenance or adjustment (momentary) */
+    PARAM_ID_EMIS_Q3_RESULT   = 429, /* RO: the last entry's result (0 recorded, 1 bad channel, 2 no QAL3, 3 not a number, 4 no clock) */
     PARAM_ID_EMIS_SRC         = 430, /* [32] source: 0-199 measurement (plat_meas index), 200+p instrument point p, 255 none */
     PARAM_ID_EMIS_UNIT        = 431, /* [32] EMIS_U_* */
     PARAM_ID_EMIS_WET         = 432, /* [32] the reading is wet */
@@ -238,6 +244,12 @@ enum {
     PARAM_ID_EMIS_YS_MAX      = 439, /* [32] highest calibrated value in the QAL2, standard conditions */
     PARAM_ID_EMIS_ELV         = 440, /* [32] daily ELV, standard conditions, reference O2 */
     PARAM_ID_EMIS_CI_PCT      = 441, /* [32] 95 % confidence interval, % of the ELV */
+    PARAM_ID_EMIS_ELV2        = 442, /* [32] the second period's ELV (IED waste CO 10 min: 150), 0 = none */
+    PARAM_ID_EMIS_Q3_SAMS     = 444, /* [32] QAL3: s_AMS from the QAL1 certificate, the analyser's unit (0 = no QAL3) */
+    PARAM_ID_EMIS_Q3_ZERO_REF = 445, /* [32] zero gas value */
+    PARAM_ID_EMIS_Q3_SPAN_REF = 446, /* [32] span gas certified value */
+    PARAM_ID_EMIS_Q3_ZERO_RD  = 447, /* [32] the check's zero reading (entered, then 427) */
+    PARAM_ID_EMIS_Q3_SPAN_RD  = 448, /* [32] the check's span reading */
     PARAM_ID_EMIS_BANK_FIRST  = 450, /* 450 + b: RO [32] float, bank b = EMIS_B_* (raw, std, ref, mass, run, avg, val, day) */
     PARAM_ID_EMIS_Q_IN        = 460, /* RO [32] PLAT_Q_* of the raw reading */
     PARAM_ID_EMIS_Q_CALC      = 461, /* RO [32] of banks 1-2 */
@@ -249,7 +261,19 @@ enum {
     PARAM_ID_EMIS_DISCARDED   = 467, /* RO [32] short-term averages discarded today */
     PARAM_ID_EMIS_DAYS_INVALID = 468, /* RO [32] days invalid this year */
     PARAM_ID_EMIS_WEEKS_ABOVE = 469, /* RO [32] consecutive weeks above the valid calibration range */
+    PARAM_ID_EMIS_AVG2        = 470, /* RO [32] float: the last validated second-period average */
+    PARAM_ID_EMIS_Q_AVG2      = 471, /* RO [32] its quality */
+    PARAM_ID_EMIS_N2          = 472, /* RO [32] valid second-period averages today */
+    PARAM_ID_EMIS_N2_ABOVE    = 473, /* RO [32] of those, above the ELV 442 */
+    PARAM_ID_EMIS_N2_DAY      = 474, /* RO [32] the same for the last complete day */
+    PARAM_ID_EMIS_N2_ABOVE_DAY = 475,
+    PARAM_ID_EMIS_Q3_ZERO_DEV = 476, /* RO [32] float: last zero check reading - reference */
+    PARAM_ID_EMIS_Q3_SPAN_DEV = 477, /* RO [32] float */
+    PARAM_ID_EMIS_Q3_LAST     = 478, /* RO [32] clock of the last check, s since 1970 (0 = none) */
+    PARAM_ID_EMIS_Q3_STATUS   = 479, /* RO [32] EMIS_Q3_* bits */
+    PARAM_ID_EMIS_Q3_N        = 480, /* RO [32] checks on the chart since it started */
     PARAM_ID_EMIS_BLOCK       = 910, /* retained: periods in progress (emis_bind.c) */
+    PARAM_ID_EMIS_Q3_BLOCK    = 911, /* retained: the QAL3 charts */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };

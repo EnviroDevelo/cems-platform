@@ -22,6 +22,12 @@
  *   B_VAL    B_AVG validated: the confidence interval (ci_pct of the ELV) subtracted
  *   B_DAY    the last complete daily average of the validated short-term averages
  *
+ * A second, shorter period (period2_s, 0 = off; IED Annex VI Part 3 1.5 (c), Part 8 1.1 (d)(i)
+ * and 1.2: 10-minute CO averages, at least 95 % of them within the 10-minute ELV) gives
+ * every channel a validated (confidence interval subtracted) average of its own, emis_res.v2,
+ * with the same valid-time rule, and the day's counts of valid ones and of those above elv2.
+ * Its averages do not count towards the day's validity (that rule is for the half-hours).
+ *
  * Quality. Every calculated value carries one of the eight PLAT_Q_* codes: the worst of the
  * qualities of everything it was calculated from (emis_q_worst), or the engine's own verdict
  * (RANGE: O2 too high to correct, the water content impossible, the analyser out of its range;
@@ -102,6 +108,7 @@ typedef struct {
     float    elv[EMIS_CH_MAX];    /* daily emission limit, at standard conditions and reference O2 (0 = none) */
     float    ci_pct[EMIS_CH_MAX]; /* 95 % confidence interval as % of the daily ELV (IED: CO 10, SO2 20, NOx 20, dust 30,
                                      TOC 30, HCl 40, HF 40) */
+    float    elv2[EMIS_CH_MAX];   /* the second period's ELV (IED waste CO 10 min: 150 mg/Nm3), 0 = none */
 } emis_chs_t;
 
 /* The plant's configuration */
@@ -128,6 +135,7 @@ typedef struct {
     uint8_t  ci_subtract; /* subtract the confidence interval (IED: 1; NSW licences: 0) */
     uint8_t  clamp_zero;  /* a validated average below zero is reported as zero */
     float    cal_ext_pct; /* valid calibration range: 0 .. ys_max + this % of the ELV (10) */
+    uint32_t period2_s;   /* second averaging period, 0 = off (600: IED waste CO); must divide a day */
 } emis_cfg_t;
 
 /* One channel's input for a step */
@@ -152,6 +160,10 @@ typedef struct {
     uint16_t discarded_today;  /* short-term averages discarded so far today */
     uint16_t days_invalid;     /* days invalid this calendar year (IED: report when more than 10) */
     uint16_t weeks_above;      /* consecutive weeks with more than 5 % of averages above the valid range */
+    float    avg2;             /* the last validated second-period average */
+    uint8_t  q_avg2;
+    uint16_t n2_today, n2_above_today; /* valid second-period averages today, and those above elv2 */
+    uint16_t n2_day, n2_above_day;     /* the same for the last complete day */
 } emis_out_t;
 
 /* Defaults: IED waste incineration (11 % O2, half-hours, 5 discards a day, CI subtracted). */
@@ -180,6 +192,10 @@ typedef struct {
     uint16_t discarded[EMIS_CH_MAX];
     uint16_t days_invalid[EMIS_CH_MAX];
     uint16_t weeks_above[EMIS_CH_MAX];
+    float    v2[EMIS_CH_MAX];              /* the last validated second-period average */
+    uint8_t  q2[EMIS_CH_MAX];
+    uint16_t n2[EMIS_CH_MAX], n2_above[EMIS_CH_MAX]; /* today: valid ones, and those above elv2 */
+    uint16_t n2_day[EMIS_CH_MAX], n2_above_day[EMIS_CH_MAX]; /* the last complete day */
 } emis_res_t;
 extern emis_res_t emis_res;                /* written by emis_step, the scan task */
 
@@ -200,7 +216,7 @@ float   emis_co2_ref(float c, float co2_meas, float co2_ref);            /* c co
 /* Power cycles: the periods and the day in progress, the last averages and the counters, as one
  * block (EMIS_SAVE_SIZE bytes) for the retained store. emis_load refuses a block saved under
  * another configuration (cfg_crc) or layout; the engine then starts fresh. */
-#define EMIS_SAVE_SIZE (32u + EMIS_CH_MAX * 28u)
+#define EMIS_SAVE_SIZE (32u + EMIS_CH_MAX * 32u)
 void emis_save(void *buf, uint32_t cfg_crc);          /* buf: EMIS_SAVE_SIZE bytes, 8-byte aligned */
 bool emis_load(const void *buf, uint32_t cfg_crc);
 

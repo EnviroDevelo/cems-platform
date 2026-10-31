@@ -8,35 +8,35 @@ module, and before choosing hardware. Last run: 2026-10-31.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 537.0 KB | 1016.0 KB | 53 % | 479.0 KB |
-| RAM (STM32H573/H563, 640 KB) | 472.7 KB | 640.0 KB | 74 % | 167.3 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 561.0 KB | 1016.0 KB | 55 % | 455.0 KB |
+| RAM (STM32H573/H563, 640 KB) | 484.6 KB | 640.0 KB | 76 % | 155.4 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 33.4 | 0.1 |
-| Parameter table | 17.6 | 25.8 |
+| Scan engine, queue, watchdog, diag | 35.4 | 0.1 |
+| Parameter table | 23.6 | 25.8 |
 | Parameter store (FRAM) | 6.8 | 57.3 |
-| Event log / data logger | 15.1 | 6.8 |
-| Alarm manager, state, supply, calibration, service, self-test | 17.5 | 11.3 |
-| Emissions calculations (emis) | 8.4 | 4.4 |
+| Event log / data logger | 15.3 | 6.8 |
+| Alarm manager, state, supply, calibration, service, self-test | 17.8 | 11.3 |
+| Emissions calculations (emis) | 11.9 | 8.2 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 2.0 | 0.1 |
-| Firmware update, signatures, serial | 6.9 | 2.0 |
-| I/O boards (Ethernet/RS-485 master) | 19.1 | 2.5 |
+| Firmware update, signatures, serial | 7.0 | 2.0 |
+| I/O boards (Ethernet/RS-485 master) | 19.6 | 2.5 |
 | Modbus TCP | 13.3 | 18.1 |
-| Web server + page + logins | 90.5 | 33.5 |
+| Web server + page + logins | 93.6 | 33.5 |
 | HTTPS (tls.c + mbedTLS) | 96.7 | 83.4 |
-| Touch UI + EVE driver | 69.4 | 3.1 |
-| Task layer (FreeRTOS glue) | 3.3 | 99.7 |
+| Touch UI + EVE driver | 71.4 | 3.1 |
+| Task layer (FreeRTOS glue) | 3.4 | 99.7 |
 | Board support (BSP) | 1.6 | 0.8 |
 | lwIP + Ethernet driver | 55.0 | 39.4 |
 | FreeRTOS kernel + heap | 9.8 | 64.8 |
 | ST HAL + startup | 19.3 | 0.0 |
 | Application | 2.6 | 0.2 |
 | C library | 27.8 | 0.8 |
-| Other | 14.7 | 4.4 |
+| Other | 21.0 | 12.5 |
 | Main stack (interrupts, start-up) + C heap | 0.0 | 12.0 |
 
 

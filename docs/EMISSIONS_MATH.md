@@ -6,8 +6,9 @@ the evidence: every formula with its source, the order the steps run in, how qua
 through them, the averaging rules, and the test vectors that prove the code
 (`platform/core/emis.c`, `tests/test_emis.c`).
 
-Code: `platform/include/emis.h` (the engine, no parameters, no HAL), `platform/core/emis_bind.c`
-(parameters 400-469, the scan, retained block 910).
+Code: `platform/include/emis.h` (the engine, no parameters, no HAL), `platform/include/emis_qal3.h`
+(the QAL3 charts, section 9), `platform/core/emis_bind.c` (parameters 400-480, the scan, retained
+blocks 910 and 911).
 
 ## 1. Sources
 
@@ -19,6 +20,8 @@ Code: `platform/include/emis.h` (the engine, no parameters, no HAL), `platform/c
 | IED Annex VI Part 6 point 2.7 | Normalise with the Part 7 formula; for hazardous waste with gas cleaning, only when the measured O2 is above the standard | Text read |
 | IED Annex VI Part 7 | E_S = (21 - O_S) / (21 - O_M) x E_M | Text read (also the Walloon transposition) |
 | IED Annex VI Part 8 point 1.2 | Half-hour and 10-minute averages within the effective operating time, after subtracting the confidence interval; daily averages from those validated averages; at most 5 half-hours a day discarded; at most 10 days a year | Text read |
+| IED Annex VI Part 3 point 1.5 (c), Part 8 point 1.1 (d)(i) | CO for waste incineration: 150 mg/Nm3 as a 10-minute average; compliance when at least 95 % of all 10-minute averages in any 24-hour period are within it (a Member State may use 7 days) | Text read (legislation.gov.uk) |
+| EU ETS Guidance Document 7 (CEMS), section 3.3.3; EPA Ireland AG3 (2021), section 2.4 and FAQ 5.4 | QAL3: zero and span checks on control charts (Shewhart or CUSUM), drift and precision apart; Shewhart action limits at 2 s_AMS around the zero and span references (EN 14181 Annex C.1, as GD7 quotes it); example decision rules "three consecutive points beyond one of the action limits" and "eight consecutive points on the same side of the centre line"; at most 2 weeks between checks (weekly for CUSUM); span gas 80-100 % of the half-hour ELV | Text read (climate.ec.europa.eu, epa.ie). EN 14181 Annex C itself not read: **confirm against your copy** |
 | IED Annex V Part 3 points 7, 9, 10 | Large combustion plants: O2, T, p, H2O measured; CIs CO 10 %, SO2 20 %, NOx 20 %, dust 30 %; validated hourly averages after CI subtraction; a day with more than 3 invalid hours is invalid; more than 10 such days a year needs action | Text read |
 | IED Annex V Part 1 | Reference O2: 6 % solid fuels, 3 % liquid and gaseous fuels, 15 % gas turbines and engines | From the Directive; not re-read for this work |
 | EN 14181:2014 clause 6.4 | The QAL2 calibration function y = a + b x is found and applied in the AMS's measuring conditions; results are then taken to standard conditions | From the standard (not freely available); confirm against your copy |
@@ -104,8 +107,18 @@ while it was being collected; of a day, VALID or the worst reason among its disc
 
 - **Periods** are clock-aligned (local standard time, as the rest of the platform): 10, 30 or 60
   minutes (setting 416), one period for the whole plant. Waste incineration: 30 min; large
-  combustion plants: 60 min. The extra 10-minute CO averages of Annex VI Pt 8 1.1(d) need a second
-  period on one channel: not built yet (a follow-up if a waste plant needs it).
+  combustion plants: 60 min.
+- **Second period** (setting 424, 0 = off, 600 for waste plants): the 10-minute averages of Annex VI
+  Pt 3 1.5 (c) and Pt 8 1.1 (d)(i), for every channel, clock-aligned, within the operating time,
+  with the same valid-time rule (417) and the confidence interval subtracted (Pt 8 1.2: "the
+  half-hourly average values and the 10-minute averages shall be determined ... after having
+  subtracted the value of the confidence interval"). Results 470 (validated average) and 471
+  (quality); 472/473 count today's valid averages and those above the 10-minute ELV (442, CO 150),
+  474/475 the same for the last complete day. The 95 % rule is "in any 24-hour period": the engine
+  gives calendar-day counts; a rolling or 7-day evaluation is for the reporting system. A
+  discarded 10-minute average does not count against the day's validity (that rule, 418, is for
+  the half-hours). The 10-minute period in progress is not kept across a power cycle (today's
+  counts are).
 - **Effective operating time.** Only time when the plant is operating (parameter 422, written by
   the application from its "fuel/waste firing" signal, or by a PLC) counts. A period with no
   operating time has no average and is not a discard. A day with no operating time has no daily
@@ -151,6 +164,8 @@ while it was being collected; of a day, VALID or the worst reason among its disc
 | 13 | 10 min operating, all valid | kept: the rule is against operating time | t_short |
 | 14 | 5 half-hours lost: day valid (mean 35); 6 lost: invalid, counted; plant off all day: neither; LCP 4 hours lost: invalid | t_day |
 | 15 | ys,max 30, ELV 50: 36 flagged, 34 not; a week with 50 % of averages above: QAL2 review | t_cal_range |
+| 16 | 10-minute period, ELV 50, CI 10 %, 10-minute ELV 150: 10 min at 40 -> 35; at 160 -> 155, above; 4 of 10 min calibrating -> discarded (quality CAL), the half-hour kept; a day: 143 valid of 144, 1 above | t_period2 |
+| 17 | QAL3, s_AMS 1, k 2: zero 2.5: warning; three beyond +2 in a row: out of control (latched until reset); +2.5, -2.5, +2.5: not; 8 span readings at +0.4: out of control on the 8th; one at -3.1: out of control; due after 14 days; a new span gas starts the chart again | t_qal3 |
 
 Also proved: worst-of ranking, every input's quality reaching the right banks, over-range and NaN
 inputs, fixed H2O, O2 limit, "only above", CO2 reference, the clock (unset, stepped back, new
@@ -163,18 +178,19 @@ Plant: 400 enable, 401 T_ref K, 402 p_ref kPa, 403 diluent (0 none, 1 O2, 2 CO2)
 fixed), 409 H2O channel, 410 fixed H2O %, 411/412 T and p channels (255 = fixed values 413/414),
 415 flow channel, 416 period s, 417 min valid %, 418 max discards a day, 419 subtract CI, 420
 validated below zero as zero, 421 calibration range extension % of ELV, 422 plant operating
-(operator level, the application or a PLC writes it), 423 RO configuration error.
+(operator level, the application or a PLC writes it), 423 RO configuration error, 424 second
+period s (0 off, 600).
 
 Per channel (arrays of 32, index = Modbus standard-block slot): 430 source (0-199 a declared
 measurement, 200 + p instrument point p read over Modbus by the instrument poller, 255 none),
 431 unit (1 ppm, 2 %, 3 mg/m3 actual, 4 mg/m3 standard, 5 flow actual, 6 flow standard, 7 plain),
 432 wet, 433 O2-corrected, 434 added channel, 435 molar mass (times any factor), 437/438 QAL2 a and
-b, 439 ys,max, 440 daily ELV, 441 CI %. A channel with a unit but no source is configured but
+b, 439 ys,max, 440 daily ELV, 441 CI %, 442 10-minute ELV. A channel with a unit but no source is configured but
 unwired: its results are UNAVAILABLE.
 
 Results (read only, arrays of 32): 450-457 banks 0-7, 460-465 qualities (raw, calc, mass, average,
 day, running), 466 status bits, 467 averages discarded today, 468 days invalid this year, 469 weeks
-above the calibration range.
+above the calibration range, 470-475 the second period (section 5), 476-480 QAL3 (section 9).
 
 Status bits (466; bits 0-4 belong to the Modbus block: NE 107 and forced): 5 NO_QAL2, 6 ABOVE_CAL,
 7 OVER_RANGE, 8 O2_HIGH, 9 INPUT_MISSING, 10 AVG_INCOMPLETE, 11 DAY_INVALID, 12 CI_OFF, 13
@@ -196,20 +212,49 @@ FIXED_H2O, 14 BELOW_RANGE, 15 QAL2_REVIEW.
 - Non-detects are reported as "less than the limit of reporting", not zero (Approved Methods 5.4):
   for reporting tools, not the engine.
 
-## 9. Outside the engine
+## 9. QAL3 (emis_qal3.h)
 
-QAL1 (EN 15267 certification of the analysers), QAL3 drift and precision checks (CUSUM or Shewhart
-charts on zero and span), the annual surveillance test (AST), and the annual reports are not done
-here. The CORE keeps the calibration records (plat_cal.h) and the data log; a QAL3 chart can be
-added later on top of the calibration records if a site needs it.
+EN 14181 QAL3 keeps each analyser in control between QAL2s with regular zero and span checks
+plotted on control charts. The CORE keeps one Shewhart chart for zero and one for span per channel,
+apart, so drift at either end shows and the analyser can be adjusted (GD7 3.3.3, AG3 2.4).
+
+- **Settings** (admin, persisted; a change does not restart the averages): 444 s_AMS per channel,
+  from the analyser's QAL1 certificate, in its own unit (0 = no QAL3 for the channel); 445 zero gas
+  value; 446 span gas certified value (80-100 % of the half-hour ELV, AG3); 425 k, the action limit
+  in multiples of s_AMS (2: GD7); 426 days between checks before one is due (14: AG3 FAQ 5.4).
+- **A check** (touchscreen, web or the application): enter the zero and span readings (447, 448
+  for the channel; as read, in the analyser's unit, like bank 0), then write channel + 1 to 427.
+  429 says the result (0 recorded, 1 bad channel, 2 no QAL3 on it, 3 not a number, 4 clock not
+  set). Each check is in the event log ("QAL3 check": channel, zero and span deviations, outcome).
+- **Decision rules**, deviation d = reading - reference, L = k s_AMS:
+  WARN when |d| > L on the latest check; OUT OF CONTROL (latched) on 3 consecutive beyond the same
+  limit, 8 consecutive on the same side of the reference (GD7's examples), or one beyond 1.5 L
+  (3 s_AMS: the Shewhart 3-sigma line). DUE when no check for the interval, or none yet.
+- **After maintenance or an adjustment** write channel + 1 to 428: the chart starts again (logged).
+  A change of s_AMS or a reference gas value also starts it again.
+- **Results** (arrays of 32): 476/477 last zero and span deviation, 478 time of the last check, 479
+  status bits (1 on, 2 zero warning, 4 span warning, 8 zero out of control, 16 span out of control,
+  32 due), 480 checks on the chart.
+- **Alarm** 24 QAL3 (warning, emailed) while any channel is out of control or due.
+- **Kept** in retained block 911 (1 KB, written when a chart changes), on the 128 KB FRAM.
+
+CUSUM charts are not built: their parameters are in EN 14181 Annex C, which has not been read for
+this work. The Shewhart chart is the method GD7 works through and needs no extra settings.
+
+## 10. Outside the engine
+
+QAL1 (EN 15267 certification of the analysers), the annual surveillance test (AST), and the annual
+reports are not done here. The CORE keeps the calibration records (plat_cal.h), the QAL3 charts and
+the data log. VDI 4201-3 BasisR (starting and reporting reference material checks over Modbus) can
+feed the QAL3 entry once the standard is bought.
 
 Open points to confirm against a purchased copy of EN 14181:2014: the exact extension of the valid
-calibration range (setting 421, default 10 % of the ELV) and whether the weekly test counts
-short-term averages (this design) or individual values.
+calibration range (setting 421, default 10 % of the ELV), whether the weekly test counts
+short-term averages (this design) or individual values, and the Annex C chart rules (section 9).
 
-## 10. RAM
+## 11. RAM
 
-4.4 KB in all (docs/MEMORY.md): the settings 1.3 KB (the engine reads the channel settings in
-place, no copy), the results 1.5 KB (the parameter table points at the engine's own arrays), the
-accumulators 1 KB, the retained copy 0.9 KB. Measured with tools/check_target.sh: all eight
-configurations link (RAM 81 % in the fullest build).
+8.2 KB in all (docs/MEMORY.md): the averages 5 KB (settings 1.5 KB read in place, results 1.9 KB
+that the parameter table points at, accumulators 1.5 KB, retained copy 1 KB) and QAL3 3.2 KB
+(settings 0.4 KB, entry 0.3 KB, charts and results 1 KB, retained copy 1 KB). Measured with
+tools/check_target.sh: all ten configurations link (RAM 83 % in the fullest build).
