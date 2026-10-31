@@ -13,10 +13,10 @@
  *   capture of the tacho (TIM2 free running at 1 MHz, rising edge), PUMP_DIR PC6, PUMP_EN PC7.
  *   REL1_N PB4, REL2_N PB5: open drain, low = on.
  *
- * The gate (MAX6369, 30 ms window, AND GATE_EN): WDI is toggled on each pass in which the node
- * core says HEALTHY (FW-22), so it only moves while the core runs and its gate is open; the
- * iobus task passes every millisecond. GATE_EN follows the core's gate. A stuck task, or a core
- * that closed its gate, lets the hardware drop bank A, bank B, the pump and the relays.
+ * The gate (MAX6369, 30 ms window, latched, AND GATE_EN): WDI is toggled on each pass in which the
+ * node core says HEALTHY (FW-22); the iobus task passes every millisecond. GATE_EN arms the latch
+ * (low then high) while the core's gate is open. A stuck task, or a core that closed its gate, lets
+ * the hardware drop bank A, bank B, the pump and the relays (see the hooks below).
  *
  * The AD4112 (4-20 mA, level, mass flow; map 3) is node/drivers/drv_ad4112.c, built with
  * NODE_ANALOG 1 (check.mk sets it for this board); until its datasheet check it reports no
@@ -124,23 +124,57 @@ int port_fram_read(uint8_t offset, uint8_t *buf, uint8_t n) { (void)offset; (voi
 int port_fram_write(uint8_t offset, const uint8_t *buf, uint8_t n) { (void)offset; (void)buf; (void)n; return -1; }
 
 /* ---------------- plat_node.h hooks ---------------- */
-static uint32_t gate_fb_bad;            /* passes in a row with GATE_EN set but GATE_FB low */
+/* The gate latches (CORE PCB rev 0.2: the MAX6369's WDO only pulses for about 100 ms, so the board
+ * holds a trip in a latch). GATE_EN low then high arms it; GATE_FB reads high while the outputs
+ * may switch. After a trip GATE_FB stays low until the latch is armed again, and the outputs come
+ * back from the node core's next pass (it rewrites both banks every pass). WDI must move at least
+ * every 20 ms: it is toggled on every healthy pass (1 ms).
+ * Arming: only while the core asks for the gate AND is healthy; one pass low, then high. A trip
+ * (GATE_FB low for TRIP_PASSES while armed) waits REARM_MS before the next arm, so a fault that
+ * keeps tripping shows as a gate fault (bsp_node_gate_fault) instead of chattering the outputs. */
+#define SETTLE_PASSES 5u                 /* after arming, before GATE_FB counts */
+#define TRIP_PASSES   3u                 /* GATE_FB low this many passes in a row: a trip */
+#define REARM_MS      1000u
+
+static enum { G_OFF, G_LOW, G_ARMED } gstate;
+static uint32_t settle, fb_low, rearm_at, trips;
+static bool tripped;
+
+static void gate_en(bool v) { pin(GATE_EN_GPIO_Port, GATE_EN_Pin, v); }
 
 const node_hw_t *bsp_node_chips(void) {
     pin(CS_AI_GPIO_Port, CS_AI_Pin, true);
-    pin(GATE_EN_GPIO_Port, GATE_EN_Pin, false);
+    gate_en(false);
+    gstate = G_OFF;
     port_relays(0);
     port_pwm(0, 0, false);
     return drivers_hw();
 }
 
 void bsp_node_pass(bool healthy, bool gate) {
-    pin(GATE_EN_GPIO_Port, GATE_EN_Pin, gate);
     if (healthy) WDI_GPIO_Port->ODR ^= WDI_Pin;
-    gate_fb_bad = (gate && !in(GATE_FB_GPIO_Port, GATE_FB_Pin)) ? gate_fb_bad + 1u : 0u;
+    uint32_t now = bsp_ms();
+    if (!gate) { gate_en(false); gstate = G_OFF; return; }
+    switch (gstate) {
+    case G_OFF:                                         /* the low half of the arming edge */
+        gate_en(false);
+        if (healthy && (int32_t)(now - rearm_at) >= 0) gstate = G_LOW;
+        break;
+    case G_LOW:                                         /* the rising edge arms the latch */
+        gate_en(true); gstate = G_ARMED; settle = SETTLE_PASSES; fb_low = 0;
+        break;
+    case G_ARMED:
+        if (settle) { --settle; break; }
+        if (in(GATE_FB_GPIO_Port, GATE_FB_Pin)) { fb_low = 0; tripped = false; break; }
+        if (++fb_low >= TRIP_PASSES) {                  /* tripped: watchdog or the AND gate dropped it */
+            ++trips; tripped = true; gstate = G_OFF; gate_en(false); rearm_at = now + REARM_MS;
+        }
+        break;
+    }
 }
 
-/* the gate asked open but its read-back low for more than 50 passes (about 50 ms): the watchdog
- * or the AND gate has dropped the outputs (for the self-test and the service screen) */
-bool bsp_node_gate_fault(void) { return gate_fb_bad > 50u; }
+/* the gate tripped and has not yet been confirmed back (GATE_FB high after a re-arm): for the
+ * self-test and the service screen; trips counts every trip since start-up */
+bool bsp_node_gate_fault(void) { return tripped; }
+uint32_t bsp_node_gate_trips(void) { return trips; }
 #endif

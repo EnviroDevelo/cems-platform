@@ -289,9 +289,12 @@ read per cycle) and maps the eight values to `plat_io_in_t ai_raw` from `iobN_fi
 FAULT). The RO arrays `iobN_ai` and `iobN_ai_state` (374..379) and `/api/iob` `ai` show them.
 Boards on map 1 or 2 read 0 at 107 and are not asked.
 
-`node/drivers/drv_ad4112.c` reports "converter fault" on every input until `AD4112_CONFIRMED` is
-set after its datasheet check (register addresses, input codes, setup bits and the current-input
-scale are marked TO CHECK).
+`node/drivers/drv_ad4112.c` was checked against the AD4112 datasheet on 31 Oct 2026
+(IO_CHIPS_DATASHEET_CHECK.md): ID 0x30DX; voltage inputs on setup 0 (buffers on), current inputs
+on setup 1 (input buffers off, as the datasheet requires); sinc5+sinc1 at 49.68 SPS (50 Hz notch);
+internal 2.5 V reference with REF_EN (REFOUT feeds REF+ on the board). It reports "converter
+fault" on every input after a wrong ID, an SPI error or 1 s without a conversion on a channel, and
+re-configures once a second. `tests/node/test_drv.c` t_ad4112 runs it on a simulated chip.
 
 ## Decisions made here (change any of them)
 

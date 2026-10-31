@@ -44,6 +44,19 @@ typedef struct {
     uint32_t frames, wrong_mode, wrong_len;
 } sim_iso808a_t;
 
+/* AD4112 (analog inputs, CORE PCB): registers, the sequencer over the enabled channels, DATA with
+ * the status byte appended. The world: uA on IIN0-3, mV at the pins VIN0-5. */
+typedef struct {
+    uint32_t iin_ua[4];
+    int32_t  vin_mv[6];
+    bool     dead;
+    uint16_t id, adcmode, ifmode, ch[16], setup[8], filt[8];
+    unsigned next;               /* the next channel the sequencer converts */
+    bool     ready;
+    uint32_t frames, wrong_mode, resets, writes;
+} sim_ad4112_t;
+
+extern sim_ad4112_t sai;
 extern sim_iso2h823_t sa;
 extern sim_iso808a_t  sb;
 extern sim_iso1i813t_t si;

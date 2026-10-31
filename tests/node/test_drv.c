@@ -358,8 +358,75 @@ static void t_board_address(void)
     hp.fram_absent = false;
 }
 
+/* The AD4112 driver on a simulated chip: ID check, both setups (current inputs with the buffers
+ * off), 49.68 SPS filter, every channel scaled (uA, mV, ratiometric mass flow, supplies), a wrong
+ * ID or a dead chip reports no converter and keeps retrying once a second. */
+static void t_ad4112(void)
+{
+    sim_chips_reset();
+    node_ai_t a; memset(&a, 0, sizeof a);
+    for (int i = 0; i < 4; i++) sai.iin_ua[i] = 4000u + 4000u * (uint32_t)i;   /* 4, 8, 12, 16 mA */
+    sai.vin_mv[0] = 1000;            /* 4 mA on 250 ohm */
+    sai.vin_mv[1] = 5000;            /* 20 mA */
+    sai.vin_mv[2] = 2500;            /* level */
+    sai.vin_mv[3] = 4000;            /* mass flow, at a 9.8 V supply: 4081.6 mV corrected */
+    sai.vin_mv[4] = 4900;            /* 10 V supply through /2: 9.8 V */
+    sai.vin_mv[5] = 5010;
+    ad4112_poll(0, 0, &a);
+    CHECK_EQ(sai.wrong_mode, 0);
+    CHECK_EQ(sai.resets, 1);
+    CHECK_EQ(sai.setup[0], 0x1320);
+    CHECK_EQ(sai.setup[1], 0x1020);
+    CHECK_EQ(sai.filt[0], 0x0510);
+    CHECK_EQ(sai.filt[1], 0x0510);
+    CHECK_EQ(sai.ifmode, 0x0040);
+    CHECK_EQ(sai.adcmode, 0x8000);
+    CHECK_EQ(sai.ch[0], 0x8000 | 0x1000 | 0x1E8);
+    CHECK_EQ(sai.ch[3], 0x8000 | 0x1000 | 0x18B);
+    CHECK_EQ(sai.ch[4], 0x8000 | 0x010);
+    CHECK_EQ(sai.ch[9], 0x8000 | 0x0B0);
+    for (int k = 0; k < 30; k++) ad4112_poll(0, (uint32_t)k, &a);   /* three passes of the sequencer */
+    for (int i = 0; i < 4; i++) { CHECK(a.v[i] >= 3999u + 4000u * (uint32_t)i && a.v[i] <= 4001u + 4000u * (uint32_t)i); CHECK_EQ(a.st[i], IOB_TS_OK); }
+    CHECK(a.v[4] >= 3999 && a.v[4] <= 4001); CHECK_EQ(a.st[4], IOB_TS_OK);
+    CHECK(a.v[5] >= 19999 && a.v[5] <= 20001); CHECK_EQ(a.st[5], IOB_TS_OK);
+    CHECK(a.v[6] >= 2499 && a.v[6] <= 2501);
+    CHECK(a.v[7] >= 4081 && a.v[7] <= 4083); CHECK_EQ(a.st[7], IOB_TS_OK);
+    CHECK(a.supply[0] >= 9799 && a.supply[0] <= 9801);
+    CHECK(a.supply[1] >= 5009 && a.supply[1] <= 5011);
+    /* an open loop and an over-range loop */
+    sai.iin_ua[0] = 0; sai.iin_ua[1] = 23000;
+    for (int k = 0; k < 10; k++) ad4112_poll(0, 100u + (uint32_t)k, &a);
+    CHECK_EQ(a.st[0], IOB_TS_OPEN);
+    CHECK_EQ(a.st[1], IOB_TS_OVER);
+    /* nothing new (RDY high): nothing changes */
+    sai.ready = false; uint32_t f = sai.frames; uint16_t v6 = a.v[6];
+    ad4112_poll(0, 200, &a);
+    CHECK_EQ(sai.frames, f + 1);
+    CHECK_EQ(a.v[6], v6);
+    /* the wrong chip: no converter, nothing written, a retry a second later */
+    sim_chips_reset();
+    sai.id = 0x30E0u;
+    memset(&a, 0, sizeof a);
+    ad4112_poll(0, 0, &a);
+    for (int i = 0; i < 8; i++) CHECK_EQ(a.st[i], IOB_TS_ADC);
+    CHECK_EQ(sai.writes, 0);
+    ad4112_poll(0, 500, &a); CHECK_EQ(sai.resets, 1);
+    ad4112_poll(0, 1000, &a); CHECK_EQ(sai.resets, 2);
+    /* a chip that dies after start-up: the next pass fails over to IOB_TS_ADC */
+    sim_chips_reset();
+    memset(&a, 0, sizeof a);
+    ad4112_poll(0, 0, &a);
+    for (int k = 0; k < 10; k++) ad4112_poll(0, (uint32_t)k, &a);
+    sai.dead = true;                                             /* MISO floats high: RDY never low */
+    ad4112_poll(0, 500, &a);
+    CHECK_EQ(a.st[0], IOB_TS_OPEN);                              /* not yet stale (no loop current in this world) */
+    ad4112_poll(0, 1100, &a);
+    for (int i = 0; i < 8; i++) CHECK_EQ(a.st[i], IOB_TS_ADC);
+}
+
 void test_drv(void)
 {
+    t_ad4112();
     t_nvcfg();
     t_board_address();
     t_crc5();

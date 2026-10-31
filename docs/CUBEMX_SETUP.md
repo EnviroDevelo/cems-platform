@@ -285,11 +285,17 @@ the `CS_A` label the node falls back to the platform's pins (the Nucleo bench).
 - **TIM1** CH1 PWM on PA8 (AF1), prescaler set so the counter runs at **1 MHz**; leave it stopped (the
   firmware sets ARR, CCR1 and MOE). **TIM2** CH1 input capture on PA0 (AF1), rising edge, 1 MHz, 32-bit
   free running, no interrupt.
-- **The gate:** WDI toggles on every node pass in which the node core is healthy and its gate open,
-  and GATE_EN follows that gate, so the MAX6369 (30 ms) drops every output if the iobus task stalls.
-  To check on the first board: the MAX6369 start-up timeout against the time to the first command
-  (the gate must open once kicks start), and GATE_FB against GATE_EN (`bsp_node_gate_fault`).
-- **AD4112** (map 3 analog inputs): `node/drivers/drv_ad4112.c` with `NODE_ANALOG=1`; it reports "no converter" until `AD4112_CONFIRMED` is set after the datasheet check.
+- **The gate (latched):** WDI toggles on every node pass in which the node core is healthy (at
+  least every 20 ms is needed; the pass is 1 ms). The MAX6369's WDO only pulses (about 100 ms), so
+  the board latches a trip: GATE_EN low then high arms the latch, and GATE_FB reads high while the
+  outputs may switch. The firmware arms it while the core's gate is open and the core healthy; a
+  trip (GATE_FB low for 3 passes) waits 1 s before re-arming, and the node core rewrites both banks
+  every pass, so the outputs come back on their own. `bsp_node_gate_fault` is true from a trip
+  until GATE_FB is seen high again; `bsp_node_gate_trips` counts them.
+  To check on the first board: the MAX6369 start-up timeout against the time to the first command.
+- **AD4112** (map 3 analog inputs): `node/drivers/drv_ad4112.c` with `NODE_ANALOG=1`, checked against
+  its datasheet (`AD4112_CONFIRMED` 1). A wrong ID, an SPI error or a channel with no conversion for
+  1 s reports "no converter" on every input and re-configures once a second.
 
 ## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
 

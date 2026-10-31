@@ -149,6 +149,64 @@ static int iso808a_frame(uint8_t mode, const uint8_t *tx, uint8_t *rx, uint16_t 
     return 0;
 }
 
+sim_ad4112_t sai;
+
+static uint32_t ad4112_code(unsigned c)       /* bipolar, VREF 2.5 V: 2^23 x (Vmod / VREF + 1) */
+{
+    double vmod = c < 4u ? sai.iin_ua[c] * 1e-6 * 50.0                 /* internal 50 ohm */
+                         : sai.vin_mv[c - 4u] * 1e-3 * 0.1;            /* internal /10 divider */
+    double code = 8388608.0 * (vmod / 2.5 + 1.0);
+    return code < 0.0 ? 0u : code > 16777215.0 ? 0xFFFFFFu : (uint32_t)code;
+}
+
+/* channel register index -> the sim's input (IIN0-3 = 0-3, VIN0-5 = 4-9), by its input code */
+static int ad4112_input(uint16_t ch)
+{
+    static const uint16_t codes[10] = { 0x1E8u, 0x1C9u, 0x1AAu, 0x18Bu, 0x010u, 0x030u, 0x050u, 0x070u, 0x090u, 0x0B0u };
+    for (int i = 0; i < 10; i++) if ((ch & 0x3FFu) == codes[i]) return i;
+    return -1;
+}
+
+static int ad4112_frame(uint8_t mode, const uint8_t *tx, uint8_t *rx, uint16_t n)
+{
+    sai.frames++;
+    if (mode != 3) sai.wrong_mode++;
+    if (rx) memset(rx, 0xFF, n);
+    if (sai.dead || n == 0) return 0;
+    bool all_ones = true;
+    for (uint16_t i = 0; i < n; i++) if (tx[i] != 0xFFu) all_ones = false;
+    if (all_ones) { if (n >= 8) { sai.resets++; sai.adcmode = 0x2000u; sai.ifmode = 0; memset(sai.ch, 0, sizeof sai.ch); sai.ch[0] = 0x8001u; } return 0; }
+    uint8_t reg = tx[0] & 0x3Fu;
+    if (tx[0] & 0x40u) {
+        if (!rx) return 0;
+        if (reg == 0x07 && n >= 3) { rx[1] = (uint8_t)(sai.id >> 8); rx[2] = (uint8_t)sai.id; }
+        else if (reg == 0x00 && n >= 2) rx[1] = sai.ready ? 0x00u : 0x80u;
+        else if (reg == 0x04 && n >= 5) {
+            /* the sequencer: the next enabled channel */
+            for (unsigned k = 0; k < 16; k++) {
+                unsigned c = (sai.next + k) % 16u;
+                if (!(sai.ch[c] & 0x8000u)) continue;
+                int in = ad4112_input(sai.ch[c]);
+                uint32_t code = in >= 0 ? ad4112_code((unsigned)in) : 0x800000u;
+                rx[1] = (uint8_t)(code >> 16); rx[2] = (uint8_t)(code >> 8); rx[3] = (uint8_t)code;
+                rx[4] = (uint8_t)c;
+                sai.next = (c + 1u) % 16u;
+                break;
+            }
+        }
+        return 0;
+    }
+    if (n != 3) return 0;
+    uint16_t v = (uint16_t)(tx[1] << 8 | tx[2]);
+    sai.writes++;
+    if (reg == 0x01) sai.adcmode = v;
+    else if (reg == 0x02) sai.ifmode = v;
+    else if (reg >= 0x10 && reg <= 0x1F) sai.ch[reg - 0x10] = v;
+    else if (reg >= 0x20 && reg <= 0x27) sai.setup[reg - 0x20] = v;
+    else if (reg >= 0x28 && reg <= 0x2F) sai.filt[reg - 0x28] = v;
+    return 0;
+}
+
 static int spi(port_cs_t cs, uint8_t mode, const uint8_t *tx, uint8_t *rx, uint16_t n)
 {
     switch (cs) {
@@ -156,6 +214,7 @@ static int spi(port_cs_t cs, uint8_t mode, const uint8_t *tx, uint8_t *rx, uint1
     case PORT_CS_BANK_B: return iso808a_frame(mode, tx, rx, n);
     case PORT_CS_INPUTS: return iso1i813t_frame(mode, tx, rx, n);
     case PORT_CS_TEMP: return sim_ads_frame(mode, tx, rx, n);
+    case PORT_CS_AI: return ad4112_frame(mode, tx, rx, n);
     default: memset(rx, 0xFF, n); return 0;
     }
 }
@@ -165,6 +224,9 @@ void sim_chips_reset(void)
     memset(&sa, 0, sizeof sa);
     memset(&sb, 0, sizeof sb);
     memset(&si, 0, sizeof si);
+    memset(&sai, 0, sizeof sai);
+    sai.id = 0x30D4u; sai.ready = true; sai.adcmode = 0x2000u;
+    ad4112_reset_state();
     sim_ads_reset();
     memset(si.coefil, 0x1F, sizeof si.coefil);
     si.s_uv = si.s_w4s = si.s_te = true;          /* GLERR 06h, INTERR 06h after power-up */
