@@ -224,8 +224,12 @@ board's -40 to 85 °C parts, sets the instrument's rating.
     FB2/C40-C42 (VDDA) and FB3/C48/C49 (centre tap) at their pins.
   - Why it matters: the ST DK, whose PHY shares a 25 MHz oscillator, loses 14-45 % of its
     100 Mbit TX frames through some switches (31 Oct bench, firmware thread), and none at
-    10 Mbit. Prototype acceptance test: 0 % loss at 100 Mbit through three different
-    switches, including a cheap unmanaged one, and over a 100 m Cat5e drum.
+    10 Mbit. **Prototype acceptance test (flagged by Gary, 31 Oct):** 1000 × 1472-byte pings
+    plus page loads, 0 % loss at 100 Mbit, through three different switches (including a cheap
+    unmanaged one, and Gary's bench switch that fails with the DK) and over a 100 m Cat5e
+    drum. The link must stay at 100 Mbit: the firmware's automatic 10 Mbit fallback must not
+    trigger. If it fails, check the PHY clock (Y3 on MCO or a probe), the TX pair layout and
+    the MagJack.
   - The W5500 port has the same line rules. It has no auto-MDIX, but its peer (the I/O
     node's LAN8742A) does.
 - Under each MagJack: no copper on the line side except chassis; the two ports' chassis
