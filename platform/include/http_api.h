@@ -40,6 +40,10 @@
  *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (tech/factory level)
  *   POST /api/fw/activate  restart on the staged image (tech/factory level); it confirms itself after a
  *                          healthy trial, or the unit rolls back
+ *   GET  /api/inst         third-party instruments (inst.h): state and statistics of each, value, quality
+ *                          and raw bits of each point in use (the settings are parameters 500-621)
+ *   POST /api/inst/explore ip=..&port=502&unit=1&fc=3&addr=0&count=10 (admin): read registers once
+ *   GET  /api/inst/explore the last explorer read: result, raw bytes as hex, the words
  *
  * Every POST must carry the header "X-CEMS: 1" (a page from another site cannot
  * add it without the browser asking first), and writes need a session cookie.

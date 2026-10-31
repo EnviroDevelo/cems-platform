@@ -1,6 +1,7 @@
 /* w5500_sim.c - see w5500_sim.h */
 #include <string.h>
 #include "w5500_sim.h"
+#include "inst_sim.h"
 #include "iob_net.h"
 
 #define RD16(p) ((uint16_t)((p)[0] << 8 | (p)[1]))
@@ -180,11 +181,19 @@ void w5500_sim_init(w5500_sim_t *c) {
 /* ---------------- backend: the simulated I/O network ---------------- */
 static void lk(w5500_sim_t *c, bool on) { if (c->lock) c->lock(on); }
 
+static inst_sim_t *inst_at(iob_simnet_t *net, uint32_t ip, uint16_t port) {
+    for (unsigned i = 0; i < net->n_inst; ++i)
+        if (net->inst[i] && net->inst[i]->ip == ip && net->inst[i]->port == port) return net->inst[i];
+    return NULL;
+}
+
 static bool net_connect(w5500_sim_t *c, uint8_t s, uint32_t ip, uint16_t port) {
     (void)s;
     iob_simnet_t *net = (iob_simnet_t *)c->ctx;
     bool ok = false;
     lk(c, true);
+    inst_sim_t *in = inst_at(net, ip, port);
+    if (in) { ok = !in->refuse; lk(c, false); return ok; }
     for (unsigned i = 0; i < net->n && port == IOB_TCP_PORT; ++i) {
         const iob_node_t *nd = net->nodes[i];
         if (nd->powered && nd->ip && nd->ip == ip && (!nd->master_ip || nd->master_ip == w5500_sim_ip(c))) ok = true;
@@ -196,6 +205,19 @@ static bool net_connect(w5500_sim_t *c, uint8_t s, uint32_t ip, uint16_t port) {
 static void net_tcp(w5500_sim_t *c, uint8_t s, const uint8_t *d, uint16_t n) {
     iob_simnet_t *net = (iob_simnet_t *)c->ctx;
     int len;
+    lk(c, true);
+    inst_sim_t *in = inst_at(net, RD32(&c->sreg[s][W5500_Sn_DIPR]), RD16(&c->sreg[s][W5500_Sn_DPORT]));
+    if (in) {                                   /* an instrument: Modbus TCP as it is */
+        while (n && (len = iob_mbap_complete(d, n)) > 0) {
+            uint8_t rep[IOB_MBAP_MAX];
+            uint16_t r = inst_sim_serve(in, d, (uint16_t)len, rep, sizeof rep);
+            d += len; n = (uint16_t)(n - len);
+            if (r) w5500_sim_rx_push(c, s, rep, r);
+        }
+        lk(c, false);
+        return;
+    }
+    lk(c, false);
     while (n && (len = iob_mbap_complete(d, n)) > 0) {
         uint8_t rtu[IOB_MBAP_MAX], rep[IOB_MBAP_MAX], back[IOB_MBAP_MAX];
         uint16_t tid;

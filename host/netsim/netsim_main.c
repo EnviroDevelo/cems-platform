@@ -48,6 +48,9 @@
 #include "iob_tcp.h"
 #include "iob_w5500.h"
 #include "w5500_sim.h"
+#include "inst.h"
+#include "inst_w5500.h"
+#include "inst_sim.h"
 #include <math.h>
 
 /* ---------------- critical sections ---------------- */
@@ -125,6 +128,11 @@ static iob_tcp_t    realnet;
 /* the I/O port (iob_link 2, the default): a simulated W5500 in front of the same simulated network */
 static w5500_sim_t  iochip;
 static iob_w5500_t  ioport;
+/* a simulated gas analyser on the I/O network (inst.h): 192.168.1.70, unit 1. Holding 0-1 O2 %
+ * (f32, CDAB), 2-3 CO mg/m3 (f32, CDAB), 10 status (bit 0 fault, 1 maintenance, 2 calibration);
+ * input 0 the cell temperature (i16, 0.1 degC). Console: "analyser status <n>", "analyser off|on". */
+static inst_w5500_t inst_io;
+static inst_sim_t   analyser;
 static void io_lock(bool on) { if (on) plat_host_crit_enter(); else plat_host_crit_exit(); }
 static void io_wait(w5500_bus_t *b, uint32_t ms) { (void)b; struct timespec t = { 0, (long)ms * 1000000L }; nanosleep(&t, NULL); }
 static uint16_t locked_net_xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, uint16_t cap, uint32_t t) {
@@ -181,6 +189,10 @@ static void eth_init(void) {
     iob_w5500_mac(uid, mac);
     iob_w5500_init(&ioport, &iochip.bus, mac);
     iob_init_ioport(&ioport.port, &ioport.disc);
+    inst_sim_init(&analyser, 0xC0A80146u, 1);
+    simnet.inst[simnet.n_inst++] = &analyser;
+    inst_w5500_init(&inst_io, &ioport);
+    inst_init(&inst_io.net);
 }
 
 /* FRAM: RAM image written through to a file */
@@ -310,6 +322,13 @@ static void *iobus_thread(void *a) {
         simnode[0].inputs = (uint8_t)(((bsp_ms() / 1000u) % 12u) < 8u ? 0x01u : 0x00u) | (simnode[0].inputs & 0xFEu);
         plat_host_crit_exit();
         iob_cycle(bsp_ms());
+        plat_host_crit_enter();
+        float s = (float)(bsp_ms() % 60000u) / 60000.0f;
+        inst_sim_put_f32(analyser.holding, 0, 7.5f + 0.5f * s, INST_O_CDAB);
+        inst_sim_put_f32(analyser.holding, 2, 12.0f + 4.0f * s, INST_O_CDAB);
+        analyser.input[0] = (uint16_t)(int16_t)(450 + (int)(10.0f * s));
+        plat_host_crit_exit();
+        inst_cycle(bsp_ms());
     }
     return NULL;
 }
@@ -366,6 +385,15 @@ static void *console_thread(void *a) {
         else if (!strncmp(line, "fwyes", 5)) { fw_local_answer(true, 0); continue; }   /* the touchscreen's answer */
         else if (!strncmp(line, "fwno", 4)) { fw_local_answer(false, 0); continue; }
         else if (!strncmp(line, "node ", 5)) { if (!node_cmd(line)) fprintf(stderr, "node: ?\n"); continue; }
+        else if (!strncmp(line, "analyser ", 9)) {
+            unsigned v;
+            plat_host_crit_enter();
+            if (sscanf(line, "analyser status %i", (int *)&v) == 1) analyser.holding[10] = (uint16_t)v;
+            else if (!strncmp(line + 9, "off", 3)) analyser.silent = true;
+            else if (!strncmp(line + 9, "on", 2)) analyser.silent = false;
+            plat_host_crit_exit();
+            continue;
+        }
         else if (!strncmp(line, "local", 5)) { val.u = 0; e = param_post(PARAM_ID_CTRL_MODE, PLAT_VAL_U32, val, PLAT_SRC_LOCAL, PLAT_LVL_OPERATOR); }
         else if (sscanf(line, "set %u %ld", &id, &v) == 2) { val.i = (int32_t)v; e = param_post((uint16_t)id, PLAT_VAL_I32, val, PLAT_SRC_LOCAL, PLAT_LVL_FACTORY); }
         else continue;

@@ -1,6 +1,6 @@
 /* iob_w5500.h - the I/O bus on the I/O port: the Modbus TCP client and the discovery socket the
  * master needs (iob_port_t, iob_dgram_t; the protocol is in iob_net.h), on the W5500's hardware
- * sockets (w5500.h). Sockets 0-2 are the boards' connections, socket 3 discovery; 4-7 stay free.
+ * sockets (w5500.h). Sockets 0-2 are the boards' connections, socket 3 discovery; 4-7 belong to the instruments (inst_w5500.h).
  *
  * Same behaviour as iob_tcp.c on lwIP: a connection opens on first use and is opened again after a
  * failure; a late reply to an earlier request is dropped. On top of that it keeps the chip itself:
@@ -37,5 +37,9 @@ void iob_w5500_init(iob_w5500_t *t, w5500_bus_t *bus, const uint8_t mac[6]);
 /* The I/O port's MAC from the chip's 96-bit unique ID: the main port's (locally administered,
  * plat_net_lwip.c, D10) with bit 1 of the last byte flipped, so the two never collide. */
 void iob_w5500_mac(const uint8_t uid[12], uint8_t mac[6]);
+/* The chip set up with the current I/O port settings (set up again at most once a second while
+ * it does not answer); false while it does not answer. For the instrument poller (inst_w5500.h),
+ * which shares the chip on sockets 4-7. iobus task only. */
+bool iob_w5500_ready(iob_w5500_t *t);
 
 #endif

@@ -18,6 +18,7 @@
 #include "w5500_sim.h"
 #include "bsp_host.h"
 #include "iobus.h"
+#include "inst.h"
 #include "iob_node_sim.h"
 #include "http_server.h"
 #include "plat_net.h"
@@ -346,6 +347,7 @@ static void t_api(void) {
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 403);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 403);   /* operator session */
     CHECK_EQ(call("POST", "/api/iob/find", "addr=246", true), 403);              /* operator session */
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70", true), 403);    /* operator session */
     CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 403);
     CHECK_EQ(call("POST", "/api/login", "level=admin&password=2222", true), 200);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 200);
@@ -366,6 +368,19 @@ static void t_api(void) {
     CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1", true), 400);
     CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1&ref=20.5", true), 409); CHECK(has("no reading"));
     CHECK_EQ(call("GET", "/api/iob", NULL, false), 200); CHECK(has("\"temps\":["));
+    /* third-party instruments (inst.h): the status list, and the register explorer queued for the bus task */
+    inst_reset();
+    CHECK_EQ(call("GET", "/api/inst", NULL, false), 200);
+    CHECK(has("\"instruments\":[{\"n\":1,")); CHECK(has("\"points\":[]"));
+    CHECK_EQ(call("POST", "/api/inst/explore", "port=502", true), 400);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&fc=6", true), 400);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&count=x", true), 400);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&fc=3&count=126", true), 409);   /* more registers than a read takes */
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&unit=1&fc=4&addr=10&count=4", true), 202);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70", true), 409);
+    CHECK_EQ(call("GET", "/api/inst/explore", NULL, false), 200);
+    CHECK(has("\"busy\":true")); CHECK(has("\"ip\":\"192.168.1.70\"")); CHECK(has("\"fc\":4")); CHECK(has("\"count\":4"));
+    inst_reset();
     /* on Ethernet: list the boards on the network, give one a board slot's IP and address */
     {
         static iob_simnet_t net; static iob_node_t nd;
