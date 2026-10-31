@@ -354,6 +354,20 @@ netsim's simulated analyser (22 checks: explorer, find, pick, save, live value, 
 maintenance, export, import into a second instrument, viewer view); without the firmware it only
 checks the tab stays hidden. Screenshot: `docs/web_instruments.png`.
 
+**Emissions tab** (emissions engine, `docs/EMISSIONS_MATH.md`, parameters 400-469): shown when parameter
+400 exists and the engine is on, and always at admin login. Results poll every 2 s (`/api/values` for
+450-469 with 400, 416, 422, 423, 430, 431, 433): per configured channel the banks RAW, STD, REF (only
+when O2-corrected), MASS (concentrations), RUN, AVG, VAL and DAY with their qualities (460-465 by
+plat_state code), discards today (467), and the status bits (466) as words plus days invalid (468)
+and weeks above the calibration range (469). 423 non-zero shows which channel (1-32) or the plant
+settings (33) the engine rejected. The operator box writes 422. The setup (admin, REMOTE) reads the
+plant settings and the channel arrays, writes only the changed elements six per request and waits
+for the read-back; a ppm channel needs a molar mass and plant numbers must be in their parameter
+range before anything is sent. A new row gets the slot's usual unit, molar mass, O2 reference and the
+IED confidence interval. Sources: the declared measurements (the parameters marked `q`, in table
+order, or by a parameter's `meas` index when the firmware gives it) and instrument points 200 + p
+named from 550 + p. Test: `tests/integration/emis_web_test.py` (16 checks against netsim's engine).
+
 **Alarm priority tiers** (Alarm setup tab, admin; firmware PR #19): shown when
 `/api/alarms/config` has `tiers`. The tiers table writes the names (90-94, whole text, empty for the
 standard name) and the per-tier actions (53, AR_SET | bits, 0 for the default) and shows the
