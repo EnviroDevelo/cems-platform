@@ -674,6 +674,7 @@ Platform alarms (always present; the application doesn't define them):
 | 8 | DISPLAY_FAULT (warning) | the touchscreen stopped responding for 5 s |
 | 10 | NOTIFY_FAIL (warning) | an alarm email failed three times (clears at the next email that goes through) |
 | 11 | RESOURCE_LOW (warning, latched) | heap or a task stack nearly used up (5h) |
+| 25 | NET_SWAPPED (fault) | with the boards on the I/O port, I/O boards answer a FIND on the client port: the RJ45s are swapped or the networks joined. Modbus TCP and the web close until two probes 10 s apart find none (`iobus.h` `iob_net_swapped`) |
 
 Costs: 4.1 KB of flash and 2.7 KB of RAM for up to 96 alarms (`docs/MEMORY.md`); the
 scan spends a few microseconds per alarm.

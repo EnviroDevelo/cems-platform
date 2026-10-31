@@ -8,25 +8,25 @@ module, and before choosing hardware. Last run: 2026-10-31.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 591.1 KB | 1016.0 KB | 58 % | 424.9 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 592.2 KB | 1016.0 KB | 58 % | 423.8 KB |
 | RAM (STM32H573/H563, 640 KB) | 487.9 KB | 640.0 KB | 76 % | 152.1 KB |
 
 ## By module (KB)
 
 | Module | Flash | RAM |
 |---|---|---|
-| Scan engine, queue, watchdog, diag | 38.8 | 0.1 |
+| Scan engine, queue, watchdog, diag | 39.1 | 0.1 |
 | Parameter table | 23.9 | 25.8 |
 | Parameter store (FRAM) | 6.8 | 57.3 |
 | Event log / data logger | 15.3 | 6.8 |
-| Alarm manager, state, supply, calibration, service, self-test | 17.8 | 11.3 |
+| Alarm manager, state, supply, calibration, service, self-test | 18.0 | 11.3 |
 | Emissions calculations (emis) | 11.9 | 8.2 |
 | Alarm email (SMTP client) | 6.2 | 2.2 |
 | Clock + SNTP | 2.0 | 0.1 |
 | Firmware update, signatures, serial | 6.9 | 2.0 |
-| I/O boards (Ethernet/RS-485 master) | 20.3 | 2.8 |
+| I/O boards (Ethernet/RS-485 master) | 20.9 | 2.8 |
 | Modbus TCP | 18.1 | 18.1 |
-| Web server + page + logins | 101.2 | 33.5 |
+| Web server + page + logins | 101.3 | 33.5 |
 | HTTPS (tls.c + mbedTLS) | 96.6 | 83.4 |
 | Touch UI + EVE driver | 84.4 | 6.1 |
 | Task layer (FreeRTOS glue) | 3.4 | 99.7 |

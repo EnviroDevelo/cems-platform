@@ -18,6 +18,7 @@
 
 static iob_simbus_t bus;
 static iob_simnet_t net;
+static iob_simnet_t plant;              /* the client port's network when the boards are on the I/O port: no boards */
 static iob_node_t n1, n2, n3;
 static w5500_sim_t chip;                /* the I/O port: a simulated W5500 on the same simulated network */
 static iob_w5500_t io;
@@ -44,7 +45,8 @@ static void setup(void) {
     static const uint8_t mac[6] = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x57 };
     iob_w5500_init(&io, &chip.bus, mac);
     iob_init(&bus.port);
-    iob_init_eth(&net.port, &net.disc);
+    iob_simnet_init(&plant, SUP_IP);
+    iob_init_eth(cur_link == IOB_LINK_IOPORT ? &plant.port : &net.port, cur_link == IOB_LINK_IOPORT ? &plant.disc : &net.disc);
     iob_init_ioport(&io.port, &io.disc);
     iob_link = cur_link;
     iob_port_ip = SUP_IP;
@@ -856,6 +858,43 @@ static void t_link_change(void) {
     CHECK_EQ(view(0).state, IOB_S_RUN);
 }
 
+/* The cable-swap guard: with the boards on the I/O port, I/O boards answering a FIND on the client
+ * port raise NET_SWAPPED; two clean probes clear it; with the boards on the client port it is off. */
+static void t_swap_guard(void) {
+    cur_link = IOB_LINK_IOPORT;
+    setup();
+    iob_tags[0].enable = true;
+    run(PLAT_IOB_SWAP_FIRST_MS + 1000u, true);
+    CHECK(!iob_net_swapped);                    /* the client port's network has no boards */
+    CHECK_EQ(plant.datagrams, 1u);              /* one FIND at FIRST_MS */
+    CHECK(!alarm_on(ALARM_ID_NET_SWAPPED));
+    run(PLAT_IOB_SWAP_FAST_MS * 2u, true);
+    CHECK_EQ(plant.datagrams, 1u);              /* the next one only after SLOW_MS */
+    /* the cables swapped: the client port now reaches the boards */
+    iob_init_eth(&net.port, &net.disc);
+    uint32_t d0 = net.datagrams;
+    run(PLAT_IOB_SWAP_SLOW_MS, true);
+    CHECK(net.datagrams > d0);
+    CHECK(iob_net_swapped);
+    CHECK(alarm_on(ALARM_ID_NET_SWAPPED));
+    CHECK_EQ(view(0).state, IOB_S_RUN);         /* the I/O port itself still works in this world */
+    /* swapped back: two clean probes FAST_MS apart clear it */
+    iob_init_eth(&plant.port, &plant.disc);
+    run(PLAT_IOB_SWAP_FAST_MS + 500u, true);
+    CHECK(iob_net_swapped);                     /* one clean probe is not enough */
+    run(PLAT_IOB_SWAP_FAST_MS, true);
+    CHECK(!iob_net_swapped);
+    run(5000, true);
+    CHECK(!alarm_on(ALARM_ID_NET_SWAPPED));
+    /* the boards on the client port (iob_link 1): I/O traffic there is expected, the guard is off */
+    iob_init_eth(&net.port, &net.disc);
+    iob_link = IOB_LINK_ETH;
+    d0 = net.datagrams;
+    run(PLAT_IOB_SWAP_SLOW_MS + 1000u, true);
+    CHECK(!iob_net_swapped);
+    CHECK_EQ(net.datagrams, d0);
+}
+
 /* map 2: temperatures (settings to the board, calibration, channel states, the alarm) and the pump PWM */
 static void t_temps_and_pwm(void) {
     setup();
@@ -1021,6 +1060,7 @@ void test_iobus_all(void) {
     RUN(t_eth_commission);
     RUN(t_eth_ip_change);
     RUN(t_link_change);
+    RUN(t_swap_guard);
     iob_reset();
     memset(iob_tags, 0, sizeof iob_tags);
     param_set_defaults(PARAM_ALL);

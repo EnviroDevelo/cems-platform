@@ -113,6 +113,7 @@ GET /api/info .modbus.refused_ip number
 GET /api/info .modbus.requests number
 GET /api/info .modbus.writes_queued number
 GET /api/info .mode string
+GET /api/info .net_swapped bool
 GET /api/info .product string
 GET /api/info .run_hours number
 GET /api/info .scan.late_starts number

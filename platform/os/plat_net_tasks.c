@@ -13,6 +13,7 @@
 #include "param_store.h"
 #include "plat_role.h"
 #include "tls.h"
+#include "iobus.h"
 
 bool plat_net_ready(void);
 
@@ -29,8 +30,14 @@ void plat_modbus_task_body(void) {
     static mbtcp_server_t s;
     if (plat_role() == PLAT_ROLE_NODE) node_idle(PLAT_TASK_MODBUS);
     wait_net(PLAT_TASK_MODBUS);
-    while (mbtcp_open(&s, PLAT_MODBUS_PORT) != 0) { plat_checkin(PLAT_TASK_MODBUS); vTaskDelay(pdMS_TO_TICKS(1000)); }
+    s.lfd = -1;
     for (;;) {
+        if (iob_net_swapped) {                       /* the client port is on the I/O network: serve nothing there */
+            if (s.lfd >= 0) mbtcp_close_all(&s);
+            plat_checkin(PLAT_TASK_MODBUS); vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+        if (s.lfd < 0 && mbtcp_open(&s, PLAT_MODBUS_PORT) != 0) { plat_checkin(PLAT_TASK_MODBUS); vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
         mbtcp_poll(&s, 100);
         plat_checkin(PLAT_TASK_MODBUS);
     }
@@ -56,12 +63,21 @@ void plat_http_task_body(void) {
     http_api_init(&cfg);
     mail_init(app->ident.product);
     wait_net(PLAT_TASK_HTTP);
-    while (http_open(&s, PLAT_HTTPS_PORT, http_buf, sizeof http_buf) != 0) { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(1000)); }
-    s.alive = http_alive;
-    s.tls = true;
-    tls_alive_hook = http_alive;                       /* a long record over a lossy link checks in too */
+    s.lfd = -1;
     r.lfd = -1;
+    tls_alive_hook = http_alive;                       /* a long record over a lossy link checks in too */
     for (;;) {
+        if (iob_net_swapped) {                         /* the client port is on the I/O network (iobus.h): web off */
+            if (s.lfd >= 0) http_close(&s);
+            if (r.lfd >= 0) http_close(&r);
+            plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+        if (s.lfd < 0) {
+            if (http_open(&s, PLAT_HTTPS_PORT, http_buf, sizeof http_buf) != 0) { plat_checkin(PLAT_TASK_HTTP); vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
+            s.alive = http_alive;
+            s.tls = true;
+        }
         plat_val_t v;
         bool want80 = param_read(PARAM_ID_HTTP_REDIRECT, &v) ? v.b : true;
         if (want80 && r.lfd < 0 && http_open(&r, PLAT_HTTP_PORT, rbuf, sizeof rbuf) == 0) { r.alive = http_alive; r.redirect_only = true; }

@@ -348,6 +348,13 @@ extern iob_board_tags_t iob_tags[IOB_BOARDS];
 extern uint16_t iob_hold_s;          /* parameter 100: node hold time, s (1..600) */
 extern uint8_t  iob_filter_ms;       /* parameter 101 */
 extern uint8_t  iob_link;            /* parameter 102: IOB_LINK_* (default the I/O port) */
+/* The cable-swap guard (CORE_PCB.md 15: the client and I/O RJ45s fit each other's cable). With the
+ * boards on the I/O port (iob_link 2), the iobus task sends one discovery FIND on the client port
+ * PLAT_IOB_SWAP_FIRST_MS after start and then every PLAT_IOB_SWAP_SLOW_MS (80 bytes, broadcast).
+ * Any I/O board answering there means the plant network and the I/O network are swapped or joined:
+ * iob_net_swapped is set (alarm NET_SWAPPED, event log) and the client services (Modbus TCP, web)
+ * close their ports until two probes in a row, PLAT_IOB_SWAP_FAST_MS apart, find no board. */
+extern volatile bool iob_net_swapped;
 extern uint32_t iob_port_ip;         /* parameter 103: the I/O port's own IP (W5500, its own network) */
 extern uint8_t  iob_port_prefix;     /* parameter 104: its subnet as a prefix length (24 = 255.255.255.0) */
 #define IOB_PORT_MASK(prefix) ((prefix) >= 8u && (prefix) <= 30u ? 0xFFFFFFFFu << (32u - (prefix)) : 0xFFFFFF00u)
