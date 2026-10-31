@@ -9,6 +9,9 @@
 #include "plat_config.h"
 #include "mbtcp.h"
 #include "plat_state.h"
+#include "plat_alarm.h"
+#include "emis_bind.h"
+#include "emis_qal3.h"
 
 extern uint8_t plat_meas_q[PLAT_MEAS_MAX];    /* plat_state.c */
 
@@ -280,9 +283,14 @@ static void t_standard_block(void) {
     rd(4, 7748, 1); CHECK_EQ(reg(0), 2);          /* quality unavailable */
     rd(4, 7300, 2); CHECK_EQ(reg(0), 0x7FC0);     /* bank 1 NaN */
     rd(4, 7990, 10); CHECK_EQ(rl, 22);            /* to the block's last register */
-    rd(4, 7990, 20); CHECK(EXC(2));               /* past it: 8000 is not mapped */
+    rd(4, 7990, 20); CHECK_EQ(rl, 42);            /* on into the Rev C extension */
+    rd(4, 8990, 10); CHECK_EQ(rl, 22);            /* to its last register */
+    rd(4, 8990, 20); CHECK_EQ(rl, 42);            /* and on into the platform block at 9000 */
     rd(4, 6999, 2); CHECK(EXC(2));                /* 6999 is not mapped */
-    rd(4, 7999, 2); CHECK(EXC(2));                /* nor 8000 */
+    rd(4, 8000, 2); CHECK_EQ(reg(0), 0x7FC0);     /* second-period average, unfitted: NaN */
+    rd(4, 8064, 1); CHECK_EQ(reg(0), 2);          /* its quality unavailable */
+    rd(4, 8416, 1); CHECK_EQ(reg(0), 0);          /* QAL3 status */
+    { uint16_t zz[1] = { 0 }; wr16(8000, zz, 1); CHECK(EXC(2)); }   /* read-only */
     uint16_t v[2] = { 0, 0 };
     wr16(7000, v, 2); CHECK(EXC(2));              /* read-only, BasisS included */
     wr16(7128, v, 2); CHECK(EXC(2));
@@ -296,6 +304,40 @@ static void t_standard_block(void) {
     CHECK_EQ(mb_init(bad, 1, NULL), 1);
     mb_map_t bad2[1] = { MB_ENTRY(MB_INPUT, 6999, P_PRESET, MBF_U32) };
     CHECK_EQ(mb_init(bad2, 1, NULL), 1);
+    mb_map_t bad3[1] = { MB_ENTRY(MB_INPUT, 8500, P_PRESET, MBF_U32) };   /* the Rev C extension */
+    CHECK_EQ(mb_init(bad3, 1, NULL), 1);
+    mb_map_t bad4[1] = { MB_ENTRY(MB_COILS, 8050, P_START, MBF_BIT) };   /* coils 8000-8099 reserved */
+    CHECK_EQ(mb_init(bad4, 1, NULL), 1);
+}
+
+/* Rev C (MODBUS_STANDARD_BLOCK.md 8): second-period averages and QAL3 on a fitted slot */
+static void t_standard_block_c(void) {
+    setup();
+    emis_set.ch.unit[3] = 1;                      /* slot 3 (CO) fitted */
+    emis_res.v2[3] = 42.5f; emis_res.q2[3] = PLAT_Q_VALID;
+    emis_res.n2[3] = 140; emis_res.n2_above[3] = 3; emis_res.n2_day[3] = 144; emis_res.n2_above_day[3] = 8;
+    emis_q3.zero_dev[3] = -1.5f; emis_q3.span_dev[3] = 2.25f; emis_q3.last[3] = 0x6543210Fu;
+    emis_q3.status[3] = EMIS_Q3_ON | EMIS_Q3_ZERO_WARN | EMIS_Q3_SPAN_OUT | EMIS_Q3_DUE;
+    scan();                                       /* published to the readers */
+    float f; uint32_t u;
+    rd(4, 8006, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == 42.5f);
+    rd(3, 8006, 2); CHECK_EQ((uint32_t)reg(0) << 16 | reg(1), u);   /* holding mirror */
+    rd(4, 8067, 1); CHECK_EQ(reg(0), PLAT_Q_VALID);
+    rd(4, 8099, 1); CHECK_EQ(reg(0), 140);
+    rd(4, 8131, 1); CHECK_EQ(reg(0), 3);
+    rd(4, 8163, 1); CHECK_EQ(reg(0), 144);
+    rd(4, 8195, 1); CHECK_EQ(reg(0), 8);
+    rd(4, 8230, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == -1.5f);
+    rd(4, 8294, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == 2.25f);
+    rd(4, 8358, 2); CHECK_EQ((uint32_t)reg(0) << 16 | reg(1), 0x6543210Fu);
+    rd(4, 8419, 1); CHECK_EQ(reg(0), 0x33);
+    rd(4, 8416, 1); CHECK_EQ(reg(0), 0);          /* slot 0 not fitted */
+    rd(4, 7014, 2); u = (uint32_t)reg(0) << 16 | reg(1);   /* slot 3's status word */
+    CHECK(u & 1u << 28); CHECK(u & 1u << 29); CHECK(u & 1u << 30); CHECK(u & 1u << 3);
+    emis_q3.status[3] = EMIS_Q3_ON; scan();
+    rd(4, 7014, 2); u = (uint32_t)reg(0) << 16 | reg(1);
+    CHECK(!(u & (7u << 28)));
+    emis_set.ch.unit[3] = 0; memset(&emis_res, 0, sizeof emis_res); memset(&emis_q3, 0, sizeof emis_q3); scan();
 }
 
 /* MBAP framing */
@@ -454,6 +496,7 @@ void test_modbus_all(void) {
     RUN(t_busy);
     RUN(t_device_id);
     RUN(t_standard_block);
+    RUN(t_standard_block_c);
     RUN(t_platform_block);
     RUN(t_force);
 }

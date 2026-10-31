@@ -13,8 +13,8 @@
 #define PLAT_VERSION_H
 
 #define PLAT_CORE_MAJOR 0
-#define PLAT_CORE_MINOR 9
+#define PLAT_CORE_MINOR 10
 #define PLAT_CORE_PATCH 0
-#define PLAT_CORE_VERSION "0.9.0"      /* keep in step with the three numbers above */
+#define PLAT_CORE_VERSION "0.10.0"      /* keep in step with the three numbers above */
 
 #endif
