@@ -29,6 +29,7 @@
 #include "plat_selftest.h"
 #include "plat_boardtest.h"
 #include "inst.h"
+#include "emis_bind.h"
 #include "plat_version.h"
 
 /* ---------------- layout and colours (1024 x 600) ---------------- */
@@ -80,6 +81,7 @@ enum {
     T_TR_ADD = 206, T_TR_DEL, T_TR_CLR, T_TRENDS,       /* trends */
     T_SVC = 226, T_SVC_BT, T_SVC_LOG,                  /* service screen, board test, add a service log entry */
     T_INST = 229,           /* System: open the instruments page */
+    T_EMIS = 237,           /* System: open the emissions page */
     T_AL_ROW0 = 220,        /* .. T_AL_ROW0 + ROWS - 1: tap an alarm for what to check */
     T_DISP = 230, T_DT_COLOURS, T_DT_TOUCH, T_DT_NEXT, T_DT_CLEAR, T_DT_DONE,  /* display test (bench bring-up) */
     T_FORCE = 240, T_FC_CLEAR_ALL,      /* Modbus force (commissioning) */
@@ -90,6 +92,7 @@ typedef enum { KB_NUM, KB_IP, KB_TEXT, KB_BOOL } kb_t;
 typedef enum { ACT_NONE, ACT_POST, ACT_BLOB, ACT_FW, ACT_FW_LOCAL, ACT_CAL, ACT_FORCE, ACT_ELEM, ACT_BT } act_t;
 #define TR_PENS 4
 #define INST_PT_ROWS 9u          /* instruments page: point rows shown */
+#define EMIS_ROWS 5u             /* emissions page: channel rows shown */
 #define TR_N    150              /* trend samples kept: 10 minutes at TR_MS */
 #define TR_MS   4000u
 
@@ -172,6 +175,7 @@ static struct {
     uint8_t  svc_step;
     uint8_t  inst_sel;             /* instruments page: the instrument shown (0..INST_MAX-1), its first point row */
     unsigned inst_first;
+    unsigned emis_first;           /* emissions page: first channel row (of the channels in use) */
     char     svc_tech[16];
     /* record editor */
     const ui_record_t *rec;
@@ -913,6 +917,11 @@ static void tap(uint8_t t, uint32_t now) {
             goto_scr(UI_TRENDS);
         }
         break;
+    case UI_EMIS:
+        if (t == T_BACK) goto_scr(UI_SYSTEM);
+        else if (t == T_PGUP) { U.emis_first = U.emis_first >= EMIS_ROWS ? U.emis_first - EMIS_ROWS : 0; U.dirty = true; }
+        else if (t == T_PGDN) { U.emis_first += EMIS_ROWS; U.dirty = true; }
+        break;
     case UI_INST:
         if (t == T_BACK) goto_scr(UI_SYSTEM);
         else if (t >= T_ROW0 && t < T_ROW0 + INST_MAX) { U.inst_sel = (uint8_t)(t - T_ROW0); U.inst_first = 0; U.dirty = true; }
@@ -951,6 +960,7 @@ static void tap(uint8_t t, uint32_t now) {
         } else if (t == T_IOB) goto_scr(UI_IOB);
         else if (t == T_SVC) goto_scr(UI_SERVICE);
         else if (t == T_INST) { U.inst_first = 0; goto_scr(UI_INST); }
+        else if (t == T_EMIS) { U.emis_first = 0; goto_scr(UI_EMIS); }
         else if (t == T_CAL) { unsigned a; if (plat_cal_active(&a)) U.cal_ch = (uint8_t)a; goto_scr(UI_CAL); }
         else if (t == T_BRIGHT_DN) { U.bright = U.bright > 20 ? (uint8_t)(U.bright - 20) : 10; U.dirty = true; }
         else if (t == T_BRIGHT_UP) { U.bright = U.bright < 80 ? (uint8_t)(U.bright + 20) : 100; U.dirty = true; }
@@ -1401,8 +1411,9 @@ static void draw_system(uint32_t now) {
     button(T_BRIGHT_DN, 252, BODY_Y + 254, 72, 56, "-", C_ACCENT, true);
     color(C_INK); text(372, BODY_Y + 282, F_BIG, OPT_CENTER, b);
     button(T_BRIGHT_UP, 420, BODY_Y + 254, 72, 56, "+", C_ACCENT, true);
-    button(T_INST, 32, BODY_Y + 316, 224, 56, "Instruments", C_ACCENT, true);   /* third-party analysers (inst.h) */
-    button(T_SVC, 268, BODY_Y + 316, 224, 56, "Service", 0x5B6577u, true);   /* self-test, board test, service log, display test */
+    button(T_EMIS, 32, BODY_Y + 316, 148, 56, "Emissions", C_ACCENT, true);     /* the emissions engine's results (emis.h) */
+    button(T_INST, 188, BODY_Y + 316, 148, 56, "Instruments", C_ACCENT, true);  /* third-party analysers (inst.h) */
+    button(T_SVC, 344, BODY_Y + 316, 148, 56, "Service", 0x5B6577u, true);      /* self-test, board test, service log, display test */
     /* HTTPS fingerprint: a technician compares it with the browser's to know it reached this unit */
     const char *fp = tls_fingerprint();
     color(C_MUTE); text(32, BODY_Y + 378, F_SMALL, 0, fp[0] ? "HTTPS certificate fingerprint (SHA-256)" : "HTTPS not available");
@@ -2100,6 +2111,112 @@ static void draw_tr_pick(void) {
     if (!n) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No values to trend"); }
     button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.tr_first > 0);
     button(T_PGDN, 908, BODY_Y + 136, 100, 120, "Down", C_ACCENT, U.tr_first + ROWS < n);
+    button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
+}
+
+/* ---------------- emissions (emis.h, docs/EMISSIONS_MATH.md), read only ---------------- */
+static const char *const emis_slot[EMIS_CH_MAX] = {     /* the standard block's slot names (docs/MODBUS_STANDARD_BLOCK.md) */
+    "O2 dry", "O2 wet", "CO2", "CO", "NO", "NO2", "NOx as NO2", "SO2", "HCl", "HF", "NH3", "H2O",
+    "TOC as C", "CH4", "N2O", "H2S", "Hg", "Dust", "Flue gas flow", "Flue gas velocity",
+    "Stack temperature", "Stack pressure", "Sample flow", "Probe/line temp.", "Cooler temp.", "Cell temp.",
+    "Cabinet temp.", "Air/cal gas pressure", "Opacity", "TRS", "Spare 31", "Spare 32" };
+static const char *emis_unit(uint8_t u, bool raw) {      /* the unit a bank is in (EMISSIONS_MATH section 2) */
+    if (u == EMIS_U_PPM || u == EMIS_U_MG_ACT || u == EMIS_U_MG_STD) return raw ? (u == EMIS_U_PPM ? "ppm" : u == EMIS_U_MG_ACT ? "mg/m\xC2\xB3" : "mg/Nm\xC2\xB3") : "mg/Nm\xC2\xB3";
+    if (u == EMIS_U_PCT) return "%";
+    if (u == EMIS_U_FLOW_ACT || u == EMIS_U_FLOW_STD) return raw && u == EMIS_U_FLOW_ACT ? "m\xC2\xB3/h" : "Nm\xC2\xB3/h";
+    return "";
+}
+/* one value right-aligned at x: the number and unit, greyed with its quality word under it when not valid */
+static void emis_cell(int16_t x, int16_t y, float v, uint8_t q, const char *unit) {
+    char b[40], n[24];
+    if (q == PLAT_Q_UNAVAILABLE || !isfinite(v)) snprintf(n, sizeof n, "----"); else fmt_float(n, sizeof n, (double)v);
+    snprintf(b, sizeof b, "%s %s", n, isfinite(v) && q != PLAT_Q_UNAVAILABLE ? unit : "");
+    color(q == PLAT_Q_VALID ? C_INK : C_GREY); text(x, y, F_SMALL, OPT_CENTERY | OPT_RIGHTX, b);
+    if (q != PLAT_Q_VALID) { color(q_color(q)); text(x, (int16_t)(y + 18), F_SMALL, OPT_CENTERY | OPT_RIGHTX, plat_quality_name(q)); }
+}
+static void emis_notes(unsigned i, char *b, size_t cap, uint32_t *c) {   /* status words, QAL3, the second period */
+    static const struct { uint16_t bit; const char *w; } st[] = {
+        { EMIS_ST_QAL2_REVIEW, "new QAL2 due" }, { EMIS_ST_ABOVE_CAL, "above calibration range" }, { EMIS_ST_OVER_RANGE, "over range" },
+        { EMIS_ST_BELOW_RANGE, "below range" }, { EMIS_ST_O2_HIGH, "O2 too high" }, { EMIS_ST_INPUT_MISSING, "input missing" },
+        { EMIS_ST_DAY_INVALID, "last day invalid" }, { EMIS_ST_AVG_INCOMPLETE, "last average discarded" }, { EMIS_ST_NO_QAL2, "no QAL2" } };
+    const uint16_t bad = EMIS_ST_QAL2_REVIEW | EMIS_ST_ABOVE_CAL | EMIS_ST_OVER_RANGE | EMIS_ST_BELOW_RANGE | EMIS_ST_O2_HIGH |
+                         EMIS_ST_INPUT_MISSING | EMIS_ST_DAY_INVALID;
+    size_t o = 0; b[0] = 0; *c = C_MUTE;
+    uint16_t s = emis_res.status[i];
+    for (unsigned k = 0; k < sizeof st / sizeof st[0] && o + 2u < cap; ++k)
+        if (s & st[k].bit) o += (size_t)snprintf(b + o, cap - o, "%s%s", o ? ", " : "", st[k].w);
+    if (s & bad) *c = C_WARN;
+    uint8_t q3 = emis_q3.status[i];
+    if ((q3 & EMIS_Q3_ON) && o + 2u < cap) {
+        const char *w = (q3 & (EMIS_Q3_ZERO_OUT | EMIS_Q3_SPAN_OUT)) ? ((q3 & EMIS_Q3_ZERO_OUT) && (q3 & EMIS_Q3_SPAN_OUT) ? "QAL3 OUT OF CONTROL (zero, span)"
+                        : q3 & EMIS_Q3_ZERO_OUT ? "QAL3 OUT OF CONTROL (zero)" : "QAL3 OUT OF CONTROL (span)")
+                      : q3 & EMIS_Q3_DUE ? "QAL3 check due"
+                      : q3 & (EMIS_Q3_ZERO_WARN | EMIS_Q3_SPAN_WARN) ? "QAL3 last check beyond the action limit" : "QAL3 ok";
+        o += (size_t)snprintf(b + o, cap - o, "%s%s", o ? ", " : "", w);
+        if (q3 & (EMIS_Q3_ZERO_OUT | EMIS_Q3_SPAN_OUT)) *c = C_BAD;
+        else if (q3 & (EMIS_Q3_DUE | EMIS_Q3_ZERO_WARN | EMIS_Q3_SPAN_WARN) && *c != C_BAD) *c = C_WARN;
+    }
+    if (emis_set.period2_s && emis_set.ch.elv2[i] > 0.0f && o + 2u < cap) {
+        char a[24];
+        if (emis_res.q2[i] == PLAT_Q_VALID && isfinite(emis_res.v2[i])) fmt_float(a, sizeof a, (double)emis_res.v2[i]); else snprintf(a, sizeof a, "----");
+        o += (size_t)snprintf(b + o, cap - o, "%s%u-min %s %s, %u of %u above the limit today", o ? "; " : "", (unsigned)(emis_set.period2_s / 60u), a,
+                              emis_unit(emis_set.ch.unit[i], false), (unsigned)emis_res.n2_above[i], (unsigned)emis_res.n2[i]);
+        if (emis_res.n2[i] && emis_res.n2_above[i] * 20u > emis_res.n2[i] && *c != C_BAD) *c = C_WARN;   /* more than 5 % above */
+    }
+}
+
+static void draw_emis(void) {
+    char b[128];
+    box(16, BODY_Y, 880, 392, C_CARD, 8);
+    if (!emis_set.enable) {
+        color(C_MUTE); text(456, BODY_Y + 180, F_TEXT, OPT_CENTER, "The emissions engine is off.");
+        text(456, BODY_Y + 214, F_SMALL, OPT_CENTER, "It is set up on the web page, Emissions.");
+        button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
+        return;
+    }
+    if (emis_p_cfg_error) {
+        if (emis_p_cfg_error > EMIS_CH_MAX) snprintf(b, sizeof b, "The plant settings don't fit together: the engine is stopped.");
+        else snprintf(b, sizeof b, "Channel %s has a setting that doesn't fit: the engine is stopped.", emis_slot[emis_p_cfg_error - 1u]);
+        color(C_BAD);
+    } else {
+        snprintf(b, sizeof b, "Plant %s. Averages every %u min, at %.4g %% %s.", emis_p_operating ? "operating" : "NOT operating: averages paused",
+                 (unsigned)(emis_set.period_s / 60u), (double)emis_set.ref_pct, emis_set.diluent == EMIS_DIL_CO2 ? "CO2" : "O2");
+        color(emis_p_operating ? C_INK : C_WARN);
+    }
+    text(32, BODY_Y + 18, F_SMALL, OPT_CENTERY, b);
+    color(C_MUTE);
+    text(430, BODY_Y + 44, F_SMALL, OPT_CENTERY | OPT_RIGHTX, "Now, corrected");
+    text(590, BODY_Y + 44, F_SMALL, OPT_CENTERY | OPT_RIGHTX, "This period");
+    text(740, BODY_Y + 44, F_SMALL, OPT_CENTERY | OPT_RIGHTX, "Validated");
+    text(880, BODY_Y + 44, F_SMALL, OPT_CENTERY | OPT_RIGHTX, "Last day");
+    unsigned used = 0, row = 0;
+    for (unsigned i = 0; i < EMIS_CH_MAX; ++i) {
+        uint8_t u = emis_set.ch.unit[i];
+        if (u == EMIS_U_OFF) continue;
+        if (used++ < U.emis_first || row >= EMIS_ROWS) continue;
+        int16_t y = (int16_t)(BODY_Y + 60 + row * 66);
+        color(C_LINE); eve_line(E, 24, y, 888, y, 1);
+        bool ref = emis_set.ch.ref[i];
+        const char *un = emis_unit(u, false);
+        color(C_INK); text(32, (int16_t)(y + 16), F_TEXT, OPT_CENTERY, emis_slot[i]);
+        emis_cell(430, (int16_t)(y + 16), emis_res.v[ref ? EMIS_B_REF : EMIS_B_STD][i], emis_res.q[EMIS_Q_CALC][i], un);
+        emis_cell(590, (int16_t)(y + 16), emis_res.v[EMIS_B_RUN][i], emis_res.q[EMIS_Q_RUN][i], un);
+        emis_cell(740, (int16_t)(y + 16), emis_res.v[EMIS_B_VAL][i], emis_res.q[EMIS_Q_AVG][i], un);
+        emis_cell(880, (int16_t)(y + 16), emis_res.v[EMIS_B_DAY][i], emis_res.q[EMIS_Q_DAY][i], un);
+        uint32_t c;
+        emis_notes(i, b, sizeof b, &c);
+        if (emis_res.discarded[i]) {
+            size_t o = strlen(b);
+            snprintf(b + o, sizeof b - o, "%s%u discarded today", o ? ", " : "", (unsigned)emis_res.discarded[i]);
+        }
+        if (strlen(b) > 92) { b[89] = b[90] = b[91] = '.'; b[92] = 0; }   /* one line under the numbers' quality words */
+        color(c); text(32, (int16_t)(y + 52), F_SMALL, OPT_CENTERY, b);
+        ++row;
+    }
+    if (!used) { color(C_MUTE); text(456, BODY_Y + 200, F_TEXT, OPT_CENTER, "No channels are set up yet"); }
+    if (U.emis_first >= used && used) U.emis_first = (used - 1u) / EMIS_ROWS * EMIS_ROWS;
+    button(T_PGUP, 908, BODY_Y, 100, 120, "Up", C_ACCENT, U.emis_first > 0);
+    button(T_PGDN, 908, BODY_Y + 136, 100, 120, "Down", C_ACCENT, U.emis_first + EMIS_ROWS < used);
     button(T_BACK, 908, BODY_Y + 272, 100, 120, "Back", 0x5B6577u, true);
 }
 
@@ -2994,6 +3111,7 @@ void ui_draw(eve_t *e, uint32_t now) {
     case UI_TR_PICK: draw_tr_pick(); break;
     case UI_SERVICE: draw_service(); break;
     case UI_INST: draw_inst(); break;
+    case UI_EMIS: draw_emis(); break;
     case UI_CLOCK: draw_clock(); break;
     case UI_APP:   draw_app(); break;
     case UI_REC:   draw_rec(); break;

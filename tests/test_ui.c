@@ -33,6 +33,7 @@ extern uint8_t plat_alarm_tier_route[AL_TIERS], plat_alarm_prio[ALARM_ID_MAX + 1
 #include "plat_cal.h"
 #include "plat_service.h"
 #include "inst.h"
+#include "emis_bind.h"
 #include "plat_version.h"
 
 static eve_sim_t sim;
@@ -967,6 +968,44 @@ static void t_inst_screen(void) {
     memset(&inst_tags, 0, sizeof inst_tags); memset(&inst_pt, 0, sizeof inst_pt);
 }
 
+/* System > Emissions: the engine's results, read only (the engine itself is tested in test_emis.c) */
+static void t_emis_screen(void) {
+    setup();
+    emis_set_t keep = emis_set;
+    memset(&emis_res, 0, sizeof emis_res); memset(&emis_q3, 0, sizeof emis_q3);
+    emis_set.enable = false;
+    CHECK(tap("System")); CHECK(tap("Emissions")); CHECK_EQ(ui_screen(), UI_EMIS);
+    CHECK(shows("The emissions engine is off."));
+    emis_set.enable = true; emis_set.period_s = 1800; emis_set.period2_s = 600; emis_set.ref_pct = 11.0f; emis_set.diluent = EMIS_DIL_O2;
+    memset(emis_set.ch.unit, 0, sizeof emis_set.ch.unit);
+    emis_set.ch.unit[0] = EMIS_U_PCT;                                                   /* O2 dry */
+    emis_set.ch.unit[3] = EMIS_U_MG_STD; emis_set.ch.ref[3] = true; emis_set.ch.elv2[3] = 150.0f;   /* CO */
+    emis_set.ch.unit[6] = EMIS_U_PPM; emis_set.ch.ref[6] = true; emis_set.ch.elv2[6] = 0.0f;        /* NOx */
+    emis_p_operating = true; emis_p_cfg_error = 0;
+    for (unsigned b = 0; b < EMIS_BANKS; ++b) { emis_res.v[b][0] = 9.8f; emis_res.v[b][3] = 12.4f + (float)b; emis_res.v[b][6] = 140.0f; }
+    for (unsigned k = 0; k < EMIS_QS; ++k) { emis_res.q[k][0] = emis_res.q[k][3] = PLAT_Q_VALID; emis_res.q[k][6] = PLAT_Q_VALID; }
+    emis_res.q[EMIS_Q_DAY][6] = PLAT_Q_UNAVAILABLE;
+    emis_res.status[6] = EMIS_ST_ABOVE_CAL; emis_res.discarded[6] = 2;
+    emis_res.v2[3] = 18.0f; emis_res.q2[3] = PLAT_Q_VALID; emis_res.n2[3] = 40; emis_res.n2_above[3] = 1;
+    emis_q3.status[3] = EMIS_Q3_ON; emis_q3.status[6] = EMIS_Q3_ON | EMIS_Q3_DUE;
+    frame();
+    CHECK(shows("Plant operating. Averages every 30 min, at 11 % O2."));
+    CHECK(shows("O2 dry")); CHECK(shows("CO")); CHECK(shows("NOx as NO2"));
+    CHECK(shows("QAL3 ok; 10-min 18 mg/Nm")); CHECK(shows("1 of 40 above the limit today"));
+    CHECK(shows("above calibration range, QAL3 check due, 2 discarded today"));
+    CHECK(shows("----")); CHECK(shows("unavailable"));
+    dump("emissions");
+    emis_q3.status[3] = EMIS_Q3_ON | EMIS_Q3_SPAN_OUT; frame();
+    CHECK(shows("QAL3 OUT OF CONTROL (span)"));
+    emis_p_operating = false; frame();
+    CHECK(shows("NOT operating: averages paused"));
+    emis_p_cfg_error = 4; frame();
+    CHECK(shows("Channel CO has a setting that doesn't fit: the engine is stopped."));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    emis_set = keep; emis_p_cfg_error = 0; emis_p_operating = false;
+    memset(&emis_res, 0, sizeof emis_res); memset(&emis_q3, 0, sizeof emis_q3);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
@@ -982,4 +1021,5 @@ void test_ui_all(void) {
     RUN(t_trends_screen);
     RUN(t_service_screen);
     RUN(t_inst_screen);
+    RUN(t_emis_screen);
 }
