@@ -353,6 +353,15 @@ netsim's simulated analyser (22 checks: explorer, find, pick, save, live value, 
 maintenance, export, import into a second instrument, viewer view); without the firmware it only
 checks the tab stays hidden. Screenshot: `docs/web_instruments.png`.
 
+**Alarm priority tiers** (Alarm setup tab, admin; firmware PR #19): shown when
+`/api/alarms/config` has `tiers`. The tiers table writes the names (90-94, whole text, empty for the
+standard name) and the per-tier actions (53, AR_SET | bits, 0 for the default) and shows the
+counts; the Tier column writes 52 per alarm ID (0 default, 1-5, 6 off only where `can_switch_off`),
+read back with `/api/values` so "default" shows as set. The alarm list names each alarm's tier and
+marks Critical rows; the header badge starts with CRITICAL when `worst_priority` is 1. The handover
+file's Codes sheet names each alarm's tier and lists common-alarm bits 5 and 6 (added by the page if
+the map lacks them). Test: `tests/integration/alarm_tiers_web_test.py`.
+
 **Digital input alarms** (Alarm setup tab, admin; firmware parameters 340-345 and labels
 350-373): 24 slots, alarm IDs 30-53. Each row picks a digital input (1-64 or unused), whether the
 alarm is raised when it is on or off, the delay (0-3600 s), latch, severity (warning, alarm,
