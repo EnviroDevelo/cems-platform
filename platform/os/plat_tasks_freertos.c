@@ -249,7 +249,8 @@ void plat_start(const plat_app_t *app) {
 #ifdef PLAT_BENCH_SETTINGS
     {   /* Development bench only, never a product build: whole-number settings written at every
          * start over the stored ones, e.g. -DPLAT_BENCH_SETTINGS="{15,2},{102,1},{110,1}", so the
-         * bench needs no login to set them. Each one is checked and logged like any other write. */
+         * bench needs no login to set them. Each one is checked like any other write; internal
+         * writes are not logged as changes, so one event per setting says it was forced. */
         static const struct { uint16_t id; int32_t v; } bench[] = { PLAT_BENCH_SETTINGS };
         for (size_t i = 0; i < sizeof bench / sizeof bench[0]; ++i) {
             const param_def_t *d = param_find(bench[i].id);
@@ -257,7 +258,8 @@ void plat_start(const plat_app_t *app) {
             plat_val_t v = { .i = bench[i].v };
             uint8_t kind = d->ptype == PT_BOOL ? PLAT_VAL_BOOL : d->ptype == PT_INT ? PLAT_VAL_I32 : PLAT_VAL_U32;
             if (kind == PLAT_VAL_BOOL) v = (plat_val_t){ .b = bench[i].v != 0 };
-            (void)param_post(bench[i].id, kind, v, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY);
+            if (param_post(bench[i].id, kind, v, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY) == PERR_OK)
+                plat_log_event(LOG_EV_PARAM, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY, d->id, NAN, (double)bench[i].v, d->name);
         }
     }
 #endif
