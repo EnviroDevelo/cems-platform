@@ -325,7 +325,7 @@ Screenshot: `docs/web_modbus_force.png`.
 library: a stored (uncompressed) zip of SpreadsheetML with inline strings, a bold frozen header
 row and filters. Sheets, as agreed with the standard-map thread: Cover (product, serial,
 firmware, map version, IP, port, unit ID, addressing, word order, when and at which login it was
-made, integrator sign-off), Standard values (registers 7000-7999, once products have them),
+made, integrator sign-off), Standard values (registers 7000-8999, once products have them),
 Project map (every entry: table, 0-based and Modicon address, function codes, format, word and
 byte order, name, description, unit, min/max, scaling, access, write login and mode, a "Checked
 by integrator" column), Platform block, Codes (the map's "codes" when it has them, alarm IDs,
