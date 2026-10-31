@@ -24,6 +24,7 @@ void test_ui_app_all(void);
 void test_iobus_all(void);
 void test_iobtcp_all(void);
 void test_w5500_all(void);
+void test_inst_all(void);
 void test_state_all(void);
 void test_power_all(void);
 void test_cal_all(void);
@@ -55,6 +56,7 @@ int main(void) {
     test_iobus_all();
     test_iobtcp_all();
     test_w5500_all();
+    test_inst_all();
     test_state_all();
     test_power_all();
     test_cal_all();

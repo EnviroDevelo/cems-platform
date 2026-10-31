@@ -104,6 +104,8 @@ typedef struct {
     unsigned    qn, qi;          /* discovery answers waiting to be received */
     unsigned    drop_next;
     uint32_t    requests, datagrams;
+    struct inst_sim *inst[4];    /* third-party instruments on the same network (inst_sim.h) */
+    unsigned    n_inst;
 } iob_simnet_t;
 void iob_simnet_init(iob_simnet_t *s, uint32_t master_ip);
 void iob_simnet_add(iob_simnet_t *s, iob_node_t *n);
