@@ -8,7 +8,7 @@ module, and before choosing hardware. Last run: 2026-10-31.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 561.0 KB | 1016.0 KB | 55 % | 455.0 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 561.3 KB | 1016.0 KB | 55 % | 454.7 KB |
 | RAM (STM32H573/H563, 640 KB) | 484.6 KB | 640.0 KB | 76 % | 155.4 KB |
 
 ## By module (KB)
@@ -26,7 +26,7 @@ module, and before choosing hardware. Last run: 2026-10-31.
 | Firmware update, signatures, serial | 7.0 | 2.0 |
 | I/O boards (Ethernet/RS-485 master) | 19.6 | 2.5 |
 | Modbus TCP | 13.3 | 18.1 |
-| Web server + page + logins | 93.6 | 33.5 |
+| Web server + page + logins | 93.9 | 33.5 |
 | HTTPS (tls.c + mbedTLS) | 96.7 | 83.4 |
 | Touch UI + EVE driver | 71.4 | 3.1 |
 | Task layer (FreeRTOS glue) | 3.4 | 99.7 |
