@@ -246,6 +246,21 @@ void plat_start(const plat_app_t *app) {
     }
     plat_state_safe_mode(safe);
     param_bind(&plat_cmdq, &plat_snap_lock);
+#ifdef PLAT_BENCH_SETTINGS
+    {   /* Development bench only, never a product build: whole-number settings written at every
+         * start over the stored ones, e.g. -DPLAT_BENCH_SETTINGS="{15,2},{102,1},{110,1}", so the
+         * bench needs no login to set them. Each one is checked and logged like any other write. */
+        static const struct { uint16_t id; int32_t v; } bench[] = { PLAT_BENCH_SETTINGS };
+        for (size_t i = 0; i < sizeof bench / sizeof bench[0]; ++i) {
+            const param_def_t *d = param_find(bench[i].id);
+            if (d == NULL || d->ptype == PT_FLOAT) continue;
+            plat_val_t v = { .i = bench[i].v };
+            uint8_t kind = d->ptype == PT_BOOL ? PLAT_VAL_BOOL : d->ptype == PT_INT ? PLAT_VAL_I32 : PLAT_VAL_U32;
+            if (kind == PLAT_VAL_BOOL) v = (plat_val_t){ .b = bench[i].v != 0 };
+            (void)param_post(bench[i].id, kind, v, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY);
+        }
+    }
+#endif
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "modbus map", 0, bsp_ms());
