@@ -197,13 +197,14 @@ u32_t *ethernetif_tcp_out(struct pbuf *p, struct tcp_hdr *hdr, const struct tcp_
 
 /* Automatic 10 Mbit (net_link_mode 0 only). Some switch and cable combinations lose 100BASE-TX
  * frames without an error at either end (the DK on Gary's switch: 14-45 %, none at 10 Mbit), so
- * TCP retransmissions are the only sign. Two 10 s windows in a row with real traffic and 10 % or
- * more sent again: offer 10 Mbit only until a power cycle or a net_link_mode change. Little
+ * TCP retransmissions are the only sign. Two 10 s windows in a row with real traffic and 3 % or
+ * more sent again (a healthy LAN resends next to nothing; on the bench 2-3 % already cost the I/O
+ * board link a 1 s outage): offer 10 Mbit only until a power cycle or a net_link_mode change. Little
  * traffic leaves the count as it was, so one vanished browser can't do it on its own. */
 #define WATCH_POLLS   40u                /* 10 s of 250 ms polls */
 #define WATCH_SEGS    40u
 #define WATCH_REXMITS 5u
-#define WATCH_PCT     10u
+#define WATCH_PCT     3u
 #define WATCH_BAD     2u
 unsigned ethernetif_link_watch(struct netif *netif) {
     static uint32_t polls, segs0, rex0;

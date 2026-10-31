@@ -26,7 +26,7 @@ One source for the CORE and the I/O node (30 Oct, Gary):
   component) and streams codes 1-3 with "more follows". A product map entry in 7000-7999 of the
   input or holding registers stops start-up (none of the current maps uses it).
 - Automatic 10 Mbit (net_link_mode 0): the port counts TCP data segments and retransmissions
-  (lwIP hook, `lwip_hooks.h`); two 10 s windows in a row with 40+ segments and 10 % or more sent
+  (lwIP hook, `lwip_hooks.h`); two 10 s windows in a row with 40+ segments and 3 % or more sent
   again at 100 Mbit drop the offer to 10 Mbit until a restart or a setting change. Event
   `eth_speed`, `/api/info` eth gains `fallback`, `fallbacks`, `tcp_segs`, `tcp_rexmits`, and the
   header badge reads "ETH 10 FD (auto)". Bench: the DK lost 14-45 % at 100 Mbit through Gary's
