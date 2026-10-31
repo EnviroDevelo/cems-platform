@@ -318,6 +318,53 @@ static void t_routes(void) {
     memset(plat_alarm_relay_inv, 0, 4);
 }
 
+extern uint8_t plat_alarm_prio[256], plat_alarm_tier_route[AL_TIERS];
+extern char plat_alarm_tier_name[AL_TIERS][AL_TIER_NAME];
+static void t_tiers(void) {
+    setup(BSP_RESET_POWER_ON);
+    memset(plat_alarm_route, 0, 256); memset(plat_alarm_prio, 0, 256); memset(plat_alarm_tier_route, 0, AL_TIERS);
+    /* defaults from the severity: fault High, alarm Medium, warning Low, status Info */
+    CHECK_EQ(alarm_prio(A_FLOW), AL_PRIO_HIGH);
+    CHECK_EQ(alarm_prio(A_DI), AL_PRIO_MEDIUM);
+    CHECK_EQ(alarm_prio(A_DESC), AL_PRIO_LOW);
+    CHECK_EQ(alarm_prio(A_STOP), AL_PRIO_INFO);
+    CHECK(!strcmp(alarm_prio_name(AL_PRIO_CRITICAL), "Critical"));
+    /* assign: A_DI Critical, A_FLOW Low; the order and colour follow the tier */
+    apply(1101, 0);
+    plat_alarm_prio[A_DI] = AL_PRIO_CRITICAL;
+    plat_alarm_prio[A_FLOW] = AL_PRIO_LOW;
+    alarm_set(A_FLOW, true); alarm_set(A_DI, true); scan(20);
+    alarm_view_t v[8];
+    CHECK(app_list(v, 8) >= 2);
+    CHECK_EQ(v[0].id, A_DI); CHECK_EQ(v[0].priority, AL_PRIO_CRITICAL); CHECK_EQ(v[0].severity, AL_SEV_FAULT);
+    CHECK_EQ(get(A_FLOW).severity, AL_SEV_WARNING);
+    alarm_summary_t sm; alarm_summary(&sm); CHECK_EQ(sm.worst_prio, AL_PRIO_CRITICAL);
+    plat_val_t pv;
+    CHECK(param_read(PARAM_ID_ALARM_COMMON, &pv));
+    CHECK((pv.u & (ACOM_CRIT_ACTIVE | ACOM_CRIT_UNACKED)) == (ACOM_CRIT_ACTIVE | ACOM_CRIT_UNACKED));
+    uint16_t ta[AL_TIERS];
+    CHECK_EQ(param_read_blob(PARAM_ID_ALARM_TIER_ACTIVE, 0, ta, sizeof ta), PERR_OK);
+    CHECK_EQ(ta[0], 1u); CHECK_EQ(ta[3], 1u);
+    /* tier actions apply to alarms with none of their own; an alarm's own still wins */
+    plat_alarm_tier_route[0] = AR_SET | AR_EMAIL | AR_RELAY(2);
+    CHECK_EQ(alarm_route(A_DI), AR_EMAIL | AR_RELAY(2));
+    plat_alarm_route[A_DI] = AR_SET | AR_MODBUS;
+    CHECK_EQ(alarm_route(A_DI), AR_MODBUS);
+    /* a renamed tier */
+    strcpy(plat_alarm_tier_name[0], "Emergency");
+    CHECK(!strcmp(alarm_prio_name(AL_PRIO_CRITICAL), "Emergency"));
+    /* off: the alarm leaves the list and stays out while its condition is there */
+    plat_alarm_prio[A_FLOW] = AL_PRIO_OFF;
+    scan(20);
+    CHECK(!get(A_FLOW).active); CHECK(!get(A_FLOW).enabled);
+    alarm_set(A_FLOW, true); scan(20);
+    CHECK(!get(A_FLOW).active);
+    plat_alarm_prio[A_FLOW] = AL_PRIO_DEFAULT; alarm_set(A_FLOW, false);
+    alarm_set(A_DI, false); scan(20); alarm_ack(ALARM_ACK_ALL, 0, 0); scan(20);
+    memset(plat_alarm_route, 0, 256); memset(plat_alarm_prio, 0, 256); memset(plat_alarm_tier_route, 0, AL_TIERS);
+    memset(plat_alarm_tier_name, 0, sizeof plat_alarm_tier_name);
+}
+
 #include "plat_health.h"
 static void t_health(void) {
     setup(BSP_RESET_POWER_ON);
@@ -438,6 +485,7 @@ void test_alarm_all(void) {
     RUN(t_range);
     RUN(t_text_order);
     RUN(t_routes);
+    RUN(t_tiers);
     RUN(t_health);
     RUN(t_platform);
     RUN(t_di_alarms);

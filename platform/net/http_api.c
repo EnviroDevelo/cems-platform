@@ -306,6 +306,7 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"alarms\":{\"active\":"); json_uint(o, s.active);
       out_str(o, ",\"unacked\":"); json_uint(o, s.unacked);
       out_str(o, ",\"worst\":"); if (s.worst >= 0) json_str(o, alarm_sev_name((uint8_t)s.worst)); else out_str(o, "null");
+    out_str(o, ",\"worst_priority\":"); if (s.worst_prio) json_uint(o, s.worst_prio); else out_str(o, "null");
       out_str(o, "}"); }
     {   plat_health_t h = plat_health;
         char why[64] = "";
@@ -909,6 +910,8 @@ static void get_alarms(http_out_t *o) {
         out_str(o, ",\"text\":"); json_str(o, v.text);
         out_str(o, ",\"help\":"); json_str(o, v.help ? v.help : "");    /* what to check (docs/FAULT_CODES.md) */
         out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"priority\":"); json_uint(o, v.priority);
+        out_str(o, ",\"tier\":"); json_str(o, alarm_prio_name(v.priority));
         out_str(o, ",\"active\":"); json_bool(o, v.active);
         out_str(o, ",\"unacked\":"); json_bool(o, v.unacked);
         out_str(o, ",\"latch\":"); json_bool(o, (v.flags & AL_LATCH) != 0);
@@ -938,7 +941,10 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, "{\"id\":"); json_uint(o, d->id);
         out_str(o, ",\"name\":"); json_str(o, d->name);
         out_str(o, ",\"text\":"); json_str(o, v.text);
-        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(d->severity));
+        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"priority\":"); json_uint(o, v.priority);                     /* in force: 1..5, 6 off */
+        out_str(o, ",\"default_priority\":"); json_uint(o, alarm_prio_default(d));
+        out_str(o, ",\"can_switch_off\":"); json_bool(o, !(d->flags & AL_STOPS));
         out_str(o, ",\"route\":"); json_uint(o, alarm_route(d->id));
         out_str(o, ",\"default\":"); json_uint(o, d->route);
         out_str(o, ",\"configured\":"); json_bool(o, (route[d->id] & AR_SET) != 0);
@@ -952,6 +958,22 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, ",\"mode\":"); json_uint(o, rmode[k]);
         out_str(o, ",\"failsafe\":"); json_bool(o, rinv[k] != 0);
         out_str(o, ",\"in_alarm\":"); json_bool(o, (on >> k) & 1u);
+        out_str(o, "}");
+    }
+    out_str(o, "],\"tiers\":[");                     /* the priority tiers (plat_alarm.h) */
+    uint8_t tr[AL_TIERS];
+    uint16_t ta[AL_TIERS], tu[AL_TIERS];
+    if (param_read_blob(PARAM_ID_ALARM_TIER_ROUTE, 0, tr, sizeof tr) != PERR_OK) memset(tr, 0, sizeof tr);
+    if (param_read_blob(PARAM_ID_ALARM_TIER_ACTIVE, 0, ta, sizeof ta) != PERR_OK) memset(ta, 0, sizeof ta);
+    if (param_read_blob(PARAM_ID_ALARM_TIER_UNACKED, 0, tu, sizeof tu) != PERR_OK) memset(tu, 0, sizeof tu);
+    for (unsigned k = 0; k < AL_TIERS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"priority\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"name\":"); json_str(o, alarm_prio_name((uint8_t)(k + 1u)));
+        out_str(o, ",\"route\":"); json_uint(o, tr[k] & (uint8_t)~AR_SET);
+        out_str(o, ",\"configured\":"); json_bool(o, (tr[k] & AR_SET) != 0);
+        out_str(o, ",\"active\":"); json_uint(o, ta[k]);
+        out_str(o, ",\"unacked\":"); json_uint(o, tu[k]);
         out_str(o, "}");
     }
     out_str(o, "]}");

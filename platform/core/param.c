@@ -68,6 +68,9 @@ static char      p_mail_user[48], p_mail_pass[48], p_mail_from[64], p_mail_to[16
 extern uint16_t plat_alarm_active_count, plat_alarm_unack_count;            /* plat_alarm.c */
 extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alarm_common;
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
+extern uint8_t  plat_alarm_prio[256], plat_alarm_tier_route[AL_TIERS];
+extern uint16_t plat_alarm_tier_active[AL_TIERS], plat_alarm_tier_unacked[AL_TIERS];
+extern char     plat_alarm_tier_name[AL_TIERS][AL_TIER_NAME];
 extern bool     plat_alarm_relay_inv[4];
 extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS], plat_dia_status[PLAT_DIA_SLOTS];   /* plat_alarm.c */
 extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
@@ -150,6 +153,15 @@ static const param_def_t plat_defs[] = {
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_ALARM_COMMON, "alarm_common", plat_alarm_common, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_ROUTE, "alarm_route", plat_alarm_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_PRIO, "alarm_prio", plat_alarm_prio, CT_U8, 0, AL_PRIO_OFF, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_TIER_ROUTE, "alarm_tier_route", plat_alarm_tier_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_TIER_ACTIVE, "alarm_tier_active", plat_alarm_tier_active, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_TIER_UNACKED, "alarm_tier_unacked", plat_alarm_tier_unacked, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 0, "alarm_tier1_name", plat_alarm_tier_name[0], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 1, "alarm_tier2_name", plat_alarm_tier_name[1], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 2, "alarm_tier3_name", plat_alarm_tier_name[2], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 3, "alarm_tier4_name", plat_alarm_tier_name[3], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 4, "alarm_tier5_name", plat_alarm_tier_name[4], NULL, PLAT_LVL_ADMIN, NET),
     /* digital input alarms (plat_alarm.h) */
     PARAM_ARRAY_UINT(PARAM_ID_DIA_INPUT, "dia_input", plat_dia_input, CT_U8, 0, PLAT_DI_MAX, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_BOOL(PARAM_ID_DIA_WHEN, "dia_when", plat_dia_when, PLAT_LVL_ADMIN, NET),

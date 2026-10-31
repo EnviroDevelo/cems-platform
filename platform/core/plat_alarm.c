@@ -149,6 +149,10 @@ uint16_t plat_alarm_active_count, plat_alarm_unack_count;
 uint16_t plat_alarm_active_bits[ALARM_BIT_WORDS], plat_alarm_unack_bits[ALARM_BIT_WORDS];
 uint16_t plat_alarm_common;                         /* ACOM_* */
 uint8_t  plat_alarm_route[ALARM_ID_MAX + 1];        /* AR_SET | actions, per ID (persisted) */
+uint8_t  plat_alarm_prio[ALARM_ID_MAX + 1];         /* AL_PRIO_*, per ID (persisted) */
+uint8_t  plat_alarm_tier_route[AL_TIERS];           /* AR_SET | actions, per tier (persisted) */
+uint16_t plat_alarm_tier_active[AL_TIERS], plat_alarm_tier_unacked[AL_TIERS];
+char     plat_alarm_tier_name[AL_TIERS][AL_TIER_NAME];
 uint8_t  plat_alarm_relay_do[ALARM_RELAYS];         /* digital output 1..32 for relay k (0 = not used) */
 uint8_t  plat_alarm_relay_mode[ALARM_RELAYS];       /* AR_MODE_* */
 bool     plat_alarm_relay_inv[ALARM_RELAYS];        /* fail-safe: energised when healthy */
@@ -254,9 +258,42 @@ __attribute__((weak)) void plat_alarm_email(const alarm_def_t *d, uint8_t what, 
     (void)d; (void)what; (void)t_unix; (void)up_s;
 }
 
+uint8_t alarm_prio_default(const alarm_def_t *d) {
+    switch (d->severity) {
+    case AL_SEV_FAULT:   return d->flags & AL_STOPS ? AL_PRIO_CRITICAL : AL_PRIO_HIGH;
+    case AL_SEV_ALARM:   return AL_PRIO_MEDIUM;
+    case AL_SEV_WARNING: return AL_PRIO_LOW;
+    default:             return AL_PRIO_INFO;
+    }
+}
+
+static uint8_t prio_of(size_t i) {
+    const alarm_def_t *d = defs[i];
+    uint8_t p = plat_alarm_prio[d->id];
+    if (p == AL_PRIO_OFF && (d->flags & AL_STOPS)) p = AL_PRIO_DEFAULT;
+    return p >= AL_PRIO_CRITICAL && p <= AL_PRIO_OFF ? p : alarm_prio_default(d);
+}
+uint8_t alarm_prio(uint16_t id) { int i = idx(id); return i < 0 ? 0 : prio_of((size_t)i); }
+
+static uint8_t sev_of_prio(uint8_t p) {
+    return p <= AL_PRIO_HIGH ? AL_SEV_FAULT : p == AL_PRIO_MEDIUM ? AL_SEV_ALARM : p == AL_PRIO_LOW ? AL_SEV_WARNING : AL_SEV_STATUS;
+}
+
+const char *alarm_prio_name(uint8_t p) {
+    static const char *const dflt[AL_TIERS] = { "Critical", "High", "Medium", "Low", "Info" };
+    if (p == AL_PRIO_OFF) return "Off";
+    if (p < AL_PRIO_CRITICAL || p > AL_PRIO_INFO) return "?";
+    return plat_alarm_tier_name[p - 1u][0] ? plat_alarm_tier_name[p - 1u] : dflt[p - 1u];
+}
+
+/* the alarm's own actions, else its tier's, else the definition's */
 static uint8_t route_of(size_t i) {
     uint8_t r = plat_alarm_route[defs[i]->id];
-    return r & AR_SET ? (uint8_t)(r & ~AR_SET) : defs[i]->route;
+    if (r & AR_SET) return (uint8_t)(r & ~AR_SET);
+    uint8_t p = prio_of(i);
+    if (p >= AL_PRIO_CRITICAL && p <= AL_PRIO_INFO && (plat_alarm_tier_route[p - 1u] & AR_SET))
+        return (uint8_t)(plat_alarm_tier_route[p - 1u] & ~AR_SET);
+    return defs[i]->route;
 }
 uint8_t alarm_route(uint16_t id) { int i = idx(id); return i < 0 ? 0 : route_of((size_t)i); }
 
@@ -292,6 +329,7 @@ static void poll_platform(void) {
 
 static void publish(void) {
     uint16_t na = 0, nu = 0, ab[ALARM_BIT_WORDS] = { 0 }, ub[ALARM_BIT_WORDS] = { 0 }, com = 0;
+    uint16_t ta[AL_TIERS] = { 0 }, tu[AL_TIERS] = { 0 };
     uint8_t rel = 0;
     for (size_t i = 0; i < n_defs; ++i) {
         uint16_t id = defs[i]->id;
@@ -299,6 +337,9 @@ static void publish(void) {
         if (a) { na++; ab[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
         if (u) { nu++; ub[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
         if (!a && !u) continue;
+        uint8_t p = prio_of(i);
+        if (p >= AL_PRIO_CRITICAL && p <= AL_PRIO_INFO) { ta[p - 1u] += a; tu[p - 1u] += u; }
+        if (p == AL_PRIO_CRITICAL) com |= (uint16_t)((a ? ACOM_CRIT_ACTIVE : 0u) | (u ? ACOM_CRIT_UNACKED : 0u));
         uint8_t r = route_of(i);
         com |= (uint16_t)((a ? ACOM_ANY_ACTIVE : 0u) | (u ? ACOM_ANY_UNACKED : 0u));
         if (r & AR_MODBUS) com |= (uint16_t)((a ? ACOM_MB_ACTIVE : 0u) | (u ? ACOM_MB_UNACKED : 0u));
@@ -316,6 +357,8 @@ static void publish(void) {
     plat_alarm_active_count = na; plat_alarm_unack_count = nu;
     memcpy(plat_alarm_active_bits, ab, sizeof ab);
     memcpy(plat_alarm_unack_bits, ub, sizeof ub);
+    memcpy(plat_alarm_tier_active, ta, sizeof ta);
+    memcpy(plat_alarm_tier_unacked, tu, sizeof tu);
 }
 
 void alarm_scan(uint32_t now) {
@@ -325,7 +368,7 @@ void alarm_scan(uint32_t now) {
     for (size_t i = 0; i < n_defs; ++i) {
         const alarm_def_t *d = defs[i];
         al_state_t *s = &st[i];
-        bool en = param_bool(d->enable_param, true);
+        bool en = param_bool(d->enable_param, true) && prio_of(i) != AL_PRIO_OFF;
         if (!en) {                                         /* suppressed: out of the list at once */
             if (s->active || s->unacked) {
                 bool was = s->active;
@@ -504,17 +547,18 @@ static void view(size_t i, alarm_view_t *v) {
     PLAT_CRIT_ENTER();
     al_state_t s = st[i];
     PLAT_CRIT_EXIT();
-    v->id = d->id; v->severity = d->severity; v->flags = d->flags; v->name = d->name; v->help = d->help;
+    v->priority = prio_of(i);
+    v->id = d->id; v->severity = sev_of_prio(v->priority); v->flags = d->flags; v->name = d->name; v->help = d->help;
     v->active = s.active; v->unacked = s.unacked; v->enabled = s.enabled; v->cond = cond[i] != 0;
     v->t_raise = s.t_raise; v->up_raise = s.up_raise;
     text_of(d, v->text, sizeof v->text);
 }
 
 /* Order key: lower = more urgent. Unacked active, acked active, cleared unacked;
- * then higher severity; then newest; the index makes every key unique. */
+ * then the more urgent tier; then newest; the index makes every key unique. */
 static uint64_t key_of(size_t i, const al_state_t *a) {
     uint64_t g = a->active && a->unacked ? 0u : a->active ? 1u : 2u;
-    uint64_t sev = (uint64_t)(AL_SEV_FAULT - defs[i]->severity);
+    uint64_t sev = prio_of(i);
     return g << 48 | sev << 40 | (uint64_t)(0xFFFFFFFFu - a->up_raise) << 8 | i;
 }
 
@@ -564,7 +608,9 @@ void alarm_summary(alarm_summary_t *s) {
         if (a.unacked) s->unacked++;
         if (!a.active && !a.unacked) continue;
         s->shown++;
-        int8_t sev = (int8_t)defs[i]->severity;
+        uint8_t p = prio_of(i);
+        if (!s->worst_prio || p < s->worst_prio) s->worst_prio = p;
+        int8_t sev = (int8_t)sev_of_prio(p);
         if (sev > s->worst) { s->worst = sev; s->worst_unacked = a.unacked; }
         else if (sev == s->worst && a.unacked) s->worst_unacked = true;
     }

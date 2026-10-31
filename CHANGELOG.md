@@ -25,6 +25,13 @@ One source for the CORE and the I/O node (30 Oct, Gary):
   extended objects (serial, ComponentNumber 30, BasisM/S/R addresses, name/range/unit per
   component) and streams codes 1-3 with "more follows". A product map entry in 7000-7999 of the
   input or holding registers stops start-up (none of the current maps uses it).
+- Alarm priority tiers (Gary 31 Oct, `plat_alarm.h`): every alarm has a tier, Critical, High,
+  Medium, Low or Info, or Off (param 52, one byte per alarm ID; 0 = the definition's default
+  from its severity; AL_STOPS alarms can't be switched off). The tier sets the list order and
+  colour, per-tier counts (54, 55), ACOM_CRIT_ACTIVE / ACOM_CRIT_UNACKED in the common word, and
+  per-tier actions (53) for alarms without their own. Tier names are editable (90-94).
+  `/api/alarms` gains `priority`, `tier`, `worst_priority`; `/api/alarms/config` gains
+  `priority`, `default_priority`, `can_switch_off` and `tiers`.
 - I/O boards: a board that has never answered since power-up gets PLAT_IOB_START_MS (20 s)
   before it counts as "not responding", so a restart no longer raises IOB_LOST while the network
   comes up (outputs stay off until it is online, as before). Fault text "No reply: board switches
