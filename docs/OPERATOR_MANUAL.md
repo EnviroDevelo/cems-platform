@@ -156,7 +156,7 @@ instead of guessing. **Previous** and **Next** move between slots.
 
   System also holds these controls:
   - **Set clock** (admin). Only needed when there is no time server. "Clock, not synced" means nothing outside has confirmed the time;
-  - **I/O boards**: each board's link, inputs, outputs, temperatures and faults, in words;
+  - **I/O boards**: each board's link, inputs, outputs, temperatures and faults, in words. A CORE PCB used as an I/O board also shows its 8 analog inputs (1-6 in mA, 7 level and 8 mass flow in mV) and the measured 10 V and 5 V sensor supplies;
   - screen brightness;
   - **Emissions** (see 8d);
   - **Instruments** (see 8c);

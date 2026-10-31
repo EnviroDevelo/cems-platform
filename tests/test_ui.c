@@ -685,6 +685,7 @@ static void t_iob_screen(void) {
     CHECK(!shows("T3 ")); CHECK(!shows("T4 "));       /* connector 2 not configured */
     CHECK(shows("T5 -12.5 ")); CHECK(!shows("T6 "));  /* an RTD has no B channel */
     CHECK(shows("Pump 0.0 %, 1200 rpm"));
+    CHECK(!shows("AI1 "));                            /* map 2 board: no analog inputs */
     /* on Ethernet: the board's IP and Modbus address */
     iob_link = IOB_LINK_ETH;
     iob_tags[0].ip = 0xC0A8013Du;
@@ -697,6 +698,24 @@ static void t_iob_screen(void) {
     iob_tags[0].ip = 0xC0A8013Du;
     iob_link = IOB_LINK_RS485;
     iob_tags[0].temp_type[0] = iob_tags[0].temp_type[2] = IOB_TT_NONE;
+    /* map 3 (CORE PCB node): the analog inputs where the temperatures go */
+    nd.n_ai = IOB_AIS;
+    for (unsigned i = 0; i < IOB_AIS; ++i) { nd.ai[i] = (uint16_t)(4000u + 1000u * i); nd.ai_st[i] = IOB_TS_OK; }
+    nd.ai[1] = 12345;
+    nd.ai_st[2] = IOB_TS_OPEN; nd.ai[2] = 0;
+    nd.ai_supply[0] = 10010; nd.ai_supply[1] = 4980;
+    iob_tags[0].first_ai = 1;
+    nd.powered = false; iob_run(1100); nd.powered = true;   /* the master reads the map at identify */
+    iob_run(1500);
+    iob_run(PLAT_IOB_TEMP_MS * 2u + 200u);
+    frame();
+    CHECK(shows("AI1 4.00 mA")); CHECK(shows("AI2 12.34 mA"));
+    CHECK(shows("AI3 open circuit") || shows("AI3 open"));
+    CHECK(shows("AI7 10000 mV")); CHECK(shows("AI8 11000 mV"));
+    CHECK(shows("Sensor supply 10.0 V, 4.9 V"));
+    CHECK(!shows("T1 "));
+    dump("iob_ai");
+    nd.n_ai = 0; iob_tags[0].first_ai = 0;
     nd.powered = false;
     iob_run(1100);
     frame();

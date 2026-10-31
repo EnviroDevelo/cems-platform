@@ -1779,6 +1779,29 @@ static void draw_iob(void) {
             ++nt;
         }
         ly = (int16_t)(ly + ((nt + 1u) / 2u) * 18);
+        /* map 3 (the CORE PCB as a node): the analog inputs, mA for 1-6, mV for 7 (level) and
+         * 8 (mass flow), in the same two columns, then the 10 V and 5 V sensor supplies as measured */
+        unsigned na = 0;
+        for (unsigned i = 0; v.n_ai && i < IOB_AIS; ++i) {
+            uint8_t st = t->ai_state[i];
+            if (st == IOB_TS_OFF) continue;
+            bool wait = st == IOB_TS_WAIT;
+            if (st == IOB_TS_OK && i < 6u)
+                snprintf(b, sizeof b, "AI%u %u.%02u mA", i + 1u, t->ai[i] / 1000u, (t->ai[i] % 1000u) / 10u);
+            else if (st == IOB_TS_OK) snprintf(b, sizeof b, "AI%u %u mV", i + 1u, (unsigned)t->ai[i]);
+            else snprintf(b, sizeof b, "AI%u %s", i + 1u, iob_temp_state_name(st));
+            color(st == IOB_TS_OK ? C_INK : wait ? C_MUTE : C_BAD);
+            text((int16_t)(x + 14 + (na % 2u) * 155), (int16_t)(ly + (na / 2u) * 18), F_SMALL, 0, b);
+            ++na;
+        }
+        ly = (int16_t)(ly + ((na + 1u) / 2u) * 18);
+        if (na && (v.ai_supply[0] || v.ai_supply[1])) {
+            snprintf(b, sizeof b, "Sensor supply %u.%u V, %u.%u V", v.ai_supply[0] / 1000u, (v.ai_supply[0] % 1000u) / 100u,
+                     v.ai_supply[1] / 1000u, (v.ai_supply[1] % 1000u) / 100u);
+            color(C_MUTE); text((int16_t)(x + 14), ly, F_SMALL, 0, b);
+            ly = (int16_t)(ly + 18);
+        }
+        nt += na;
         if (v.n_pwm) {
             snprintf(b, sizeof b, "Pump %u.%u %%, %u rpm", v.pwm_applied / 10u, v.pwm_applied % 10u, (unsigned)v.rpm);
             color(C_INK); text((int16_t)(x + 14), ly, F_SMALL, 0, b);
