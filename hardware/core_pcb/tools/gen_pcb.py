@@ -67,10 +67,31 @@ T_PREFIXES = ("T1_", "T2_", "T3_", "T4_", "T5_", "T6_", "T_SCLK", "T_DIN", "T_CS
               "T_AINCOM", "T_RTN")
 AI_PREFIXES = ("AI_SCLK", "AI_DIN", "AI_CS", "AI_DOUT", "AI_ERR", "AI_REG", "AI_REF", "AI_ADJ", "LOOP",
                "AI1_", "AI2_", "AI3_", "AI4_", "AI5_", "AI6_")
-POWER = ("+24V", "+24V_IN", "+24V_F", "+24V_D", "0V_IN", "+5V", "+3V3", "GND", "BUCK5_SW", "BUCK3_SW")
+POWER = ("+24V", "+24V_IN", "+24V_F", "+24V_D", "0V_IN", "BUCK5_SW", "BUCK3_SW")
+RAIL = ("+5V", "+3V3", "GND")
+
+
+HICURRENT = ("FA_IN", "FB_IN", "+24V_FB", "+24V_FP", "PUMP_PWR")   # field supplies and pump, up to 10 A (+24V_FA is an In2 plane)
+OUT1A = ("A_OUT", "B_OUT", "B_CL")                                           # 0.6 A / 1 A valve outputs
+
+
+CLASSES = [
+    {"name": "Default", "clearance": 0.15, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3},
+    {"name": "RAIL", "clearance": 0.15, "track_width": 0.3, "via_diameter": 0.6, "via_drill": 0.3},
+    {"name": "Power", "clearance": 0.2, "track_width": 0.6, "via_diameter": 0.8, "via_drill": 0.4},
+    {"name": "HICURRENT", "clearance": 0.25, "track_width": 1.0, "via_diameter": 1.0, "via_drill": 0.5},
+    {"name": "OUT1A", "clearance": 0.15, "track_width": 0.5, "via_diameter": 0.8, "via_drill": 0.4},
+    {"name": "FIELD", "clearance": 0.15, "track_width": 0.25, "via_diameter": 0.6, "via_drill": 0.3},
+    {"name": "ISO_T", "clearance": 0.15, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3},
+    {"name": "ISO_AI", "clearance": 0.15, "track_width": 0.25, "via_diameter": 0.6, "via_drill": 0.3},
+]
 
 
 def net_class(net):
+    if net in HICURRENT:
+        return "HICURRENT"
+    if net.startswith(OUT1A):
+        return "OUT1A"
     for cls, names in ISO_CLASSES.items():
         if net in names:
             return cls
@@ -82,6 +103,8 @@ def net_class(net):
         return "ISO_AI"
     if net in POWER:
         return "Power"
+    if net in RAIL:
+        return "RAIL"
     return "Default"
 
 
@@ -175,7 +198,7 @@ def rules(board):
 # isolators' own packages bridge the gap; keep the slot under each one clear of copper.
 (rule "logic to field"
   (constraint clearance (min 2.5mm))
-  (condition "A.NetClass == 'FIELD' && B.NetClass != 'FIELD' && B.Type == 'track'"))
+  (condition "(A.NetClass == 'FIELD' || A.NetClass == 'HICURRENT' || A.NetClass == 'OUT1A') && !(B.NetClass == 'FIELD' || B.NetClass == 'HICURRENT' || B.NetClass == 'OUT1A') && B.Type == 'track'"))
 (rule "logic to temperature island"
   (constraint clearance (min 2.5mm))
   (condition "A.NetClass == 'ISO_T' && B.NetClass != 'ISO_T' && B.Type == 'track'"))
@@ -183,8 +206,8 @@ def rules(board):
   (constraint clearance (min 2.5mm))
   (condition "A.NetClass == 'ISO_AI' && B.NetClass != 'ISO_AI' && B.Type == 'track'"))
 (rule "field current"
-  (constraint track_width (min 0.5mm))
-  (condition "A.NetName == 'PUMP_PWR' || A.NetName == '+24V_FP' || A.NetName == '+24V_FA' || A.NetName == '+24V_FB' || A.NetName == 'FA_IN' || A.NetName == 'FB_IN'"))
+  (constraint track_width (min 1.0mm))
+  (condition "A.NetClass == 'HICURRENT'"))
 """)
 
 
@@ -192,13 +215,7 @@ def project_netclasses(nets):
     pro = os.path.join(OUT, "cems_core.kicad_pro")
     with open(pro) as f:
         data = json.load(f)
-    classes = [
-        {"name": "Default", "clearance": 0.15, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3},
-        {"name": "Power", "clearance": 0.2, "track_width": 0.5, "via_diameter": 0.8, "via_drill": 0.4},
-        {"name": "FIELD", "clearance": 0.3, "track_width": 0.3, "via_diameter": 0.8, "via_drill": 0.4},
-        {"name": "ISO_T", "clearance": 0.2, "track_width": 0.2, "via_diameter": 0.6, "via_drill": 0.3},
-        {"name": "ISO_AI", "clearance": 0.2, "track_width": 0.25, "via_diameter": 0.6, "via_drill": 0.3},
-    ]
+    classes = [dict(c) for c in CLASSES]
     for c in classes:
         c.update({"bus_width": 12, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25, "diff_pair_width": 0.2,
                   "line_style": 0, "microvia_diameter": 0.3, "microvia_drill": 0.1, "pcb_color": "rgba(0, 0, 0, 0.000)",

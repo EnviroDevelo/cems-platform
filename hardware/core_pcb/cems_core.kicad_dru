@@ -4,7 +4,7 @@
 # isolators' own packages bridge the gap; keep the slot under each one clear of copper.
 (rule "logic to field"
   (constraint clearance (min 2.5mm))
-  (condition "A.NetClass == 'FIELD' && B.NetClass != 'FIELD' && B.Type == 'track'"))
+  (condition "(A.NetClass == 'FIELD' || A.NetClass == 'HICURRENT' || A.NetClass == 'OUT1A') && !(B.NetClass == 'FIELD' || B.NetClass == 'HICURRENT' || B.NetClass == 'OUT1A') && B.Type == 'track'"))
 (rule "logic to temperature island"
   (constraint clearance (min 2.5mm))
   (condition "A.NetClass == 'ISO_T' && B.NetClass != 'ISO_T' && B.Type == 'track'"))
@@ -12,5 +12,5 @@
   (constraint clearance (min 2.5mm))
   (condition "A.NetClass == 'ISO_AI' && B.NetClass != 'ISO_AI' && B.Type == 'track'"))
 (rule "field current"
-  (constraint track_width (min 0.5mm))
-  (condition "A.NetName == 'PUMP_PWR' || A.NetName == '+24V_FP' || A.NetName == '+24V_FA' || A.NetName == '+24V_FB' || A.NetName == 'FA_IN' || A.NetName == 'FB_IN'"))
+  (constraint track_width (min 1.0mm))
+  (condition "A.NetClass == 'HICURRENT'"))
