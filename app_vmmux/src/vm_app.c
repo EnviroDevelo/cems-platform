@@ -14,6 +14,8 @@
 #include "vm_alarms.h"
 #include "vm_hmi.h"
 #include "vm_ui.h"
+#include "vm_params_modbus.h"
+#include "plat_state.h"
 
 uint8_t vm_chan_ai_status[2], vm_chan_rtd_status[2];
 
@@ -97,12 +99,44 @@ static void remote_link_pre_logic(void)
     }
 }
 
+/* Operating state and measurement quality (plat_state.h, CIP-09/10). The VM/MUX switches sample
+ * routes for an analyser and watches the sample system (flow, heated line) all the time; it has
+ * no warm-up. So it reports MEASURING from the first scan: in READY the platform marks every
+ * reading unavailable, which would hide the live flow and temperatures between runs. Whether a
+ * run is on is shown by the screens and Modbus as before; the firmware-restart gate (vm_busy)
+ * still refuses a restart during a run. Quality of the four measured values (vm_meas): unavailable when
+ * the channel is disabled, fault when the input reports a fault; the platform adds stale,
+ * maintenance, calibration and fault states on top. */
+const plat_meas_def_t vm_meas[] = {
+    { .id = VMMB_ANALOGSENSOR,      .index = 0, .max_age_ms = 1000 },
+    { .id = VMMB_ANALOGSENSOR,      .index = 1, .max_age_ms = 1000 },
+    { .id = VMMB_TEMPERATURESENSOR, .index = 0, .max_age_ms = 1000 },   /* 0.1 degree */
+    { .id = VMMB_TEMPERATURESENSOR, .index = 1, .max_age_ms = 1000 },
+};
+const size_t vm_n_meas = sizeof vm_meas / sizeof vm_meas[0];
+
+static uint8_t meas_quality(uint8_t plat_status, bool enabled)
+{
+    if (!enabled) return PLAT_Q_UNAVAILABLE;
+    return plat_status == PLAT_AIN_OK ? PLAT_Q_VALID : PLAT_Q_FAULT;
+}
+
+static void report_state(void)
+{
+    plat_app_state(PLAT_ST_MEASURING);
+    plat_meas_update(0, meas_quality(vm_chan_ai_status[0], AnalogEnable[0]));
+    plat_meas_update(1, meas_quality(vm_chan_ai_status[1], AnalogEnable[1]));
+    plat_meas_update(2, meas_quality(vm_chan_rtd_status[0], TemperatureEnable[0]));
+    plat_meas_update(3, meas_quality(vm_chan_rtd_status[1], TemperatureEnable[1]));
+}
+
 void vm_after_logic(void)
 {
     vm_alarms_scan();
     vm_compat_scan();
     vm_ui_scan();
     log_channels();
+    report_state();
 }
 
 /* ---------------- firmware restart gate ---------------- */
@@ -132,11 +166,12 @@ const plat_app_t *vmmux_app(void)
     if (a.scan == NULL) {
         a.scan = &vmmux_scan;
         /* the generated table plus the screen-action entries (vm_hmi.c), one array */
-        static param_def_t all[PARAM_MAX];
+        static param_def_t all[VM_APP_PARAMS_CAP];   /* not PARAM_MAX: that counts the platform's too */
         size_t n = 0;
-        for (size_t k = 0; k < vm_n_params && n < PARAM_MAX; k++) all[n++] = vm_params[k];
-        for (size_t k = 0; k < vm_n_hmi_params && n < PARAM_MAX; k++) all[n++] = vm_hmi_params[k];
-        for (size_t k = 0; k < vm_n_ui_params && n < PARAM_MAX; k++) all[n++] = vm_ui_params[k];
+        for (size_t k = 0; k < vm_n_params && n < VM_APP_PARAMS_CAP; k++) all[n++] = vm_params[k];
+        for (size_t k = 0; k < vm_n_hmi_params && n < VM_APP_PARAMS_CAP; k++) all[n++] = vm_hmi_params[k];
+        for (size_t k = 0; k < vm_n_ui_params && n < VM_APP_PARAMS_CAP; k++) all[n++] = vm_ui_params[k];
+        if (n != vm_n_params + vm_n_hmi_params + vm_n_ui_params) n = PARAM_MAX + 1u;  /* param_init refuses it */
         a.params = all;                a.n_params = n;
         a.retain = vm_retain;          a.n_retain = vm_n_retain;
         a.layout_version = 1;          a.migrate = NULL;
@@ -148,6 +183,7 @@ const plat_app_t *vmmux_app(void)
         a.alarms = vm_alarm_defs;      a.n_alarms = vm_n_alarms;
         a.fw_safe = vm_fw_safe;
         a.ui = &vm_ui;                 /* screens and record editors (vm_ui.c) */
+        a.meas = vm_meas;              a.n_meas = vm_n_meas;   /* AI1, AI2, RTD1, RTD2 with quality */
     }
     return &a;
 }

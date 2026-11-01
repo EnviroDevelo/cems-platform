@@ -1,8 +1,8 @@
 # app_vmmux: the Valve Manager / Multiplexor on the CEMS core platform
 
-Rev C, 21 Oct 2026 (Rev B: owner decisions Q1-Q7; Rev C: main `45a7cc3` merged: records, screens,
-app selection, 128 KB FRAM; requests R1-R5 closed). Branch `app/vmmux` of `cems-platform`. Nothing under
-`platform/` is changed.
+Rev D, 1 Nov 2026 (Rev B: owner decisions Q1-Q7; Rev C: main `45a7cc3` merged: records, screens,
+app selection, 128 KB FRAM; requests R1-R5 closed; Rev D: main `f165dcc` (core 0.10.0) merged, the
+application brought onto the platform's newer contracts, section 8). Nothing under `platform/` is changed.
 
 ## 1. What this is
 
@@ -51,10 +51,10 @@ Regenerate after an Analysis change: `sh app_vmmux/tools/gen_all.sh "<path>/Exis
 | | |
 |---|---|
 | Tags | 450 definitions covering 768 dictionary tags, + 117 UI/Modbus-only tags |
-| Parameters | 422 application entries + 40 platform = 462 of `PARAM_MAX` 512 (364 settings, records and Modbus views; 48 screen commands and status; 10 display values) |
+| Parameters | 422 application entries + 389 platform (1 Nov) = 811 of this build's `PARAM_MAX` 1024 (`app_vars.mk`; the platform default 512 no longer holds both); block pool 24 KB (`PARAM_BLOB_POOL`, default 16 KB) |
 | STM32H573 (21 Oct, `check_target.sh`, fullest configuration) | flash 509.5 KB of 1016 KB (50 %), RAM 434.5 KB of 640 KB (68 %); the application itself 95.7 KB flash, 46.1 KB RAM |
 | Retained blocks | 194 |
-| **FRAM user image** | **13,600 bytes**: 33 % of the 40 KB copy on the 128 KB part (Q7, now the platform default); the 32 KB breakout still fits (90.2 % of 14,848) with `PLAT_FRAM_SIZE=32768u` in the CubeIDE preprocessor symbols |
+| **FRAM user image** | **about 16-22 KB** with core 0.10.0 (`t_store_fits_and_keeps` prints it): fits the 40 KB copy on the 128 KB part (Q7, the platform default, MB85RC1MT on the CORE PCB). **The 32 KB breakout no longer fits** (14,848 per copy): the VM/MUX needs the 128 KB FRAM |
 | Alarms | 57 (IDs 100-173) |
 | Modbus | 201 old entries + 6 platform alarm entries |
 
@@ -139,4 +139,30 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | R4 | **Closed**: 128 KB is the default map. |
 | R5 | **Closed**: `check_target.sh` links the application; re-run here on 21 Oct with the screens (figures in section 2). |
 | R6 | **New.** The touchscreen opens an editor only for a whole parameter: a `UW_VALUE` with `index` (one element of an array) is shown but cannot be changed there. The VM/MUX keeps many settings as arrays (`AnalogEnable[2]`, `RangeMin[2]`, `DOInlet[19]`, `Di_FunctionVM[22]` ...): editable on the web page's settings list today, read-only on the panel's Inputs tab. Please let a `UW_VALUE` with `index` edit that element (a one-element block write), with the usual level and mode checks. |
-| R7 | **New, for information.** `PARAM_MAX` 512: the platform's 40 and the application's 422 entries leave 50. If the platform's own table grows by more than that, the application will not start (`param_init` refuses the table; `vm_tests` prints the count). A `#ifndef PARAM_MAX` would let a build raise it. |
+| R6 | Still open on core 0.10.0 (`ui.c`: the editor opens only for `index == UW_NO_INDEX`). Passed to the firmware hub again on 1 Nov. |
+| R7 | **Closed**: `PARAM_MAX` is `#ifndef` in `param.h`; this application builds with 1024 (section 8). |
+
+## 8. Rev D: core 0.10.0 (main `f165dcc`, 1 Nov 2026)
+
+281 platform commits merged; the only conflict was `.gitignore`. The Stage 4 suites and every
+application, network and web-screen test pass unchanged in behaviour. What changed here:
+
+| # | Change | Why |
+|---|---|---|
+| D-1 | `-DPARAM_MAX=1024 -DPARAM_BLOB_POOL=24576u` in `app_vars.mk` and `app.mk`. **The CubeIDE project for a VM/MUX image needs the same two symbols.** Costs about 8 KB + 8 KB RAM over the defaults | the platform table grew from 40 to 389 entries (I/O boards, instruments, emissions, alarm tiers, Modbus force ...); 811 entries and the blocks no longer fit the defaults (`param_init` refused the table) |
+| D-2 | `vmmux_app()` copies its entries into an array of `VM_APP_PARAMS_CAP` (512), not `PARAM_MAX` | the old size would have grown to 1024 entries of RAM with D-1; a table that does not fit now makes `param_init` refuse it rather than drop entries |
+| D-3 | Every alarm has a `.help` (what to check); `FAULT_CODES.md` generated | `make conformance` (CIP-11.3) |
+| D-4 | Operating state MEASURING from the first scan; quality on AI1, AI2, RTD1, RTD2 (`plat_app_t.meas`): unavailable while the channel is disabled, fault on an input fault; the platform adds stale, maintenance, calibration and fault | CIP-09 / CIP-10. Not READY between runs: the platform marks readings unavailable in READY, which would hide the live flow and temperatures. Test `t_meas_quality` |
+| D-5 | `PROFILE.md`, `interface/MODBUS_MAP.md`, `interface/API.txt` | `make conformance APP=app_vmmux` passes (18 checks); after an intended interface change run `make snapshots APP=app_vmmux` |
+| D-6 | Tests: the output image is 64-bit; the web-screen test bypasses the page's content security policy for `wait_for_function` (as the platform's own web tests do); the network test treats a value read as null during a scan as "not yet" and always stops its simulator | core changes; an intermittent failure left a simulator holding the test ports |
+
+Alarm tiers (parameter 52): the VM/MUX alarms take the platform defaults from their severity
+(DI and valve-feedback alarms Medium, sensor faults High, analyser not OK Low, digital stop and
+sampling paused Info) and are set per site on the Alarm setup page. The platform's own 24
+digital-input alarm slots stay unused by default; the VM/MUX DI alarms 100-121 remain the
+legacy ones so the old Modbus coils keep their meaning.
+
+I/O: the application still sees the generic channel image (DI 1-30, DO 1-20, AI 1-2, RTD 1-2,
+`vm_io.c`). On the CORE PCB the core's own 8 inputs and 8 valve outputs plus I/O boards give
+those channels; which board carries which range is set per site with each board's
+`first_di` / `first_do` / `first_ai` / `first_temp` (I/O board settings), not in this code.

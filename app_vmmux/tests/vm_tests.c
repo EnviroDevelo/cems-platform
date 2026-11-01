@@ -45,6 +45,7 @@ static void power_up(void)
     param_store_init(bsp_param_nvm(), NULL, a->retain, a->n_retain, a->layout_version, a->migrate);
     param_store_boot();
     CHECK_EQ(alarm_init(a->alarms, a->n_alarms, BSP_RESET_POWER_ON), 0);
+    CHECK_EQ(plat_state_init(a->meas, a->n_meas), 0);
     ui_app_set(a->ui);
     scan_set_sys(&s, &plat_sys);
     bsp_host.rtc_valid = true;
@@ -552,6 +553,39 @@ static void t_vm_modbus_run_and_link_loss(void)
     set_mode(PARAM_MODE_LOCAL);
 }
 
+static void t_meas_quality(void)
+{
+    /* CIP-10: AI1, AI2, RTD1, RTD2 carry a quality: unavailable while disabled, fault on an input
+     * fault, valid otherwise (a new unit's missing calibration makes the platform say fault) */
+    memset(bsp_host_fram, 0, sizeof bsp_host_fram);
+    power_up();
+    scans(3);
+    CHECK_EQ(plat_meas_count(), 4u);
+    CHECK_EQ(plat_state(), PLAT_ST_FAULT);                           /* no calibration data yet (Q6) */
+    CHECK_EQ(plat_meas_quality(0), PLAT_Q_FAULT);                    /* and so no valid value */
+    FirstCalibPoint[0] = 4.0f; SecondCalibPoint[0] = 20.0f;          /* a calibration saved once */
+    scans(200);
+    power_up(); scans(3);
+    CHECK(param_store_calibration_valid());
+    CHECK_EQ(plat_state(), PLAT_ST_MEASURING);                       /* no warm-up: measuring at once */
+    CHECK_EQ(plat_meas_quality(0), PLAT_Q_UNAVAILABLE);              /* AI1 disabled by default */
+    AnalogEnable[0] = true; scans(2);
+    CHECK_EQ(plat_meas_quality(0), PLAT_Q_FAULT);                    /* enabled, not fitted */
+    bsp_host.in.ai_status[0] = PLAT_AIN_OK; bsp_host.in.ai_raw[0] = 4096; scans(2);
+    CHECK_EQ(plat_meas_quality(0), PLAT_Q_VALID);
+    CHECK(fabsf(plat_meas_value(0) - AnalogSensor[0]) < 1e-3f);
+    TemperatureEnable[1] = true; bsp_host.in.rtd_status[1] = PLAT_AIN_OK; bsp_host.in.rtd_cdeg[1] = 2120; scans(2);
+    CHECK(fabsf(plat_meas_value(3) - 212.0f) < 1e-3f);               /* 0.1 degree units */
+    CHECK_EQ(plat_meas_quality(3), PLAT_Q_VALID);
+    CHECK_EQ(plat_state_request(PLAT_ST_MAINTENANCE, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK); scans(2);
+    CHECK_EQ(plat_state(), PLAT_ST_MAINTENANCE);
+    CHECK_EQ(plat_meas_quality(0), PLAT_Q_MAINT);                    /* the platform marks it */
+    CHECK_EQ(plat_state_request(PLAT_ST_READY, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK); scans(2);
+    CHECK_EQ(plat_state(), PLAT_ST_MEASURING);
+    AnalogEnable[0] = false; TemperatureEnable[1] = false;
+    bsp_host.in.ai_status[0] = PLAT_AIN_NOT_FITTED; bsp_host.in.rtd_status[1] = PLAT_AIN_NOT_FITTED;
+}
+
 static void t_mux_schedule_run(void)
 {
     /* the automated sequence: inlet 2 then inlet 3, dwell 2 s + sample 3 s each */
@@ -1028,6 +1062,7 @@ static void t_panel(void)
 int main(void)
 {
     RUN(t_ai_conversion);
+    RUN(t_meas_quality);
     RUN(t_rtd_conversion);
     RUN(t_do_mapping);
     RUN(t_runs_clean);

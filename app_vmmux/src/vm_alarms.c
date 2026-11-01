@@ -32,12 +32,24 @@ uint16_t vm_fb_settle_s = 5;
 uint16_t vm_rtd_delay_s[2] = { 10, 10 };
 float    vm_rtd_hyst[2];
 
+#define DI_HELP "The digital input set as an alarm input (Inputs tab) is in its alarm state. " \
+    "Check the field device wired to it and its wiring; the description is set on the Inputs tab."
+#define FB_HELP "The valve's feedback input did not follow its output within the settle time. " \
+    "Check the valve, its air or power supply, the limit switch and its wiring."
+#define AI_RANGE_HELP "The scaled value stayed outside its range limits for 10 s. " \
+    "Check the process, then the range limits and scaling on the Inputs tab."
+#define AI_FAULT_HELP "The input channel reports a fault (open loop, out of range, or not fitted) while it is enabled. " \
+    "Check the transmitter, its loop supply and the wiring."
+#define RTD_RANGE_HELP "The temperature stayed outside its range limits for the alarm delay. " \
+    "Check the heated line or oven, then the limits on the Inputs tab."
+#define RTD_FAULT_HELP "The temperature channel reports a fault (open or short sensor, or not fitted) while it is enabled. " \
+    "Check the sensor and its wiring."
 #define DI(n, i) { .id = (uint16_t)(VM_AL_DI_FIRST + (i)), .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, \
     .name = "DI_ALARM_" n, .text = "Digital input " n " alarm", .text_param = VMP_ALARM##i##_DESCRIPTION, \
-    .route = AR_MODBUS }
+    .route = AR_MODBUS, .help = DI_HELP }
 #define FB(n, i) { .id = (uint16_t)(VM_AL_FB_FIRST + (i)), .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, \
     .name = "VALVE_FB_" n, .text = "Valve DO" #i " feedback alarm", .delay_param = VM_PARAM_FB_SETTLE_S, \
-    .route = AR_MODBUS }
+    .route = AR_MODBUS, .help = FB_HELP }
 
 static const alarm_def_t defs[] = {
     DI("01", 0),
@@ -83,29 +95,33 @@ static const alarm_def_t defs[] = {
     FB("19", 18),
     FB("20", 19),
     { .id = VM_AL_AI1_RANGE, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "AI1_RANGE",
-      .text = "Analog input 1 out of range", .on_delay_ms = 10000, .off_delay_ms = 10000, .route = AR_MODBUS },
+      .text = "Analog input 1 out of range", .on_delay_ms = 10000, .off_delay_ms = 10000, .route = AR_MODBUS, .help = AI_RANGE_HELP },
     { .id = VM_AL_AI1_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "AI1_FAULT",
-      .text = "Analog input 1 sensor fault", .route = AR_MODBUS },
+      .text = "Analog input 1 sensor fault", .route = AR_MODBUS, .help = AI_FAULT_HELP },
     { .id = VM_AL_AI2_RANGE, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "AI2_RANGE",
-      .text = "Analog input 2 out of range", .on_delay_ms = 10000, .off_delay_ms = 10000, .route = AR_MODBUS },
+      .text = "Analog input 2 out of range", .on_delay_ms = 10000, .off_delay_ms = 10000, .route = AR_MODBUS, .help = AI_RANGE_HELP },
     { .id = VM_AL_AI2_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "AI2_FAULT",
-      .text = "Analog input 2 sensor fault", .route = AR_MODBUS },
+      .text = "Analog input 2 sensor fault", .route = AR_MODBUS, .help = AI_FAULT_HELP },
     { .id = VM_AL_RTD1_RANGE, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "RTD1_RANGE",
-      .text = "Temperature 1 out of range", .delay_param = VM_PARAM_RTD1_DELAY_S, .route = AR_MODBUS },
+      .text = "Temperature 1 out of range", .delay_param = VM_PARAM_RTD1_DELAY_S, .route = AR_MODBUS, .help = RTD_RANGE_HELP },
     { .id = VM_AL_RTD1_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "RTD1_FAULT",
-      .text = "Temperature 1 sensor fault", .route = AR_MODBUS },
+      .text = "Temperature 1 sensor fault", .route = AR_MODBUS, .help = RTD_FAULT_HELP },
     { .id = VM_AL_RTD2_RANGE, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .name = "RTD2_RANGE",
-      .text = "Temperature 2 out of range", .delay_param = VM_PARAM_RTD2_DELAY_S, .route = AR_MODBUS },
+      .text = "Temperature 2 out of range", .delay_param = VM_PARAM_RTD2_DELAY_S, .route = AR_MODBUS, .help = RTD_RANGE_HELP },
     { .id = VM_AL_RTD2_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .name = "RTD2_FAULT",
-      .text = "Temperature 2 sensor fault", .route = AR_MODBUS },
+      .text = "Temperature 2 sensor fault", .route = AR_MODBUS, .help = RTD_FAULT_HELP },
     { .id = VM_AL_FLOW_VALIDATION, .severity = AL_SEV_ALARM, .flags = AL_LATCH | AL_NOTIFY, .name = "FLOW_VALIDATION",
-      .text = "No flow detected when valve open", .route = AR_MODBUS },
+      .text = "No flow detected when valve open", .route = AR_MODBUS,
+      .help = "The flow switch did not see flow with a sample valve open. Check the pump, filters and sample line for a blockage, then acknowledge." },
     { .id = VM_AL_DIGITAL_STOP, .severity = AL_SEV_STATUS, .flags = AL_NO_ACK, .name = "DIGITAL_STOP",
-      .text = "Digital stop activated", .route = AR_MODBUS },
+      .text = "Digital stop activated", .route = AR_MODBUS,
+      .help = "The digital stop input is on, so the MUX sequence is held. Release the stop at the plant to carry on." },
     { .id = VM_AL_ANALYSER_NOT_OK, .severity = AL_SEV_WARNING, .flags = AL_NO_ACK | AL_NOTIFY, .name = "ANALYSER_NOT_OK",
-      .text = "Analyzer not okay", .route = AR_MODBUS },
+      .text = "Analyzer not okay", .route = AR_MODBUS,
+      .help = "The analyser's OK input is off, so sampling is locked. Check the analyser's own status display." },
     { .id = VM_AL_SAMPLING_PAUSED, .severity = AL_SEV_STATUS, .flags = AL_NO_ACK, .name = "SAMPLING_PAUSED",
-      .text = "MUX automated sampling paused during calibration", .route = 0 },
+      .text = "MUX automated sampling paused during calibration", .route = 0,
+      .help = "Information only: the MUX waits while a Valve Manager calibration run uses the analyser." },
 };
 const alarm_def_t *const vm_alarm_defs = defs;
 const size_t vm_n_alarms = sizeof defs / sizeof defs[0];

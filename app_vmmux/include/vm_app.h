@@ -46,6 +46,9 @@ enum {
 /* ---- after-logic hooks (vm_app.c) ---- */
 void vm_after_logic(void);        /* alarms, data log, link watchdog: once per scan after Function1 */
 bool vm_fw_safe(char *why, size_t cap);
+/* The application's own parameter entries (422 on 1 Nov 2026), held in one array for plat_app_t.
+ * The build's PARAM_MAX (app_vars.mk, 1024) must cover these plus the platform's (389). */
+#define VM_APP_PARAMS_CAP 512u
 bool vm_busy(char *why, size_t cap);   /* a sequence, manual run or purge is active */
 void vm_compat_scan(void);       /* old Modbus coils and buffers kept meaningful (vm_compat.c) */
 

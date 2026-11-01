@@ -47,10 +47,14 @@ def check(cond, what):
         print("  FAIL:", what)
 
 
+RUNNING = []      # units still running, stopped on the way out whatever happens
+
+
 class Unit:
     def __init__(self):
         self.p = subprocess.Popen([os.path.join(ROOT, "build", "netsim-app_vmmux"), str(MB), str(WEB), FRAM, NOR],
                                   stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        RUNNING.append(self.p)
         self.log = []
         threading.Thread(target=self._read, daemon=True).start()
         for _ in range(200):
@@ -118,9 +122,14 @@ class Modbus:
 
 
 def wait_for(fn, timeout=3.0):
+    # A value can read null for one poll while the scan holds it (the reader collided with the
+    # scan): that is "not yet", not an error.
     t = time.time()
     while time.time() - t < timeout:
-        if fn(): return True
+        try:
+            if fn(): return True
+        except (TypeError, KeyError, IndexError):
+            pass
         time.sleep(0.05)
     return False
 
@@ -176,12 +185,12 @@ def main():
     check(wait_for(lambda: (mb.holding(760, 1) or [0])[0] == 3), "Modbus: MUX mode 3 (manual) at holding 760")
     # inlet 4 does not exist with 4 valves: the interlock refuses it at apply time
     web.write(MUX_INLET, 4); time.sleep(0.3)
-    check(web.values()[str(MUX_INLET_ON)][3] in (False, 0), "web: inlet 4 refused (not fitted)")
+    check(wait_for(lambda: web.values()[str(MUX_INLET_ON)][3] in (False, 0)), "web: inlet 4 refused (not fitted)")
 
     # master enable off from the web page (admin): everything MUX stops
     st, _ = web.write(MUXEN, 0)
     check(st == 200 and wait_for(lambda: (mb.holding(760, 1) or [9])[0] == 0), "mux_enable off: MUX at rest")
-    check(not any(web.values()[str(MUX_INLET_ON)]), "mux_enable off: no inlet open")
+    check(wait_for(lambda: not any(web.values()[str(MUX_INLET_ON)])), "mux_enable off: no inlet open")
 
     # sequence editor through the web API: refused with the check's reason, then accepted
     st, rec = web.req(f"/api/record?id={SEQ1}")
@@ -216,4 +225,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        rc = main()
+    finally:          # never leave a netsim holding the ports (the next run would fail to start)
+        for p in RUNNING:
+            if p.poll() is None:
+                p.kill(); p.wait()
+    sys.exit(rc)
