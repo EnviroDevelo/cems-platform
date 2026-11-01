@@ -9,6 +9,7 @@ backup/restore, concurrent clients, and that everything survives a restart.
 
     PYTHONPATH=<pymodbus source> python3 tests/integration/net_test.py
 """
+# Requirements proved here: CIP-07.6, 26.1, 26.4, 05.5, 12.3, 12.4, 15.4, 17.2, 17.5, 20.1, 13.1.
 import http.cookiejar, ssl, json, os, signal, struct, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 
 from pymodbus.client import ModbusTcpClient
@@ -161,6 +162,50 @@ def main():
     check(st == 401, "wrong password -> 401")
     st, j = web.json("/api/login", {"level": "admin", "password": "2222"})
     check(st == 200 and j["level"] == "admin", "admin login")
+
+    # ---------------- Modbus force for commissioning (admin, 30 s, Modbus only) ----------------
+    real = mb.read_input_registers(100, 1, slave=1).registers[0]
+    st, j = web.json("/api/modbus/force")
+    names = {f["name"] for f in j["forceable"]}
+    check(st == 200 and j["max_s"] == 30 and "demo_level" in names and "start_in" in names and "start_delay" not in names,
+          "forceable list: values the PLC reads, not settings")
+    st, j = web.json("/api/modbus/force", {"id": 1008, "v": "42.5"})
+    check(st == 200 and j["forced"] == 1, "admin forces demo_level")
+    st, j = web.json("/api/modbus/force", {"id": 1004, "v": "true"})
+    check(st == 200 and j["forced"] == 2, "admin toggles a test bit (start_in)")
+    time.sleep(0.15)
+    check(mb.read_input_registers(100, 1, slave=1).registers[0] == 425, "the PLC reads the forced value (x10)")
+    check(mb.read_discrete_inputs(0, 1, slave=1).bits[0] is True, "the PLC reads the forced bit")
+    blk = mb.read_input_registers(9090, 1, slave=1).registers[0]
+    com = mb.read_input_registers(9006, 1, slave=1).registers[0]
+    check(blk == 2 and com & 0x10, "the PLC can tell values are forced (9090, common bit 4)")
+    st, j = web.json("/api/values")
+    check(st == 200 and abs(j["v"]["1008"] * 10 - real) < 1, "the web keeps the real value")
+    st, j = web.json("/api/modbus/force")
+    f = [x for x in j["forces"] if x["id"] == 1008]
+    check(f and f[0]["v"] == 42.5 and 0 < f[0]["left_s"] <= 30 and f[0]["by"] == "web" and f[0]["index"] is None,
+          "force listed with the time left")
+    st, j = web.json("/api/info")
+    check(j["modbus"]["forced"] == 2, "/api/info modbus.forced")
+    st, j = web.json("/api/modbus/force", {"id": 1001, "v": "5"})
+    check(st == 404, "a setting is not forceable")
+    st, j = web.json("/api/modbus/force/clear", {"id": 1008})
+    check(st == 200 and j["forced"] == 1, "clear one force")
+    time.sleep(0.15)
+    check(abs(mb.read_input_registers(100, 1, slave=1).registers[0] - real) <= 1, "...and the PLC reads the real value again")
+    st, j = web.json("/api/modbus/force/clear", {"all": 1})
+    check(st == 200 and j["forced"] == 0, "clear all")
+    st, j = web.json("/api/modbus/map")
+    e = [x for x in j["entries"] if x["name"] == "demo_level"]
+    check(st == 200 and j["addressing"] == "0-based" and e and e[0]["table"] == "input" and e[0]["addr"] == 100
+          and e[0]["scale_dec"] == 1 and e[0]["forceable"] and e[0]["access"] == "read", "register map for the handover file")
+    c = j["codes"]
+    check(len(c["quality"]) == 8 and c["quality"][0]["name"] == "valid" and c["state"][4]["key"] == "MEASURING"
+          and any(b["bit"] == 4 for b in c["common_bits"]) and len(c["exceptions"]) == 5, "codes for the handover file")
+    st, j = web.json("/api/log/events?n=50")
+    ev = [x for x in j["events"] if x["event"] == "force"]
+    check(len(ev) >= 4 and any(x["detail"] == "demo_level" and x["new"] == 42.5 for x in ev)
+          and any(x["detail"] == "demo_level" and x["new"] is None for x in ev), "force set and clear in the event log")
     st, j = web.json("/api/write", [("id", 1001), ("v", 2500), ("id", 1005), ("v", "Inlet 9")])
     check(st == 200 and j["queued"] == 2, "web batch write")
     time.sleep(0.05)
@@ -171,8 +216,6 @@ def main():
     check(u32(mb.read_holding_registers(0, 2, slave=1).registers) == 2500, "...and nothing applied")
     st, j = web.json("/api/write", {"id": 1, "v": 0})
     check(st == 409 and j["error"] == "mode", "only the touchscreen changes the mode")
-    st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
-    check(st == 200, "admin password changed")
 
     # ---------------- client limit and IP filter ----------------
     extra = [ModbusTcpClient("127.0.0.1", port=MB) for _ in range(4)]
@@ -241,6 +284,16 @@ def main():
     bad = bytearray(backup); bad[-1] ^= 1
     st, body, _ = web.req("/api/restore", raw=bytes(bad))
     check(st == 400, "damaged backup refused")
+    # the file is received straight into the settings store's buffer (not the web server's):
+    # one larger than any backup is refused without breaking the connection
+    st, body, _ = web.req("/api/restore", raw=b"CEMX" + bytes(64 * 1024))
+    check(st == 413, f"oversized backup refused ({st})")
+    st, backup2, _ = web.req("/api/backup")
+    check(st == 200 and backup2[:4] == b"CEMX", "backup still works after the refusal (buffer returned)")
+    web.json("/api/write", {"id": 1001, "v": 1234})
+    time.sleep(1.5)                                   # saved: the store got its buffer back
+    st, body, _ = web.req("/api/restore", raw=backup)
+    check(st == 200, "restore again")
 
     # ---------------- HTTPS ----------------
     import hashlib, socket, http.client
@@ -295,13 +348,31 @@ def main():
     check(ok_all and hs1 == hs0, f"22 requests on one kept connection: no further TLS handshakes ({hs1 - hs0})")
     kc.request("GET", "/api/log/events.csv"); rr = kc.getresponse(); body = rr.read()
     check(rr.getheader("Transfer-Encoding") == "chunked" and body.startswith(b"seq,time,event"), "a streamed CSV is chunked on a kept connection")
-    other = Web(); other.json("/api/info")                # another client: the kept connection gives way
-    try:
-        kc.request("GET", "/api/values?ids=1"); rr = kc.getresponse(); rr.read(); gave_way = False
-    except (http.client.RemoteDisconnected, ConnectionError, ssl.SSLError):
-        gave_way = True
-    check(gave_way, "a waiting client closes the kept connection (one connection at a time)")
-    kc.close()
+    # a second browser keeps its own connection: both are served in turn, no new handshakes
+    kc2 = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
+    kc2.request("GET", "/api/values?ids=1"); kc2.getresponse().read()
+    hs2 = kinfo()
+    ok_all = True
+    for k in range(10):
+        for c in (kc, kc2):
+            c.request("GET", "/api/values?ids=1"); rr = c.getresponse(); body = rr.read()
+            ok_all &= rr.status == 200 and rr.getheader("Connection") == "keep-alive"
+    check(ok_all and kinfo() == hs2, "two kept connections served in turn, no further TLS handshakes")
+    def alive(c):
+        try:
+            c.request("GET", "/api/values?ids=1"); rr = c.getresponse(); rr.read(); return True
+        except (http.client.RemoteDisconnected, ConnectionError, ssl.SSLError):
+            return False
+    k3 = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)   # a third client, both places busy
+    k3.request("GET", "/api/values?ids=1"); rr = k3.getresponse(); rr.read()
+    check(rr.status == 200 and rr.getheader("Connection") == "close", "a third client is served once (Connection: close)")
+    k3.close()
+    check(alive(kc) and alive(kc2), "... and both kept connections stay")
+    for _ in range(4):                                    # kc idles past HTTP_EVICT_IDLE_MS, kc2 keeps polling
+        time.sleep(0.3); kc2.request("GET", "/api/values?ids=1"); kc2.getresponse().read()
+    other = Web(); other.json("/api/info")                # now the idle one gives way
+    check(not alive(kc) and alive(kc2), "a new client takes the place of a kept connection idle over 1 s")
+    kc.close(); kc2.close()
     kc = http.client.HTTPSConnection("127.0.0.1", WEB, context=CTX, timeout=5)
     kc.request("POST", "/api/logout", body=b"", headers={"X-CEMS": "1", "Content-Type": "application/x-www-form-urlencoded"})
     rr = kc.getresponse(); rr.read()
@@ -309,7 +380,7 @@ def main():
     kc.close()
     st, info = web.json("/api/info")
     print(f"   TLS: {info['tls']}")
-    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 44 * 1024, "TLS statistics")
+    check(info["tls"]["resumed"] >= 1 and info["tls"]["pool_peak"] < 80 * 1024, "TLS statistics")
 
     # ---------------- alarms ----------------
     def alarms(w=web):
@@ -318,6 +389,7 @@ def main():
     j, a = alarms()
     check(1 in a and a[1]["severity"] == "fault" and a[1]["active"] and a[1]["name"] == "CAL_INVALID",
           "platform alarm: calibration invalid")
+    check(a[1]["help"].startswith("Neither copy of the factory data"), "alarm list carries what to check (help)")
     web.json("/api/write", {"id": 1007, "v": 1}); time.sleep(0.3)
     j, a = alarms()
     check(100 in a and a[100]["active"] and a[100]["unacked"] and a[100]["latch"], "application alarm raised (latching)")
@@ -365,6 +437,63 @@ def main():
     check(info["alarms"]["active"] == j["active"], "alarm counts in /api/info")
     mbc.close()
 
+    # ---------------- calibration records (CIP-18) ----------------
+    st, cal = web.json("/api/cal")
+    check(st == 200 and cal["channels"][0]["name"] == "Level" and cal["channels"][0]["in_force"] is None
+          and cal["active"] is None, "calibrated channels listed, nothing in force")
+    st, j = web.json("/api/cal", {"cmd": "begin", "ch": 0})
+    check(st == 409 and "FAULT" in j["error"], f"admin may not calibrate a unit with no calibration data ({j})")
+    fac = Web()
+    st, j = fac.json("/api/login", {"level": "factory", "password": "9999"})
+    check(st == 200, "factory login")
+    st, j = fac.json("/api/cal", {"cmd": "begin", "ch": 0})
+    check(st == 200, f"factory calibration started ({j})")
+    time.sleep(0.1)
+    st, cal = web.json("/api/cal")
+    check(cal["active"] == 0, "calibration running on channel 0")
+    st, j = fac.json("/api/cal", {"cmd": "accept"})
+    check(st == 200, "accepted")
+    time.sleep(0.1)
+    st, cal = web.json("/api/cal")
+    rec = cal["channels"][0]["in_force"] or {}
+    check(rec.get("kind") == "factory" and rec.get("outcome") == "pass" and rec.get("level") == "factory"
+          and rec.get("src") == "web" and rec.get("points") == [[50, 50, 50]] and rec.get("coef") == [0, 1],
+          f"factory record in force ({rec})")
+    check(cal["channels"][0]["factory"] == rec and len(cal["history"]) == 1, "factory record and history")
+    check(cal["channels"][0]["due_time"] == rec.get("time", -1) + 90 * 86400, "due in 90 days")
+    check(cal["channels"][0]["overdue"] is False, "not overdue")
+    # ---------------- service history (CIP-22.2, 22.4, 23.4, 05.4) ----------------
+    st, j = web.json("/api/service/log", {"tech": "Sam", "work": "Pump replaced"})
+    check(st == 403, "service log needs factory login")
+    st, j = fac.json("/api/service/log", {"tech": "Sam", "work": "Pump replaced"})
+    check(st == 200, "service log entry")
+    st, j = fac.json("/api/service/test", {"station": "EOL-1", "r": "1,1,1,2"})
+    check(st == 200, "test record")
+    time.sleep(0.1)
+    st, sv = web.json("/api/service")
+    check(st == 200 and sv["log"] and sv["log"][0]["tech"] == "Sam" and sv["log"][0]["level"] == "factory"
+          and sv["test"]["passed"] is False and sv["test"]["results"] == [1, 1, 1, 2], f"service history ({sv})")
+    st, info = web.json("/api/info")
+    for _ in range(3):      # the checksum is worked out once a second: a change just before may land between the reads
+        if info["config_crc"] == sv["config_crc"]:
+            break
+        time.sleep(1.1)
+        st, sv = web.json("/api/service")
+        st, info = web.json("/api/info")
+    check(len(info["config_crc"]) == 8 and info["config_crc"] == sv["config_crc"] and info["board_rev"] == 0
+          and info["build"], "config checksum, board revision, build on /api/info")
+    for _ in range(120):                                # the start-up self-test closes 10 s after start
+        st, info = web.json("/api/info")
+        if info["selftest"]["done"]: break
+        time.sleep(0.1)
+    stt = {t["name"]: t["result"] for t in info["selftest"]["tests"]}
+    check(info["selftest"]["done"] and list(stt)[:3] == ["image", "ram", "rtc"] and stt["ram"] == "pass"
+          and stt["image"] == "skipped" and stt["settings"] == "pass" and stt["log_flash"] == "pass",
+          f"start-up self-test list on /api/info ({info['selftest']})")
+    fac.req("/api/logout", {})
+    st, j = web.json("/api/password", {"level": "admin", "password": "Cems-2026"})
+    check(st == 200, "admin password changed")
+
     # ---------------- event log ----------------
     st, j = web.json("/api/log/events?n=200")
     ev = j["events"] if st == 200 else []
@@ -389,7 +518,7 @@ def main():
           and len(lines) == len(ev) + 1, f"event CSV ({len(lines) - 1} rows)")
     st, j = web.json("/api/log/info")
     check(st == 200 and j["status"] == 0 and j["events"]["used"] == len(ev), "log info")
-    n_events = len([e for e in ev if not e["event"].startswith("alarm")])   # the platform's own alarms come and go
+    n_events = len([e for e in ev if not e["event"].startswith(("alarm", "state"))])   # the platform's own alarms and the state they force come and go
 
     time.sleep(1.5)                                  # let the store save
     log = unit.stop()
@@ -407,9 +536,14 @@ def main():
     check(st == 401, "old admin password no longer works")
     st, j = web.json("/api/login", {"level": "admin", "password": "Cems-2026"})
     check(st == 200, "changed admin password survived the restart")
+    st, cal = web.json("/api/cal")
+    check((cal["channels"][0]["factory"] or {}).get("outcome") == "pass", "calibration record survived the restart")
+    st, sv = web.json("/api/service")
+    check(sv["log"] and sv["log"][0]["work"] == "Pump replaced" and sv["test"]["station"] == "EOL-1",
+          "service history survived the restart")
     st, j = web.json("/api/log/events?n=200")
     allev = j["events"] if st == 200 else []
-    ev = [e for e in allev if not e["event"].startswith("alarm")]
+    ev = [e for e in allev if not e["event"].startswith(("alarm", "state"))]
     check(len(ev) == n_events + 3 and [e["event"] for e in ev[:3]] == ["login", "login_fail", "power_up"],
           "event log continues across the restart")
     check([e["seq"] for e in allev] == list(range(len(allev), 0, -1)), "sequence numbers contiguous")

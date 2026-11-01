@@ -13,6 +13,7 @@ typedef struct nvm_dev {
     uint32_t size;        /* bytes */
     bool     persistent;  /* false for the RAM fallback: contents lost at power-off */
     void    *ctx;
+    uint8_t  parts;       /* chips joined into this memory (I2C FRAM scan); 0 = not counted */
 } nvm_dev_t;
 
 /* RAM device. fail_after: number of further bytes a write may store before it

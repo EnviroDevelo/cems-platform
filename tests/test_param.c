@@ -1,4 +1,5 @@
-/* test_param.c - shared parameter table: definitions, checks, apply, arbitration. */
+/* test_param.c - shared parameter table: definitions, checks, apply, arbitration.
+ * Requirements proved here: CIP-05.2, 14.1, 14.6, 15.4, 07.4. */
 #include <math.h>
 #include <string.h>
 #include "tst.h"

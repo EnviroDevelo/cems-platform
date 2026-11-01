@@ -5,9 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include "http_api.h"
+#include "iobus.h"
+#include "inst.h"
+#include "mb_rtu.h"
+#include "mbtcp.h"
+#include "modbus.h"
 #include "param.h"
 #include "param_store.h"
 #include "plat_diag.h"
+#include "plat_boardtest.h"
+#include "boot.h"
 #include "bsp.h"
 #include "log_csv.h"
 #include "fw_update.h"
@@ -18,6 +25,12 @@
 #include "plat_health.h"
 #include "plat_serial.h"
 #include "ui_app.h"
+#include "plat_state.h"
+#include "plat_cal.h"
+#include "plat_service.h"
+#include "plat_selftest.h"
+#include "plat_version.h"
+#include "plat_net.h"
 
 extern uint16_t plat_log_interval_s;
 
@@ -116,6 +129,10 @@ static void head(http_out_t *o, int st, const char *ctype, const char *extra) {
     out_str(o, o->keep ? (len ? "Connection: keep-alive\r\n" : "Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n")
                        : "Connection: close\r\n");
     out_str(o, "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\n");
+    if (!strncmp(ctype, "text/html", 9))                /* the page: nothing loaded or sent anywhere but this unit */
+        out_str(o, "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                   "img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\n"
+                   "Referrer-Policy: no-referrer\r\n");
     if (extra) out_str(o, extra);
     out_str(o, "\r\n");
     out_head_done(o, len);
@@ -189,6 +206,42 @@ static void level_name_json(http_out_t *o, uint8_t l) {
     json_str(o, l <= 3 ? n[l] : "view");
 }
 
+static void json_ip(http_out_t *o, uint32_t ip);
+
+extern bool plat_eth_diag(plat_eth_diag_t *d) __attribute__((weak));   /* the H5 port only */
+
+static void get_eth(http_out_t *o) {
+    plat_eth_diag_t d;
+    if (!plat_eth_diag || !plat_eth_diag(&d)) return;
+    out_str(o, ",\"eth\":{\"link\":"); json_bool(o, d.link_up);
+    out_str(o, ",\"phy_mbps\":"); json_uint(o, d.phy_mbps);
+    out_str(o, ",\"phy_full\":"); json_bool(o, d.phy_full);
+    out_str(o, ",\"mac_mbps\":"); json_uint(o, d.mac_mbps);
+    out_str(o, ",\"mac_full\":"); json_bool(o, d.mac_full);
+    out_str(o, ",\"phy_symbol_errors\":"); json_uint(o, d.phy_symbol_errors);
+    out_str(o, ",\"rx_good_unicast\":"); json_uint(o, d.rx_good_unicast);
+    out_str(o, ",\"tx_good\":"); json_uint(o, d.tx_good);
+    out_str(o, ",\"rx_crc_errors\":"); json_uint(o, d.rx_crc_errors);
+    out_str(o, ",\"rx_align_errors\":"); json_uint(o, d.rx_align_errors);
+    out_str(o, ",\"rx_missed\":"); json_uint(o, d.rx_missed);
+    out_str(o, ",\"rx_overflow\":"); json_uint(o, d.rx_overflow);
+    out_str(o, ",\"rx_pool_empty\":"); json_uint(o, d.rx_pool_empty);
+    out_str(o, ",\"rx_kicks\":"); json_uint(o, d.rx_kicks);
+    out_str(o, ",\"link_mode\":"); json_uint(o, d.link_mode);
+    out_str(o, ",\"fallback\":"); json_bool(o, d.fallback);       /* auto mode dropped to 10 Mbit: 100 lost data */
+    out_str(o, ",\"fallbacks\":"); json_uint(o, d.fallbacks);
+    out_str(o, ",\"tcp_segs\":"); json_uint(o, d.tcp_segs);
+    out_str(o, ",\"tcp_rexmits\":"); json_uint(o, d.tcp_rexmits);
+    out_str(o, ",\"link_drops\":"); json_uint(o, d.link_drops);
+    out_str(o, ",\"resyncs\":"); json_uint(o, d.resyncs);
+    out_str(o, ",\"anar\":"); json_uint(o, d.phy_anar);       /* PHY registers 4-6, raw */
+    out_str(o, ",\"anlpar\":"); json_uint(o, d.phy_anlpar);
+    out_str(o, ",\"aner\":"); json_uint(o, d.phy_aner);
+    out_str(o, ",\"partner_autoneg\":"); json_bool(o, (d.phy_aner & 0x0001u) != 0);   /* 0: the switch didn't negotiate (we guessed its mode) */
+    out_str(o, ",\"parallel_fault\":"); json_bool(o, (d.phy_aner & 0x0010u) != 0);
+    out_str(o, "}");
+}
+
 static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     plat_val_t v;
     uint32_t left = 0;
@@ -198,8 +251,26 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"product\":"); json_str(o, cfg.product);
     out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    out_str(o, ",\"core\":"); json_str(o, PLAT_CORE_VERSION);    /* the platform it is built on (R4) */
+    out_str(o, ",\"api\":"); json_uint(o, HTTP_API_VERSION);
+    out_str(o, ",\"state\":"); json_str(o, plat_state_key(plat_state()));
+    out_str(o, ",\"state_since\":"); json_uint(o, plat_state_since());
     out_str(o, ",\"serial\":"); json_uint(o, param_read(PARAM_ID_SERIAL, &v) ? v.u : 0);
     out_str(o, ",\"hw_rev\":"); json_uint(o, param_read(PARAM_ID_HW_REV, &v) ? v.u : 0);
+    out_str(o, ",\"board_rev\":"); if (fw_board_rev() >= 0) json_uint(o, (unsigned long)fw_board_rev()); else out_str(o, "null");
+    out_str(o, ",\"build\":"); json_str(o, fw_build_id());
+    { char cb[12]; snprintf(cb, sizeof cb, "%08lx", (unsigned long)plat_config_crc());
+      out_str(o, ",\"config_crc\":"); json_str(o, cb); }
+    out_str(o, ",\"run_hours\":"); json_float(o, (float)plat_service_hours_x10() / 10.0f);
+    out_str(o, ",\"selftest\":{\"done\":"); json_bool(o, plat_selftest_done());   /* CIP-11.1 */
+    out_str(o, ",\"failed\":"); json_uint(o, plat_selftest_failed());
+    out_str(o, ",\"tests\":[");
+    { const char *nm; uint8_t res;
+      for (unsigned i = 0; plat_selftest_get(i, &nm, &res); ++i) {
+          out_str(o, i ? ",{\"name\":" : "{\"name\":"); json_str(o, nm);
+          out_str(o, ",\"result\":"); json_str(o, plat_selftest_result_name(res)); out_str(o, "}");
+      } }
+    out_str(o, "]}");
     out_str(o, ",\"uptime_s\":"); json_uint(o, now / 1000u);
     out_str(o, ",\"mode\":"); json_str(o, param_ctrl_mode() == PARAM_MODE_REMOTE ? "remote" : "local");
     out_str(o, ",\"link_lost\":"); json_bool(o, param_remote_link_lost());
@@ -209,12 +280,35 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"resumed\":"); json_uint(o, t.resumed);
       out_str(o, ",\"failed\":"); json_uint(o, t.failed);
       out_str(o, ",\"pool_peak\":"); json_uint(o, t.pool_peak); out_str(o, "}"); }
+    {   const mbtcp_server_t *m = mbtcp_main();      /* the web Service tab's Modbus panel */
+        mb_stats_t st = mb_stats();
+        out_str(o, ",\"modbus\":{\"listening\":"); json_bool(o, m != NULL);
+        out_str(o, ",\"port\":"); if (m) json_uint(o, m->port); else out_str(o, "null");
+        out_str(o, ",\"clients\":"); json_uint(o, m ? (unsigned)mbtcp_clients(m) : 0u);
+        out_str(o, ",\"max_clients\":"); json_uint(o, MBTCP_MAX_CLIENTS);
+        out_str(o, ",\"requests\":"); json_uint(o, st.requests);
+        out_str(o, ",\"exceptions\":"); json_uint(o, st.exceptions);
+        out_str(o, ",\"writes_queued\":"); json_uint(o, st.writes_queued);
+        out_str(o, ",\"read_only\":"); json_bool(o, !(param_read(PARAM_ID_MODBUS_WRITE_EN, &v) && v.b));
+        out_str(o, ",\"allow_ip\":");                  /* null: any client */
+        if (param_read(PARAM_ID_MODBUS_ALLOW_IP, &v) && v.u) json_ip(o, v.u); else out_str(o, "null");
+        out_str(o, ",\"accepted\":"); json_uint(o, m ? m->accepted : 0u);
+        out_str(o, ",\"refused_ip\":"); json_uint(o, m ? m->refused_ip : 0u);
+        out_str(o, ",\"evicted\":"); json_uint(o, m ? m->evicted : 0u);
+        out_str(o, ",\"protocol_errors\":"); json_uint(o, m ? m->protocol_errors : 0u);
+        out_str(o, ",\"forced\":"); json_uint(o, mb_force_count());
+        out_str(o, ",\"last_request_s\":");
+        if (m && m->frames) json_uint(o, (uint32_t)(bsp_ms() - m->last_frame_ms) / 1000u); else out_str(o, "null");
+        out_str(o, "}"); }
+    get_eth(o);
     out_str(o, ",\"ip_conflict\":"); json_bool(o, (plat_net_status_word & NETST_CONFLICT) != 0);
+    out_str(o, ",\"net_swapped\":"); json_bool(o, iob_net_swapped);
     out_str(o, ",\"cal_valid\":"); json_bool(o, param_store_calibration_valid());
     { alarm_summary_t s; alarm_summary(&s);
       out_str(o, ",\"alarms\":{\"active\":"); json_uint(o, s.active);
       out_str(o, ",\"unacked\":"); json_uint(o, s.unacked);
       out_str(o, ",\"worst\":"); if (s.worst >= 0) json_str(o, alarm_sev_name((uint8_t)s.worst)); else out_str(o, "null");
+    out_str(o, ",\"worst_priority\":"); if (s.worst_prio) json_uint(o, s.worst_prio); else out_str(o, "null");
       out_str(o, "}"); }
     {   plat_health_t h = plat_health;
         char why[64] = "";
@@ -233,6 +327,8 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
         }
         out_str(o, "}}"); }
     out_str(o, ",\"store_status\":"); json_uint(o, param_store_status());
+    { unsigned parts; uint32_t sz = param_store_nvm_size(&parts);
+      out_str(o, ",\"fram\":{\"bytes\":"); json_uint(o, sz); out_str(o, ",\"chips\":"); json_uint(o, parts); out_str(o, "}"); }
     out_str(o, ",\"log_status\":"); json_uint(o, plat_log_status());
     out_str(o, ",\"default_passwords\":"); json_bool(o, auth_any_default());
     out_str(o, ",\"login_locked_s\":"); json_uint(o, (auth_locked_ms(now) + 999u) / 1000u);
@@ -244,7 +340,37 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
     out_str(o, ",\"late_starts\":"); json_uint(o, ss.late_starts); out_str(o, "}");
     out_str(o, ",\"last_fault\":{\"code\":"); json_uint(o, plat_diag.fault);
     out_str(o, ",\"name\":"); json_strn(o, plat_diag.fault_name, blen(plat_diag.fault_name, sizeof plat_diag.fault_name));
+    out_str(o, ",\"arg\":"); json_uint(o, plat_diag.fault_arg);
+    out_str(o, ",\"lr\":"); json_uint(o, plat_diag.fault_lr);
+    out_str(o, ",\"cfsr\":"); json_uint(o, plat_diag.fault_cfsr);
+    out_str(o, ",\"hfsr\":"); json_uint(o, plat_diag.fault_hfsr);
+    out_str(o, ",\"addr\":"); json_uint(o, plat_diag.fault_addr);
     out_str(o, ",\"boots\":"); json_uint(o, plat_diag.boots); out_str(o, "}}");
+}
+
+/* "meas": the parameter's position in the measurement table (plat_meas), so a page can find its
+ * quality in /api/values. A scalar gives a number; an array gives one entry per element (null
+ * where that element isn't a measurement). Left out when the parameter has none. */
+static void meas_json(http_out_t *o, const param_def_t *d) {
+    size_t nm = plat_meas_count();
+    bool any = false;
+    for (size_t m = 0; m < nm && !any; ++m) any = plat_meas_at(m)->id == d->id;
+    if (!any) return;
+    out_str(o, ",\"meas\":");
+    if (d->ptype != PT_ARRAY) {
+        for (size_t m = 0; m < nm; ++m)
+            if (plat_meas_at(m)->id == d->id) { json_uint(o, (uint32_t)m); return; }
+        return;
+    }
+    size_t es = param_ctype_size(d->ctype), n = es ? d->size / es : 0;
+    out_str(o, "[");
+    for (size_t k = 0; k < n; ++k) {
+        if (k) out_str(o, ",");
+        size_t m = 0;
+        while (m < nm && !(plat_meas_at(m)->id == d->id && plat_meas_at(m)->index == k)) ++m;
+        if (m < nm) json_uint(o, (uint32_t)m); else out_str(o, "null");
+    }
+    out_str(o, "]");
 }
 
 static void get_params(http_out_t *o) {
@@ -265,6 +391,8 @@ static void get_params(http_out_t *o) {
         }
         if (d->ptype <= PT_FLOAT) { out_str(o, ",\"def\":"); json_val(o, d->ptype, d->vdef); }
         if (PARAM_IS_BLOB(d)) { out_str(o, ",\"size\":"); json_uint(o, d->size); }
+        if (param_has_quality(d->id, PLAT_MEAS_NO_INDEX)) out_str(o, ",\"q\":true");
+        meas_json(o, d);
         out_str(o, ",\"level\":"); json_uint(o, d->level);
         out_str(o, ",\"flags\":["); bool f = false;
         static const struct { uint16_t bit; const char *n; } fl[] = {
@@ -320,6 +448,36 @@ static void value_json(http_out_t *o, const param_def_t *d) {
     }
 }
 
+/* is id in the comma-separated list (NULL: every ID)? */
+static bool listed(const char *ids, uint16_t id) {
+    if (!ids) return true;
+    for (const char *p = ids; *p;) {
+        char *e; unsigned long x = strtoul(p, &e, 10);
+        if (e == p) return false;
+        if (x == id) return true;
+        if (*e != ',') return false;
+        p = e + 1;
+    }
+    return false;
+}
+
+/* the measurements whose quality is not valid: {"1002":"stale","1010.3":"cal"} */
+static void quality_json(http_out_t *o, const char *ids) {
+    out_str(o, ",\"q\":{");
+    bool first = true;
+    for (size_t i = 0; i < plat_meas_count(); ++i) {
+        const plat_meas_def_t *m = plat_meas_at(i);
+        uint8_t q = plat_meas_quality(i);
+        if (q == PLAT_Q_VALID || !listed(ids, m->id)) continue;
+        if (!first) out_str(o, ",");
+        first = false;
+        out_str(o, "\""); json_uint(o, m->id);
+        if (m->index != PLAT_MEAS_NO_INDEX) { out_str(o, "."); json_uint(o, m->index); }
+        out_str(o, "\":"); json_str(o, plat_quality_code(q));
+    }
+    out_str(o, "}");
+}
+
 static void get_values(const http_req_t *r, http_out_t *o, uint32_t now) {
     char ids[sizeof r->query];
     bool filter = form_get(r->query, strlen(r->query), "ids", ids, sizeof ids);
@@ -345,7 +503,9 @@ static void get_values(const http_req_t *r, http_out_t *o, uint32_t now) {
             out_str(o, "\""); json_uint(o, d->id); out_str(o, "\":"); value_json(o, d);
         }
     }
-    out_str(o, "}}");
+    out_str(o, "}");
+    quality_json(o, filter ? ids : NULL);
+    out_str(o, "}");
 }
 
 /* ---------------- writes ---------------- */
@@ -539,6 +699,17 @@ static void post_password(const http_req_t *r, http_out_t *o, uint8_t lvl, uint3
     out_str(o, "{\"ok\":true}");
 }
 
+/* Read and drop the rest of a refused upload, so the client gets the answer instead
+ * of a broken connection (with TLS, closing on unread data resets the connection). */
+static void drain(http_read_fn rd, void *ctx, uint32_t left) {
+    if (left > 2u * 1024u * 1024u || !cfg.scratch) return;   /* not for absurd lengths */
+    while (left) {
+        int n = rd(ctx, cfg.scratch, left < cfg.scratch_size ? left : cfg.scratch_size);
+        if (n <= 0) return;
+        left -= (uint32_t)n;
+    }
+}
+
 static bool wait_job(int32_t *result) {
     for (int k = 0; k < 500; ++k) {                       /* up to ~5 s */
         if (param_store_job_done(result)) return true;
@@ -547,29 +718,67 @@ static bool wait_job(int32_t *result) {
     return false;
 }
 
+/* The backup file lives in the settings store's staging buffer, lent to us between saves
+ * (param_store_lease): the web server keeps no 45 KB buffer of its own. */
+static uint8_t *lease(uint32_t *cap) {
+    int32_t n;
+    if (param_store_lease_start() != 0) return NULL;
+    if (!wait_job(&n)) return NULL;                       /* a late grant is reclaimed by the next job */
+    uint8_t *b = n > 0 ? param_store_lease_buf() : NULL;
+    if (b) *cap = (uint32_t)n;
+    return b;
+}
+
 static void get_backup(http_out_t *o, uint8_t lvl) {
     if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
-    if (!cfg.scratch || param_store_job_start(true, cfg.scratch, cfg.scratch_size, lvl) != 0) { json_error(o, 503, "busy", -1); return; }
+    uint32_t cap = 0;
+    uint8_t *buf = lease(&cap);
+    if (!buf) { json_error(o, 503, "busy", -1); return; }
     int32_t n;
-    if (!wait_job(&n)) { json_error(o, 503, "timeout", -1); return; }  /* (a late job finishes harmlessly) */
-    if (n <= 0) { json_error(o, 500, "nothing stored", -1); return; }
+    if (param_store_job_start(true, buf, cap, lvl) != 0) { param_store_lease_end(); json_error(o, 503, "busy", -1); return; }
+    if (!wait_job(&n)) { param_store_lease_end(); json_error(o, 503, "timeout", -1); return; }  /* (a late job finishes harmlessly) */
+    if (n <= 0) { param_store_lease_end(); json_error(o, 500, "nothing stored", -1); return; }
     plat_val_t s;
     char extra[160];
     snprintf(extra, sizeof extra, "Content-Length: %ld\r\nContent-Disposition: attachment; filename=\"cems-%lu.bkp\"\r\n",
              (long)n, (unsigned long)(param_read(PARAM_ID_SERIAL, &s) ? s.u : 0));
     head(o, 200, "application/octet-stream", extra);
-    out_bytes(o, cfg.scratch, (size_t)n);
+    out_bytes(o, buf, (size_t)n);
+    param_store_lease_end();
 }
 
-static void post_restore(const http_req_t *r, http_out_t *o, uint8_t lvl) {
-    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
-    if (param_store_job_start(false, (uint8_t *)(uintptr_t)r->body, r->body_len, lvl) != 0) { json_error(o, 503, "busy", -1); return; }
+/* A backup file: the part already received (first), then the rest read with rd (streamed
+ * upload) straight into the store's buffer. rd may be NULL when first holds the whole body. */
+static void restore(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint8_t lvl) {
+    uint32_t cap = 0, got = r->body_len;
+    uint8_t *buf = r->content_length <= STORE_BACKUP_MAX ? lease(&cap) : NULL;
+    if (!buf || r->content_length > cap) {
+        if (buf) param_store_lease_end();
+        if (rd) drain(rd, ctx, r->content_length - got);
+        if (r->content_length > STORE_BACKUP_MAX) json_error(o, 413, "too large", -1);
+        else json_error(o, 503, "busy", -1);
+        return;
+    }
+    memcpy(buf, r->body, got);
+    while (got < r->content_length) {
+        int n = rd ? rd(ctx, buf + got, r->content_length - got) : -1;
+        if (n <= 0) { param_store_lease_end(); json_error(o, 400, "upload interrupted", -1); return; }
+        got += (uint32_t)n;
+    }
     int32_t rc;
-    if (!wait_job(&rc)) { json_error(o, 503, "timeout", -1); return; }
+    if (param_store_job_start(false, buf, got, lvl) != 0) { param_store_lease_end(); json_error(o, 503, "busy", -1); return; }
+    bool done = wait_job(&rc);
+    param_store_lease_end();                              /* safe even if late: the import is applied before any save */
+    if (!done) { json_error(o, 503, "timeout", -1); return; }
     if (rc != 0) { json_error(o, 400, rc == -5 ? "nothing to restore at this level" : "invalid file", -1); return; }
     plat_log_event(LOG_EV_RESTORE_BACKUP, PLAT_SRC_WEB, lvl, 0, NAN, NAN, NULL);
     head(o, 200, "application/json", NULL);
     out_str(o, "{\"ok\":true}");
+}
+
+static void post_restore(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    restore(r, NULL, NULL, o, lvl);
 }
 
 /* ---------------- logs ---------------- */
@@ -653,33 +862,42 @@ static void get_log_events(const http_req_t *r, http_out_t *o) {
     if (!cfg.scratch || !log_sync() || !plat_log_info(LOG_RING_EVENTS, &inf)) { json_error(o, 503, "log not available", -1); return; }
     if (n > 200u) n = 200u;
     if (n > inf.used) n = inf.used;
-    if (n > cfg.scratch_size / LOG_SLOT) n = cfg.scratch_size / LOG_SLOT;
-    int32_t got = 0;
-    if (n && (plat_log_read_start(LOG_RING_EVENTS, (inf.wr + inf.nslots - n) % inf.nslots, n, cfg.scratch) != 0 ||
-              !wait_log(&got) || got != (int32_t)n)) { json_error(o, 503, "busy", -1); return; }
-    head(o, 200, "application/json", NULL);
-    out_str(o, "{\"events\":[");
-    bool first = true;
-    for (uint32_t k = n; k-- > 0;) {
-        log_event_t e;
-        if (!plat_log_decode_event(cfg.scratch + k * LOG_SLOT, &e)) continue;
-        if (!first) out_str(o, ",");
-        first = false;
-        char tb[32];
-        log_fmt_time(tb, sizeof tb, e.time, e.clock_set);
-        out_str(o, "{\"seq\":"); json_uint(o, e.seq);
-        out_str(o, ",\"time\":"); json_str(o, tb);
-        out_str(o, ",\"t\":"); json_uint(o, e.time);
-        out_str(o, ",\"code\":"); json_uint(o, e.code);
-        out_str(o, ",\"event\":"); json_str(o, plat_log_event_name(e.code));
-        out_str(o, ",\"source\":"); json_str(o, log_src_name(e.src));
-        out_str(o, ",\"level\":"); json_str(o, log_level_name(e.level));
-        out_str(o, ",\"arg\":"); json_uint(o, e.arg);
-        out_str(o, ",\"detail\":"); json_str(o, e.text);
-        out_str(o, ",\"old\":"); ev_num(o, e.old_v);
-        out_str(o, ",\"new\":"); ev_num(o, e.new_v);
-        out_str(o, "}");
+    /* newest first, read in chunks of what the scratch buffer holds, newest chunk first */
+    uint32_t chunk = cfg.scratch_size / LOG_SLOT, end = n, c = 0;
+    if (!chunk) { json_error(o, 503, "log not available", -1); return; }
+    bool first = true, started = false;
+    while (end > 0) {
+        c = end < chunk ? end : chunk;
+        int32_t got = 0;
+        if (plat_log_read_start(LOG_RING_EVENTS, (inf.wr + inf.nslots - n + end - c) % inf.nslots, c, cfg.scratch) != 0 ||
+            !wait_log(&got) || got != (int32_t)c) {
+            if (!started) { json_error(o, 503, "busy", -1); return; }
+            break;                                        /* the list so far, closed properly */
+        }
+        if (!started) { head(o, 200, "application/json", NULL); out_str(o, "{\"events\":["); started = true; }
+        end -= c;
+        for (uint32_t k = c; k-- > 0;) {
+            log_event_t e;
+            if (!plat_log_decode_event(cfg.scratch + k * LOG_SLOT, &e)) continue;
+            if (!first) out_str(o, ",");
+            first = false;
+            char tb[32];
+            log_fmt_time(tb, sizeof tb, e.time, e.clock_set);
+            out_str(o, "{\"seq\":"); json_uint(o, e.seq);
+            out_str(o, ",\"time\":"); json_str(o, tb);
+            out_str(o, ",\"t\":"); json_uint(o, e.time);
+            out_str(o, ",\"code\":"); json_uint(o, e.code);
+            out_str(o, ",\"event\":"); json_str(o, plat_log_event_name(e.code));
+            out_str(o, ",\"source\":"); json_str(o, log_src_name(e.src));
+            out_str(o, ",\"level\":"); json_str(o, log_level_name(e.level));
+            out_str(o, ",\"arg\":"); json_uint(o, e.arg);
+            out_str(o, ",\"detail\":"); json_str(o, e.text);
+            out_str(o, ",\"old\":"); ev_num(o, e.old_v);
+            out_str(o, ",\"new\":"); ev_num(o, e.new_v);
+            out_str(o, "}");
+        }
     }
+    if (!started) { head(o, 200, "application/json", NULL); out_str(o, "{\"events\":["); }
     out_str(o, "]}");
 }
 
@@ -710,6 +928,11 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"state\":"); json_str(o, fw_state_name(st.state));
     out_str(o, ",\"trial_left_s\":"); json_uint(o, (st.trial_left_ms + 999u) / 1000u);
     out_str(o, ",\"staged\":"); if (st.staged) json_str(o, st.staged_version); else out_str(o, "null");
+    out_str(o, ",\"build\":"); json_str(o, fw_build_id());
+    if (st.staged) {
+        out_str(o, ",\"staged_build\":"); json_str(o, st.staged_build);
+        out_str(o, ",\"staged_hw\":["); json_uint(o, st.staged_hw_min); out_str(o, ","); json_uint(o, st.staged_hw_max); out_str(o, "]");
+    }
     out_str(o, ",\"uploading\":"); json_bool(o, st.uploading);
     out_str(o, ",\"received\":"); json_uint(o, st.upload_bytes);
     out_str(o, ",\"total\":"); json_uint(o, st.upload_total);
@@ -720,6 +943,20 @@ static void get_fw(http_out_t *o) {
     out_str(o, ",\"not_safe\":"); json_str(o, st.not_safe);
     { plat_val_t v; out_str(o, ",\"min_version\":"); json_uint(o, param_read(PARAM_ID_FW_MIN_VERSION, &v) ? v.u : 0); }
     out_str(o, ",\"last_error\":"); json_str(o, fw_err_name(st.last_error));
+    /* the first-stage bootloader at this start (boot.h): null = none ran */
+    {   boot_action_t ba; boot_report_t br; unsigned bv;
+        out_str(o, ",\"bootloader\":");
+        if (boot_report_decode(st.boot_report, &ba, &br, &bv)) {
+            out_str(o, "{\"version\":"); json_uint(o, bv);
+            out_str(o, ",\"image\":"); json_str(o, boot_img_name(br.mapped));
+            out_str(o, ",\"swapped\":"); json_bool(o, br.after_swap);
+            out_str(o, ",\"rollback\":"); json_bool(o, br.rollback);
+            if (br.rollback || br.mapped != BOOT_IMG_OK) {   /* only then did it look at the other bank */
+                out_str(o, ",\"other\":"); json_str(o, boot_img_name(br.other));
+            }
+            out_str(o, "}");
+        } else out_str(o, "null");
+    }
     /* the update history (FRAM), newest first */
     fw_hist_t h[FW_HIST_MAX];
     size_t n = fw_history(h, FW_HIST_MAX);
@@ -757,7 +994,10 @@ static void get_alarms(http_out_t *o) {
         out_str(o, "{\"id\":"); json_uint(o, v.id);
         out_str(o, ",\"name\":"); json_str(o, v.name);
         out_str(o, ",\"text\":"); json_str(o, v.text);
+        out_str(o, ",\"help\":"); json_str(o, v.help ? v.help : "");    /* what to check (docs/FAULT_CODES.md) */
         out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"priority\":"); json_uint(o, v.priority);
+        out_str(o, ",\"tier\":"); json_str(o, alarm_prio_name(v.priority));
         out_str(o, ",\"active\":"); json_bool(o, v.active);
         out_str(o, ",\"unacked\":"); json_bool(o, v.unacked);
         out_str(o, ",\"latch\":"); json_bool(o, (v.flags & AL_LATCH) != 0);
@@ -787,7 +1027,10 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, "{\"id\":"); json_uint(o, d->id);
         out_str(o, ",\"name\":"); json_str(o, d->name);
         out_str(o, ",\"text\":"); json_str(o, v.text);
-        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(d->severity));
+        out_str(o, ",\"severity\":"); json_str(o, alarm_sev_name(v.severity));
+        out_str(o, ",\"priority\":"); json_uint(o, v.priority);                     /* in force: 1..5, 6 off */
+        out_str(o, ",\"default_priority\":"); json_uint(o, alarm_prio_default(d));
+        out_str(o, ",\"can_switch_off\":"); json_bool(o, alarm_can_switch_off(d));
         out_str(o, ",\"route\":"); json_uint(o, alarm_route(d->id));
         out_str(o, ",\"default\":"); json_uint(o, d->route);
         out_str(o, ",\"configured\":"); json_bool(o, (route[d->id] & AR_SET) != 0);
@@ -801,6 +1044,22 @@ static void get_alarm_config(http_out_t *o) {
         out_str(o, ",\"mode\":"); json_uint(o, rmode[k]);
         out_str(o, ",\"failsafe\":"); json_bool(o, rinv[k] != 0);
         out_str(o, ",\"in_alarm\":"); json_bool(o, (on >> k) & 1u);
+        out_str(o, "}");
+    }
+    out_str(o, "],\"tiers\":[");                     /* the priority tiers (plat_alarm.h) */
+    uint8_t tr[AL_TIERS];
+    uint16_t ta[AL_TIERS], tu[AL_TIERS];
+    if (param_read_blob(PARAM_ID_ALARM_TIER_ROUTE, 0, tr, sizeof tr) != PERR_OK) memset(tr, 0, sizeof tr);
+    if (param_read_blob(PARAM_ID_ALARM_TIER_ACTIVE, 0, ta, sizeof ta) != PERR_OK) memset(ta, 0, sizeof ta);
+    if (param_read_blob(PARAM_ID_ALARM_TIER_UNACKED, 0, tu, sizeof tu) != PERR_OK) memset(tu, 0, sizeof tu);
+    for (unsigned k = 0; k < AL_TIERS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"priority\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"name\":"); json_str(o, alarm_prio_name((uint8_t)(k + 1u)));
+        out_str(o, ",\"route\":"); json_uint(o, tr[k] & (uint8_t)~AR_SET);
+        out_str(o, ",\"configured\":"); json_bool(o, (tr[k] & AR_SET) != 0);
+        out_str(o, ",\"active\":"); json_uint(o, ta[k]);
+        out_str(o, ",\"unacked\":"); json_uint(o, tu[k]);
         out_str(o, "}");
     }
     out_str(o, "]}");
@@ -823,6 +1082,385 @@ static void post_alarm_ack(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true}");
 }
 
+/* ---------------- Modbus: forced values and the register map (modbus.h) ---------------- */
+static const char *const src_names[] = { "touchscreen", "web", "modbus", "internal" };
+
+static void json_num_pt(http_out_t *o, uint8_t pt, double x) {
+    if (pt == PT_BOOL) json_bool(o, x != 0.0);
+    else if (pt == PT_FLOAT) json_float(o, (float)x);
+    else { char b[24]; snprintf(b, sizeof b, "%.0f", x); out_str(o, b); }
+}
+
+static void get_mb_force(http_out_t *o, uint32_t now) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"max_s\":"); json_uint(o, PLAT_MB_FORCE_MS / 1000u);
+    out_str(o, ",\"max\":"); json_uint(o, MB_FORCE_MAX);
+    out_str(o, ",\"forces\":[");
+    mb_force_t f;
+    for (unsigned i = 0; mb_force_get(i, &f, now); ++i) {
+        const param_def_t *d = param_find(f.id);
+        if (!d) continue;
+        out_str(o, i ? ",{\"id\":" : "{\"id\":"); json_uint(o, f.id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        out_str(o, ",\"index\":"); if (f.index == MB_FORCE_SCALAR) out_str(o, "null"); else json_uint(o, f.index);
+        out_str(o, ",\"v\":"); json_num_pt(o, elem_pt(d->ctype), f.v);
+        out_str(o, ",\"left_s\":"); json_uint(o, (f.left_ms + 999u) / 1000u);
+        out_str(o, ",\"by\":"); json_str(o, src_names[f.src & 3u]); out_str(o, "}");
+    }
+    out_str(o, "],\"forceable\":[");
+    bool first = true;
+    for (size_t i = 0; i < param_count(); ++i) {
+        const param_def_t *d = param_at(i);
+        if (!mb_forceable(d->id)) continue;
+        out_str(o, first ? "{\"id\":" : ",{\"id\":"); first = false;
+        json_uint(o, d->id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        static const char *const t[] = { "bool", "int", "uint", "float" };
+        out_str(o, ",\"type\":"); json_str(o, t[elem_pt(d->ctype)]);
+        out_str(o, ",\"count\":");
+        if (d->ptype == PT_ARRAY) json_uint(o, d->size / param_ctype_size(d->ctype)); else out_str(o, "null");
+        out_str(o, ",\"unit\":"); if (d->unit) json_str(o, d->unit); else out_str(o, "null");
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+static bool form_ulong(const http_req_t *r, const char *k, unsigned long *v) {
+    char b[16], *e;
+    if (!form_get((const char *)r->body, r->body_len, k, b, sizeof b) || !b[0]) return false;
+    *v = strtoul(b, &e, 10);
+    return *e == 0;
+}
+
+/* POST /api/modbus/force id, [index], v | /api/modbus/force/clear id, [index] or all=1. Admin. */
+static void post_mb_force(const http_req_t *r, http_out_t *o, uint8_t lvl, uint32_t now, bool clear) {
+    unsigned long id = 0, index = MB_FORCE_SCALAR;
+    char vb[24];
+    int e;
+    if (clear && form_get((const char *)r->body, r->body_len, "all", vb, sizeof vb) && strcmp(vb, "0") && strcmp(vb, "false"))
+        e = mb_force_clear_all(PLAT_SRC_WEB, lvl);
+    else {
+        if (!form_ulong(r, "id", &id) || id > 0xFFFFu) { json_error(o, 400, "id", -1); return; }
+        if (form_get((const char *)r->body, r->body_len, "index", vb, sizeof vb) && vb[0] && strcmp(vb, "null")) {
+            if (!form_ulong(r, "index", &index) || index >= MB_FORCE_SCALAR) { json_error(o, 400, "index", (int)id); return; }
+        }
+        if (clear) e = mb_force_clear((uint16_t)id, (uint16_t)index, PLAT_SRC_WEB, lvl);
+        else {
+            if (!form_get((const char *)r->body, r->body_len, "v", vb, sizeof vb) || !vb[0]) { json_error(o, 400, "v", (int)id); return; }
+            char *end; double x = !strcmp(vb, "true") ? 1.0 : !strcmp(vb, "false") ? 0.0 : strtod(vb, &end);
+            if (strcmp(vb, "true") && strcmp(vb, "false") && *end) { json_error(o, 400, "v", (int)id); return; }
+            e = mb_force_set((uint16_t)id, (uint16_t)index, x, PLAT_SRC_WEB, lvl, now);
+        }
+    }
+    if (e != PERR_OK) {
+        json_error(o, e == PERR_BUSY ? 409 : perr_status((param_err_t)e),
+                   e == PERR_BUSY ? "too many forced values" : e == PERR_NO_ID ? (clear ? "not forced" : "not forceable")
+                                                                                   : perr_name((param_err_t)e), (int)id);
+        return;
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"forced\":"); json_uint(o, mb_force_count()); out_str(o, "}");
+}
+
+struct std_ctx { http_out_t *o; bool first; };
+static void std_entry(const mb_std_item_t *it, void *ctx) {
+    static const char *const fmt[] = { "bit", "u16", "i16", "u32", "i32", "f32", "bytes", "array" };
+    struct std_ctx *c = ctx;
+    http_out_t *o = c->o;
+    char nm[24], desc[112];
+    if (it->slot < 0xFFu) snprintf(nm, sizeof nm, "std%u_%u", (unsigned)it->slot, (unsigned)it->addr);
+    else snprintf(nm, sizeof nm, "std_%u", (unsigned)it->addr);
+    if (it->slot_name) snprintf(desc, sizeof desc, "%s - %s", it->slot_name, it->item);
+    else snprintf(desc, sizeof desc, "%s", it->item);
+    out_str(o, c->first ? "{\"table\":\"input\"" : ",{\"table\":\"input\"");
+    c->first = false;
+    out_str(o, ",\"mirror\":\"holding\",\"fc_read\":4,\"fc_write\":null,\"addr\":"); json_uint(o, it->addr);
+    out_str(o, ",\"count\":"); json_uint(o, it->count);
+    out_str(o, ",\"format\":"); json_str(o, it->fmt <= MBF_ARRAY ? fmt[it->fmt] : "?");
+    if (it->count == 2u) { out_str(o, ",\"word_order\":"); json_str(o, plat_mb_std_words == 1u ? "low_first" : "high_first"); }
+    out_str(o, ",\"id\":null,\"name\":"); json_str(o, nm);
+    out_str(o, ",\"description\":"); json_str(o, desc);
+    out_str(o, ",\"unit\":"); if (it->unit && *it->unit) json_str(o, it->unit); else out_str(o, "null");
+    out_str(o, ",\"slot\":"); if (it->slot < 0xFFu) json_uint(o, it->slot); else out_str(o, "null");
+    out_str(o, ",\"access\":\"read\",\"block\":false,\"core\":\"standard\",\"forceable\":false}");
+}
+
+/* GET /api/modbus/map: the register map in force, for the integrator's handover file */
+static void get_mb_map(http_out_t *o) {
+    static const char *const tab[] = { "coil", "discrete", "holding", "input" };
+    static const uint8_t fc_rd[] = { 1, 2, 3, 4 };
+    static const char *const fmt[] = { "bit", "u16", "i16", "u32", "i32", "f32", "bytes", "array" };
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"product\":"); json_str(o, cfg.product);
+    out_str(o, ",\"fw\":"); json_str(o, cfg.fw_version);
+    plat_val_t v;
+    out_str(o, ",\"map_version\":"); json_uint(o, param_read(PARAM_ID_MB_MAP_VERSION, &v) ? v.u : 0u);
+    out_str(o, ",\"block_layout\":"); json_uint(o, PLAT_MB_BLOCK_VERSION);
+    out_str(o, ",\"addressing\":\"0-based\",\"entries\":[");
+    for (size_t i = 0; i < mb_entry_count(); ++i) {
+        uint16_t span;
+        const mb_map_t *m = mb_entry_at(i, &span);
+        const param_def_t *d = param_find(m->id);
+        if (!d) continue;
+        bool rw = (m->table == MB_COILS || m->table == MB_HOLDING) && !(d->flags & (PF_RO | PF_DEV | PF_NO_MODBUS));
+        out_str(o, i ? ",{\"table\":" : "{\"table\":"); json_str(o, tab[m->table & 3u]);
+        out_str(o, ",\"fc_read\":"); json_uint(o, fc_rd[m->table & 3u]);
+        out_str(o, ",\"fc_write\":");
+        if (!rw) out_str(o, "null"); else out_str(o, m->table == MB_COILS ? "[5,15]" : "[6,16]");
+        out_str(o, ",\"addr\":"); json_uint(o, m->addr);
+        out_str(o, ",\"count\":"); json_uint(o, span);
+        out_str(o, ",\"format\":"); json_str(o, m->fmt <= MBF_ARRAY ? fmt[m->fmt] : "?");
+        if (m->fmt == MBF_ARRAY) { out_str(o, ",\"elem\":"); json_str(o, ctype_name(d->ctype)); }
+        out_str(o, ",\"word_order\":"); json_str(o, (m->flags & MBF_WORD_LO_FIRST) ? "low_first" : "high_first");
+        out_str(o, ",\"byte_order\":"); json_str(o, (m->flags & MBF_BYTE_LO_FIRST) ? "low_first" : "high_first");
+        out_str(o, ",\"scale_dec\":"); json_int(o, m->dec);
+        out_str(o, ",\"id\":"); json_uint(o, d->id);
+        out_str(o, ",\"name\":"); json_str(o, d->name);
+        out_str(o, ",\"unit\":"); if (d->unit) json_str(o, d->unit); else out_str(o, "null");
+        uint8_t pt = d->ptype == PT_ARRAY ? elem_pt(d->ctype) : d->ptype;
+        if (pt <= PT_FLOAT && pt != PT_BOOL) {
+            out_str(o, ",\"min\":"); json_val(o, pt, d->vmin);
+            out_str(o, ",\"max\":"); json_val(o, pt, d->vmax);
+        }
+        out_str(o, ",\"access\":"); json_str(o, rw ? "read/write" : "read");
+        if (rw) {
+            static const char *const lv[] = { "view", "operator", "admin", "factory" };
+            out_str(o, ",\"write_any_mode\":"); json_bool(o, (d->flags & PF_ANY_MODE) != 0);
+            out_str(o, ",\"write_level\":"); json_str(o, lv[d->level & 3u]);
+        }
+        out_str(o, ",\"block\":"); json_bool(o, m->table == MB_INPUT && m->addr >= PLAT_MB_BLOCK_ADDR && m->addr <= PLAT_MB_BLOCK_END);
+        out_str(o, ",\"forceable\":"); json_bool(o, mb_forceable(d->id));
+        out_str(o, "}");
+    }
+    /* the standard CEMS block (docs/MODBUS_STANDARD_BLOCK.md): fitted slots and the globals */
+    struct std_ctx sc = { o, mb_entry_count() == 0 };
+    mb_std_each(std_entry, &sc);
+    /* the digital input alarms' discrete inputs (plat_alarm.h), named live by their labels */
+    {
+        static const char *const what[3] = { "active", "waiting for an acknowledge", "input unreliable" };
+        static const char *const key[3] = { "active", "unacked", "unreliable" };
+        alarm_view_t av;
+        char nm[24], desc[96];
+        bool first = sc.first;
+        for (unsigned g = 0; g < 4u; ++g)
+            for (unsigned i = 0; i < (g < 3u ? PLAT_DIA_SLOTS : (unsigned)PLAT_DI_MAX); ++i) {
+                uint16_t addr = (uint16_t)(g < 3u ? PLAT_DIA_MB_ADDR + 32u * g + i : PLAT_DIA_MB_ADDR + 100u + i);
+                if (g < 3u) {
+                    snprintf(nm, sizeof nm, "dia%u_%s", i + 1u, key[g]);
+                    const char *t = alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + i), &av) ? av.text : "";
+                    snprintf(desc, sizeof desc, "%s: %s", t, what[g]);
+                } else {
+                    snprintf(nm, sizeof nm, "di%u", i + 1u);
+                    snprintf(desc, sizeof desc, "Digital input %u", i + 1u);
+                    for (unsigned s2 = 0; s2 < PLAT_DIA_SLOTS; ++s2) {   /* the first slot bound to it names it */
+                        uint8_t b = 0;
+                        if (param_read_blob(PARAM_ID_DIA_INPUT, (uint16_t)s2, &b, 1) != PERR_OK || b != i + 1u) continue;
+                        if (alarm_get((uint16_t)(ALARM_ID_DIA_FIRST + s2), &av)) snprintf(desc, sizeof desc, "%s", av.text);
+                        break;
+                    }
+                }
+                out_str(o, first ? "{\"table\":\"discrete\"" : ",{\"table\":\"discrete\"");
+                first = false;
+                out_str(o, ",\"fc_read\":2,\"fc_write\":null,\"addr\":"); json_uint(o, addr);
+                out_str(o, ",\"count\":1,\"format\":\"bit\",\"id\":null,\"name\":"); json_str(o, nm);
+                out_str(o, ",\"description\":"); json_str(o, desc);
+                out_str(o, ",\"unit\":null,\"access\":\"read\",\"block\":false,\"core\":\"input_alarms\",\"forceable\":false}");
+            }
+    }
+    /* the codes the values use (MODBUS.md 6), for the handover file's Codes sheet */
+    out_str(o, "],\"codes\":{\"quality\":[");
+    for (uint8_t q = 0; q < PLAT_Q_COUNT; ++q) {
+        out_str(o, q ? ",{\"code\":" : "{\"code\":"); json_uint(o, q);
+        out_str(o, ",\"key\":"); json_str(o, plat_quality_code(q));
+        out_str(o, ",\"name\":"); json_str(o, q ? plat_quality_name(q) : "valid"); out_str(o, "}");
+    }
+    out_str(o, "],\"state\":[");
+    for (uint8_t s = 0; s < PLAT_ST_COUNT; ++s) {
+        out_str(o, s ? ",{\"code\":" : "{\"code\":"); json_uint(o, s);
+        out_str(o, ",\"key\":"); json_str(o, plat_state_key(s));
+        out_str(o, ",\"name\":"); json_str(o, plat_state_name(s)); out_str(o, "}");
+    }
+    out_str(o, "],\"common_bits\":[{\"bit\":0,\"name\":\"a Modbus-routed alarm is active\"},"
+               "{\"bit\":1,\"name\":\"a Modbus-routed alarm waits for an acknowledge\"},"
+               "{\"bit\":2,\"name\":\"any alarm is active\"},{\"bit\":3,\"name\":\"any alarm waits for an acknowledge\"},"
+               "{\"bit\":4,\"name\":\"values are forced on Modbus (commissioning)\"},"
+               "{\"bit\":5,\"name\":\"a Critical-tier alarm is active\"},"
+               "{\"bit\":6,\"name\":\"a Critical-tier alarm waits for an acknowledge\"}");
+    for (unsigned k = 0; k < ALARM_RELAYS; ++k) {
+        char b[64]; snprintf(b, sizeof b, ",{\"bit\":%u,\"name\":\"alarm relay %u in alarm\"}", 8u + k, k + 1u);
+        out_str(o, b);
+    }
+    /* the standard block's status word (docs/MODBUS_STANDARD_BLOCK.md section 3) and input alarm states */
+    out_str(o, "],\"std_status_bits\":[{\"bit\":0,\"name\":\"failure\"},{\"bit\":1,\"name\":\"maintenance (function check)\"},"
+               "{\"bit\":2,\"name\":\"maintenance request\"},{\"bit\":3,\"name\":\"out of specification\"},"
+               "{\"bit\":4,\"name\":\"test / simulation value transmitted\"},{\"bit\":16,\"name\":\"forced from the web page or touchscreen\"},"
+               "{\"bit\":17,\"name\":\"no QAL2 calibration function\"},{\"bit\":18,\"name\":\"above the valid calibration range\"},"
+               "{\"bit\":19,\"name\":\"analyser over-range\"},{\"bit\":20,\"name\":\"O2 too high to correct\"},"
+               "{\"bit\":21,\"name\":\"calculation input missing\"},{\"bit\":22,\"name\":\"average incomplete\"},"
+               "{\"bit\":23,\"name\":\"day invalid\"},{\"bit\":24,\"name\":\"confidence interval not applied\"},"
+               "{\"bit\":25,\"name\":\"fixed H2O used\"},{\"bit\":26,\"name\":\"below range\"},"
+               "{\"bit\":27,\"name\":\"QAL2 review due\"},{\"bit\":28,\"name\":\"QAL3 warning limit exceeded\"},"
+               "{\"bit\":29,\"name\":\"QAL3 chart out of control\"},{\"bit\":30,\"name\":\"QAL3 check due\"}],"
+               "\"input_alarm_status\":[{\"code\":0,\"name\":\"not used\"},{\"code\":1,\"name\":\"normal\"},"
+               "{\"code\":2,\"name\":\"active, acknowledged\"},{\"code\":3,\"name\":\"active, not acknowledged\"},"
+               "{\"code\":4,\"name\":\"cleared, not acknowledged\"},{\"code\":5,\"name\":\"input unreliable\"}");
+    out_str(o, "],\"clock_source\":[{\"code\":0,\"name\":\"none\"},{\"code\":1,\"name\":\"SNTP\"},"
+               "{\"code\":2,\"name\":\"touchscreen\"},{\"code\":3,\"name\":\"web\"},{\"code\":4,\"name\":\"Modbus\"}],"
+               "\"exceptions\":[{\"code\":1,\"name\":\"illegal function, writes disabled, or level too low\"},"
+               "{\"code\":2,\"name\":\"illegal address, read-only, or half a 32-bit value\"},"
+               "{\"code\":3,\"name\":\"illegal value: range, type or length\"},"
+               "{\"code\":4,\"name\":\"refused in this mode (LOCAL) or by an interlock\"},"
+               "{\"code\":6,\"name\":\"busy: write queue full, retry\"}]}}");
+}
+
+/* ---------------- calibration records (plat_cal.h) ---------------- */
+static void cal_record(http_out_t *o, const plat_cal_record_t *c) {
+    static const char *const kind[] = { "", "factory", "field" };
+    out_str(o, "{\"ch\":"); json_uint(o, c->channel);
+    out_str(o, ",\"time\":"); json_uint(o, c->time);
+    out_str(o, ",\"kind\":"); json_str(o, kind[c->kind <= PLAT_CAL_FIELD ? c->kind : 0]);
+    out_str(o, ",\"outcome\":"); json_str(o, plat_cal_outcome_name(c->outcome));
+    static const char *const lvl[] = { "view", "operator", "admin", "factory" };
+    static const char *const src[] = { "touchscreen", "web", "modbus", "internal" };
+    out_str(o, ",\"level\":"); json_str(o, lvl[c->level & 3u]);
+    out_str(o, ",\"src\":"); json_str(o, src[c->src & 3u]);
+    out_str(o, ",\"coef\":[");
+    for (unsigned k = 0; k < c->n_coef && k < PLAT_CAL_COEF_MAX; ++k) { if (k) out_str(o, ","); json_float(o, c->coef[k]); }
+    out_str(o, "],\"points\":[");
+    for (unsigned k = 0; k < c->n_pts && k < PLAT_CAL_PTS_MAX; ++k) {
+        out_str(o, k ? ",[" : "["); json_float(o, c->ref[k]); out_str(o, ","); json_float(o, c->found[k]);
+        out_str(o, ","); json_float(o, c->left[k]); out_str(o, "]");
+    }
+    out_str(o, "]}");
+}
+
+static void get_cal(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    unsigned run = 0;
+    bool active = plat_cal_active(&run);
+    out_str(o, "{\"active\":"); if (active) json_uint(o, run); else out_str(o, "null");
+    out_str(o, ",\"due\":"); json_bool(o, plat_cal_any_due());
+    out_str(o, ",\"channels\":[");
+    for (unsigned ch = 0; ch < plat_cal_count(); ++ch) {
+        plat_cal_record_t c;
+        if (ch) out_str(o, ",");
+        out_str(o, "{\"name\":"); json_str(o, plat_cal_name(ch));
+        out_str(o, ",\"due_time\":"); json_uint(o, plat_cal_due(ch));
+        out_str(o, ",\"overdue\":"); json_bool(o, plat_cal_overdue(ch));
+        out_str(o, ",\"in_force\":"); if (plat_cal_in_force(ch, &c)) cal_record(o, &c); else out_str(o, "null");
+        out_str(o, ",\"factory\":"); if (plat_cal_factory(ch, &c)) cal_record(o, &c); else out_str(o, "null");
+        out_str(o, "}");
+    }
+    out_str(o, "],\"history\":[");
+    plat_cal_record_t c;
+    for (unsigned i = 0; plat_cal_history(i, &c); ++i) { if (i) out_str(o, ","); cal_record(o, &c); }
+    out_str(o, "]}");
+}
+
+/* cmd=begin|accept|abort|revert, ch=<n> (begin, revert) */
+static void post_cal(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char cmd[8], v[4] = "0";
+    if (!form_get((const char *)r->body, r->body_len, "cmd", cmd, sizeof cmd)) { json_error(o, 400, "cmd", -1); return; }
+    (void)form_get((const char *)r->body, r->body_len, "ch", v, sizeof v);
+    unsigned ch = (unsigned)strtoul(v, NULL, 10);
+    int e;
+    if (!strcmp(cmd, "begin"))       e = plat_cal_begin(ch, PLAT_SRC_WEB, lvl);
+    else if (!strcmp(cmd, "accept")) e = plat_cal_end(true, PLAT_SRC_WEB, lvl);
+    else if (!strcmp(cmd, "abort"))  e = plat_cal_end(false, PLAT_SRC_WEB, lvl);
+    else if (!strcmp(cmd, "revert")) e = plat_cal_revert(ch, PLAT_SRC_WEB, lvl);
+    else { json_error(o, 400, "cmd", -1); return; }
+    if (e != PERR_OK) {
+        const char *why = plat_cal_refusal();
+        json_error(o, perr_status((param_err_t)e), why[0] ? why : perr_name((param_err_t)e), -1);
+        return;
+    }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* ---------------- service history (plat_service.h) ---------------- */
+static void get_service(http_out_t *o) {
+    static const char *const lvl[] = { "view", "operator", "admin", "factory" };
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"run_hours\":"); json_float(o, (float)plat_service_hours_x10() / 10.0f);
+    out_str(o, ",\"since_service_hours\":"); json_float(o, (float)plat_service_since_x10() / 10.0f);
+    { char cb[12]; snprintf(cb, sizeof cb, "%08lx", (unsigned long)plat_config_crc());
+      out_str(o, ",\"config_crc\":"); json_str(o, cb); }
+    out_str(o, ",\"log\":[");
+    plat_svc_entry_t e;
+    for (unsigned i = 0; plat_service_entry(i, &e); ++i) {
+        if (i) out_str(o, ",");
+        out_str(o, "{\"time\":"); json_uint(o, e.time);
+        out_str(o, ",\"level\":"); json_str(o, lvl[e.level & 3u]);
+        out_str(o, ",\"tech\":"); json_strn(o, e.tech, blen(e.tech, sizeof e.tech));
+        out_str(o, ",\"work\":"); json_strn(o, e.work, blen(e.work, sizeof e.work));
+        out_str(o, "}");
+    }
+    out_str(o, "],\"test\":");
+    plat_test_record_t t;
+    if (plat_service_test_record(&t)) {
+        out_str(o, "{\"time\":"); json_uint(o, t.time);
+        out_str(o, ",\"station\":"); json_strn(o, t.station, blen(t.station, sizeof t.station));
+        out_str(o, ",\"passed\":"); json_bool(o, t.passed);
+        out_str(o, ",\"results\":[");
+        for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_uint(o, t.result[k]); }
+        out_str(o, "]");
+        if (!strncmp(t.station, "board", sizeof t.station)) {   /* made by the board test: its names */
+            out_str(o, ",\"names\":[");
+            for (unsigned k = 0; k < t.n; ++k) { if (k) out_str(o, ","); json_str(o, plat_boardtest_name(k) ? plat_boardtest_name(k) : ""); }
+            out_str(o, "]");
+        }
+        out_str(o, "}");
+    } else out_str(o, "null");
+    /* the factory board test (CIP-23.3): the last or running one */
+    static const char *const res[] = { "skipped", "pass", "fail" };
+    plat_bt_status_t bt;
+    plat_boardtest_status(&bt);
+    out_str(o, ",\"boardtest\":{\"running\":"); json_bool(o, bt.running);
+    out_str(o, ",\"done\":"); json_bool(o, bt.done);
+    out_str(o, ",\"saved\":"); json_bool(o, bt.done && bt.saved == 0);
+    out_str(o, ",\"tests\":[");
+    for (unsigned k = 0; k < PLAT_BT_N; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"name\":"); json_str(o, plat_boardtest_name(k));
+        out_str(o, ",\"result\":"); json_str(o, bt.done || bt.running ? res[bt.result[k] % 3u] : "skipped");
+        out_str(o, ",\"detail\":"); json_strn(o, bt.detail[k], blen(bt.detail[k], sizeof bt.detail[k]));
+        out_str(o, "}");
+    }
+    out_str(o, "]}}");
+}
+
+static void service_result(http_out_t *o, int r) {
+    if (r == -3) { json_error(o, 403, "factory login needed", -1); return; }
+    if (r == -2) { json_error(o, 400, "value", -1); return; }
+    if (r == -1) { json_error(o, 503, "busy", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* tech=<name>&work=<what was done> */
+static void post_service_log(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char tech[16], work[40];
+    if (!form_get((const char *)r->body, r->body_len, "tech", tech, sizeof tech) ||
+        !form_get((const char *)r->body, r->body_len, "work", work, sizeof work)) { json_error(o, 400, "tech, work", -1); return; }
+    service_result(o, plat_service_log(tech, work, PLAT_SRC_WEB, lvl));
+}
+
+/* station=<name>&r=1,1,2,... (1 pass, 2 fail, 0 not run; in the test procedure's order) */
+static void post_service_test(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    char station[12] = "", rs[3 * PLAT_SVC_TESTS + 4];
+    uint8_t res[PLAT_SVC_TESTS];
+    unsigned n = 0;
+    (void)form_get((const char *)r->body, r->body_len, "station", station, sizeof station);
+    if (!form_get((const char *)r->body, r->body_len, "r", rs, sizeof rs)) { json_error(o, 400, "r", -1); return; }
+    for (const char *p = rs; *p; ) {
+        if (n >= PLAT_SVC_TESTS || *p < '0' || *p > '2') { json_error(o, 400, "r", -1); return; }
+        res[n++] = (uint8_t)(*p++ - '0');
+        if (*p == ',') ++p; else if (*p) { json_error(o, 400, "r", -1); return; }
+    }
+    service_result(o, plat_service_test(station, res, n, PLAT_SRC_WEB, lvl));
+}
+
 /* ---------------- clock ---------------- */
 static void get_time(http_out_t *o) {
     uint32_t t;
@@ -838,6 +1476,9 @@ static void get_time(http_out_t *o) {
     out_str(o, ",\"unix\":"); json_uint(o, t);
     out_str(o, ",\"text\":"); json_str(o, set ? b : "");
     out_str(o, ",\"utc_offset_min\":"); json_int(o, plat_clock_utc_offset_s() / 60);
+    out_str(o, ",\"synced\":"); json_bool(o, plat_clock_synced());
+    out_str(o, ",\"sync_time\":"); json_uint(o, plat_clock_sync_time());
+    out_str(o, ",\"source\":"); json_str(o, plat_clock_source_name(plat_clock_source()));
     out_str(o, ",\"sntp\":{\"on\":"); json_bool(o, ip != 0);
     out_str(o, ",\"last_ok_s_ago\":"); if (s.last_ok_ms) json_uint(o, (bsp_ms() - s.last_ok_ms) / 1000u); else out_str(o, "null");
     out_str(o, ",\"diff_s\":"); json_int(o, s.last_diff_s);
@@ -1040,11 +1681,464 @@ static void post_serial(const http_req_t *r, http_out_t *o, uint8_t lvl) {
     out_str(o, "{\"ok\":true,\"serial\":"); json_uint(o, want); out_str(o, "}");
 }
 
+/* ---------------- credential recovery (web_auth.h, CIP-19.3) ---------------- */
+static void get_auth_reset(http_out_t *o) {
+    char msg[AUTH_RESET_MSG_MAX], uid[25];
+    plat_serial_uid_hex(uid);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"uid\":"); json_str(o, uid);
+    out_str(o, ",\"key\":"); json_bool(o, plat_serial_key_present());
+    out_str(o, ",\"message\":"); json_str(o, auth_reset_message(msg, sizeof msg) ? msg : "");
+    out_str(o, "}");
+}
+
+/* sig=<128 hex digits: r||s>; no login (whoever asks is locked out), counts as a failed login when wrong */
+static void post_auth_reset(const http_req_t *r, http_out_t *o, uint32_t now) {
+    char sh[160] = "";
+    uint8_t sig[64];
+    if (!form_get((const char *)r->body, r->body_len, "sig", sh, sizeof sh) || strlen(sh) != 128 || hex_decode(sh, sig, sizeof sig) != 64) {
+        json_error(o, 400, "token", -1); return;
+    }
+    auth_rc_t rc = auth_reset_with_token(sig, now);
+    plat_log_event(LOG_EV_PASSWORD, PLAT_SRC_WEB, 0, 0, NAN, NAN, rc == AUTH_OK ? "reset by token" : "reset token refused");
+    if (rc == AUTH_LOCKED) { json_error(o, 429, "locked", -1); return; }
+    if (rc == AUTH_NO_KEY) { json_error(o, 409, "no developer key in this firmware", -1); return; }
+    if (rc != AUTH_OK) { json_error(o, 403, "token not valid for this unit", -1); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
 /* ---------------- alarm email ---------------- */
 static void hex32(http_out_t *o, const uint8_t *b) {
     char h[96];
     for (int k = 0; k < 32; ++k) snprintf(h + 3 * k, 4, "%02X%s", b[k], k < 31 ? ":" : "");
     json_str(o, h);
+}
+
+/* I/O boards on RS-485 (iobus.h): state, channels, faults in words */
+static void get_iob(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"boards\":[");
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        const iob_board_tags_t *t = &iob_tags[k];
+        iob_view_t v; memset(&v, 0, sizeof v); (void)iob_board_view(k, &v);
+        char lines[8][IOB_LINE];
+        int n = iob_fault_lines(&v, t->ol_mask, t->wb_mask, lines, 8);
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"enabled\":"); json_bool(o, t->enable);
+        out_str(o, ",\"state\":"); json_str(o, t->enable ? iob_state_name(v.state) : "not fitted");
+        out_str(o, ",\"address\":"); json_uint(o, t->address);
+        out_str(o, ",\"first_do\":"); json_uint(o, t->first_do);
+        out_str(o, ",\"first_di\":"); json_uint(o, t->first_di);
+        out_str(o, ",\"outputs\":"); json_uint(o, v.outputs);
+        out_str(o, ",\"out_faults\":"); json_uint(o, v.out_faults);
+        out_str(o, ",\"inputs\":"); json_uint(o, v.inputs);
+        out_str(o, ",\"in_faults\":"); json_uint(o, v.in_faults);
+        out_str(o, ",\"gate_open\":"); json_bool(o, (v.status & IOBS_GATE_OPEN) != 0);
+        out_str(o, ",\"faults\":[");
+        for (int i = 0; i < n; ++i) { if (i) out_str(o, ","); json_str(o, lines[i]); }
+        out_str(o, "],\"fw\":");
+        if (v.fw_version) { char b[16]; snprintf(b, sizeof b, "%u.%u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u)); json_str(o, b); }
+        else out_str(o, "null");
+        out_str(o, ",\"hw\":"); json_uint(o, v.hw_rev);
+        out_str(o, ",\"requests\":"); json_uint(o, v.requests);
+        out_str(o, ",\"errors\":"); json_uint(o, v.errors);
+        out_str(o, ",\"last_error\":"); json_str(o, v.errors ? mbr_result_name(v.last_error) : "");
+        out_str(o, ",\"node_rx_errors\":"); json_uint(o, v.node_rx_errors);
+        /* map 2: the configured temperature channels (calibrated), the cold junction, the pump */
+        out_str(o, ",\"map\":"); json_uint(o, v.map_version);
+        out_str(o, ",\"temps\":[");
+        bool first = true;
+        for (unsigned i = 0; i < IOB_TEMPS; ++i) {
+            if (t->temp_state[i] == IOB_TS_OFF) continue;
+            if (!first) out_str(o, ",");
+            first = false;
+            out_str(o, "{\"ch\":"); json_uint(o, i + 1u);
+            out_str(o, ",\"conn\":"); json_uint(o, i / 2u + 1u);
+            out_str(o, ",\"type\":"); json_str(o, iob_temp_type_name(t->temp_type[i / 2u]));
+            out_str(o, ",\"state\":"); json_str(o, iob_temp_state_name(t->temp_state[i]));
+            out_str(o, ",\"ok\":"); json_bool(o, t->temp_state[i] == IOB_TS_OK);
+            out_str(o, ",\"t\":");
+            if (t->temps[i] != IOB_TEMP_INVALID) { char b[16]; snprintf(b, sizeof b, "%.1f", t->temps[i] / 10.0); out_str(o, b); }
+            else out_str(o, "null");
+            out_str(o, ",\"offset\":"); { char b[16]; snprintf(b, sizeof b, "%.2f", t->temp_offset[i] / 100.0); out_str(o, b); }
+            out_str(o, ",\"channel\":"); json_uint(o, t->first_temp ? t->first_temp + i : 0u);
+            out_str(o, "}");
+        }
+        out_str(o, "],\"cj\":");
+        if (v.cj != IOB_TEMP_INVALID && v.n_temps) { char b[16]; snprintf(b, sizeof b, "%.1f", v.cj / 10.0); out_str(o, b); }
+        else out_str(o, "null");
+        out_str(o, ",\"pump\":");
+        if (v.n_pwm) {
+            out_str(o, "{\"ao\":"); json_uint(o, t->first_ao);
+            out_str(o, ",\"duty\":"); { char b[16]; snprintf(b, sizeof b, "%.1f", v.pwm_applied / 10.0); out_str(o, b); }
+            out_str(o, ",\"rpm\":"); json_uint(o, v.rpm);
+            out_str(o, ",\"hz\":"); json_uint(o, t->pwm_hz);
+            out_str(o, "}");
+        } else out_str(o, "null");
+        /* map 3: the analog inputs (CORE PCB node): 1-6 4-20 mA, 7 level, 8 mass flow */
+        out_str(o, ",\"ai\":");
+        if (v.n_ai) {
+            static const char *const what[IOB_AIS] = { "4-20 mA 1", "4-20 mA 2", "4-20 mA 3", "4-20 mA 4",
+                                                       "4-20 mA 5", "4-20 mA 6", "level", "mass flow" };
+            out_str(o, "[");
+            for (unsigned i = 0; i < IOB_AIS; ++i) {
+                if (i) out_str(o, ",");
+                bool ma = i < 6u;
+                out_str(o, "{\"ch\":"); json_uint(o, i + 1u);
+                out_str(o, ",\"name\":"); json_str(o, what[i]);
+                out_str(o, ",\"unit\":"); json_str(o, ma ? "mA" : "V");
+                out_str(o, ",\"state\":"); json_str(o, iob_temp_state_name(t->ai_state[i]));
+                out_str(o, ",\"ok\":"); json_bool(o, t->ai_state[i] == IOB_TS_OK);
+                out_str(o, ",\"v\":");
+                if (t->ai_state[i] == IOB_TS_OK) { char b[16]; snprintf(b, sizeof b, "%.3f", t->ai[i] / 1000.0); out_str(o, b); }
+                else out_str(o, "null");
+                out_str(o, ",\"channel\":"); json_uint(o, t->first_ai ? t->first_ai + i : 0u);
+                out_str(o, "}");
+            }
+            out_str(o, "],\"ai_supply\":[");
+            { char b[40]; snprintf(b, sizeof b, "%.3f,%.3f", v.ai_supply[0] / 1000.0, v.ai_supply[1] / 1000.0); out_str(o, b); }
+            out_str(o, "]");
+        } else out_str(o, "null");
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+/* board=<1..>&ch=<1..6>&ref=<degC>: set the channel's calibration offset so it reads ref now (the
+ * reference thermometer's reading; the span stays). Admin; an ordinary, logged parameter write. */
+static void post_iob_zero(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    char v[24] = "";
+    uint32_t board, ch;
+    if (!form_get((const char *)r->body, r->body_len, "board", v, sizeof v) || !parse_u32(v, &board) || board < 1 || board > IOB_BOARDS) {
+        json_error(o, 400, "board", -1); return;
+    }
+    if (!form_get((const char *)r->body, r->body_len, "ch", v, sizeof v) || !parse_u32(v, &ch) || ch < 1 || ch > IOB_TEMPS) {
+        json_error(o, 400, "ch", -1); return;
+    }
+    char *e;
+    if (!form_get((const char *)r->body, r->body_len, "ref", v, sizeof v)) { json_error(o, 400, "ref", -1); return; }
+    double ref = strtod(v, &e);
+    if (!v[0] || *e || !isfinite(ref) || ref < -273.0 || ref > 2000.0) { json_error(o, 400, "ref", -1); return; }
+    iob_view_t bv; memset(&bv, 0, sizeof bv); (void)iob_board_view(board - 1u, &bv);
+    const iob_board_tags_t *t = &iob_tags[board - 1u];
+    if (bv.state != IOB_S_RUN || bv.temp_st[ch - 1u] != IOB_TS_OK || t->temp_state[ch - 1u] != IOB_TS_OK) {
+        json_error(o, 409, "the channel has no reading", -1); return;
+    }
+    int32_t now_cd = iob_temp_cal(bv.temp[ch - 1u], 0, t->temp_gain[ch - 1u]);
+    long off = lround(ref * 100.0) - now_cd;
+    if (off < -5000 || off > 5000) { json_error(o, 409, "more than 50 degC out: check the sensor and its type", -1); return; }
+    int16_t o16 = (int16_t)off;
+    uint16_t pid = (uint16_t)(PARAM_ID_IOB_T_FIRST + 16u * (board - 1u) + 5u);
+    param_err_t pe = param_blob_post(pid, (uint16_t)(2u * (ch - 1u)), &o16, 2, false, PLAT_SRC_WEB, lvl);
+    if (pe != PERR_OK) { json_error(o, perr_status(pe), perr_name(pe), pid); return; }
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"ok\":true,\"offset\":"); { char b[16]; snprintf(b, sizeof b, "%.2f", (double)off / 100.0); out_str(o, b); }
+    out_str(o, "}");
+}
+
+/* I/O board commissioning (iob_cm_*): find a board at an address (246: a new board), give it an address */
+static void get_iob_cm(http_out_t *o) {
+    iob_cm_view_t v;
+    iob_cm_view(&v);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"result\":"); json_str(o, iob_cm_result_name(v.result));
+    out_str(o, ",\"busy\":"); json_bool(o, v.result == IOB_CM_BUSY);
+    out_str(o, ",\"ok\":"); json_bool(o, v.result == IOB_CM_OK);
+    out_str(o, ",\"op\":"); json_str(o, v.op == 1 ? "find" : v.op == 2 ? "assign" : "");
+    out_str(o, ",\"from\":"); json_uint(o, v.from);
+    out_str(o, ",\"to\":"); json_uint(o, v.to);
+    out_str(o, ",\"exception\":"); json_uint(o, v.exception);
+    out_str(o, ",\"seq\":"); json_uint(o, v.seq);
+    out_str(o, ",\"commission_addr\":"); json_uint(o, IOB_COMMISSION_ADDR);
+    out_str(o, ",\"addr_max\":"); json_uint(o, IOB_ADDR_MAX);
+    out_str(o, ",\"configured\":[");
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"enabled\":"); json_bool(o, iob_tags[k].enable);
+        out_str(o, ",\"address\":"); json_uint(o, iob_tags[k].address); out_str(o, "}");
+    }
+    out_str(o, "],\"board\":");
+    if (!v.found) { out_str(o, "null}"); return; }
+    char b[32];
+    snprintf(b, sizeof b, "%u.%u", (unsigned)(v.fw_version >> 8), (unsigned)(v.fw_version & 255u));
+    out_str(o, "{\"fw\":"); json_str(o, b);
+    out_str(o, ",\"build\":"); json_uint(o, v.fw_build);
+    out_str(o, ",\"hw\":"); json_uint(o, v.hw_rev);
+    for (unsigned k = 0; k < 6; ++k) snprintf(b + 4 * k, 5, "%04X", (unsigned)v.uid[5 - k]);
+    out_str(o, ",\"uid\":"); json_str(o, b);
+    out_str(o, ",\"serial\":"); json_str(o, v.serial);
+    out_str(o, "}}");
+}
+
+static bool form_addr(const http_req_t *r, const char *key, uint8_t *a) {
+    char v[8] = "";
+    uint32_t n;
+    if (!form_get((const char *)r->body, r->body_len, key, v, sizeof v) || !parse_u32(v, &n) || n > 255u) return false;
+    *a = (uint8_t)n;
+    return true;
+}
+
+/* find: addr=<1..246>; assign: from=<1..246>&to=<1..245>. Admin; the result comes on GET /api/iob/commission */
+static void post_iob_cm(const http_req_t *r, http_out_t *o, uint8_t lvl, bool assign) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    uint8_t from = 0, to = 0;
+    if (!form_addr(r, assign ? "from" : "addr", &from)) { json_error(o, 400, "address", -1); return; }
+    if (assign && !form_addr(r, "to", &to)) { json_error(o, 400, "address", -1); return; }
+    bool ok;
+    if (assign) {
+        if (from < 1 || from > IOB_COMMISSION_ADDR || to < 1 || to > IOB_ADDR_MAX || to == from) { json_error(o, 400, "address", -1); return; }
+        ok = iob_cm_assign(from, to);
+    } else {
+        if (from < 1 || from > IOB_COMMISSION_ADDR) { json_error(o, 400, "address", -1); return; }
+        ok = iob_cm_find(from);
+    }
+    if (!ok) { json_error(o, 409, "busy", -1); return; }
+    head(o, 202, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* I/O boards on Ethernet (iob_dc_*): list the boards on the network, give one the IP and address of a
+ * board slot. The supervisor's own fixed IP, mask and gateway go with it (not with DHCP: the
+ * boards must always find the supervisor at the same address). */
+static void json_ip(http_out_t *o, uint32_t ip) {
+    char b[16];
+    snprintf(b, sizeof b, "%u.%u.%u.%u", (unsigned)(ip >> 24), (unsigned)(ip >> 16 & 255u), (unsigned)(ip >> 8 & 255u), (unsigned)(ip & 255u));
+    json_str(o, b);
+}
+static void uid_text(const uint16_t uid[6], char b[25]) {
+    for (unsigned k = 0; k < 6; ++k) snprintf(b + 4 * k, 5, "%04X", (unsigned)uid[5 - k]);
+}
+/* The supervisor's address as the I/O boards see it: the I/O port's own (iob_port_ip, never DHCP)
+ * when the boards are on the I/O port, otherwise the main port's. */
+typedef struct { bool dhcp; uint32_t ip, mask, gw; } iob_me_t;
+static bool iob_me(iob_me_t *m) {
+    plat_val_t v;
+    memset(m, 0, sizeof *m);
+    if (iob_link == IOB_LINK_IOPORT) {
+        if (!param_read(PARAM_ID_IOB_PORT_IP, &v)) return false;
+        m->ip = v.u;
+        if (!param_read(PARAM_ID_IOB_PORT_PREFIX, &v)) return false;
+        m->mask = IOB_PORT_MASK(v.u);
+        return true;
+    }
+    m->dhcp = param_read(PARAM_ID_NET_DHCP, &v) && v.b;
+    if (!param_read(PARAM_ID_NET_IP, &v)) return false;
+    m->ip = v.u;
+    if (!param_read(PARAM_ID_NET_MASK, &v)) return false;
+    m->mask = v.u;
+    if (!param_read(PARAM_ID_NET_GW, &v)) return false;
+    m->gw = v.u;
+    return true;
+}
+
+static void get_iob_net(http_out_t *o) {
+    static iob_dc_view_t v;                      /* large: not on the HTTP task's stack */
+    iob_dc_view(&v);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"result\":"); json_str(o, iob_cm_result_name(v.result));
+    out_str(o, ",\"busy\":"); json_bool(o, v.result == IOB_CM_BUSY);
+    out_str(o, ",\"ok\":"); json_bool(o, v.result == IOB_CM_OK);
+    out_str(o, ",\"op\":"); json_str(o, v.op == 1 ? "find" : v.op == 2 ? "set" : "");
+    out_str(o, ",\"seq\":"); json_uint(o, v.seq);
+    out_str(o, ",\"link\":"); json_str(o, IOB_LINK_IS_ETH(iob_link) ? "ethernet" : "rs485");
+    out_str(o, ",\"port\":"); json_str(o, iob_link == IOB_LINK_IOPORT ? "io" : iob_link == IOB_LINK_ETH ? "main" : "");
+    iob_me_t me;                    /* the supervisor as the boards see it: the I/O port, or the main port */
+    iob_me(&me);
+    out_str(o, ",\"supervisor\":{\"dhcp\":"); json_bool(o, me.dhcp);
+    out_str(o, ",\"ip\":"); json_ip(o, me.ip);
+    out_str(o, ",\"mask\":"); json_ip(o, me.mask);
+    out_str(o, ",\"gw\":"); json_ip(o, me.gw);
+    out_str(o, "},\"configured\":[");
+    for (unsigned k = 0; k < IOB_BOARDS; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"enabled\":"); json_bool(o, iob_tags[k].enable);
+        out_str(o, ",\"address\":"); json_uint(o, iob_tags[k].address);
+        out_str(o, ",\"ip\":"); json_ip(o, iob_tags[k].ip); out_str(o, "}");
+    }
+    out_str(o, "],\"boards\":[");
+    for (unsigned i = 0; i < v.n; ++i) {
+        const iob_disc_t *b = &v.boards[i];
+        char t[32];
+        if (i) out_str(o, ",");
+        uid_text(b->uid, t);
+        out_str(o, "{\"uid\":"); json_str(o, t);
+        snprintf(t, sizeof t, "%02X:%02X:%02X:%02X:%02X:%02X", b->mac[0], b->mac[1], b->mac[2], b->mac[3], b->mac[4], b->mac[5]);
+        out_str(o, ",\"mac\":"); json_str(o, t);
+        out_str(o, ",\"serial\":"); json_str(o, b->serial);
+        snprintf(t, sizeof t, "%u.%u", (unsigned)(b->fw_version >> 8), (unsigned)(b->fw_version & 255u));
+        out_str(o, ",\"fw\":"); json_str(o, t);
+        out_str(o, ",\"build\":"); json_uint(o, b->fw_build);
+        out_str(o, ",\"hw\":"); json_uint(o, b->hw_rev);
+        out_str(o, ",\"new\":"); json_bool(o, (b->flags & IOB_DISC_F_NEW) != 0);
+        out_str(o, ",\"controlled\":"); json_bool(o, (b->flags & IOB_DISC_F_CONTROLLED) != 0);
+        out_str(o, ",\"ip\":"); json_ip(o, b->ip);
+        out_str(o, ",\"mask\":"); json_ip(o, b->mask);
+        out_str(o, ",\"gw\":"); json_ip(o, b->gw);
+        out_str(o, ",\"master_ip\":"); json_ip(o, b->master_ip);
+        out_str(o, ",\"address\":"); json_uint(o, b->address);
+        unsigned slot = 0;                       /* the board slot whose settings it has */
+        for (unsigned k = 0; k < IOB_BOARDS && !slot; ++k)
+            if (b->ip && b->ip == iob_tags[k].ip && b->address == iob_tags[k].address) slot = k + 1u;
+        out_str(o, ",\"slot\":"); json_uint(o, slot);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+static bool parse_uid(const char *s, uint16_t uid[6]) {
+    if (strlen(s) != 24) return false;
+    for (unsigned k = 0; k < 6; ++k) {
+        char w[5]; memcpy(w, s + 4 * k, 4); w[4] = 0;
+        char *e; unsigned long n = strtoul(w, &e, 16);
+        if (*e || !isxdigit((unsigned char)w[0])) return false;
+        uid[5 - k] = (uint16_t)n;
+    }
+    return true;
+}
+
+/* Third-party instruments (inst.h): each instrument's state and statistics, each point's value,
+ * quality and raw bits. The settings themselves are ordinary parameters (500-621). */
+static void get_inst(http_out_t *o) {
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"instruments\":[");
+    for (unsigned k = 0; k < INST_MAX; ++k) {
+        if (k) out_str(o, ",");
+        out_str(o, "{\"n\":"); json_uint(o, k + 1u);
+        out_str(o, ",\"name\":"); json_str(o, inst_tags.name[k]);
+        out_str(o, ",\"enabled\":"); json_bool(o, inst_tags.enable[k]);
+        out_str(o, ",\"ip\":"); json_ip(o, inst_tags.ip[k]);
+        out_str(o, ",\"port\":"); json_uint(o, inst_tags.port[k]);
+        out_str(o, ",\"unit\":"); json_uint(o, inst_tags.unit[k]);
+        out_str(o, ",\"state\":"); json_str(o, inst_state_name(inst_tags.state[k]));
+        out_str(o, ",\"good\":"); json_uint(o, inst_tags.good[k]);
+        out_str(o, ",\"errors\":"); json_uint(o, inst_tags.errors[k]);
+        out_str(o, ",\"last_error\":"); json_str(o, inst_err_name(inst_tags.last_err[k]));
+        out_str(o, ",\"last_exception\":"); json_uint(o, inst_tags.last_exc[k]);
+        out_str(o, ",\"resp_ms\":"); json_uint(o, inst_tags.resp_ms[k]);
+        out_str(o, "}");
+    }
+    out_str(o, "],\"points\":[");
+    bool first = true;
+    for (unsigned p = 0; p < INST_POINTS; ++p) {
+        if (!inst_pt.inst[p]) continue;
+        if (!first) out_str(o, ",");
+        first = false;
+        char b[12];
+        snprintf(b, sizeof b, "%08lX", (unsigned long)inst_pt.raw[p]);
+        out_str(o, "{\"n\":"); json_uint(o, p + 1u);
+        out_str(o, ",\"inst\":"); json_uint(o, inst_pt.inst[p]);
+        out_str(o, ",\"name\":"); json_str(o, inst_pt.name[p]);
+        char u8[3 * INST_UNIT_LEN];
+        out_str(o, ",\"unit\":");
+        if (utf16le_to_utf8(inst_pt.unit[p], INST_UNIT_LEN / 2u, u8, sizeof u8) < 0) out_str(o, "null"); else json_str(o, u8);
+        out_str(o, ",\"fc\":"); json_uint(o, inst_pt.fc[p]);
+        out_str(o, ",\"addr\":"); json_uint(o, inst_pt.addr[p]);
+        out_str(o, ",\"type\":"); json_str(o, inst_type_name(inst_pt.type[p]));
+        out_str(o, ",\"order\":"); json_str(o, inst_order_name(inst_pt.order[p]));
+        out_str(o, ",\"value\":"); json_float(o, inst_pt.value[p]);
+        out_str(o, ",\"q\":"); json_str(o, plat_quality_code(inst_pt.q[p]));
+        out_str(o, ",\"raw\":"); json_str(o, b);
+        out_str(o, "}");
+    }
+    out_str(o, "]}");
+}
+
+/* The register explorer: the last read, its raw bytes as hex (registers high byte first; coils
+ * packed, first coil in bit 0) and, for registers, the words as numbers. */
+static void get_inst_ex(http_out_t *o) {
+    inst_ex_view_t v;
+    inst_ex_view(&v);
+    head(o, 200, "application/json", NULL);
+    out_str(o, "{\"result\":"); json_str(o, inst_ex_result_name(v.result));
+    out_str(o, ",\"busy\":"); json_bool(o, v.result == INST_EX_BUSY);
+    out_str(o, ",\"ok\":"); json_bool(o, v.result == INST_EX_OK);
+    out_str(o, ",\"exception\":"); json_uint(o, v.exception);
+    out_str(o, ",\"ip\":"); json_ip(o, v.ip);
+    out_str(o, ",\"port\":"); json_uint(o, v.port);
+    out_str(o, ",\"unit\":"); json_uint(o, v.unit);
+    out_str(o, ",\"fc\":"); json_uint(o, v.fc);
+    out_str(o, ",\"addr\":"); json_uint(o, v.addr);
+    out_str(o, ",\"count\":"); json_uint(o, v.count);
+    out_str(o, ",\"ms\":"); json_uint(o, v.ms);
+    out_str(o, ",\"seq\":"); json_uint(o, v.seq);
+    out_str(o, ",\"hex\":\"");
+    for (unsigned i = 0; i < v.nbytes && i < sizeof v.data; ++i) {
+        char b[3];
+        snprintf(b, sizeof b, "%02X", v.data[i]);
+        out_str(o, b);
+    }
+    out_str(o, "\",\"words\":[");
+    if (v.result == INST_EX_OK && v.fc >= INST_FC_HOLDING)
+        for (unsigned i = 0; i + 1u < v.nbytes; i += 2) {
+            if (i) out_str(o, ",");
+            json_uint(o, (uint32_t)(v.data[i] << 8 | v.data[i + 1]));
+        }
+    out_str(o, "]}");
+}
+
+/* ip=a.b.c.d&port=502&unit=1&fc=3&addr=0&count=10. Admin; reads only. The result comes on
+ * GET /api/inst/explore. */
+static void post_inst_ex(const http_req_t *r, http_out_t *o, uint8_t lvl) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    char v[32] = "";
+    uint32_t ip = 0, port = 502, unit = 1, fc = 3, addr = 0, count = 1;
+    if (!form_get((const char *)r->body, r->body_len, "ip", v, sizeof v) || !parse_ipv4(v, &ip) || ip == 0) { json_error(o, 400, "ip", -1); return; }
+    static const char *const keys[] = { "port", "unit", "fc", "addr", "count" };
+    uint32_t *dst[] = { &port, &unit, &fc, &addr, &count };
+    for (unsigned i = 0; i < 5; ++i)
+        if (form_get((const char *)r->body, r->body_len, keys[i], v, sizeof v) && !parse_u32(v, dst[i])) { json_error(o, 400, keys[i], -1); return; }
+    if (port < 1 || port > 65535u || unit > 255u || fc < 1 || fc > 4 || addr > 65535u || count < 1 || count > 2000u) {
+        json_error(o, 400, "range", -1); return;
+    }
+    if (!inst_ex_start(ip, (uint16_t)port, (uint8_t)unit, (uint8_t)fc, (uint16_t)addr, (uint16_t)count)) {
+        json_error(o, 409, "busy or out of range", -1); return;
+    }
+    head(o, 202, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
+}
+
+/* find: no fields. set: uid=<as listed>&board=<1..IOB_BOARDS>[&ip=a.b.c.d]: the board gets that slot's
+ * address and IP (ip= changes the slot's IP setting first). Admin; the result comes on GET /api/iob/net */
+static void post_iob_net(const http_req_t *r, http_out_t *o, uint8_t lvl, bool set) {
+    if (lvl < PLAT_LVL_ADMIN) { json_error(o, 403, "access", -1); return; }
+    bool ok;
+    if (!set) ok = iob_dc_find();
+    else {
+        char v[32] = "";
+        uint16_t uid[6];
+        uint32_t board, ip;
+        plat_val_t mask, gw;
+        if (!form_get((const char *)r->body, r->body_len, "uid", v, sizeof v) || !parse_uid(v, uid)) { json_error(o, 400, "uid", -1); return; }
+        if (!form_get((const char *)r->body, r->body_len, "board", v, sizeof v) || !parse_u32(v, &board) || board < 1 || board > IOB_BOARDS) {
+            json_error(o, 400, "board", -1); return;
+        }
+        iob_me_t me;
+        if (!iob_me(&me)) { json_error(o, 500, "settings", -1); return; }
+        if (me.dhcp) { json_error(o, 409, "the supervisor needs a fixed IP (net_dhcp off) for the I/O boards", -1); return; }
+        mask.u = me.mask; gw.u = me.gw;
+        ip = iob_tags[board - 1].ip;
+        if (form_get((const char *)r->body, r->body_len, "ip", v, sizeof v) && !parse_ipv4(v, &ip)) { json_error(o, 400, "ip", -1); return; }
+        uint8_t addr = iob_tags[board - 1].address;
+        uint32_t g = (gw.u & mask.u) == (ip & mask.u) ? gw.u : 0;
+        if (!iob_net_settings_ok(ip, mask.u, g, me.ip, addr) || ip == me.ip) { json_error(o, 400, "ip", -1); return; }
+        for (unsigned k = 0; k < IOB_BOARDS; ++k)
+            if (k != board - 1 && iob_tags[k].enable && iob_tags[k].ip == ip) { json_error(o, 409, "another board slot has that IP", -1); return; }
+        uint16_t pid = (uint16_t)(PARAM_ID_IOB_IP_FIRST + board - 1);
+        plat_val_t nv = { .u = ip };
+        bool change = ip != iob_tags[board - 1].ip;
+        param_err_t e = change ? param_check(pid, PLAT_VAL_U32, nv, PLAT_SRC_WEB, lvl) : PERR_OK;
+        if (e != PERR_OK) { json_error(o, perr_status(e), perr_name(e), pid); return; }
+        ok = iob_dc_set(uid, ip, mask.u, g, me.ip, addr);
+        if (ok && change) (void)param_post(pid, PLAT_VAL_U32, nv, PLAT_SRC_WEB, lvl);   /* the slot follows the board */
+    }
+    if (!ok) { json_error(o, 409, "busy", -1); return; }
+    head(o, 202, "application/json", NULL);
+    out_str(o, "{\"ok\":true}");
 }
 
 static void get_mail(http_out_t *o) {
@@ -1114,18 +2208,7 @@ static void post_fw_activate(http_out_t *o, uint8_t lvl) {
 }
 
 bool http_wants_stream(const http_req_t *r) {
-    return !strcmp(r->method, "POST") && !strcmp(r->path, "/api/fw/upload");
-}
-
-/* Read and drop the rest of a refused upload, so the client gets the answer instead
- * of a broken connection (with TLS, closing on unread data resets the connection). */
-static void drain(http_read_fn rd, void *ctx, uint32_t left) {
-    if (left > 2u * 1024u * 1024u || !cfg.scratch) return;   /* not for absurd lengths */
-    while (left) {
-        int n = rd(ctx, cfg.scratch, left < cfg.scratch_size ? left : cfg.scratch_size);
-        if (n <= 0) return;
-        left -= (uint32_t)n;
-    }
+    return !strcmp(r->method, "POST") && (!strcmp(r->path, "/api/fw/upload") || !strcmp(r->path, "/api/restore"));
 }
 
 void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_out_t *o, uint32_t now) {
@@ -1133,6 +2216,13 @@ void http_handle_stream(const http_req_t *r, http_read_fn rd, void *ctx, http_ou
     uint32_t rest = r->content_length - r->body_len;
     if (!r->csrf) { drain(rd, ctx, rest); json_error(o, 403, "missing X-CEMS header", -1); out_end(o); return; }
     if (lvl == 0) { drain(rd, ctx, rest); json_error(o, 401, "login", -1); out_end(o); return; }
+    if (!strcmp(r->path, "/api/restore")) {              /* a backup file: into the store's buffer */
+        if (lvl < PLAT_LVL_ADMIN) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_end(o); return; }
+        restore(r, rd, ctx, o, lvl);
+        if (!o->err) auth_touch(r->sid, now);
+        out_end(o);
+        return;
+    }
     if (lvl < PLAT_LVL_FACTORY) { drain(rd, ctx, rest); json_error(o, 403, "access", -1); out_end(o); return; }   /* tech level (D14) */
     fw_err_t e = fw_upload_begin(r->content_length);
     if (e == FW_OK) e = fw_upload_data(r->body, r->body_len);
@@ -1184,7 +2274,17 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
     else if (get && !strcmp(r->path, "/api/alarms/config")) get_alarm_config(o);
     else if (get && !strcmp(r->path, "/api/mail")) get_mail(o);
     else if (get && !strcmp(r->path, "/api/time")) get_time(o);
+    else if (get && !strcmp(r->path, "/api/cal")) get_cal(o);
+    else if (get && !strcmp(r->path, "/api/service")) get_service(o);
+    else if (get && !strcmp(r->path, "/api/auth/reset")) get_auth_reset(o);
     else if (get && !strcmp(r->path, "/api/serial")) get_serial(r, o);
+    else if (get && !strcmp(r->path, "/api/iob")) get_iob(o);
+    else if (get && !strcmp(r->path, "/api/modbus/force")) get_mb_force(o, now);
+    else if (get && !strcmp(r->path, "/api/modbus/map")) get_mb_map(o);
+    else if (get && !strcmp(r->path, "/api/iob/commission")) get_iob_cm(o);
+    else if (get && !strcmp(r->path, "/api/iob/net")) get_iob_net(o);
+    else if (get && !strcmp(r->path, "/api/inst")) get_inst(o);
+    else if (get && !strcmp(r->path, "/api/inst/explore")) get_inst_ex(o);
     else if (get && !strcmp(r->path, "/api/ui")) get_ui(o);
     else if (get && !strcmp(r->path, "/api/record")) get_record(r, o, lvl);
     else if (get && !strcmp(r->path, "/api/tls/cert")) get_cert(o);
@@ -1198,17 +2298,34 @@ void http_handle(const http_req_t *r, http_out_t *o, uint32_t now) {
             if (lvl) plat_log_event(LOG_EV_LOGOUT, PLAT_SRC_WEB, lvl, 0, NAN, NAN, NULL);
             auth_logout(r->sid); head(o, 200, "application/json",
                      "Set-Cookie: sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict\r\n"); out_str(o, "{\"ok\":true}"); }
+        else if (!strcmp(r->path, "/api/auth/reset")) post_auth_reset(r, o, now);   /* no login: the passwords are lost */
         else if (lvl == 0) json_error(o, 401, "login", -1);
         else if (!strcmp(r->path, "/api/write")) post_write(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/password")) post_password(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/restore")) post_restore(r, o, lvl);
         else if (!strcmp(r->path, "/api/fw/activate")) post_fw_activate(o, lvl);
         else if (!strcmp(r->path, "/api/alarms/ack")) post_alarm_ack(r, o, lvl);
+        else if (!strcmp(r->path, "/api/modbus/force")) post_mb_force(r, o, lvl, now, false);
+        else if (!strcmp(r->path, "/api/modbus/force/clear")) post_mb_force(r, o, lvl, now, true);
         else if (!strcmp(r->path, "/api/mail/test")) post_mail_test(o, lvl);
         else if (!strcmp(r->path, "/api/time")) post_time(r, o, lvl);
+        else if (!strcmp(r->path, "/api/cal")) post_cal(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/log")) post_service_log(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/test")) post_service_test(r, o, lvl);
+        else if (!strcmp(r->path, "/api/service/boardtest")) {
+            int e = plat_boardtest_start(PLAT_SRC_WEB, lvl);
+            if (e == -1) json_error(o, 409, "running, or the start-up self-test not finished", -1);
+            else service_result(o, e);
+        }
         else if (!strcmp(r->path, "/api/serial")) post_serial(r, o, lvl);
         else if (!strcmp(r->path, "/api/record")) post_record(r, o, lvl, now);
         else if (!strcmp(r->path, "/api/mail/trust")) post_mail_trust(r, o, lvl);
+        else if (!strcmp(r->path, "/api/iob/find")) post_iob_cm(r, o, lvl, false);
+        else if (!strcmp(r->path, "/api/iob/assign")) post_iob_cm(r, o, lvl, true);
+        else if (!strcmp(r->path, "/api/iob/net/find")) post_iob_net(r, o, lvl, false);
+        else if (!strcmp(r->path, "/api/iob/net/set")) post_iob_net(r, o, lvl, true);
+        else if (!strcmp(r->path, "/api/iob/temp/zero")) post_iob_zero(r, o, lvl);
+        else if (!strcmp(r->path, "/api/inst/explore")) post_inst_ex(r, o, lvl);
         else json_error(o, 404, "not found", -1);
     }
     else if (!get && !post) json_error(o, 405, "method", -1);

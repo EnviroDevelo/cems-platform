@@ -6,9 +6,10 @@
  * drop-outs, reboots and laptop sleep recover on the next poll.
  *
  *   GET  /                 the page (gzip)
- *   GET  /api/info         unit status: product, firmware, serial, mode, alarms, store, scan, session
- *   GET  /api/params       the parameter table definitions (names, types, limits, levels)
- *   GET  /api/values[?ids=1,2,3]   current values {"t":ms,"v":{"id":value,...}}
+ *   GET  /api/info         unit status: product, firmware, API version, state, serial, mode, alarms, store, scan, session
+ *   GET  /api/params       the parameter table definitions (names, types, limits, levels; "q":true = carries quality)
+ *   GET  /api/values[?ids=1,2,3]   current values {"t":ms,"v":{"id":value,...},"q":{"id":"stale",...}}
+ *                          "q" lists only measurements whose quality is not valid ("id.index" for an array element)
  *   POST /api/login        level=operator|admin|factory&password=...      -> session cookie
  *   POST /api/logout
  *   POST /api/write        id=..&v=..[&o=..]  (repeat for several; all or nothing)
@@ -23,8 +24,15 @@
  *   GET  /api/alarms       alarms shown (active or unacknowledged), most urgent first, and counts
  *   GET  /api/alarms/config every alarm with its actions (email, Modbus, relays) and the relay set-up
  *   POST /api/alarms/ack   id=<alarm ID>|all  (any login; logged with the login and source)
- *   GET  /api/time         the clock (local standard time), UTC offset, SNTP status
+ *   GET  /api/time         the clock (local standard time), UTC offset, quality (synced, sync_time, source), SNTP status
  *   POST /api/time         t=<local seconds since 1970> sets it; sync=1 asks the time server now (admin)
+ *   GET  /api/cal          calibration records (plat_cal.h): channels (in force, factory, due), history
+ *   POST /api/cal          cmd=begin&ch=N | accept | abort | revert&ch=N (level from setting 321; revert factory)
+ *   GET  /api/service      operating hours, configuration checksum, service log, manufacturing test record
+ *   POST /api/service/log  tech=..&work=.. (factory): a service log entry; restarts "since service"
+ *   POST /api/service/test station=..&r=1,1,2,.. (factory): the manufacturing test record
+ *   GET  /api/auth/reset   chip ID and the text a credential-recovery token signs (web_auth.h)
+ *   POST /api/auth/reset   sig=<128 hex> (no login): all passwords back to the defaults
  *   GET  /api/mail         alarm email status: queue, last result, the server's certificate fingerprint, the pin
  *   POST /api/mail/test    send a test email (admin)
  *   POST /api/mail/trust   trust=1 pins the certificate the mail server last presented, trust=0 unpins (admin)
@@ -32,6 +40,10 @@
  *   POST /api/fw/upload    body = image file (.cfw), streamed into the free flash bank (tech/factory level)
  *   POST /api/fw/activate  restart on the staged image (tech/factory level); it confirms itself after a
  *                          healthy trial, or the unit rolls back
+ *   GET  /api/inst         third-party instruments (inst.h): state and statistics of each, value, quality
+ *                          and raw bits of each point in use (the settings are parameters 500-621)
+ *   POST /api/inst/explore ip=..&port=502&unit=1&fc=3&addr=0&count=10 (admin): read registers once
+ *   GET  /api/inst/explore the last explorer read: result, raw bytes as hex, the words
  *
  * Every POST must carry the header "X-CEMS: 1" (a page from another site cannot
  * add it without the browser asking first), and writes need a session cookie.
@@ -47,6 +59,10 @@
 #include "web_auth.h"
 #include "scan_engine.h"
 #include "plat_log.h"
+#include "plat_config.h"
+
+/* /api/info "api": bumped on any change a client could break on (plat_config.h) */
+#define HTTP_API_VERSION PLAT_API_VERSION
 
 typedef struct {
     char     method[8];

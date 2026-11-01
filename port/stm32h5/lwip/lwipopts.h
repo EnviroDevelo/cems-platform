@@ -27,12 +27,14 @@
 #define MEM_ALIGNMENT                   4
 #define MEM_SIZE                        (16 * 1024)   /* TX data (zero-copy RX has its own pool) */
 #define MEMP_NUM_PBUF                   16
-#define PBUF_POOL_SIZE                  8
+#define PBUF_POOL_SIZE                  0             /* unused: received frames are RX_POOL custom pbufs (ethernetif.c),
+                                                         and nothing else in lwIP or the platform allocates PBUF_POOL
+                                                         (lwIP 2.2.1 core/api checked, 29 Oct). Was 8 = 12 KB idle */
 #define PBUF_POOL_BUFSIZE               1536
 #define LWIP_SUPPORT_CUSTOM_PBUF        1             /* zero-copy RX in ethernetif.c */
-#define MEMP_NUM_TCP_PCB                12            /* 4 Modbus + 4 HTTP + spare */
+#define MEMP_NUM_TCP_PCB                16            /* 4 Modbus + 5 HTTP + 3 I/O boards + mail + spare */
 #define MEMP_NUM_TCP_PCB_LISTEN         4
-#define MEMP_NUM_NETCONN                16
+#define MEMP_NUM_NETCONN                20            /* + 3 I/O board connections and the discovery socket */
 #define MEMP_NUM_TCP_SEG                TCP_SND_QUEUELEN
 #define MEMP_NUM_SYS_TIMEOUT            (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 4)
 
@@ -54,6 +56,9 @@
 #define TCP_SND_BUF                     (4 * TCP_MSS)
 #define TCP_SND_QUEUELEN                ((4 * TCP_SND_BUF) / TCP_MSS)
 #define TCP_LISTEN_BACKLOG              1
+/* first retransmit after 1 s, not lwIP's 3 s (RFC 6298's value): on a lossy link a lost SYN or a
+ * lost first segment costs a second, not three, before round-trip samples take over */
+#define LWIP_TCP_RTO_TIME               1000
 #define LWIP_TCP_KEEPALIVE              1
 /* a PLC that disappears without closing is noticed in about 50 s */
 #define TCP_KEEPIDLE_DEFAULT            30000
@@ -87,6 +92,9 @@
 #define CHECKSUM_CHECK_UDP              0
 #define CHECKSUM_CHECK_TCP              0
 #define CHECKSUM_CHECK_ICMP             0
+
+/* ---- hooks ---- */
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"   /* TCP retransmission count (ethernetif.c) */
 
 /* ---- diagnostics ---- */
 #define LWIP_STATS                      0

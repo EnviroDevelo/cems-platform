@@ -17,6 +17,12 @@ typedef struct {
     uint32_t safe_states;
     uint32_t resets;
     bsp_reset_cause_t reset_cause;
+    struct iob_port *rs485;      /* returned by bsp_rs485 (a simulated bus, iob_node_sim.h) */
+    struct w5500_bus *w5500;     /* returned by bsp_w5500 (a simulated chip, w5500_sim.h) */
+    uint32_t supply_mv;          /* returned by bsp_supply_mv (0 = not measured) */
+    bool     straps_fitted;      /* bsp_hw_straps returns hw_straps (false = no straps) */
+    bool     role_fitted, role_a, role_b;   /* bsp_role_read: the role jumper J7 (plat_role.h) */
+    uint8_t  hw_straps;
 } bsp_host_t;
 
 extern bsp_host_t bsp_host;

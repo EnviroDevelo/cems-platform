@@ -1,0 +1,234 @@
+# Operator manual: the touchscreen
+
+This manual is for people who run the instrument from its 7" touchscreen. It describes the platform's screens, which every product built on the CEMS core shares. A
+product's own measurement screens, names and units are described in that product's manual.
+
+Other manuals:
+- Modbus and integration: `docs/MODBUS.md`.
+- Service and repair: `docs/SERVICE_PROCEDURES.md`.
+- The web page shows the same information, using the same words and colours (`docs/UI_CONVENTIONS.md`).
+
+Pictures of every screen are in `docs/ui/`.
+
+## 1. Using the screen
+
+- **Tap and release.** An action happens when you lift your finger from the button. If you slide off the button before lifting, nothing happens.
+- **Asking first.** Some actions ask "Are you sure?" before they take effect: changing control between LOCAL and REMOTE, entering or leaving maintenance, calibration steps, network changes, a firmware restart, and some settings.
+- **Dimming.** The screen dims after 10 minutes with no touch. The first touch only wakes it, so it can't press anything by accident.
+- **Greyed buttons.** A greyed button can't be used right now. Tapping it, or the line under it, tells you why.
+- **The bar at the bottom** opens Home, Trends, Settings, Events and System, and holds **Log in**.
+
+## 2. The header (top of every screen)
+
+From left to right:
+
+| Item | What it tells you |
+|---|---|
+| Product name | Which instrument this is |
+| **State** | What the instrument is doing (table below) |
+| **LOCAL / REMOTE** | Who has control. LOCAL: settings are changed here. REMOTE (green): the PLC or the web page has control, and changes made here are refused |
+| **Link** | The supervisory system. LINK OK (green): the PLC or SCADA is polling. LINK LOST (red): polling has stopped for longer than the configured timeout. NO LINK: nothing has polled since start-up, or the timeout is off |
+| **Alarms** | Red: an alarm or fault is not acknowledged. Amber: a warning is not acknowledged. Grey: all alarms are acknowledged, and the pill still shows how many are active. Tap it to open the alarm list |
+| Time | Local standard time. "--:--:--" means the clock is not set (see 8) |
+| **FORCED n** (amber, in place of the name) | n values are being forced on Modbus for commissioning (see 8a). Tap it for the list |
+
+| State | Meaning | Colour |
+|---|---|---|
+| STARTING, INITIALISING | Starting up | Neutral |
+| WARMING UP | Not yet ready to measure | Amber |
+| READY | Ready, not measuring | Green |
+| MEASURING | Measuring normally | Green |
+| MAINTENANCE | Someone has put it in maintenance (see 5) | Amber |
+| CALIBRATION | A calibration is under way (see 6) | Amber |
+| FAULT | A fault stops measurement. The alarm list says what it is | Red |
+| SAFE MODE | It restarted repeatedly after crashes and is running without its measurement logic. Call service | Red |
+
+## 3. Values and what the marks mean
+
+A normal reading is dark text with its unit. Any other reading is greyed, and a word under it says why:
+
+| Word | Meaning | What to do |
+|---|---|---|
+| stale | The value has not been updated recently | Check the alarm list, then the I/O boards screen |
+| unavailable (shown as "----") | There is no value | Check the alarm list |
+| out of range | The reading is outside the instrument's range | Check the process |
+| warming up | Not valid until warm-up ends | Wait |
+| maintenance | The instrument is in maintenance | End maintenance when the work is done |
+| calibration | A calibration is under way | Finish or abort the calibration |
+| fault | The measurement has a fault | The alarm list and the I/O boards screen give the reason |
+
+In a grid, such as a set of valves or channels, each cell carries its own mark.
+
+## 4. Logging in
+
+Viewing needs no login. Changing things does:
+
+| Level | Can |
+|---|---|
+| operator | Everyday operation: hand control to REMOTE, maintenance, and settings marked for operators |
+| admin | Commissioning: most settings, the clock, alarm actions, calibration (by default) |
+| factory | Service: firmware, factory settings and factory calibration |
+
+1. Tap **Log in** (bottom right).
+2. Choose the level.
+3. Type the password and tap **Enter**.
+
+After five wrong passwords the login locks for 30 seconds. A login ends after 10 minutes with no touch, or when you tap **Log out**.
+
+The passwords are set at commissioning. If a password is lost, see the service manual.
+
+## 5. Home
+
+Home shows the main readings, plus two controls:
+
+- **Hand to REMOTE / Take LOCAL control.** Handing control to the PLC and web needs an operator login. Anyone can take LOCAL control back at the instrument, because the person standing at it always wins.
+- **Maintenance / End maintenance.** This needs an operator login. In maintenance the state shows MAINTENANCE and readings are marked "maintenance", so the PLC knows not to trust them. Always end maintenance when the work is done.
+
+## 6. Calibration (System, then Calibrate)
+
+The **Calibrate** button reads **Cal DUE** in amber when a channel is due.
+
+- **Channels** lists each channel's status: "calibrating now", "never calibrated", "DUE since ...", "due ...", or the last calibration's kind and date. Tap a channel to select it.
+- For the selected channel the screen shows the calibration in force, the factory calibration, and the points of the last calibration: reference, as found, as left.
+- **History** shows the latest calibrations and their outcome: pass (green), fail (red), or other outcomes (amber).
+
+To calibrate:
+1. Log in. The default is admin, and your instrument may require another level.
+2. Select the channel and tap **Start calibration**.
+3. Follow the product's calibration procedure.
+4. Tap **Accept** to keep the result, or **Abort** to keep the previous calibration.
+
+**Revert to factory** puts the factory calibration back.
+
+If a step is refused, the reason shows under the button. For example, you may need to log in, or the instrument may be in a state that doesn't allow calibration.
+
+## 7. Alarms
+
+Open the alarm list by tapping the alarm pill. Each row shows:
+- the alarm;
+- when it started, or how long after start-up if the clock was not set;
+- whether it is still active.
+
+A coloured bar on the left gives the severity.
+
+- **Acknowledge** acknowledges one alarm. **Ack all** acknowledges every alarm. Neither needs a login.
+- An alarm that has cleared stays in the list until it is acknowledged. A latched alarm stays active until it is acknowledged.
+- **Tap an alarm** to see "What to check" for it. Tap it again to close that.
+- Each row's status line starts with the alarm's **priority tier**: Critical, High, Medium, Low or Info (or the names set for your site). The list is sorted by tier, most urgent first.
+- **Actions** (admin) sets each alarm's tier and what it does: email, Modbus, and relays 1 to 4.
+  - **The tier button**: each tap moves to the next tier: Critical, High, Medium, Low, Info, Off, then back to the alarm's own default. A star (*) means the alarm is on its default tier. Off takes the alarm out of the list, the counts and the actions. Alarms that stop measurement, and a few that protect the data (such as no valid calibration), can't be switched off: the button skips Off for them.
+  - **The action buttons** (green = on): changing one gives the alarm its own actions, and the line under its name says "own actions". Until then it follows its tier's actions, if the tier has any, or its built-in default. To put an alarm back on its tier's actions, tap its name and confirm.
+  - **Tiers** opens the tier page. Each tier shows how many of its alarms are active and how many are not acknowledged. Tap a tier's name to rename it, up to 16 characters. The action buttons set what that tier's alarms do when they have no actions of their own, and **Use defaults** clears them.
+
+- **Inputs** (admin) sets up the input alarms (see 7a).
+
+The full list of alarm and fault codes is in `docs/FAULT_CODES.md`.
+
+## 7a. Input alarms (Alarms, then Inputs)
+
+There are 24 input alarm slots. Each turns a digital input on an I/O board into an alarm, which
+shows in the alarm list and is sent to Modbus. The list shows each slot's label, its settings and
+its state: not used, normal, "ACTIVE, not acknowledged", active (acknowledged), "cleared, not acknowledged", or input
+unreliable. Tap a slot to set it up (admin login). Tap a row to change it:
+
+| Row | What it sets |
+|---|---|
+| Input | Which digital input (1 to 64) the slot watches. 0 means the slot is not used |
+| Alarm when | Whether the alarm is raised when the input is active (closed) or inactive (open) |
+| On-delay | How many seconds the input must stay in the alarm state before the alarm is raised |
+| Latch | On: the alarm stays active until it is acknowledged, even after the input returns |
+| Severity | Warning, alarm or fault. Each tap moves to the next |
+| Label | The name of the alarm, up to 32 characters. It is shown in the alarm list, on the web page, in the Modbus map and in the Excel file for the PLC integrator. Empty means "Digital input n" |
+
+The line under the title gives the slot's Modbus discrete inputs: active, not acknowledged, and
+input unreliable. If the I/O board with that input is lost, the slot shows "input unreliable"
+instead of guessing. **Previous** and **Next** move between slots.
+
+## 8. Settings, Events and System
+
+- **Settings** lists the instrument's settings by page. Tap a row to change it. Some settings, such as long lists and byte values, can only be changed on the web page, and the row says so. In REMOTE, changes here are refused.
+- **Events** is the event log: settings changed, logins, alarms, power-ups, firmware changes. Each entry shows who made the change and from where (touchscreen, web, Modbus).
+- **System** shows:
+  - firmware: the version, core version, build, update state and self-test result;
+  - the unit: serial number, hardware, operating hours, supply voltage and restarts;
+  - network: the address;
+  - storage: calibration, log, configuration checksum and clock.
+
+  System also holds these controls:
+  - **Set clock** (admin). Only needed when there is no time server. "Clock, not synced" means nothing outside has confirmed the time;
+  - **I/O boards**: each board's link, inputs, outputs, temperatures and faults, in words. A CORE PCB used as an I/O board also shows its 8 analog inputs (1-6 in mA, 7 level and 8 mass flow in mV) and the measured 10 V and 5 V sensor supplies;
+  - screen brightness;
+  - **Emissions** (see 8d);
+  - **Instruments** (see 8c);
+  - **Service** (see 9).
+
+  The HTTPS fingerprint at the bottom lets a technician check that their browser has reached this unit.
+
+## 8a. Forcing Modbus values (Settings, then Force)
+
+This is used during commissioning, so the PLC or SCADA can be checked against known values,
+including test bits.
+
+- The list shows every value the PLC reads that can be forced, the instrument's own values first.
+- **Force** (admin login): enter the value, or ON/OFF for a bit, and confirm. For the next 30
+  seconds the PLC reads that value. After that it goes back to the real one by itself.
+  **Force** again restarts the 30 s.
+- A forced row shows "Modbus: forced to X, 23 s". The touchscreen and the web page keep showing
+  the **real** value, and alarms, logging and control keep using it. Only Modbus is affected.
+- **Clear** ends one force; **Clear all** ends every force.
+- Every force, clear and expiry goes into the event log, with who made it. The PLC can also see
+  how many values are forced, at input register 9090, and in common alarm bit 4. The details are
+  in `docs/MODBUS.md`.
+
+## 8b. Trends
+
+**Trends** draws up to four values over the last 10 minutes, with a new point every 4 seconds.
+
+- **Add** lists the values that can be trended, the instrument's own values first. Tap one to add it. Its line starts from that moment.
+- The boxes at the top show each value now, in its line's colour. Each line has its own scale, so values in different units can share the chart. Tap a box to show that value's scale on the left; its line is drawn thicker.
+- **Remove** takes the selected value off. **Restart** clears the lines and starts again.
+- A gap in a line means the value was not valid then: stale, unavailable, in maintenance and so on.
+- Trends keep recording while you use other screens. They are not saved: a restart clears them. For longer periods, download the data log from the web page.
+
+## 8d. Emissions (System, then Emissions)
+
+The emission values the limits are judged on, read only. The engine and its channels are set up on the web page (Emissions).
+
+- **The top line** says whether the plant is operating (averages only count operating time), the averaging period and the reference O2 (or CO2). If a setting doesn't fit, it says which channel and that the engine is stopped.
+- **Each channel in use** shows four values: **now, corrected** (to standard conditions, dry, and to the reference O2 where that applies), **this period** so far, the last **validated** average (after the confidence interval is subtracted), and the **last day**'s average. A greyed value has its quality word under it.
+- **The line under each channel** lists anything to act on: above the calibration range, over or below the analyser's range, input missing, last day invalid, a new QAL2 due, and averages discarded today. It also shows the QAL3 state (ok, check due, last check beyond the action limit, or OUT OF CONTROL for zero or span: adjust the analyser and reset its chart), and for a channel with a second, shorter limit (CO in waste incineration) the last 10-minute average and how many today were above it.
+- Amber means attention, red means QAL3 out of control.
+
+## 8c. Instruments (System, then Instruments)
+
+Third-party instruments, such as gas analysers and flow meters, that the instrument reads over Modbus TCP on its I/O network. The page only shows them. They are set up on the web page (Instruments).
+
+- **Left:** each instrument that is switched on, with its address and its state: ok, connecting, failing, lost (several polls in a row failed; it keeps trying), bad settings, or off. Tap one to show it on the right.
+- **Right:** how many polls worked and failed, how long the last reply took, the last error, and each value read from it with its unit and quality word. A greyed value is not valid: the word beside it says why (stale, unavailable, out of range, fault...). **Up** and **Down** page through the values.
+
+## 9. Service (System, then Service)
+
+For technicians. The page shows:
+- **Start-up self-test:** every check made at start-up, with pass, FAIL or skipped.
+- **Board test** (factory login): **Run board test** checks the hardware the unit can test on itself and saves the result as the unit's test record. It writes to the settings memory byte by byte, so run it on the bench, not on a unit in service. The page shows the last run, or the stored test record, and the first failure.
+- **Service log:** the hours since the last service and the latest entries. **Add entry** (factory login) asks who did the work, then what was done (up to 39 characters). Saving it starts the hours since service again.
+- **Display test** (see 9a).
+
+## 9a. Display test (System, then Service, then Display test)
+
+This page is for checking the screen itself. Nothing on it changes the instrument.
+
+- The status page shows what the display controller reports.
+- **Colour test** steps through full-screen colours and a grid; tap anywhere for the next. Use it to look for dead pixels or a shifted picture.
+- **Touch test** shows five crosses. Touch each one, and the screen tells you how far from the cross the touch landed. More than 10 px off shows red: call service. Tap **Done** to return.
+
+## 10. If something is wrong
+
+| You see | Do |
+|---|---|
+| Red alarm pill | Open the list, tap the alarm, follow "What to check" |
+| State FAULT or SAFE MODE | Open the alarm list; call service with the alarm text and the System page details |
+| LINK LOST | Check the PLC/SCADA connection and the network |
+| Values "stale" or "unavailable" | Open I/O boards: a board marked lost or faulty is the usual cause |
+| The screen is dark but the instrument runs | Touch it (it may be dimmed). If it stays dark, the instrument keeps measuring; use the web page and call service |
+| Touches land in the wrong place | Run the touch test (9a) and report the offsets |

@@ -1,10 +1,12 @@
 /* test_store.c - parameter store: boot, save, dual copies, power cuts, migration,
- * fail-safe, restore defaults, export/import. */
+ * fail-safe, restore defaults, export/import.
+ * Requirements proved here: CIP-05.1, 05.3, 05.5, 05.6, 06.1, 06.2, 06.3, 18.1, 18.5, 26.2, 26.3. */
 #include <string.h>
 #include "tst.h"
 #include "param.h"
 #include "param_store.h"
 #include "web_auth.h"
+#include "plat_service.h"
 
 static int16_t  s_i16;
 static float    s_f;
@@ -71,10 +73,24 @@ static void t_blank_fram(void) {
     save_cycle();
     CHECK_EQ(param_store_stats().saves_fac, 0);
     CHECK(!param_store_calibration_valid());
+    /* the unit's own history (service hours) lives in the factory region too, but
+     * counting hours is not a factory step: it must not write the defaults over it */
+    plat_service_reset_for_test();
+    plat_service_scan(0); plat_service_scan(3u * 360000u);
+    CHECK(plat_service_hours_x10() >= 3u);
+    save_cycle(); save_cycle();
+    CHECK_EQ(param_store_stats().saves_fac, 1);         /* the hours are kept ... */
+    CHECK(!param_store_calibration_valid());            /* ... in an image still marked uncalibrated */
+    boot();
+    CHECK(!param_store_calibration_valid());            /* and it stays so after a power cut */
+    CHECK(param_store_status() & PSTAT_FAC_VALID);
+    plat_service_reset_for_test();
     /* a deliberate factory change is saved and clears the alarm */
     plat_val_t v; v.u = 4242; apply(1003, PLAT_LVL_FACTORY, PLAT_VAL_U32, v);
     save_cycle();
     CHECK_EQ(param_store_stats().saves_fac, 1);
+    CHECK(param_store_calibration_valid());
+    boot();
     CHECK(param_store_calibration_valid());
 }
 
@@ -177,7 +193,10 @@ static void t_both_factory_copies_bad(void) {
     boot();
     CHECK(!param_store_calibration_valid());
     CHECK_EQ(s_cal, 100);                               /* default in RAM ... */
+    plat_service_reset_for_test();                      /* the hours counting on does not write either */
+    plat_service_scan(0); plat_service_scan(2u * 360000u);
     save_cycle(); save_cycle();
+    plat_service_reset_for_test();
     CHECK(memcmp(snap, fram + L->fac_a, sizeof snap) == 0);   /* ... but the damaged images are left alone */
     CHECK(!param_store_calibration_valid());
 }
@@ -307,6 +326,75 @@ static void t_export_import(void) {
     CHECK_EQ(s_cal, 600);
 }
 
+/* the web server's backup/restore buffer is the store's staging area, lent between saves:
+ * no save starts while it is lent, a save under way finishes first, a lease nobody
+ * collected is reclaimed by the next job, and changes made meanwhile are saved after */
+static void t_lease(void) {
+    fresh(); boot();
+    plat_val_t v;
+    v.i = 7; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);
+    save_cycle();
+    int32_t r = 0;
+
+    now += STORE_SAVE_PERIOD_MS;
+    param_store_poll(now);                         /* a save under way: snapshot requested */
+    CHECK_EQ(param_store_lease_start(), 0);
+    CHECK_EQ(param_store_lease_start(), -1);       /* one job at a time */
+    param_store_scan_service();
+    param_store_poll(now);                         /* the save finishes first */
+    CHECK(!param_store_job_done(&r));
+    CHECK(param_store_lease_buf() == NULL);
+    param_store_poll(now);                         /* now lent */
+    CHECK(param_store_job_done(&r));
+    CHECK_EQ(r, (int32_t)STORE_BACKUP_MAX);
+    uint8_t *buf = param_store_lease_buf();
+    CHECK(buf != NULL);
+
+    CHECK_EQ(param_store_job_start(true, buf, (uint32_t)r, PLAT_LVL_ADMIN), 0);
+    param_store_poll(now);
+    int32_t n = 0;
+    CHECK(param_store_job_done(&n));
+    CHECK(n > 40); CHECK(!memcmp(buf, "CEMX", 4));
+
+    uint32_t saves = param_store_stats().saves_usr;
+    v.i = -3; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);
+    for (int k = 0; k < 5; ++k) save_cycle();     /* no save while lent: the file stays intact */
+    CHECK_EQ(param_store_stats().saves_usr, saves);
+    CHECK(!memcmp(buf, "CEMX", 4));
+
+    CHECK_EQ(param_store_job_start(false, buf, (uint32_t)n, PLAT_LVL_ADMIN), 0);
+    param_store_poll(now);                         /* checked, waits for the scan */
+    CHECK(!param_store_job_done(&r));
+    param_store_scan_service();                    /* applied from the lent buffer */
+    param_store_poll(now);
+    CHECK(param_store_job_done(&r));
+    CHECK_EQ(r, 0);
+    CHECK_EQ(s_i16, 7);
+    v.i = 11; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);   /* a change while still lent */
+    save_cycle();
+    CHECK_EQ(param_store_stats().saves_usr, saves);
+    param_store_lease_end();
+    CHECK(param_store_lease_buf() == NULL);
+    save_cycle();                                  /* saved once returned */
+    CHECK_EQ(param_store_stats().saves_usr, saves + 1u);
+    boot();
+    CHECK_EQ(s_i16, 11);
+
+    /* abandoned: granted but never collected (the caller timed out) */
+    CHECK_EQ(param_store_lease_start(), 0);
+    param_store_poll(now);
+    CHECK(param_store_lease_buf() != NULL);
+    static uint8_t file[64 * 1024];
+    CHECK_EQ(param_store_job_start(true, file, sizeof file, PLAT_LVL_ADMIN), 0);   /* reclaimed */
+    CHECK(param_store_lease_buf() == NULL);
+    param_store_poll(now);
+    CHECK(param_store_job_done(&r));
+    CHECK(r > 40);
+    v.i = 9; apply(1001, PLAT_LVL_OPERATOR, PLAT_VAL_I32, v);
+    save_cycle(); boot();
+    CHECK_EQ(s_i16, 9);
+}
+
 /* secrets (password hashes, the mail password) never leave in a backup file, and a
  * restore never changes them */
 static void t_backup_secrets(void) {
@@ -382,6 +470,7 @@ void test_store_all(void) {
     RUN(t_out_of_range_stored);
     RUN(t_restore_defaults_cmd);
     RUN(t_export_import);
+    RUN(t_lease);
     RUN(t_backup_secrets);
     RUN(t_volatile_and_table_errors);
 }

@@ -7,7 +7,9 @@
 
 #define LWIP_ERRNO_STDINCLUDE   1          /* use newlib's errno.h */
 #define LWIP_NO_UNISTD_H        0
+#ifndef BYTE_ORDER                         /* newlib's sys/types.h may have it */
 #define BYTE_ORDER              LITTLE_ENDIAN
+#endif
 
 void plat_assert_failed(const char *file, int line);
 #define LWIP_PLATFORM_DIAG(x)   do { } while (0)

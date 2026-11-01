@@ -1,10 +1,19 @@
 /* test_modbus.c - Modbus engine on a map shaped like the old UniLogic slave map
  * (stage4/4G/modbus_map.csv): INT16 status registers, 32-bit timer presets,
- * a REAL, 10-register name buffers, bit arrays on coils. */
+ * a REAL, 10-register name buffers, bit arrays on coils.
+ * Requirements proved here: CIP-01.6, 10.5, 14.2, 14.4, 15.1, 15.2, 13.3. */
 #include <string.h>
 #include "tst.h"
 #include "modbus.h"
+#include "plat_clock.h"
+#include "plat_config.h"
 #include "mbtcp.h"
+#include "plat_state.h"
+#include "plat_alarm.h"
+#include "emis_bind.h"
+#include "emis_qal3.h"
+
+extern uint8_t plat_meas_q[PLAT_MEAS_MAX];    /* plat_state.c */
 
 static int16_t  m_mode, m_count;          /* status, read-only */
 static uint32_t m_preset;                 /* like ModbusTimer.Preset (ms) */
@@ -71,7 +80,7 @@ static void setup(void) {
     param_set_defaults(PARAM_ALL);
     plat_cmdq_init(&q);
     param_bind(&q, NULL);
-    mb_ident_t id = { "Acme", "CEMS Supervisor", "1.2.3", PLAT_LVL_OPERATOR };
+    mb_ident_t id = { "Acme", "CEMS Supervisor", "1.2.3", PLAT_LVL_OPERATOR, 7 };
     CHECK_EQ(mb_init(map, sizeof map / sizeof map[0], &id), 0);
     remote(true);
     scan();
@@ -234,7 +243,113 @@ static void t_device_id(void) {
     uint8_t r4[4] = { 0x2B, 0x0E, 4, 2 }; go(r4, 4);
     CHECK_EQ(rsp[6], 1); CHECK_EQ(rsp[7], 2); CHECK(memcmp(rsp + 9, "1.2.3", 5) == 0);
     uint8_t r9[4] = { 0x2B, 0x0E, 4, 9 }; go(r9, 4); CHECK(EXC(2));
-    uint8_t r3[4] = { 0x2B, 0x0E, 3, 0 }; go(r3, 4); CHECK(EXC(3));
+    uint8_t r5[4] = { 0x2B, 0x0E, 5, 0 }; go(r5, 4); CHECK(EXC(3));
+    uint8_t r1[4] = { 0x2B, 0x0E, 1, 0 }; go(r1, 4); CHECK_EQ(rsp[3], 0x83);   /* conformity: extended */
+    /* VDI 4201-3 self-description (docs/MODBUS_STANDARD_BLOCK.md section 5) */
+    uint8_t c81[4] = { 0x2B, 0x0E, 4, 0x81 }; go(c81, 4);
+    CHECK_EQ(rsp[7], 0x81); CHECK_EQ(rsp[8], 2); CHECK_EQ(rsp[9], 0); CHECK_EQ(rsp[10], 30);   /* ComponentNumber */
+    uint8_t c82[4] = { 0x2B, 0x0E, 4, 0x82 }; go(c82, 4); CHECK_EQ((rsp[9] << 8) | rsp[10], 7000);
+    uint8_t c84[4] = { 0x2B, 0x0E, 4, 0x84 }; go(c84, 4); CHECK_EQ((rsp[9] << 8) | rsp[10], 7256);
+    uint8_t c85[4] = { 0x2B, 0x0E, 4, 0x85 }; go(c85, 4);                 /* component 1: no emissions engine here */
+    CHECK_EQ(rsp[8], 10); CHECK(memcmp(rsp + 9, "not fitted", 10) == 0);
+    uint8_t c86[4] = { 0x2B, 0x0E, 4, 0x86 }; go(c86, 4);                 /* range start: NaN */
+    CHECK_EQ(rsp[8], 4); CHECK_EQ(rsp[9], 0x7F); CHECK_EQ(rsp[10], 0xC0);
+    uint8_t c88[4] = { 0x2B, 0x0E, 4, 0x88 }; go(c88, 4); CHECK(memcmp(rsp + 9, "% vol", 5) == 0);
+    uint8_t cfd[4] = { 0x2B, 0x0E, 4, 0x85 + 4 * 30 }; go(cfd, 4); CHECK(EXC(2));   /* no component 31 */
+    /* code 3 streams everything from the start, in pieces: "more follows" and the next object */
+    uint8_t c3[4] = { 0x2B, 0x0E, 3, 0 };
+    unsigned objs = 0, rounds = 0;
+    for (;;) {
+        go(c3, 4); CHECK_EQ(rsp[0], 0x2B);
+        objs += rsp[6];
+        if (rsp[4] != 0xFF || ++rounds > 20) break;
+        c3[3] = rsp[5];
+    }
+    CHECK_EQ(objs, 4u + 5u + 4u * 30u);           /* 0-2, 4, 0x80-0x84, components */
+    CHECK(rounds > 0);
+}
+
+/* the standard CEMS block (VDI 4201-3): read-only, holding mirrors input, unfitted slots NaN */
+static void t_standard_block(void) {
+    setup();
+    rd(4, 7000, 4);                               /* slot 0: value NaN, status 0 */
+    CHECK_EQ(rl, 10); CHECK_EQ(reg(0), 0x7FC0); CHECK_EQ(reg(1), 0); CHECK_EQ(reg(2), 0); CHECK_EQ(reg(3), 0);
+    uint16_t in[16], ho[16];
+    rd(4, 7940, 16); for (int k = 0; k < 16; ++k) in[k] = reg(k);
+    rd(3, 7940, 16); for (int k = 0; k < 16; ++k) ho[k] = reg(k);
+    CHECK(memcmp(in, ho, sizeof in) == 0);        /* holding mirror */
+    CHECK_EQ(in[0], 1);                           /* block version */
+    CHECK_EQ(in[1], 0); CHECK_EQ(in[2], 0);       /* no slot fitted */
+    rd(4, 7748, 1); CHECK_EQ(reg(0), 2);          /* quality unavailable */
+    rd(4, 7300, 2); CHECK_EQ(reg(0), 0x7FC0);     /* bank 1 NaN */
+    rd(4, 7990, 10); CHECK_EQ(rl, 22);            /* to the block's last register */
+    rd(4, 7990, 20); CHECK_EQ(rl, 42);            /* on into the Rev C extension */
+    rd(4, 8990, 10); CHECK_EQ(rl, 22);            /* to its last register */
+    rd(4, 8990, 20); CHECK_EQ(rl, 42);            /* and on into the platform block at 9000 */
+    rd(4, 6999, 2); CHECK(EXC(2));                /* 6999 is not mapped */
+    rd(4, 8000, 2); CHECK_EQ(reg(0), 0x7FC0);     /* second-period average, unfitted: NaN */
+    rd(4, 8064, 1); CHECK_EQ(reg(0), 2);          /* its quality unavailable */
+    rd(4, 8416, 1); CHECK_EQ(reg(0), 0);          /* QAL3 status */
+    { uint16_t zz[1] = { 0 }; wr16(8000, zz, 1); CHECK(EXC(2)); }   /* read-only */
+    uint16_t v[2] = { 0, 0 };
+    wr16(7000, v, 2); CHECK(EXC(2));              /* read-only, BasisS included */
+    wr16(7128, v, 2); CHECK(EXC(2));
+    uint8_t w6[5] = { 6, 0x1B, 0x58, 0, 1 }; go(w6, 5); CHECK(EXC(2));   /* 7000 */
+    /* word order setting */
+    plat_cmd_t c = { .id = PARAM_ID_MB_STD_WORDS, .src = PLAT_SRC_WEB, .level = PLAT_LVL_ADMIN, .kind = PLAT_VAL_U32, .v.u = 1 };
+    CHECK_EQ(param_apply(&c), PERR_OK); scan();
+    rd(4, 7000, 2); CHECK_EQ(reg(0), 0); CHECK_EQ(reg(1), 0x7FC0);
+    /* an application entry in 7000-7999 stops start-up, in input or holding */
+    mb_map_t bad[1] = { MB_ENTRY(MB_HOLDING, 7998, P_PRESET, MBF_U32) };
+    CHECK_EQ(mb_init(bad, 1, NULL), 1);
+    mb_map_t bad2[1] = { MB_ENTRY(MB_INPUT, 6999, P_PRESET, MBF_U32) };
+    CHECK_EQ(mb_init(bad2, 1, NULL), 1);
+    mb_map_t bad3[1] = { MB_ENTRY(MB_INPUT, 8500, P_PRESET, MBF_U32) };   /* the Rev C extension */
+    CHECK_EQ(mb_init(bad3, 1, NULL), 1);
+    mb_map_t bad4[1] = { MB_ENTRY(MB_COILS, 8050, P_START, MBF_BIT) };   /* coils 8000-8099 reserved */
+    CHECK_EQ(mb_init(bad4, 1, NULL), 1);
+}
+
+static unsigned n_items, n_slot3; static uint16_t last_addr; static bool items_ordered;
+static void count_item(const mb_std_item_t *it, void *ctx) {
+    (void)ctx;
+    if (n_items && it->addr <= last_addr) items_ordered = false;
+    last_addr = it->addr; n_items++;
+    if (it->slot == 3) n_slot3++;
+}
+
+/* Rev C (MODBUS_STANDARD_BLOCK.md 8): second-period averages and QAL3 on a fitted slot */
+static void t_standard_block_c(void) {
+    setup();
+    n_items = 0; items_ordered = true; mb_std_each(count_item, NULL);
+    CHECK_EQ(n_items, 15u);                       /* nothing fitted: BasisR and the globals */
+    emis_set.ch.unit[3] = 1;                      /* slot 3 (CO) fitted */
+    emis_res.v2[3] = 42.5f; emis_res.q2[3] = PLAT_Q_VALID;
+    emis_res.n2[3] = 140; emis_res.n2_above[3] = 3; emis_res.n2_day[3] = 144; emis_res.n2_above_day[3] = 8;
+    emis_q3.zero_dev[3] = -1.5f; emis_q3.span_dev[3] = 2.25f; emis_q3.last[3] = 0x6543210Fu;
+    emis_q3.status[3] = EMIS_Q3_ON | EMIS_Q3_ZERO_WARN | EMIS_Q3_SPAN_OUT | EMIS_Q3_DUE;
+    scan();                                       /* published to the readers */
+    n_items = n_slot3 = 0; items_ordered = true; mb_std_each(count_item, NULL);
+    CHECK_EQ(n_items, 15u + 27u); CHECK_EQ(n_slot3, 27u); CHECK(items_ordered);   /* the map lists it, in address order */
+    float f; uint32_t u;
+    rd(4, 8006, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == 42.5f);
+    rd(3, 8006, 2); CHECK_EQ((uint32_t)reg(0) << 16 | reg(1), u);   /* holding mirror */
+    rd(4, 8067, 1); CHECK_EQ(reg(0), PLAT_Q_VALID);
+    rd(4, 8099, 1); CHECK_EQ(reg(0), 140);
+    rd(4, 8131, 1); CHECK_EQ(reg(0), 3);
+    rd(4, 8163, 1); CHECK_EQ(reg(0), 144);
+    rd(4, 8195, 1); CHECK_EQ(reg(0), 8);
+    rd(4, 8230, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == -1.5f);
+    rd(4, 8294, 2); u = (uint32_t)reg(0) << 16 | reg(1); memcpy(&f, &u, 4); CHECK(f == 2.25f);
+    rd(4, 8358, 2); CHECK_EQ((uint32_t)reg(0) << 16 | reg(1), 0x6543210Fu);
+    rd(4, 8419, 1); CHECK_EQ(reg(0), 0x33);
+    rd(4, 8416, 1); CHECK_EQ(reg(0), 0);          /* slot 0 not fitted */
+    rd(4, 7014, 2); u = (uint32_t)reg(0) << 16 | reg(1);   /* slot 3's status word */
+    CHECK(u & 1u << 28); CHECK(u & 1u << 29); CHECK(u & 1u << 30); CHECK(u & 1u << 3); CHECK(u & 1u << 2);
+    emis_q3.status[3] = EMIS_Q3_ON; scan();
+    rd(4, 7014, 2); u = (uint32_t)reg(0) << 16 | reg(1);
+    CHECK(!(u & (7u << 28)));
+    emis_set.ch.unit[3] = 0; memset(&emis_res, 0, sizeof emis_res); memset(&emis_q3, 0, sizeof emis_q3); scan();
 }
 
 /* MBAP framing */
@@ -282,6 +397,104 @@ static void t_mbtcp_framing(void) {
     rx.n = 0; CHECK_EQ(mbtcp_feed(&rx, bad, 12, &used, out, sizeof out), -1);
 }
 
+/* the platform's own block at input registers 9000-9089, the same in every product (CIP-01.6, 15.1, 14.4) */
+static void t_platform_block(void) {
+    setup();
+    mb_block_scan(5000);
+    scan();
+    rd(4, 9000, MB_BLOCK_REGS);
+    CHECK_EQ(rl, 2 + 2 * MB_BLOCK_REGS);
+    CHECK_EQ(reg(0), PLAT_MB_BLOCK_VERSION);
+    CHECK_EQ(reg(1), 7);                                  /* the application's map version */
+    uint16_t beat = reg(2);
+    CHECK_EQ(reg(4), 0xFFFF);                             /* no supervisory request yet */
+    CHECK_EQ(reg(11), 0x0001); CHECK_EQ(reg(12), 0x0203); /* firmware 1.2.3 */
+    CHECK_EQ(reg(13), PLAT_API_VERSION);
+    CHECK_EQ(reg(15), 5);                                 /* uptime 5 s */
+    CHECK_EQ(reg(52), ('C' << 8) | 'E');                  /* "CEMS Supervisor" */
+    CHECK_EQ(reg(68), ('A' << 8) | 'c');                  /* "Acme" */
+    CHECK_EQ(reg(76), ('1' << 8) | '.');
+    CHECK_EQ(reg(86), 0);                                 /* clock not synchronised (layout 2) */
+    CHECK_EQ(reg(87), PLAT_CLK_SRC_NONE);
+    /* each measurement's quality sits in the block beside the values (CIP-10.5) */
+    plat_meas_q[0] = PLAT_Q_STALE; plat_meas_q[1] = PLAT_Q_RANGE;
+    param_publish(); scan();
+    rd(4, 9020, 2);
+    CHECK_EQ(reg(0), PLAT_Q_STALE); CHECK_EQ(reg(1), PLAT_Q_RANGE);
+    plat_meas_q[0] = plat_meas_q[1] = PLAT_Q_VALID;
+    rd(4, 9000, MB_BLOCK_REGS);
+    /* the heartbeat moves every 100 ms; the link age counts from the last request */
+    param_comms_activity(PLAT_SRC_MODBUS, 5000);
+    mb_block_scan(5050); mb_block_scan(5100); mb_block_scan(5150); mb_block_scan(7300);
+    scan();
+    rd(4, 9002, 3);
+    CHECK_EQ(reg(0), (uint16_t)(beat + 2));
+    CHECK_EQ(reg(2), 2);                                  /* 2.3 s since the request */
+    /* an application entry inside the block is refused at start-up */
+    mb_map_t clash[2] = { MB_ENTRY(MB_HOLDING, 9000, P_MODE, MBF_I16), MB_ENTRY(MB_INPUT, 9083, P_IN, MBF_U16) };
+    CHECK_EQ(mb_init(clash, 2, NULL), 2);                 /* holding 9000 is fine, input 9083 is not */
+    setup();
+}
+
+/* forced values for commissioning (Gary 29 Oct): admin only, Modbus only, 30 s, logged */
+static void t_force(void) {
+    setup();
+    m_inreg = 5; m_mode = 2; m_di = false; scan();
+    CHECK(mb_forceable(P_IN)); CHECK(mb_forceable(P_MODE));          /* input register; read-only holding */
+    CHECK(mb_forceable(P_DI)); CHECK(mb_forceable(P_ALARMS));        /* discrete input; read-only coil array */
+    CHECK(!mb_forceable(P_FLOW)); CHECK(!mb_forceable(P_PRESET));    /* settings the PLC writes */
+    CHECK(!mb_forceable(P_NAME)); CHECK(!mb_forceable(P_ACK));       /* text; writable coils */
+    CHECK(!mb_forceable(PARAM_ID_MB_BLOCK_VERSION)); CHECK(!mb_forceable(PARAM_ID_MB_FORCED));
+    CHECK(!mb_forceable(PARAM_ID_SERIAL)); CHECK(!mb_forceable(PARAM_ID_CLOCK_UNIX));
+    CHECK(mb_forceable(PARAM_ID_STATE));                             /* the block's state: the PLC's FAULT handling */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_OPERATOR, 1000), PERR_ACCESS);
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_MODBUS, PLAT_LVL_FACTORY, 1000), PERR_ACCESS);
+    CHECK_EQ(mb_force_set(P_FLOW, MB_FORCE_SCALAR, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_NO_ID);
+    CHECK_EQ(mb_force_set(P_IN, 0, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);            /* not an array */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 70000, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);   /* not a u16 */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1.5, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);
+    CHECK_EQ(mb_force_set(P_ALARMS, 22, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_RANGE);       /* 22 elements */
+    CHECK_EQ(mb_force_count(), 0);
+    /* outside the parameter's range is allowed (mode is -1..10): the PLC's own range checks can be tried */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1234, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_MODE, MB_FORCE_SCALAR, 99, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_DI, MB_FORCE_SCALAR, 1, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN, 1000), PERR_OK);       /* a test bit */
+    CHECK_EQ(mb_force_set(P_ALARMS, 3, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 1000), PERR_OK);
+    CHECK_EQ(mb_force_count(), 4);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 1234);
+    rd(3, 0, 1); CHECK_EQ(reg(0), 99);
+    rd(2, 0, 1); CHECK_EQ(rsp[2], 1);
+    rd(1, 13, 8); CHECK_EQ(rsp[2], 0x08);
+    plat_val_t v; CHECK(param_read(P_IN, &v)); CHECK_EQ(v.u, 5);    /* the real value is untouched */
+    mb_block_scan(1000); scan();
+    rd(4, 9090, 1); CHECK_EQ(reg(0), 4);                             /* the PLC can see something is forced */
+    mb_force_t f;
+    CHECK(mb_force_get(0, &f, 11000)); CHECK_EQ(f.id, P_IN); CHECK_EQ(f.left_ms, 20000); CHECK_EQ(f.src, PLAT_SRC_WEB);
+    CHECK(!mb_force_get(4, &f, 11000));
+    /* forcing again restarts the 30 s; a clear ends one at once */
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 4321, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 20000), PERR_OK);
+    CHECK_EQ(mb_force_count(), 4);
+    CHECK_EQ(mb_force_clear(P_MODE, MB_FORCE_SCALAR, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_OK);
+    CHECK_EQ(mb_force_clear(P_MODE, MB_FORCE_SCALAR, PLAT_SRC_LOCAL, PLAT_LVL_ADMIN), PERR_NO_ID);
+    rd(3, 0, 1); CHECK_EQ(reg(0), 2);
+    /* 30 s after: the others revert by themselves; the one set again lasts until 50 s */
+    mb_block_scan(31000); scan();
+    CHECK_EQ(mb_force_count(), 1);
+    rd(2, 0, 1); CHECK_EQ(rsp[2], 0);
+    rd(1, 13, 8); CHECK_EQ(rsp[2], 0x00);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 4321);
+    mb_block_scan(50000); scan();
+    CHECK_EQ(mb_force_count(), 0);
+    rd(4, 0, 1); CHECK_EQ(reg(0), 5);
+    rd(4, 9090, 1); CHECK_EQ(reg(0), 0);
+    /* at most MB_FORCE_MAX; clear all */
+    for (uint16_t k = 0; k < MB_FORCE_MAX; ++k) CHECK_EQ(mb_force_set(P_ALARMS, k, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 60000), PERR_OK);
+    CHECK_EQ(mb_force_set(P_IN, MB_FORCE_SCALAR, 1, PLAT_SRC_WEB, PLAT_LVL_ADMIN, 60000), PERR_BUSY);
+    CHECK_EQ(mb_force_clear_all(PLAT_SRC_WEB, PLAT_LVL_OPERATOR), PERR_ACCESS);
+    CHECK_EQ(mb_force_clear_all(PLAT_SRC_WEB, PLAT_LVL_ADMIN), PERR_OK);
+    CHECK_EQ(mb_force_count(), 0);
+}
+
 void test_modbus_all(void) {
     RUN(t_mbtcp_framing);
     RUN(t_map_validation);
@@ -294,4 +507,8 @@ void test_modbus_all(void) {
     RUN(t_permissions);
     RUN(t_busy);
     RUN(t_device_id);
+    RUN(t_standard_block);
+    RUN(t_standard_block_c);
+    RUN(t_platform_block);
+    RUN(t_force);
 }

@@ -108,9 +108,14 @@ enum {
     PARAM_ID_NET_MASK         = 12,
     PARAM_ID_NET_GW           = 13,
     PARAM_ID_NET_STATUS       = 14,  /* RO: NETST_* bits, written by the network task */
+    PARAM_ID_NET_LINK_MODE    = 15,  /* what the port offers the switch: 0 auto (10/100, half/full), 1 100 Mbit only, 2 10 Mbit only (long or poor cable) */
     PARAM_ID_RESTORE_DEFAULTS = 20,  /* write 1: user-class parameters back to defaults */
     PARAM_ID_SERIAL           = 50,  /* developer authority only (PF_DEV, plat_serial.h) */
     PARAM_ID_HW_REV           = 51,  /* factory */
+    PARAM_ID_ALARM_PRIO       = 52,  /* 256 bytes, one per alarm ID: AL_PRIO_* tier (0 = default, 6 = off; plat_alarm.h) */
+    PARAM_ID_ALARM_TIER_ROUTE = 53,  /* 5 bytes, one per tier: AR_SET | actions for alarms with none of their own */
+    PARAM_ID_ALARM_TIER_ACTIVE = 54, /* RO: 5 words, alarms active per tier */
+    PARAM_ID_ALARM_TIER_UNACKED = 55, /* RO: 5 words, alarms waiting for an acknowledge per tier */
     PARAM_ID_ALARM_ACK        = 40,  /* write an alarm ID (or 65535 = all) to acknowledge it; any mode, no login */
     PARAM_ID_ALARM_ACTIVE     = 41,  /* RO: alarms active */
     PARAM_ID_ALARM_UNACKED    = 42,  /* RO: alarms waiting for an acknowledge */
@@ -118,7 +123,7 @@ enum {
     PARAM_ID_ALARM_UNACK_BITS = 44,  /* RO: same layout, alarm ID unacknowledged */
     PARAM_ID_ALARM_COMMON     = 45,  /* RO: ACOM_* bits (Modbus common alarm, relay states) */
     PARAM_ID_ALARM_ROUTE      = 46,  /* 256 bytes, one per alarm ID: AR_* actions (plat_alarm.h) */
-    PARAM_ID_ALARM_RELAY_DO   = 47,  /* 4 bytes: digital output 1..32 for alarm relay 1..4 (0 = not used) */
+    PARAM_ID_ALARM_RELAY_DO   = 47,  /* 4 bytes: digital output 1..64 for alarm relay 1..4 (0 = not used) */
     PARAM_ID_ALARM_RELAY_MODE = 48,  /* 4 bytes: AR_MODE_* */
     PARAM_ID_ALARM_RELAY_INV  = 49,  /* 4 bools: fail-safe (energised when there is no alarm) */
     PARAM_ID_MAIL_ENABLE      = 70,  /* alarm email on/off (off: the instrument makes no outbound connection) */
@@ -143,6 +148,134 @@ enum {
     PARAM_ID_LOG_INTERVAL_S   = 30,  /* data-log averaging interval, s (0 = data log off) */
     PARAM_ID_STORE_STATUS     = 60,  /* RO: param_store status bits (param_store.h) */
     PARAM_ID_LOG_STATUS       = 61,  /* RO: plat_log status bits (plat_log.h) */
+    PARAM_ID_ALARM_TIER_NAME_FIRST = 90, /* 90..94: the names of tiers 1..5 (text, empty = Critical, High, ...) */
+    PARAM_ID_IOB_HOLD         = 100, /* I/O boards (iobus.h): hold time, s; a node with no valid write this long turns its outputs off */
+    PARAM_ID_IOB_FILTER       = 101, /* input filter, ms */
+    PARAM_ID_IOB_LINK         = 102, /* the link to the boards: 0 RS-485, 1 Ethernet on the main port, 2 the I/O port (W5500, iob_w5500.h) */
+    PARAM_ID_IOB_PORT_IP      = 103, /* the I/O port's own IP (its own network, not the main port's) */
+    PARAM_ID_IOB_PORT_PREFIX  = 104, /* the I/O port's subnet, prefix length 8..30 */
+    PARAM_ID_IOB_PORT_STATUS  = 105, /* RO: IOBP_* bits (chip found, link up) */
+    PARAM_ID_IOB_FIRST        = 110, /* board k (0..2) at 110 + 10k: */
+    /*   +0 enable, +1 Modbus address, +2 first output channel (1-based), +3 first input channel,
+         +4 open-circuit check (bank A outputs 1-8, bits), +5 wire-break check (inputs 1-8, bits),
+         +6 RO status (IOBS_*), +7 RO output faults (bits 1-18), +8 RO input faults, +9 RO failed requests */
+    PARAM_ID_IOB_LIVE_FIRST   = 140, /* board k at 140 + 2k: +0 RO inputs (bits), +1 RO outputs as driven (bits) */
+    PARAM_ID_IOB_IP_FIRST     = 146, /* board k at 146 + k: its IP on Ethernet */
+    PARAM_ID_IOB_T_FIRST      = 160, /* board k at 160 + 16k: temperature inputs and pump PWM (map 2, iobus.h): */
+    /*   +0 first temperature channel (0 = not mapped), +1 analog output for the pump PWM (0 = none),
+         +2 sensor type per connector (3 bytes, IOB_TT_*), +3 NTC R25 (3 x 10 ohm, 0 = 10k), +4 NTC B (3 x K, 0 = 3435),
+         +5 calibration offset (6 x 0.01 degC), +6 calibration span (gain - 1, 6 x 0.01 %), +7 PWM frequency (Hz),
+         +8 tacho pulses per revolution, +9 RO temperatures (6 x 0.1 degC), +10 RO channel states (6 x IOB_TS_*),
+         +11 RO cold junction (0.1 degC), +12 RO pump speed (rpm), +13 RO pump duty as driven (0.1 %),
+         +14 first analog input channel (map 3; 0 = not mapped) */
+    PARAM_ID_IOB_AI_FIRST     = 374, /* board k at 374 + 2k (map 3): +0 RO analog inputs (8 x uA or mV), +1 RO their states (IOB_TS_*) */
+    PARAM_ID_STATE            = 300, /* RO: instrument state, PLAT_ST_* (plat_state.h) */
+    PARAM_ID_MAINTENANCE      = 301, /* operator selects MAINTENANCE (1) or leaves it (0) */
+    PARAM_ID_STATE_SINCE      = 302, /* RO: clock when the state was entered (local s since 1970; 0 = not set) */
+    PARAM_ID_MEAS_Q           = 303, /* RO: one PLAT_Q_* per declared measurement (a Modbus status block) */
+    PARAM_ID_SUPPLY_MV        = 305, /* RO: the 24 V supply, mV (0 = not measured; plat_power.h) */
+    PARAM_ID_HEARTBEAT        = 306, /* RO: +1 every 100 ms (the platform's Modbus block, modbus.h) */
+    PARAM_ID_LINK_AGE_S       = 307, /* RO: s since the last Modbus or web request (65535 = none or longer) */
+    PARAM_ID_MB_BLOCK_VERSION = 308, /* RO: layout version of the platform's Modbus block */
+    PARAM_ID_MB_MAP_VERSION   = 309, /* RO: the application's register map version */
+    PARAM_ID_FW_VERSION_NUM   = 310, /* RO: firmware version, major<<16 | minor<<8 | patch */
+    PARAM_ID_API_VERSION      = 311, /* RO: web API version (/api/info "api") */
+    PARAM_ID_UPTIME_S         = 312, /* RO: s since start */
+    PARAM_ID_PRODUCT          = 313, /* RO text: product (Modbus identity) */
+    PARAM_ID_VENDOR           = 314, /* RO text: vendor */
+    PARAM_ID_FW_TEXT          = 315, /* RO text: firmware version as text */
+    PARAM_ID_CLOCK_SYNCED     = 316, /* RO: the clock is synchronised (plat_clock.h, CIP-02.6) */
+    PARAM_ID_CLOCK_SYNC_TIME  = 317, /* RO: when it was last set or confirmed (local s since 1970; 0 = not since start) */
+    PARAM_ID_CLOCK_SOURCE     = 318, /* RO: PLAT_CLK_SRC_* of that */
+    PARAM_ID_BOARD_REV        = 319, /* RO: board revision from its straps (65535 = no straps; fw_update.h, CIP-01.3) */
+    PARAM_ID_CAL_CMD          = 320, /* calibration command (plat_cal.h): command << 8 | channel; momentary */
+    PARAM_ID_CAL_LEVEL        = 321, /* factory: login level that may calibrate (CIP-19.3; default admin) */
+    PARAM_ID_RUN_HOURS        = 330, /* RO: powered hours x 10 (plat_service.h, CIP-22.2) */
+    PARAM_ID_SERVICE_HOURS    = 331, /* RO: hours since the last service log entry x 10 */
+    PARAM_ID_CONFIG_CRC       = 332, /* RO: checksum of the user settings (CIP-05.4) */
+    PARAM_ID_SELFTEST         = 333, /* RO: start-up self-test failures, bits (plat_selftest.h, CIP-11.1) */
+    PARAM_ID_MB_FORCED        = 334, /* RO: values forced on Modbus now (modbus.h mb_force_*) */
+    PARAM_ID_MB_STD_WORDS     = 335, /* standard block 7000-7999: 0 floats/u32 high word first, 1 low word first */
+    PARAM_ID_DIA_INPUT        = 340, /* digital input alarms (plat_alarm.h), [24] per slot: 0 unused, 1..64 the input */
+    PARAM_ID_DIA_WHEN         = 341, /* [24] bool: 0 alarm when the input is active, 1 when it is inactive */
+    PARAM_ID_DIA_DELAY        = 342, /* [24] on-delay, s (default 2) */
+    PARAM_ID_DIA_LATCH        = 343, /* [24] bool: stays active until acknowledged */
+    PARAM_ID_DIA_SEV          = 344, /* [24] AL_SEV_WARNING..AL_SEV_FAULT (default alarm) */
+    PARAM_ID_DIA_STATUS       = 345, /* RO [24] DIA_ST_* */
+    PARAM_ID_DIA_LABEL_FIRST  = 350, /* 350 + s: slot s's label (32 characters), the alarm's description */
+    /* 400-499 emissions calculation (emis.h, docs/EMISSIONS_MATH.md); arrays are indexed by channel
+     * = slot of the Modbus standard block. Settings at admin level, persisted, logged on change. */
+    PARAM_ID_EMIS_ENABLE      = 400, /* the engine runs (off: every result unavailable) */
+    PARAM_ID_EMIS_T_REF       = 401, /* reference temperature, K (273.15) */
+    PARAM_ID_EMIS_P_REF       = 402, /* reference pressure, kPa (101.325) */
+    PARAM_ID_EMIS_DILUENT     = 403, /* EMIS_DIL_*: 0 none, 1 O2, 2 CO2 */
+    PARAM_ID_EMIS_REF_PCT     = 404, /* reference O2 (or CO2) % */
+    PARAM_ID_EMIS_O2_MAX      = 405, /* no O2 correction above this O2 % */
+    PARAM_ID_EMIS_ONLY_ABOVE  = 406, /* correct only when O2 is above the reference (IED Annex VI Pt 6 2.7) */
+    PARAM_ID_EMIS_CH_O2       = 407, /* channel of the dry O2 (or CO2) */
+    PARAM_ID_EMIS_H2O_MODE    = 408, /* EMIS_H2O_*: 0 dried sample, 1 measured, 2 fixed */
+    PARAM_ID_EMIS_CH_H2O      = 409,
+    PARAM_ID_EMIS_H2O_FIXED   = 410, /* % */
+    PARAM_ID_EMIS_CH_T        = 411, /* stack temperature channel (255: fixed 413) */
+    PARAM_ID_EMIS_CH_P        = 412, /* stack pressure channel (255: fixed 414) */
+    PARAM_ID_EMIS_T_FIXED     = 413, /* degC */
+    PARAM_ID_EMIS_P_FIXED     = 414, /* kPa absolute */
+    PARAM_ID_EMIS_CH_FLOW     = 415, /* flow channel (255: no mass emissions) */
+    PARAM_ID_EMIS_PERIOD_S    = 416, /* short-term average: 600, 1800 or 3600 s */
+    PARAM_ID_EMIS_MIN_AVAIL   = 417, /* % of the operating time that must be valid for a valid average */
+    PARAM_ID_EMIS_MAX_DISCARD = 418, /* short-term averages a day may lose (5 waste; 3 LCP) */
+    PARAM_ID_EMIS_CI_SUBTRACT = 419, /* subtract the confidence interval (IED) */
+    PARAM_ID_EMIS_CLAMP_ZERO  = 420, /* a validated average below zero is reported as zero */
+    PARAM_ID_EMIS_CAL_EXT     = 421, /* valid calibration range: ys,max + this % of the ELV */
+    PARAM_ID_EMIS_OPERATING   = 422, /* the plant is in its effective operating time (the application or a PLC writes it) */
+    PARAM_ID_EMIS_CFG_ERROR   = 423, /* RO: 0, or the emis_check result (channel + 1; 33 = plant settings) */
+    PARAM_ID_EMIS_PERIOD2_S   = 424, /* second averaging period, s: 0 off, 600 (IED waste CO 10-minute averages) */
+    PARAM_ID_EMIS_Q3_K        = 425, /* QAL3 action limit, multiples of s_AMS (2) */
+    PARAM_ID_EMIS_Q3_INTERVAL = 426, /* QAL3: days between checks before one is due (14) */
+    PARAM_ID_EMIS_Q3_RECORD   = 427, /* QAL3 check entry: channel + 1 records readings 447[ch], 448[ch] (momentary) */
+    PARAM_ID_EMIS_Q3_RESET    = 428, /* channel + 1: the chart starts again after maintenance or adjustment (momentary) */
+    PARAM_ID_EMIS_Q3_RESULT   = 429, /* RO: the last entry's result (0 recorded, 1 bad channel, 2 no QAL3, 3 not a number, 4 no clock) */
+    PARAM_ID_EMIS_SRC         = 430, /* [32] source: 0-199 measurement (plat_meas index), 200+p instrument point p, 255 none */
+    PARAM_ID_EMIS_UNIT        = 431, /* [32] EMIS_U_* */
+    PARAM_ID_EMIS_WET         = 432, /* [32] the reading is wet */
+    PARAM_ID_EMIS_REF         = 433, /* [32] correct to the reference diluent */
+    PARAM_ID_EMIS_ADD         = 434, /* [32] also add this channel's reading (NOx = NO + NO2), 255 = no */
+    PARAM_ID_EMIS_MOLAR_MASS  = 435, /* [32] g/mol of what it is expressed as, times any factor (TOC as C from propane: 36.033) */
+    PARAM_ID_EMIS_QAL2_A      = 437, /* [32] EN 14181 calibration function intercept */
+    PARAM_ID_EMIS_QAL2_B      = 438, /* [32] slope (0 = no QAL2 yet) */
+    PARAM_ID_EMIS_YS_MAX      = 439, /* [32] highest calibrated value in the QAL2, standard conditions */
+    PARAM_ID_EMIS_ELV         = 440, /* [32] daily ELV, standard conditions, reference O2 */
+    PARAM_ID_EMIS_CI_PCT      = 441, /* [32] 95 % confidence interval, % of the ELV */
+    PARAM_ID_EMIS_ELV2        = 442, /* [32] the second period's ELV (IED waste CO 10 min: 150), 0 = none */
+    PARAM_ID_EMIS_Q3_SAMS     = 444, /* [32] QAL3: s_AMS from the QAL1 certificate, the analyser's unit (0 = no QAL3) */
+    PARAM_ID_EMIS_Q3_ZERO_REF = 445, /* [32] zero gas value */
+    PARAM_ID_EMIS_Q3_SPAN_REF = 446, /* [32] span gas certified value */
+    PARAM_ID_EMIS_Q3_ZERO_RD  = 447, /* [32] the check's zero reading (entered, then 427) */
+    PARAM_ID_EMIS_Q3_SPAN_RD  = 448, /* [32] the check's span reading */
+    PARAM_ID_EMIS_BANK_FIRST  = 450, /* 450 + b: RO [32] float, bank b = EMIS_B_* (raw, std, ref, mass, run, avg, val, day) */
+    PARAM_ID_EMIS_Q_IN        = 460, /* RO [32] PLAT_Q_* of the raw reading */
+    PARAM_ID_EMIS_Q_CALC      = 461, /* RO [32] of banks 1-2 */
+    PARAM_ID_EMIS_Q_MASS      = 462, /* RO [32] of bank 3 */
+    PARAM_ID_EMIS_Q_AVG       = 463, /* RO [32] of banks 5-6 */
+    PARAM_ID_EMIS_Q_DAY       = 464, /* RO [32] of bank 7 */
+    PARAM_ID_EMIS_Q_RUN       = 465, /* RO [32] of bank 4 */
+    PARAM_ID_EMIS_STATUS      = 466, /* RO [32] EMIS_ST_* bits */
+    PARAM_ID_EMIS_DISCARDED   = 467, /* RO [32] short-term averages discarded today */
+    PARAM_ID_EMIS_DAYS_INVALID = 468, /* RO [32] days invalid this year */
+    PARAM_ID_EMIS_WEEKS_ABOVE = 469, /* RO [32] consecutive weeks above the valid calibration range */
+    PARAM_ID_EMIS_AVG2        = 470, /* RO [32] float: the last validated second-period average */
+    PARAM_ID_EMIS_Q_AVG2      = 471, /* RO [32] its quality */
+    PARAM_ID_EMIS_N2          = 472, /* RO [32] valid second-period averages today */
+    PARAM_ID_EMIS_N2_ABOVE    = 473, /* RO [32] of those, above the ELV 442 */
+    PARAM_ID_EMIS_N2_DAY      = 474, /* RO [32] the same for the last complete day */
+    PARAM_ID_EMIS_N2_ABOVE_DAY = 475,
+    PARAM_ID_EMIS_Q3_ZERO_DEV = 476, /* RO [32] float: last zero check reading - reference */
+    PARAM_ID_EMIS_Q3_SPAN_DEV = 477, /* RO [32] float */
+    PARAM_ID_EMIS_Q3_LAST     = 478, /* RO [32] clock of the last check, s since 1970 (0 = none) */
+    PARAM_ID_EMIS_Q3_STATUS   = 479, /* RO [32] EMIS_Q3_* bits */
+    PARAM_ID_EMIS_Q3_N        = 480, /* RO [32] checks on the chart since it started */
+    PARAM_ID_EMIS_BLOCK       = 910, /* retained: periods in progress (emis_bind.c) */
+    PARAM_ID_EMIS_Q3_BLOCK    = 911, /* retained: the QAL3 charts */
     PARAM_ID_PLAT_BLOCK_FIRST = 900, /* 900..999: platform retained blocks, not in the table */
     PARAM_ID_APP_FIRST        = 1000
 };
@@ -295,6 +428,7 @@ void    param_scan_service(uint32_t now_ms);   /* scan task, every scan */
 extern void (*param_on_restore_defaults)(void);
 /* Called by param_apply when PARAM_ID_ALARM_ACK is written (set by alarm_init). */
 extern void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+extern param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);   /* plat_cal.c */
 /* Called in the scan task after an external write changed a value (the event log
  * sets it). Scalars: old and new value. Blocks and the restore command: values 0. */
 extern void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);

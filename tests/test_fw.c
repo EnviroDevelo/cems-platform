@@ -1,4 +1,5 @@
-/* test_fw.c - firmware upload, staging, activation, trial, confirm and rollback. */
+/* test_fw.c - firmware upload, staging, activation, trial, confirm and rollback.
+ * Requirements proved here: CIP-03.2, 03.3, 03.4, 03.5, 03.6, 03.7, 17.3, 20.2, 25.1, 19.2. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,6 +7,7 @@
 #include "tst.h"
 #include "fw_update.h"
 #include "fw_flash_sim.h"
+#include "boot.h"
 #include "plat_sha256.h"
 #include "plat_log.h"
 #include "http_api.h"
@@ -45,6 +47,14 @@ static uint32_t make_image(uint32_t payload, const char *ver, uint32_t product, 
     h.hdr_crc = plat_crc32(0, &h, (uint32_t)offsetof(fw_header_t, hdr_crc));
     memcpy(file, &h, sizeof h);
     return FW_HDR_SIZE + payload;
+}
+static void make_v2(uint8_t hw_min, uint8_t hw_max, const char *build) {   /* a header-version-2 image */
+    fw_header_t h; memcpy(&h, file, sizeof h);
+    h.hdr_version = 2; h.hw_min = hw_min; h.hw_max = hw_max; h.layout_version = 3;
+    memset(h.build_id, 0, sizeof h.build_id);
+    strncpy(h.build_id, build, sizeof h.build_id);
+    h.hdr_crc = plat_crc32(0, &h, (uint32_t)offsetof(fw_header_t, hdr_crc));
+    memcpy(file, &h, sizeof h);
 }
 static void reheader(void) {      /* recompute the CRC after editing the header in file[] */
     fw_header_t h; memcpy(&h, file, sizeof h);
@@ -316,8 +326,15 @@ static void sign_file(int which) {            /* as tools/mkfwimage.py --key doe
     fw_header_t h; memcpy(&h, file, sizeof h);
     h.flags = FW_F_SIGNED;
     memset(h.sig, 0, sizeof h.sig);
-    uint8_t dg[32];
-    mbedtls_sha256((const uint8_t *)&h, FW_SIGNED_LEN, dg, 0);
+    uint8_t dg[32], msg[FW_HDR_SIZE];
+    size_t n = FW_SIGNED_LEN;
+    memcpy(msg, &h, FW_SIGNED_LEN);
+    if (h.hdr_version >= 2u) {                /* v2: the fields after the signature too */
+        size_t more = offsetof(fw_header_t, hdr_crc) - FW_SIGNED2_OFF;
+        memcpy(msg + n, (const uint8_t *)&h + FW_SIGNED2_OFF, more);
+        n += more;
+    }
+    mbedtls_sha256(msg, n, dg, 0);
     mbedtls_mpi r, s2; mbedtls_mpi_init(&r); mbedtls_mpi_init(&s2);
     CHECK_EQ(mbedtls_ecdsa_sign(&sk[which].MBEDTLS_PRIVATE(grp), &r, &s2, &sk[which].MBEDTLS_PRIVATE(d), dg, 32,
                                 mbedtls_ctr_drbg_random, &rng), 0);
@@ -361,9 +378,45 @@ static void t_signed(void) {
     make_image(20000, "0.8.0", PLAT_FW_PRODUCT, 31); sign_file(0);
     file[FW_HDR_SIZE + 5] ^= 1;
     CHECK_EQ(upload(len, 2048), FW_E_HASH);
+    /* header version 2 signs the board range and build ID as well */
+    make_image(20000, "0.8.1", PLAT_FW_PRODUCT, 32); make_v2(0, 3, "abc1234"); sign_file(0);
+    CHECK_EQ(upload(len, 2048), FW_OK);
+    { fw_header_t h; memcpy(&h, file, sizeof h); h.hw_max = 9; memcpy(file, &h, sizeof h); reheader(); }
+    CHECK_EQ(upload(len, 2048), FW_E_SIGNATURE);         /* the range widened after signing */
     fw_pubkey_override_for_test(NULL);
     for (int k = 0; k < 2; ++k) mbedtls_ecdsa_free(&sk[k]);
     mbedtls_ctr_drbg_free(&rng); mbedtls_entropy_free(&ent);
+}
+
+/* ---------------- board revision range, build ID (CIP-01.3, 03.2, 25.1) ---------------- */
+static void t_hw_range(void) {
+    fw_status_t st;
+    bsp_host.straps_fitted = true; bsp_host.hw_straps = 1;      /* a Rev B board */
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_board_rev(), 1);
+    CHECK(fw_build_id()[0] != 0);
+    uint32_t len = make_image(30000, "0.9.0", PLAT_FW_PRODUCT, 41);
+    make_v2(2, 3, "deadbeef01");
+    CHECK_EQ(upload(len, 4096), FW_E_HARDWARE);           /* Rev C/D only */
+    CHECK(!strcmp(fw_err_name(FW_E_HARDWARE), "built for another board revision"));
+    make_v2(0, 1, "deadbeef01");
+    CHECK_EQ(upload(len, 4096), FW_OK);
+    fw_status(&st);
+    CHECK(!strcmp(st.staged_build, "deadbeef01"));
+    CHECK_EQ(st.staged_hw_min, 0); CHECK_EQ(st.staged_hw_max, 1);
+    /* the straps read differently at the next start (another board): refused at activation */
+    bsp_host.hw_straps = 3;
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_request_activate(), FW_E_HARDWARE);
+    /* a v1 image states no range; a board without straps checks none */
+    make_image(30000, "0.9.1", PLAT_FW_PRODUCT, 42);
+    CHECK_EQ(upload(len, 4096), FW_OK);
+    fw_status(&st); CHECK_EQ(st.staged_hw_max, 255); CHECK(!st.staged_build[0]);
+    bsp_host.straps_fitted = false;
+    power_up("0.5.0", BSP_RESET_POWER_ON);
+    CHECK_EQ(fw_board_rev(), -1);
+    make_image(30000, "0.9.2", PLAT_FW_PRODUCT, 43); make_v2(3, 3, "x");
+    CHECK_EQ(upload(len, 4096), FW_OK);
 }
 
 /* ---------------- gates: minimum version, safe state, local confirmation ---------------- */
@@ -485,6 +538,16 @@ static void t_http(void) {
     CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
     CHECK(strstr(out, "\"running\":\"0.5.0\",\"state\":\"idle\"") != NULL);
     CHECK(strstr(out, "\"staged\":\"0.7.0\"") != NULL);
+    CHECK(strstr(out, "\"bootloader\":null") != NULL);                    /* none ran */
+    boot_report_t br = { .mapped = BOOT_IMG_OK, .after_swap = true };
+    fl.boot_report = boot_report_word(BOOT_JUMP, &br);
+    CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
+    CHECK(strstr(out, "\"bootloader\":{\"version\":1,\"image\":\"ok\",\"swapped\":true,\"rollback\":false}") != NULL);
+    br.mapped = BOOT_IMG_NONE; br.other = BOOT_IMG_NONE; br.after_swap = false;   /* a debugger image, other bank empty */
+    fl.boot_report = boot_report_word(BOOT_JUMP, &br);
+    CHECK_EQ(req("GET", "/api/fw", NULL, 0, 0), 200);
+    CHECK(strstr(out, "\"image\":\"none\",\"swapped\":false,\"rollback\":false,\"other\":\"none\"}") != NULL);
+    fl.boot_report = 0;
     file[FW_HDR_SIZE + 10] ^= 1;
     CHECK_EQ(req("POST", "/api/fw/upload", file, len, 0), 400);
     CHECK(strstr(out, "checksum mismatch") != NULL);
@@ -500,6 +563,75 @@ static void t_http(void) {
     sid[0] = 0;
 }
 
+/* ---------------- behind the bootloader (boot.h) ---------------- */
+static void t_boot_offset(void) {
+    const uint32_t ioff = 2u * 8192u;                        /* PLAT_BOOT_SIZE: two sectors here */
+    fw_flash_sim_init(&fl, &fs, b0, b1, BANK);
+    fl.image_off = ioff;
+    memset(b0, 0xB5, BANK); memset(b1, 0xB5, BANK);          /* "bootloader" in both banks */
+    nvm_ram_init(&fr, &fr_ram, fr_mem, sizeof fr_mem, true);
+    memset(fr_mem, 0, sizeof fr_mem);
+    fw_status_t st;
+    power_up("0.8.0", BSP_RESET_POWER_ON);
+    CHECK(!fs.trial);
+    fs.trial = true;                                         /* a stale mark ... */
+    power_up("0.8.0", BSP_RESET_POWER_ON);
+    CHECK(!fs.trial);                                        /* ... is cleared at an ordinary start */
+
+    uint32_t len = make_image(BANK - 8192u - ioff + 1u, "0.9.0", PLAT_FW_PRODUCT, 21);   /* one byte too large */
+    CHECK_EQ(upload(len, 3000), FW_E_SIZE);
+    len = make_image(BANK - 8192u - ioff, "0.9.0", PLAT_FW_PRODUCT, 21);                 /* fills the image area */
+    CHECK_EQ(upload(len, 3000), FW_OK);
+    fw_status(&st); CHECK(st.staged);
+    uint8_t *fb = fw_flash_sim_free(&fs);
+    CHECK(memcmp(fb + ioff, file + FW_HDR_SIZE, len - FW_HDR_SIZE) == 0);
+    unsigned keep = 0;
+    for (uint32_t k = 0; k < ioff; ++k) keep += fb[k] == 0xB5;
+    CHECK_EQ(keep, ioff);                                    /* the bootloader was never erased */
+    CHECK_EQ(fs.violations, 0);
+
+    CHECK_EQ(fw_request_activate(), FW_OK);
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial); CHECK(fs.swapped);                      /* marked before the swap */
+    fw_trial_ms = 1000;
+    power_up("0.9.0", BSP_RESET_SOFTWARE);
+    CHECK(fs.trial);                                         /* still counting during the trial */
+    CHECK_EQ(fw_running_check(BANK), 1);                     /* the running image checks out at its offset */
+    uint32_t t = bsp_host.ms;
+    fw_service(t, true);
+    fw_service(t + 1500, true);
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE);
+    CHECK(!fs.trial);                                        /* confirmed */
+
+    /* a rollback clears the mark before swapping back */
+    len = make_image(20000, "0.9.1", PLAT_FW_PRODUCT, 22);
+    CHECK_EQ(upload(len, 3000), FW_OK);
+    CHECK_EQ(fw_request_activate(), FW_OK);
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial);
+    power_up("0.9.1", BSP_RESET_SOFTWARE);
+    power_up("0.9.1", BSP_RESET_IWDG);
+    CHECK(fs.reset_requested); CHECK(!fs.trial);
+    power_up("0.9.0", BSP_RESET_SOFTWARE);
+    fw_status(&st); CHECK(st.rolled_back); CHECK(!fs.trial);
+
+    /* the bootloader rolls back by itself (the new image never reached fw_boot): the
+     * previous image must not swap "back" to the one that failed */
+    CHECK_EQ(fw_request_activate(), FW_OK);                  /* 0.9.1 again, still staged */
+    fw_service(bsp_host.ms, true);
+    CHECK(fs.trial);
+    uint32_t sw = fs.swaps;
+    fs.swapped = !fs.swapped; fs.trial = false;              /* what the bootloader does after 3 starts */
+    power_up("0.9.0", BSP_RESET_IWDG);
+    CHECK_EQ(fs.swaps, sw); CHECK(!fs.reset_requested);      /* no swap */
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK(st.rolled_back);
+    CHECK(!strcmp(st.running_version, "0.9.0"));
+    CHECK(st.staged); CHECK(!strcmp(st.staged_version, "0.9.1"));
+    power_up("0.9.0", BSP_RESET_POWER_ON);                   /* and it stays that way */
+    fw_status(&st); CHECK_EQ(st.state, FW_ST_IDLE); CHECK_EQ(fs.swaps, sw);
+    fl.image_off = 0;
+}
+
 void test_fw_all(void) {
     bsp_host_reset();
     bsp_host.ms = 5000;
@@ -509,8 +641,10 @@ void test_fw_all(void) {
     RUN(t_rollback);
     RUN(t_history);
     RUN(t_signed);
+    RUN(t_hw_range);
     RUN(t_http);
     RUN(t_gates);
+    RUN(t_boot_offset);
     fw_reset_for_test();
     fw_trial_ms = FW_TRIAL_MS;
 }

@@ -53,6 +53,16 @@ size_t xPortGetFreeHeapSize(void) { return 0; }
 size_t xPortGetMinimumEverFreeHeapSize(void) { return 0; }
 
 /* the chip's unique ID: CEMS_UID (24 hex digits) or a fixed stand-in */
+struct iob_port *bsp_rs485(void) { return NULL; }   /* no I/O boards in this run */
+struct w5500_bus *bsp_w5500(void) { return NULL; }
+bool bsp_supply_mv(uint32_t *mv) { (void)mv; return false; }
+bool bsp_hw_straps(uint8_t *rev) { (void)rev; return false; }
+bool bsp_role_read(bool *a, bool *b) { (void)a; (void)b; return false; }   /* no jumper: a CORE */
+bool plat_net_ready(void) { return true; }                                   /* the NODE role waits for it (no net task here) */
+static uint32_t backup[16];
+uint32_t bsp_backup_read(unsigned idx) { return idx < 16u ? backup[idx] : 0u; }
+bool bsp_backup_write(unsigned idx, uint32_t v) { if (idx >= 16u) return false; backup[idx] = v; return true; }
+
 void bsp_chip_uid(uint8_t uid[12]) {
     static const uint8_t dflt[12] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb };
     const char *e = getenv("CEMS_UID");

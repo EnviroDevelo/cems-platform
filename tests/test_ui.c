@@ -2,13 +2,15 @@
  * driven by simulated touches: navigation, login, editing every kind of entry,
  * mode changes with confirmation, events, firmware activation, idle behaviour.
  * With UI_DUMP=<dir> set, each screen's command list is written there for
- * tools/eve_preview.py. */
+ * tools/eve_preview.py.
+ * Requirements proved here: CIP-01.5, 21.1, 21.3, 21.6. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "tst.h"
 #include "eve.h"
 #include "eve_sim.h"
+#include "modbus.h"
 #include "ui.h"
 #include "param.h"
 #include "param_store.h"
@@ -23,6 +25,17 @@
 #include "plat_alarm.h"
 #include "plat_clock.h"
 
+extern uint8_t plat_alarm_tier_route[AL_TIERS], plat_alarm_prio[ALARM_ID_MAX + 1];
+#include "iobus.h"
+#include "iob_node_sim.h"
+#include "plat_state.h"
+#include "plat_power.h"
+#include "plat_cal.h"
+#include "plat_service.h"
+#include "inst.h"
+#include "emis_bind.h"
+#include "plat_version.h"
+
 static eve_sim_t sim;
 static eve_t eve;
 static plat_cmdq_t q;
@@ -31,7 +44,7 @@ static plat_seqlock_t lk;
 /* an application table like the demo's */
 static uint32_t a_delay = 2000, a_run = 5;
 static bool a_valve, a_in;
-static float a_gain = 1.5f, a_temp = 182.5f;
+static float a_gain = 1.5f, a_temp = 182.5f, a_zero = 0.0f;
 static char a_name[11] = "Valve 1";
 static const char name_def[11] = "Valve 1";       /* defaults are the full size of the block */
 static bool a_ack[4];
@@ -44,6 +57,7 @@ static const param_def_t defs[] = {
     PARAM_ARRAY_BOOL(1006, "ack", a_ack, PLAT_LVL_OPERATOR, PF_ANY_MODE),
     PARAM_REAL(1007, "gain", a_gain, 0.0f, 10.0f, 1.5f, NULL, PLAT_LVL_ADMIN, PF_PERSIST | PF_CONFIRM),
     PARAM_REAL(1008, "stack_temp", a_temp, -50.0f, 500.0f, 182.5f, "\xC2\xB0" "C", PLAT_LVL_VIEW, PF_RO),
+    PARAM_REAL(1009, "zero_offset", a_zero, -100.0f, 100.0f, 0.0f, NULL, PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY),
 };
 static const uint16_t home_ids[] = { 1001, 1002, 1003, 1005 };
 static const ui_cfg_t cfg = { .product = "CEMS Supervisor", .version = "0.5.0", .home_ids = home_ids, .n_home = 4 };
@@ -63,9 +77,10 @@ static bool tap(const char *label) {
 }
 static bool shows(const char *s) { return eve_sim_has_text(&sim, s); }
 /* page the settings list until the row shows, then tap it */
+static bool on_page(const char *name) { return eve_sim_tag_of(&sim, name) > 0; }   /* the row itself, not a longer name */
 static bool row(const char *name) {
-    for (int k = 0; k < 10 && eve_sim_tag_of(&sim, "Up") > 0 && !shows(name); ++k) tap("Up");
-    if (!shows(name)) for (int k = 0; k < 10 && !shows(name); ++k) if (!tap("Down")) break;
+    for (int k = 0; k < 200 && eve_sim_tag_of(&sim, "Up") > 0 && !on_page(name); ++k) tap("Up");
+    if (!on_page(name)) for (int k = 0; k < 200 && !on_page(name); ++k) if (!tap("Down")) break;
     return tap(name);
 }
 static void type(const char *s) { for (; *s; ++s) press((uint8_t)*s); }
@@ -118,7 +133,20 @@ static void t_fonts(void) {
     CHECK(!strcmp(eve_font_encode("tab\there", b, sizeof b, true), "tabhere"));
 }
 
+static uint32_t sim_rd32(uint32_t reg) {
+    uint32_t v = 0;
+    for (int k = 0; k < 4; ++k) v |= (uint32_t)sim.regs[reg - EVE_RAM_REG + k] << (8 * k);
+    return v;
+}
+
 static void t_eve_driver(void) {
+    /* the system clock check: a BT817 left on 60 MHz gets REG_FREQUENCY 60 MHz; 72 MHz stays */
+    eve_sim_init(&sim); sim.sysclk_hz = 60000000u;
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(sim_rd32(REG_FREQUENCY), 60000000u);
+    eve_sim_init(&sim); sim.sysclk_hz = 72000000u;
+    CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
+    CHECK_EQ(sim_rd32(REG_FREQUENCY), 72000000u);
     eve_sim_init(&sim);
     CHECK_EQ(eve_init(&eve, &sim.bus, &eve_panel_rvt70h), 0);
     CHECK(eve.ok);
@@ -217,7 +245,7 @@ static void t_ui(void) {
     CHECK_EQ(ui_screen(), UI_HOME);
     CHECK(shows("CEMS Supervisor")); CHECK(shows("LOCAL")); CHECK(shows("1 ALARM  1 NEW")); CHECK(shows("09:41:07"));
     CHECK(shows("start_delay")); CHECK(shows("2000 ms")); CHECK(shows("Valve 1"));
-    CHECK(shows("Control: LOCAL (this touchscreen)"));
+    CHECK(shows("Control: LOCAL"));
     dump("home");
 
     /* settings: everything readable; changes need a login */
@@ -323,7 +351,20 @@ static void t_ui(void) {
     stage_firmware();
     CHECK(tap("System"));
     CHECK(shows("Running")); CHECK(shows("0.5.0")); CHECK(shows("Restart on 0.6.0")); CHECK(shows("192.168.1.50") || shows("10.0.0.5"));
+    CHECK(shows("not measured"));                     /* supply: no reading on this board */
+    plat_power_reset_for_test();
+    bsp_host.supply_mv = 24130;
+    for (int k = 0; k < 32; ++k) plat_power_sample();
+    frame();
+    CHECK(shows("24.1 V"));
+    { char crc[12]; snprintf(crc, sizeof crc, "%08lX", (unsigned long)plat_config_crc());
+      CHECK(shows(crc)); CHECK(shows("since service")); CHECK(shows("build ")); }
+    CHECK(shows("core " PLAT_CORE_VERSION));
+    CHECK(shows("Self-test"));
+    CHECK(shows("running") || shows("passed (") || shows("failed: "));   /* CIP-11.1 */   /* CIP-05.4, operating hours, build ID */
+    CHECK(shows("Clock, not synced"));             /* clock quality (CIP-02.6): never set from outside in this test */
     dump("system");
+    bsp_host.supply_mv = 0; plat_power_reset_for_test();
     uint32_t swaps = fs.swaps;
     /* a restart asked from the web, held for the touchscreen (parameter 87): the question pops up, "No" refuses it */
     { plat_cmd_t c = { .id = PARAM_ID_FW_LOCAL_CONFIRM, .src = PLAT_SRC_INTERNAL, .kind = PLAT_VAL_BOOL, .v.b = true };
@@ -400,6 +441,13 @@ static void t_ui(void) {
     CHECK(shows("IP address in use by another device: network off"));
     CHECK(shows("Ack all"));
     dump("alarms");
+    /* tap an alarm: a panel shows "what to check" (alarm_def_t.help); tap again to go back */
+    CHECK(!shows("What to check"));
+    CHECK(tap("No valid calibration data: measurement blocked"));
+    CHECK(shows("What to check"));
+    dump("alarm_help");
+    CHECK(tap("No valid calibration data: measurement blocked"));
+    CHECK(!shows("What to check"));
     CHECK(tap("Acknowledge"));
     CHECK(!strcmp(ui_toast(), "Acknowledged"));
     CHECK(shows("2 ALARMS  1 NEW"));
@@ -418,8 +466,45 @@ static void t_ui(void) {
     CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_EMAIL | AR_MODBUS | AR_RELAY(0));
     CHECK(tap("Email"));                                               /* and email off */
     CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_MODBUS | AR_RELAY(0));
+    /* priority tiers (Gary 31 Oct): a tap on the tier moves to the next; * marks the alarm's default */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);         /* a fault: High by default */
+    CHECK(tap("High*"));                                               /* first row: default -> Critical */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_CRITICAL);
+    CHECK(tap("Critical"));                                            /* -> High, set by hand: no star */
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);
+    CHECK(shows("High"));
     dump("alarm_actions");
+    for (int k = 0; k < 4; ++k) press((uint8_t)eve_sim_tag_of(&sim, alarm_prio_name(alarm_prio(ALARM_ID_CAL_INVALID))));
+    CHECK_EQ(alarm_prio(ALARM_ID_CAL_INVALID), AL_PRIO_HIGH);          /* Medium, Low, Info, then Off skipped: */
+    CHECK_EQ(plat_alarm_prio[ALARM_ID_CAL_INVALID], AL_PRIO_DEFAULT);  /* CAL_INVALID can't be switched off */
+    CHECK(shows("High*"));
+    CHECK(!shows("Off"));
+    CHECK(shows("CAL_INVALID, own actions"));                         /* R1 and Email changed above */
+    CHECK(tap("No valid calibration data:..."));                       /* its name: back to the tier's actions */
+    CHECK(shows("back on its tier's actions")); CHECK(tap("Yes"));
+    CHECK_EQ(alarm_route(ALARM_ID_CAL_INVALID), AR_EMAIL | AR_MODBUS); /* no tier actions: the definition's */
+    CHECK(!shows("own actions"));
+    CHECK(tap("No valid calibration data:..."));
+    CHECK(!strcmp(ui_toast(), "CAL_INVALID follows its tier's actions"));
+    CHECK(tap("R1"));                                                  /* own actions again, for the screenshot */
+        CHECK(tap("Tiers")); CHECK_EQ(ui_screen(), UI_TIERS);
+    CHECK(shows("1  Critical")); CHECK(shows("5  Info")); CHECK(shows("alarm defaults"));
+    CHECK(tap("Email"));                                               /* tier 1: email for alarms with no actions of their own */
+    CHECK_EQ(plat_alarm_tier_route[0], AR_SET | AR_EMAIL);
+    CHECK(shows("Use defaults"));
+    CHECK(tap("2  High"));                                             /* rename tier 2 */
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    type("Urgent"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_TIERS);
+    CHECK(!strcmp(alarm_prio_name(AL_PRIO_HIGH), "Urgent"));
+    CHECK(shows("2  Urgent"));
+    dump("alarm_tiers");
+    CHECK(tap("Use defaults"));
+    CHECK_EQ(plat_alarm_tier_route[0], 0);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARM_CFG);
+    CHECK(shows("Urgent"));
     CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(shows("Urgent  -  "));                                       /* the list names each alarm's tier */
     CHECK(tap("Log out admin"));
     { log_event_t ev = { .code = LOG_EV_IP_CONFLICT, .arg = 0xC0A80132u, .new_v = 1.0, .old_v = NAN };
       char w[32], dt[64]; log_event_text(&ev, w, sizeof w, dt, sizeof dt);
@@ -438,10 +523,522 @@ static void t_ui(void) {
     fw_reset_for_test();
 }
 
+/* CIP-21.2, 21.4, 21.5: the state and link pills in the header; a value's quality on the home
+ * tile and the settings row (UI_CONVENTIONS 3, 4) */
+static const plat_meas_def_t ui_meas[] = {
+    { .id = 1002, .index = PLAT_MEAS_NO_INDEX, .max_age_ms = 1000, .lo = 0.0f, .hi = 1000.0f },
+};
+static void st_scan(void) { plat_state_scan(bsp_ms()); param_publish(); frame(); }   /* measurements are stamped by bsp_ms() */
+static void t_state_quality(void) {
+    setup();
+    plat_state_reset_for_test();
+    CHECK_EQ(plat_state_init(ui_meas, 1), 0);
+    a_run = 12;
+    st_scan();
+    CHECK(shows("READY"));                            /* not measuring: readings unavailable */
+    CHECK(shows("NO LINK"));
+    CHECK(shows("----")); CHECK(shows("unavailable")); CHECK(!shows("12 s"));
+    plat_app_state(PLAT_ST_MEASURING);
+    st_scan();
+    CHECK(shows("MEASURING"));
+    CHECK(shows("unavailable"));                      /* measuring, but never updated */
+    plat_meas_update(0, PLAT_Q_VALID);
+    st_scan();
+    CHECK(shows("12 s")); CHECK(!shows("unavailable")); CHECK(!shows("stale"));
+    dump("home_measuring");
+    bsp_host_advance_ms(1500);                        /* not updated within max_age_ms */
+    st_scan();
+    CHECK(shows("12 s")); CHECK(shows("stale"));
+    a_run = 5000; plat_meas_update(0, PLAT_Q_VALID);
+    st_scan();
+    CHECK(shows("out of range"));
+    CHECK(tap("Settings"));
+    CHECK(row("run_seconds"));                        /* the settings row carries it too */
+    CHECK(tap("Home"));
+    CHECK(shows("out of range"));
+    /* the supervisory link: a web or Modbus request, then quiet for longer than comms_timeout (10 s) */
+    param_comms_activity(PLAT_SRC_WEB, now);
+    st_scan();
+    CHECK(shows("LINK OK"));
+    now += 10500;
+    st_scan();
+    CHECK(shows("LINK LOST"));
+    dump("home_quality");
+    /* MAINTENANCE from the home screen: operator, confirmed, readings marked */
+    CHECK(tap("Maintenance"));
+    CHECK(shows("Log in as operator to enter maintenance"));
+    CHECK(tap("Log in")); CHECK(tap("Operator")); type("1111"); CHECK(tap("Enter"));
+    CHECK(ui_level() >= PLAT_LVL_OPERATOR);
+    CHECK(tap("Home"));
+    CHECK(tap("Maintenance"));
+    CHECK(shows("Start maintenance?"));
+    CHECK(tap("Yes"));
+    scan(); st_scan();
+    CHECK(shows("Maintenance started"));
+    CHECK(shows("End maintenance"));
+    CHECK(plat_state() == PLAT_ST_MAINTENANCE || plat_state() == PLAT_ST_FAULT);
+    CHECK(tap("End maintenance"));
+    CHECK(tap("Yes"));
+    scan(); st_scan();
+    CHECK(shows("Maintenance ended"));
+    CHECK(shows("Maintenance"));
+    plat_state_reset_for_test();
+}
+
+/* CIP-18: System -> Calibrate: a refusal in words, start, the procedure's points, accept, the
+ * record in force and the history, revert to factory */
+static const plat_cal_channel_t ui_cal[] = { { .name = "Zero gas", .coef_id = { 1009 }, .interval_days = 90 } };
+static void cal_scan(void) {
+    for (int k = 0; k < 3; ++k) { scan(); bsp_host_advance_ms(10); plat_cal_scan(bsp_ms()); plat_state_scan(bsp_ms()); }
+    param_publish(); frame();
+}
+static void t_cal_screen(void) {
+    setup();
+    plat_state_reset_for_test(); plat_cal_reset_for_test();
+    CHECK_EQ(plat_cal_init(ui_cal, 1), 0);
+    static nvm_dev_t d; static nvm_ram_t r;
+    memset(fram, 0, sizeof fram);
+    nvm_ram_init(&d, &r, fram, sizeof fram, true);
+    CHECK(param_store_init(&d, NULL, NULL, 0, 1, NULL));
+    param_store_boot();
+    cal_scan();
+    CHECK(tap("System"));
+    CHECK(tap("Calibrate"));
+    CHECK_EQ(ui_screen(), UI_CAL);
+    CHECK(shows("Zero gas")); CHECK(shows("never calibrated")); CHECK(shows("No calibrations yet"));
+    CHECK(tap("Start calibration"));                  /* not logged in: refused, and why */
+    CHECK(strlen(ui_toast()) > 0); CHECK_EQ(ui_screen(), UI_CAL);
+    CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));
+    CHECK(tap("System")); CHECK(tap("Calibrate"));
+    CHECK(tap("Start calibration"));
+    CHECK(shows("Start calibrating Zero gas?"));
+    CHECK(tap("Yes"));
+    cal_scan();
+    unsigned ch = 9;
+    CHECK(plat_cal_active(&ch)); CHECK_EQ(ch, 0u);
+    CHECK(shows("calibrating now")); CHECK(shows("Accept"));
+    CHECK(shows("CALIBRATION") || shows("FAULT"));    /* blank FRAM: CAL_INVALID's FAULT outranks CALIBRATION */
+    /* the application's procedure: one point, then the new coefficient */
+    CHECK(plat_cal_point(0, 0.0f, 1.2f, 0.1f));
+    float coef[1] = { -1.1f };
+    CHECK(plat_cal_propose(coef, 1));
+    CHECK(tap("Accept")); CHECK(tap("Yes"));
+    cal_scan();
+    CHECK(!plat_cal_active(&ch));
+    CHECK(fabsf(a_zero + 1.1f) < 1e-6f);
+    CHECK(shows("In force: factory")); CHECK(shows("pass")); CHECK(shows("As found")); CHECK(shows("1.2"));
+    dump("calibration");
+    /* revert to factory: confirmed, then a REVERTED record */
+    CHECK(tap("Revert to factory")); CHECK(shows("Put the factory calibration"));
+    CHECK(tap("Yes"));
+    cal_scan();
+    CHECK(shows("reverted"));
+    plat_cal_reset_for_test(); plat_state_reset_for_test();
+}
+
+/* System -> I/O boards: board states, lit outputs and inputs, faults in words */
+static void iob_run(uint32_t ms) {
+    for (uint32_t t = 0; t < ms; t += 20) {
+        plat_io_in_t in; memset(&in, 0, sizeof in);
+        plat_io_out_t out; memset(&out, 0, sizeof out);
+        plat_do_set(&out, 1, true); plat_do_set(&out, 17, true);   /* output 2 and relay 2 on */
+        iob_scan_in(&in, bsp_host.ms); iob_scan_out(&out, bsp_host.ms);
+        iob_cycle(bsp_host.ms);
+        bsp_host_advance_ms(20);
+    }
+}
+static void t_iob_screen(void) {
+    static iob_simbus_t bus; static iob_node_t nd;
+    setup();
+    iob_reset();
+    iob_simbus_init(&bus); iob_node_init(&nd, 1); iob_simbus_add(&bus, &nd);
+    iob_init(&bus.port);
+    iob_link = IOB_LINK_RS485;
+    CHECK(tap("System"));
+    CHECK(tap("I/O boards"));
+    CHECK_EQ(ui_screen(), UI_IOB);
+    CHECK(shows("Board 1")); CHECK(shows("Board 3")); CHECK(shows("not fitted"));
+    CHECK(shows("iob1_enable (110)"));
+    iob_tags[0].enable = true;
+    nd.inputs = 0x09;
+    nd.a_open = 0x04;
+    iob_run(100);
+    frame();
+    CHECK(shows("online"));
+    CHECK(shows("RS-485, address 1"));
+    CHECK(shows("Outputs 1-18")); CHECK(shows("Inputs 1-8"));
+    CHECK(shows("Out 3: open circuit"));
+    CHECK(shows("Firmware 1.0, hardware 1"));
+    CHECK(!shows("T1 "));                             /* no temperature channel configured */
+    /* map 2: configured temperature channels (calibrated) and the pump */
+    iob_tags[0].temp_type[0] = IOB_TT_TC_K;
+    nd.temp[0] = 2345; nd.temp_st[0] = IOB_TS_OK;
+    nd.temp[1] = IOB_TEMP_INVALID; nd.temp_st[1] = IOB_TS_OPEN;
+    iob_tags[0].temp_type[2] = IOB_TT_PT100_3W;
+    nd.temp[4] = -125; nd.temp_st[4] = IOB_TS_OK;
+    iob_tags[0].temp_offset[0] = 150;
+    nd.tach_rpm = 1200;                               /* pump AO not assigned: duty 0 */
+    iob_run(PLAT_IOB_TEMP_MS + 100);
+    frame();
+    CHECK(shows("T1 236.0 "));
+    CHECK(shows("T2 fault")); CHECK(shows("Temp 2: open circuit"));
+    CHECK(!shows("T3 ")); CHECK(!shows("T4 "));       /* connector 2 not configured */
+    CHECK(shows("T5 -12.5 ")); CHECK(!shows("T6 "));  /* an RTD has no B channel */
+    CHECK(shows("Pump 0.0 %, 1200 rpm"));
+    CHECK(!shows("AI1 "));                            /* map 2 board: no analog inputs */
+    /* on Ethernet: the board's IP and Modbus address */
+    iob_link = IOB_LINK_ETH;
+    iob_tags[0].ip = 0xC0A8013Du;
+    frame();
+    CHECK(shows("192.168.1.61, address 1"));
+    dump("iob");
+    iob_tags[0].ip = 0;
+    frame();
+    CHECK(shows("No IP set (iob1_ip)"));
+    iob_tags[0].ip = 0xC0A8013Du;
+    iob_link = IOB_LINK_RS485;
+    iob_tags[0].temp_type[0] = iob_tags[0].temp_type[2] = IOB_TT_NONE;
+    /* map 3 (CORE PCB node): the analog inputs where the temperatures go */
+    nd.n_ai = IOB_AIS;
+    for (unsigned i = 0; i < IOB_AIS; ++i) { nd.ai[i] = (uint16_t)(4000u + 1000u * i); nd.ai_st[i] = IOB_TS_OK; }
+    nd.ai[1] = 12345;
+    nd.ai_st[2] = IOB_TS_OPEN; nd.ai[2] = 0;
+    nd.ai_supply[0] = 10010; nd.ai_supply[1] = 4980;
+    iob_tags[0].first_ai = 1;
+    nd.powered = false; iob_run(1100); nd.powered = true;   /* the master reads the map at identify */
+    iob_run(1500);
+    iob_run(PLAT_IOB_TEMP_MS * 2u + 200u);
+    frame();
+    CHECK(shows("AI1 4.00 mA")); CHECK(shows("AI2 12.34 mA"));
+    CHECK(shows("AI3 open circuit") || shows("AI3 open"));
+    CHECK(shows("AI7 10000 mV")); CHECK(shows("AI8 11000 mV"));
+    CHECK(shows("Sensor supply 10.0 V, 4.9 V"));
+    CHECK(!shows("T1 "));
+    dump("iob_ai");
+    nd.n_ai = 0; iob_tags[0].first_ai = 0;
+    nd.powered = false;
+    iob_run(1100);
+    frame();
+    CHECK(shows("not responding"));
+    CHECK(shows("No reply: board switches off after hold"));
+    dump("iob_lost");
+    CHECK(tap("Home"));
+    CHECK_EQ(ui_screen(), UI_HOME);
+    iob_tags[0].enable = false;
+    iob_reset();
+    iob_init(NULL);
+    iob_link = IOB_LINK_ETH;
+}
+
+/* the display test page for bench bring-up (HMI_BENCH_TEST.md): controller status and measured
+ * rates, the colour patterns (a tap anywhere steps on, the last goes back), and the touch test
+ * (points from REG_TOUCH_SCREEN_XY, the offset from the nearest cross) */
+static void t_display_screen(void) {
+    setup();
+    CHECK(tap("System")); CHECK(tap("Service"));
+    CHECK(tap("Display test"));
+    CHECK_EQ(ui_screen(), UI_DISPLAY);
+    CHECK(shows("Colour test")); CHECK(shows("Touch test"));
+    CHECK(shows("(answering)")); CHECK(shows("chip 0817"));
+    CHECK(shows("1024 x 600"));
+    CHECK(shows("measuring..."));
+    /* rates over a second: 60 frames and 72 M clocks */
+    for (int k = 0; k < 4; ++k) sim.regs[REG_FRAMES - EVE_RAM_REG + k] = 0;
+    sim.regs[0x302008u - EVE_RAM_REG] = 0; sim.regs[0x302009u - EVE_RAM_REG] = 0; sim.regs[0x30200Au - EVE_RAM_REG] = 0; sim.regs[0x30200Bu - EVE_RAM_REG] = 0;
+    frame();
+    now += 980;                                        /* frame() adds 20 */
+    sim.regs[REG_FRAMES - EVE_RAM_REG] = 60;
+    { uint32_t c = 72000000u; for (int k = 0; k < 4; ++k) sim.regs[0x302008u - EVE_RAM_REG + k] = (uint8_t)(c >> (8 * k)); }
+    frame();
+    CHECK(shows("Hz")); CHECK(shows("MHz measured"));
+    dump("display");
+    /* patterns: full screen, no navigation; seven taps go through them and back */
+    CHECK(tap("Colour test"));
+    CHECK(!shows("Home"));
+    for (int k = 0; k < 6; ++k) { press(233); CHECK_EQ(ui_screen(), UI_DISPLAY); }   /* T_DT_NEXT */
+    CHECK(shows("Grid, 50 px"));
+    dump("display_grid");
+    press(233);
+    CHECK(shows("Colour test")); CHECK(shows("Home"));
+    /* touch test: a touch 6 px right and 4 px below the top-left cross */
+    CHECK(tap("Touch test"));
+    CHECK(shows("Touch each cross"));
+    CHECK(shows("No finger on the glass"));
+    eve_sim_touch_xy(&sim, 46, 44); eve_sim_touch(&sim, 255);
+    ui_input(255, now); frame();
+    CHECK(shows("Finger at 46, 44"));
+    CHECK(shows("Last touch: 6 px right, 4 px below of the cross"));
+    eve_sim_touch_xy(&sim, 60, 44); frame();
+    eve_sim_touch_xy(&sim, -32768, -32768); eve_sim_touch(&sim, 0);
+    ui_input(0, now); frame();
+    CHECK(shows("No finger on the glass"));
+    CHECK(shows("Last touch: 6 px right"));           /* only a touch-down moves it */
+    dump("display_touch");
+    CHECK(tap("Clear")); CHECK(!shows("Last touch"));
+    CHECK(tap("Done")); CHECK(shows("Colour test"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SERVICE);
+}
+
+/* Modbus force for commissioning (modbus.h mb_force_*): the list of forceable values with the
+ * real value beside, admin to force, "Are you sure?", the countdown, the header pill, clear */
+static void t_force_screen(void) {
+    setup();
+    static const mb_map_t fmap[] = {
+        MB_ENTRY(MB_HOLDING, 0, 1001, MBF_U32),       /* a setting the PLC writes: not forceable */
+        MB_ENTRY(MB_INPUT, 0, 1008, MBF_F32),         /* a reading */
+        MB_ENTRY(MB_DISCRETE, 0, 1003, MBF_BIT),      /* a test bit */
+    };
+    CHECK_EQ(mb_init(fmap, sizeof fmap / sizeof fmap[0], NULL), 0);
+    CHECK(mb_force_clear_all(PLAT_SRC_LOCAL, PLAT_LVL_FACTORY) == PERR_OK);
+    CHECK(tap("Settings")); CHECK(tap("Force"));
+    CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(shows("1008  stack_temp")); CHECK(shows("1003  valve_out")); CHECK(!shows("1001  start_delay"));
+    CHECK(shows("Real value: 182.5"));
+    CHECK(!shows("FORCED 1"));
+    /* not logged in: refused in words */
+    int t = eve_sim_tag_of(&sim, "Force");
+    CHECK(t > 0); press((uint8_t)t);
+    CHECK(!strcmp(ui_toast(), "Log in as admin to force values"));
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    CHECK(tap("Settings")); CHECK(tap("Force"));
+    press(201);                                       /* the second row: stack_temp (1003 valve_out is first) */
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Force stack_temp  (1008)")); CHECK(shows("Modbus reads this for 30 s, then the real value again"));
+    type("250.5"); CHECK(tap("OK"));
+    CHECK(shows("Send 250.5 to Modbus as stack_temp for 30 s?"));
+    CHECK(tap("Yes"));
+    CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(mb_force_active(1008, MB_FORCE_SCALAR));
+    CHECK(shows("Modbus: forced to 250.5, 30 s"));
+    CHECK(shows("Real value: 182.5"));   /* the screens keep the real value */
+    CHECK(shows("FORCED 1"));
+    now += 10000; frame();
+    CHECK(shows("Modbus: forced to 250.5, 20 s"));
+    dump("force");
+    /* a test bit: ON/OFF */
+    press(200);                                       /* valve_out */
+    CHECK(shows("ON")); CHECK(tap("ON")); CHECK(tap("Yes"));
+    CHECK(mb_force_active(1003, MB_FORCE_SCALAR));
+    CHECK(shows("FORCED 2")); CHECK(shows("Modbus: forced to ON"));
+    /* the header pill opens the list from anywhere */
+    CHECK(tap("Home")); CHECK(tap("FORCED 2")); CHECK_EQ(ui_screen(), UI_FORCE);
+    CHECK(tap("Clear"));                              /* the first forced row */
+    CHECK_EQ(mb_force_count(), 1u);
+    CHECK(tap("Clear all"));
+    CHECK_EQ(mb_force_count(), 0u);
+    CHECK(!shows("FORCED")); CHECK(shows("CEMS Supervisor"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_PARAMS);
+}
+
+/* input alarms (plat_alarm.h, Gary 30 Oct): Alarms > Inputs lists the 24 slots; a slot's page
+ * sets the input, when, delay, latch, severity and label (admin), writing one array element */
+extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS];
+extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+extern uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+extern char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static void t_dia_screen(void) {
+    enum { TG_ALARMS = 152, TG_INPUT = 243, TG_WHEN, TG_DELAY, TG_LATCH, TG_SEV, TG_LABEL, TG_PREV, TG_NEXT, TG_SPACE = 151 };
+    setup();
+    frame();
+    press(TG_ALARMS);
+    CHECK_EQ(ui_screen(), UI_ALARMS);
+    CHECK(tap("Inputs"));
+    CHECK_EQ(ui_screen(), UI_DIA);
+    CHECK(shows("1  Not used")); CHECK(shows("No input chosen")); CHECK(shows("not used"));
+    CHECK(tap("1  Not used"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK(shows("Input alarm 1: Not used")); CHECK(shows("Modbus discrete inputs: 7000 active, 7032 not acknowledged, 7064 input unreliable"));
+    press(TG_INPUT);                                  /* not logged in */
+    CHECK(!strcmp(ui_toast(), "Log in as admin to set up input alarms"));
+    CHECK(tap("Log in")); CHECK(tap("Admin")); type("2222"); CHECK(tap("Enter"));
+    frame(); press(TG_ALARMS); CHECK(tap("Inputs")); CHECK(tap("1  Not used"));
+    /* the input, on the number keypad */
+    press(TG_INPUT);
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Input alarm 1: input")); CHECK(shows("Range 0 .. 64 (0 = not used)"));
+    type("99"); CHECK(tap("OK"));
+    CHECK(!strcmp(ui_toast(), "Allowed 0 .. 64")); CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(tap("Clear")); type("12"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK_EQ(plat_dia_input[0], 12);
+    CHECK(shows("Input alarm 1: Digital input 12"));
+    /* toggles and the severity cycle write at once */
+    press(TG_WHEN);  CHECK(plat_dia_when[0]);  CHECK(shows("the input is inactive (open)"));
+    press(TG_LATCH); CHECK(plat_dia_latch[0]); CHECK(shows("on: stays active until acknowledged"));
+    press(TG_SEV);   CHECK_EQ(plat_dia_sev[0], AL_SEV_FAULT); CHECK(shows("fault"));
+    press(TG_SEV);   CHECK_EQ(plat_dia_sev[0], AL_SEV_WARNING);
+    press(TG_DELAY); CHECK(shows("Input alarm 1: on-delay")); type("5"); CHECK(tap("OK"));
+    CHECK_EQ(plat_dia_delay[0], 5);
+    CHECK_EQ(plat_dia_input[1], 0);                   /* only slot 1's element was written */
+    /* the label: the alarm's name everywhere */
+    press(TG_LABEL);
+    CHECK_EQ(ui_screen(), UI_EDIT);
+    type("door"); press(TG_SPACE); type("open"); CHECK(tap("OK"));
+    CHECK_EQ(ui_screen(), UI_DIA_SLOT);
+    CHECK(!strcmp(plat_dia_label[0], "door open"));
+    CHECK(shows("Input alarm 1: door open"));
+    dump("input_alarm_slot");
+    press(TG_NEXT); CHECK(shows("Input alarm 2: Not used"));
+    press(TG_PREV); CHECK(shows("Input alarm 1: door open"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_DIA);
+    CHECK(shows("1  door open")); CHECK(shows("when inactive, 5 s, latched, warning"));
+    dump("input_alarms");
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_ALARMS);
+}
+
+/* live trends (Trends on the nav bar): pick values, they are sampled every 4 s on any screen,
+ * one pen is selected for its scale, remove and restart */
+static void t_trends_screen(void) {
+    setup();
+    CHECK(tap("Trends")); CHECK_EQ(ui_screen(), UI_TRENDS);
+    CHECK(shows("Tap Add to choose a value to trend"));
+    CHECK_EQ(eve_sim_tag_of(&sim, "Remove"), 0);                       /* nothing to remove yet */
+    CHECK(tap("Add")); CHECK_EQ(ui_screen(), UI_TR_PICK);
+    CHECK(shows("stack_temp")); CHECK(!shows("valve_name"));           /* numbers only: no text */
+    CHECK(tap("stack_temp")); CHECK_EQ(ui_screen(), UI_TRENDS);
+    CHECK(tap("Add")); CHECK(tap("run_seconds"));
+    CHECK(tap("Add")); CHECK(tap("stack_temp"));                      /* twice: refused */
+    CHECK(!strcmp(ui_toast(), "Already trended"));
+    for (int k = 0; k < 40; ++k) {                                     /* 160 s on another screen still records */
+        a_temp = 180.0f + (float)(k % 10); a_run = (uint32_t)k;
+        if (k == 5) { CHECK(tap("Home")); }
+        now += 4000; param_publish(); ui_input(0, now);
+    }
+    CHECK(tap("Trends"));
+    CHECK(shows("run_seconds")); CHECK(shows("the scale shown is run_seconds's"));
+    CHECK(shows("now")); CHECK(shows("-10 min"));
+    CHECK_EQ(eve.overflow, false);
+    CHECK(tap("stack_temp"));                                          /* select the first pen: its scale */
+    CHECK(shows("the scale shown is stack_temp's"));
+    dump("trends");
+    CHECK(tap("Remove"));
+    CHECK(!shows("stack_temp")); CHECK(shows("the scale shown is run_seconds's"));
+    CHECK(tap("Restart"));
+    CHECK(tap("Remove"));
+    CHECK(shows("Tap Add to choose a value to trend"));
+    CHECK(tap("Add")); dump("trend_pick"); CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_TRENDS);
+}
+
+/* System > Service: self-test, board test (factory), service log entry (factory), display test */
+static void t_service_screen(void) {
+    setup();
+    plat_service_reset_for_test();
+    CHECK(tap("System")); CHECK(tap("Service")); CHECK_EQ(ui_screen(), UI_SERVICE);
+    CHECK(shows("Start-up self-test")); CHECK(shows("Board test")); CHECK(shows("Service log"));
+    CHECK(shows("No entries yet"));
+    CHECK(tap("Add entry"));
+    CHECK(!strcmp(ui_toast(), "Log in at factory (tech) level to add to the service log"));
+    CHECK(tap("Log in")); CHECK(tap("Factory")); type("9999"); CHECK(tap("Enter"));
+    CHECK_EQ(ui_screen(), UI_SERVICE);
+    CHECK(tap("Add entry")); CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Service log: who did the work"));
+    CHECK(tap("Next"));                                                /* empty: refused */
+    CHECK(!strcmp(ui_toast(), "Enter who did the work"));
+    type("Gary"); CHECK(tap("Next"));
+    CHECK(shows("Service log: the work done")); CHECK(shows("By Gary."));
+    type("Replaced fan"); CHECK(tap("Save"));
+    CHECK_EQ(ui_screen(), UI_SERVICE);
+    plat_service_scan(now); frame();
+    CHECK(shows("Replaced fan")); CHECK(shows("Gary"));
+    dump("service");
+    CHECK(tap("Run board test")); CHECK(shows("Run the board test now?"));
+    CHECK(tap("Yes"));
+    CHECK(!strncmp(ui_toast(), "Board test started", 18) || !strncmp(ui_toast(), "Not now", 7));
+    CHECK(tap("Display test")); CHECK_EQ(ui_screen(), UI_DISPLAY);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SERVICE);
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    CHECK(tap("Log out factory"));
+}
+
+/* System > Instruments: the analysers the core polls on the I/O network, read only */
+static void t_inst_screen(void) {
+    setup();
+    inst_reset();
+    memset(&inst_tags, 0, sizeof inst_tags); memset(&inst_pt, 0, sizeof inst_pt);
+    inst_init(NULL);
+    CHECK(tap("System")); CHECK(tap("Instruments")); CHECK_EQ(ui_screen(), UI_INST);
+    CHECK(shows("No instruments are set up."));
+    inst_tags.enable[0] = true; strcpy(inst_tags.name[0], "O2 analyser");
+    inst_tags.ip[0] = 0xC0A80114u; inst_tags.port[0] = 502; inst_tags.unit[0] = 1; inst_tags.period_ms[0] = 1000;
+    inst_tags.timeout_ms[0] = 1000; inst_tags.max_regs[0] = 64;
+    inst_tags.enable[2] = true; inst_tags.ip[2] = 0xC0A80115u; inst_tags.port[2] = 502; inst_tags.unit[2] = 7;
+    inst_pt.inst[0] = 1; strcpy(inst_pt.name[0], "O2"); inst_pt.unit[0][0] = '%';
+    inst_pt.inst[1] = 1; strcpy(inst_pt.name[1], "CO");
+    { const uint8_t u[] = { 'm', 0, 'g', 0, '/', 0, 'N', 0, 'm', 0, 0xB3, 0 }; memcpy(inst_pt.unit[1], u, sizeof u); }   /* mg/Nm³ */
+    inst_pt.inst[2] = 3; strcpy(inst_pt.name[2], "Flow");
+    inst_scan(now);
+    inst_pt.value[0] = 20.9f; inst_pt.q[0] = PLAT_Q_VALID;            /* as if read */
+    inst_pt.value[1] = 41.5f; inst_pt.q[1] = PLAT_Q_STALE;
+    inst_tags.state[0] = INST_S_OK; inst_tags.good[0] = 120; inst_tags.errors[0] = 2; inst_tags.resp_ms[0] = 35;
+    inst_tags.last_err[0] = INST_E_TIMEOUT;
+    frame();
+    CHECK(shows("O2 analyser")); CHECK(shows("Instrument 3"));          /* no name: by number */
+    CHECK(shows("192.168.1.20:502, unit 1"));
+    CHECK(shows("120 polls good, 2 failed, reply 35 ms"));
+    CHECK(shows("Last error: no reply"));
+    CHECK(shows("20.9 %")); CHECK(shows("41.5 mg/Nm")); CHECK(shows("stale"));
+    CHECK(!shows("Flow"));                                             /* instrument 3's point */
+    dump("instruments");
+    CHECK(tap("Instrument 3"));
+    CHECK(shows("Flow")); CHECK(!shows("41.5"));
+    CHECK(shows("----"));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    inst_reset();
+    memset(&inst_tags, 0, sizeof inst_tags); memset(&inst_pt, 0, sizeof inst_pt);
+}
+
+/* System > Emissions: the engine's results, read only (the engine itself is tested in test_emis.c) */
+static void t_emis_screen(void) {
+    setup();
+    emis_set_t keep = emis_set;
+    memset(&emis_res, 0, sizeof emis_res); memset(&emis_q3, 0, sizeof emis_q3);
+    emis_set.enable = false;
+    CHECK(tap("System")); CHECK(tap("Emissions")); CHECK_EQ(ui_screen(), UI_EMIS);
+    CHECK(shows("The emissions engine is off."));
+    emis_set.enable = true; emis_set.period_s = 1800; emis_set.period2_s = 600; emis_set.ref_pct = 11.0f; emis_set.diluent = EMIS_DIL_O2;
+    memset(emis_set.ch.unit, 0, sizeof emis_set.ch.unit);
+    emis_set.ch.unit[0] = EMIS_U_PCT;                                                   /* O2 dry */
+    emis_set.ch.unit[3] = EMIS_U_MG_STD; emis_set.ch.ref[3] = true; emis_set.ch.elv2[3] = 150.0f;   /* CO */
+    emis_set.ch.unit[6] = EMIS_U_PPM; emis_set.ch.ref[6] = true; emis_set.ch.elv2[6] = 0.0f;        /* NOx */
+    emis_p_operating = true; emis_p_cfg_error = 0;
+    for (unsigned b = 0; b < EMIS_BANKS; ++b) { emis_res.v[b][0] = 9.8f; emis_res.v[b][3] = 12.4f + (float)b; emis_res.v[b][6] = 140.0f; }
+    for (unsigned k = 0; k < EMIS_QS; ++k) { emis_res.q[k][0] = emis_res.q[k][3] = PLAT_Q_VALID; emis_res.q[k][6] = PLAT_Q_VALID; }
+    emis_res.q[EMIS_Q_DAY][6] = PLAT_Q_UNAVAILABLE;
+    emis_res.status[6] = EMIS_ST_ABOVE_CAL; emis_res.discarded[6] = 2;
+    emis_res.v2[3] = 18.0f; emis_res.q2[3] = PLAT_Q_VALID; emis_res.n2[3] = 40; emis_res.n2_above[3] = 1;
+    emis_q3.status[3] = EMIS_Q3_ON; emis_q3.status[6] = EMIS_Q3_ON | EMIS_Q3_DUE;
+    frame();
+    CHECK(shows("Plant operating. Averages every 30 min, at 11 % O2."));
+    CHECK(shows("O2 dry")); CHECK(shows("CO")); CHECK(shows("NOx as NO2"));
+    CHECK(shows("QAL3 ok; 10-min 18 mg/Nm")); CHECK(shows("1 of 40 above the limit today"));
+    CHECK(shows("above calibration range, QAL3 check due, 2 discarded today"));
+    CHECK(shows("----")); CHECK(shows("unavailable"));
+    dump("emissions");
+    emis_q3.status[3] = EMIS_Q3_ON | EMIS_Q3_SPAN_OUT; frame();
+    CHECK(shows("QAL3 OUT OF CONTROL (span)"));
+    emis_p_operating = false; frame();
+    CHECK(shows("NOT operating: averages paused"));
+    emis_p_cfg_error = 4; frame();
+    CHECK(shows("Channel CO has a setting that doesn't fit: the engine is stopped."));
+    CHECK(tap("Back")); CHECK_EQ(ui_screen(), UI_SYSTEM);
+    emis_set = keep; emis_p_cfg_error = 0; emis_p_operating = false;
+    memset(&emis_res, 0, sizeof emis_res); memset(&emis_q3, 0, sizeof emis_q3);
+}
+
 void test_ui_all(void) {
     bsp_host_reset();
     bsp_host.ms = 100000;
     RUN(t_eve_driver);
     RUN(t_fonts);
     RUN(t_ui);
+    RUN(t_iob_screen);
+    RUN(t_state_quality);
+    RUN(t_cal_screen);
+    RUN(t_display_screen);
+    RUN(t_force_screen);
+    RUN(t_dia_screen);
+    RUN(t_trends_screen);
+    RUN(t_service_screen);
+    RUN(t_inst_screen);
+    RUN(t_emis_screen);
 }

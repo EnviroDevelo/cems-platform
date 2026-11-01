@@ -9,6 +9,7 @@
 #include "plat_cmdq.h"
 #include "bsp.h"
 #include "param.h"
+#include "plat_state.h"
 #include "plat_clock.h"
 
 bool (*fw_safe_check)(char *why, size_t cap);
@@ -84,10 +85,11 @@ static uint32_t min_version(void) {
 
 static bool safe(void) {
     F.not_safe[0] = 0;
-    if (!fw_safe_check) return true;
     char why[48] = "";
-    if (fw_safe_check(why, sizeof why)) return true;
-    const char *w = why[0] ? why : "the application is busy";
+    const char *w;
+    if (!plat_state_allows(PLAT_ACT_FW_RESTART)) w = plat_state_refusal();     /* CALIBRATION (section 7) */
+    else if (!fw_safe_check || fw_safe_check(why, sizeof why)) return true;
+    else w = why[0] ? why : "the application is busy";
     size_t k = 0;
     for (; w[k] && k + 1 < sizeof F.not_safe; ++k) F.not_safe[k] = w[k];
     F.not_safe[k] = 0;
@@ -98,7 +100,8 @@ const char *fw_err_name(fw_err_t e) {
     static const char *const n[] = { "ok", "busy", "state", "not a firmware image", "wrong product", "size",
                                      "flash error", "checksum mismatch", "signature not valid", "no image",
                                      "not safe to restart now", "older than the minimum version allowed",
-                                     "waiting for confirmation on the touchscreen" };
+                                     "waiting for confirmation on the touchscreen",
+                                     "built for another board revision" };
     return (unsigned)e < sizeof n / sizeof n[0] ? n[e] : "error";
 }
 
@@ -113,7 +116,7 @@ uint32_t fw_parse_version(const char *s) {
 }
 
 bool fw_header_ok(const fw_header_t *h) {
-    return h->magic == FW_MAGIC && h->hdr_size == FW_HDR_SIZE && h->hdr_version == 1u &&
+    return h->magic == FW_MAGIC && h->hdr_size == FW_HDR_SIZE && (h->hdr_version == 1u || h->hdr_version == 2u) &&
            h->hdr_crc == plat_crc32(0, h, (uint32_t)offsetof(fw_header_t, hdr_crc));
 }
 
@@ -148,10 +151,13 @@ static void rec_load(void) {
 
 /* ---------------- the free bank ---------------- */
 static uint32_t trailer_off(void) { return F.fl->bank_size - F.fl->sector; }
+static uint32_t img_off(void) { return F.fl->image_off; }               /* after the bootloader */
+static uint32_t img_max(void) { return trailer_off() - img_off(); }
+static void trial_mark(bool on) { if (F.fl && F.fl->trial_mark) F.fl->trial_mark(F.fl, on); }
 
 static bool read_trailer(fw_header_t *h) {
     return F.fl && F.fl->read(F.fl, false, trailer_off(), h, sizeof *h) == 0 && fw_header_ok(h) &&
-           h->image_size <= trailer_off();
+           h->image_size <= img_max();
 }
 
 /* SHA-256 of the image in the free bank, read back from the flash */
@@ -161,11 +167,47 @@ static bool bank_hash_ok(const fw_header_t *h) {
     sha256_init(&s);
     for (uint32_t off = 0; off < h->image_size; off += WBUF) {
         uint32_t n = h->image_size - off < WBUF ? h->image_size - off : WBUF;
-        if (F.fl->read(F.fl, false, off, buf, n) != 0) return false;
+        if (F.fl->read(F.fl, false, img_off() + off, buf, n) != 0) return false;
         sha256_update(&s, buf, n);
     }
     sha256_final(&s, dig);
     return memcmp(dig, h->sha256, 32) == 0;
+}
+
+/* ---------------- the running image (start-up self-test, CIP-11.1) ---------------- */
+static struct {
+    int         result;            /* fw_running_check's answer once known (0 = not yet) */
+    bool        busy;              /* hashing */
+    fw_header_t h;
+    sha256_t    sha;
+    uint32_t    off;
+} RC;
+
+int fw_running_check(uint32_t max_bytes) {
+    if (RC.result) return RC.result;
+    if (!RC.busy) {
+        /* the header an update left in this bank's last sector; none (programmed by the
+         * debugger) or one for another version (the debugger wrote over an updated bank)
+         * leaves nothing to check against */
+        if (!F.fl || F.fl->read(F.fl, true, trailer_off(), &RC.h, sizeof RC.h) != 0 || !fw_header_ok(&RC.h) ||
+            RC.h.image_size > img_max() || strncmp(RC.h.version_str, F.running, sizeof RC.h.version_str) != 0)
+            return RC.result = -2;
+        sha256_init(&RC.sha);
+        RC.off = 0;
+        RC.busy = true;
+    }
+    uint8_t buf[WBUF];
+    for (uint32_t done = 0; RC.off < RC.h.image_size && done < max_bytes; done += WBUF) {
+        uint32_t n = RC.h.image_size - RC.off < WBUF ? RC.h.image_size - RC.off : WBUF;
+        if (F.fl->read(F.fl, true, img_off() + RC.off, buf, n) != 0) return RC.result = -1;
+        sha256_update(&RC.sha, buf, n);
+        RC.off += n;
+    }
+    if (RC.off < RC.h.image_size) return 0;
+    uint8_t dig[32];
+    sha256_final(&RC.sha, dig);
+    RC.busy = false;
+    return RC.result = memcmp(dig, RC.h.sha256, 32) == 0 ? 1 : -1;
 }
 
 /* ---------------- update history ---------------- */
@@ -214,8 +256,23 @@ size_t fw_history(fw_hist_t *out, size_t max) {
     return n;
 }
 
+#ifndef PLAT_BUILD_ID
+#define PLAT_BUILD_ID "dev"
+#endif
+uint16_t plat_board_rev_tag = 0xFFFFu;          /* parameter 319 */
+const char *fw_build_id(void) { return PLAT_BUILD_ID; }
+int fw_board_rev(void) { return plat_board_rev_tag == 0xFFFFu ? -1 : (int)plat_board_rev_tag; }
+
+/* does the image's header allow this board? (v1 images state no range) */
+static bool hw_fits(const fw_header_t *h) {
+    int rev = fw_board_rev();
+    return h->hdr_version < 2u || rev < 0 || (rev >= h->hw_min && rev <= h->hw_max);
+}
+
 void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char *running_version) {
     memset(&F, 0, sizeof F);
+    uint8_t rev;
+    plat_board_rev_tag = bsp_hw_straps(&rev) ? rev : 0xFFFFu;
     F.fl = flash;
     F.fram = fram && fram->persistent ? fram : NULL;
     F.fram_addr = fram_addr;
@@ -226,6 +283,13 @@ void fw_init(fw_flash_t *flash, nvm_dev_t *fram, uint32_t fram_addr, const char 
 }
 
 void fw_boot(uint8_t cause, uint32_t now_ms) {
+    /* The bootloader (boot.h) rolled back on its own: the record still says the new image is
+     * pending or on trial, but the previous one is running. Swapping "back" now would start
+     * the image that just failed, so take it as a finished rollback. (Not detectable when the
+     * new image has the same version string as the old one.) */
+    if ((F.rec.state == FW_ST_PENDING || F.rec.state == FW_ST_TRIAL) &&
+        strncmp(F.running, F.rec.to, sizeof F.rec.to) != 0 && strncmp(F.running, F.rec.from, sizeof F.rec.from) == 0)
+        F.rec.state = FW_ST_ROLLED_BACK;
     switch (F.rec.state) {
     case FW_ST_PENDING:                         /* first start of the new image */
         F.rec.state = FW_ST_TRIAL;
@@ -241,6 +305,7 @@ void fw_boot(uint8_t cause, uint32_t now_ms) {
         }
         F.rec.state = FW_ST_ROLLED_BACK;
         rec_save();
+        trial_mark(false);                      /* (or the bootloader would count the previous image's starts) */
         if (F.fl && F.fl->swap_and_reset) F.fl->swap_and_reset(F.fl);   /* back to the previous image */
         return;                                 /* (simulation only) */
     }
@@ -250,8 +315,10 @@ void fw_boot(uint8_t cause, uint32_t now_ms) {
         plat_log_event(LOG_EV_FW_ROLLBACK, PLAT_SRC_INTERNAL, 0, 0, NAN, NAN, F.rec.to);
         F.rec.state = FW_ST_IDLE;
         rec_save();
+        trial_mark(false);
         break;
     default:
+        trial_mark(false);                      /* no trial: a stale mark must not roll this image back */
         break;
     }
     F.boot_ms = now_ms;
@@ -273,7 +340,7 @@ static fw_err_t flush_wbuf(bool final) {
     if (final) { uint32_t u = F.fl->prog_unit; while (n % u) F.wbuf[n++] = 0xFF; }
     else if (n % F.fl->prog_unit) return FW_OK;              /* wait for a whole unit */
     for (uint32_t k = 0; k < n; ) {
-        uint32_t off = F.woff + k;
+        uint32_t off = img_off() + F.woff + k;
         if (off >= F.next_erase) {                           /* erase as the image grows */
             if (F.fl->erase(F.fl, F.next_erase) != 0) return FW_E_FLASH;
             F.next_erase += F.fl->sector;
@@ -290,7 +357,7 @@ static fw_err_t flush_wbuf(bool final) {
 fw_err_t fw_upload_begin(uint32_t file_len) {
     if (!F.fl) return FW_E_STATE;
     if (F.uploading) return FW_E_BUSY;
-    if (file_len <= FW_HDR_SIZE || file_len - FW_HDR_SIZE > trailer_off()) return F.last_err = FW_E_SIZE;
+    if (file_len <= FW_HDR_SIZE || file_len - FW_HDR_SIZE > img_max()) return F.last_err = FW_E_SIZE;
     /* the free bank no longer holds a valid image from here on */
     if (F.fl->erase(F.fl, trailer_off()) != 0) return F.last_err = FW_E_FLASH;
     F.staged = false;
@@ -298,7 +365,8 @@ fw_err_t fw_upload_begin(uint32_t file_len) {
     F.total = file_len;
     F.received = 0;
     F.hdr_ok = false;
-    F.wn = F.woff = F.next_erase = 0;
+    F.wn = F.woff = 0;
+    F.next_erase = img_off();                                /* the bootloader's sectors are never touched */
     F.last_err = FW_OK;
     sha256_init(&F.sha);
     return FW_OK;
@@ -317,7 +385,8 @@ fw_err_t fw_upload_data(const uint8_t *p, uint32_t n) {
                 if (!fw_header_ok(&F.hdr)) return fail(FW_E_HEADER);
                 if (F.hdr.product != PLAT_FW_PRODUCT) return fail(FW_E_PRODUCT);
                 if (F.hdr.version < min_version()) return fail(FW_E_OLD);
-                if (F.hdr.image_size != F.total - FW_HDR_SIZE || F.hdr.image_size > trailer_off()) return fail(FW_E_SIZE);
+                if (!hw_fits(&F.hdr)) return fail(FW_E_HARDWARE);
+                if (F.hdr.image_size != F.total - FW_HDR_SIZE || F.hdr.image_size > img_max()) return fail(FW_E_SIZE);
                 F.hdr_ok = true;
             }
             continue;
@@ -341,7 +410,10 @@ fw_err_t fw_upload_end(void) {
     if (memcmp(dig, F.hdr.sha256, 32) != 0) return fail(FW_E_HASH);
     if (F.hdr.flags & FW_F_SIGNED) {
         sha256_t s; uint8_t h[32];
-        sha256_init(&s); sha256_update(&s, &F.hdr, FW_SIGNED_LEN); sha256_final(&s, h);
+        sha256_init(&s); sha256_update(&s, &F.hdr, FW_SIGNED_LEN);
+        if (F.hdr.hdr_version >= 2u)            /* v2 signs the fields after the signature too */
+            sha256_update(&s, (const uint8_t *)&F.hdr + FW_SIGNED2_OFF, (uint32_t)offsetof(fw_header_t, hdr_crc) - FW_SIGNED2_OFF);
+        sha256_final(&s, h);
         if (!fw_signature_check(h, F.hdr.sig)) return fail(FW_E_SIGNATURE);
     } else if (fw_signing_required()) {
         return fail(FW_E_SIGNATURE);
@@ -364,6 +436,7 @@ fw_err_t fw_request_activate_from(uint8_t src, uint8_t level) {
     if (F.rec.state == FW_ST_TRIAL) return FW_E_STATE;       /* confirm or roll back first */
     if (!F.staged) return FW_E_NO_IMAGE;
     if (F.staged_hdr.version < min_version()) return FW_E_OLD;
+    if (!hw_fits(&F.staged_hdr)) return FW_E_HARDWARE;
     if (!safe()) {
         plat_log_event(LOG_EV_FW_UPDATE, src, level, 0, NAN, NAN, "refused: not safe");
         return FW_E_NOT_SAFE;
@@ -429,6 +502,7 @@ void fw_service(uint32_t now_ms, bool healthy) {
         F.rec.src = F.act_src; F.rec.level = F.act_level;
         rec_save();
         if (fw_before_swap) fw_before_swap();
+        trial_mark(true);                                    /* the bootloader counts its starts from here */
         if (F.fl->swap_and_reset) F.fl->swap_and_reset(F.fl);
         return;
     }
@@ -447,6 +521,7 @@ void fw_service(uint32_t now_ms, bool healthy) {
         plat_log_event(LOG_EV_FW_UPDATE, PLAT_SRC_INTERNAL, 0, fw_parse_version(F.rec.to), NAN, NAN, txt);
         F.rec.state = FW_ST_IDLE;
         rec_save();
+        trial_mark(false);                                   /* confirmed: the bootloader stops counting */
         hist_add(FWH_UPDATED);
         F.staged = read_trailer(&F.staged_hdr);              /* the free bank now holds the previous image */
     }
@@ -460,6 +535,15 @@ void fw_status(fw_status_t *o) {
     o->upload_total = F.total;
     o->staged = F.staged;
     if (F.staged) copy_ver(o->staged_version, sizeof o->staged_version, F.staged_hdr.version_str);
+    o->staged_hw_min = 0; o->staged_hw_max = 255; o->staged_build[0] = 0;
+    o->boot_report = F.fl ? F.fl->boot_report : 0u;
+    if (F.staged && F.staged_hdr.hdr_version >= 2u) {
+        o->staged_hw_min = F.staged_hdr.hw_min; o->staged_hw_max = F.staged_hdr.hw_max;
+        size_t k = 0;
+        for (; k + 1 < sizeof o->staged_build && k < sizeof F.staged_hdr.build_id && F.staged_hdr.build_id[k]; ++k)
+            o->staged_build[k] = F.staged_hdr.build_id[k];
+        o->staged_build[k] = 0;
+    }
     copy_ver(o->running_version, sizeof o->running_version, F.running);
     o->trial_left_ms = F.rec.state == FW_ST_TRIAL ? F.trial_left : 0;
     o->last_error = F.last_err;
@@ -471,4 +555,4 @@ void fw_status(fw_status_t *o) {
     memcpy(o->not_safe, F.not_safe, sizeof o->not_safe);
 }
 
-void fw_reset_for_test(void) { memset(&F, 0, sizeof F); fw_before_swap = NULL; fw_safe_check = NULL; }
+void fw_reset_for_test(void) { memset(&F, 0, sizeof F); memset(&RC, 0, sizeof RC); fw_before_swap = NULL; fw_safe_check = NULL; }

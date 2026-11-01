@@ -1,16 +1,28 @@
 /* test_http.c - web side: SHA-256, formatting, text, request parsing, auth and
- * sessions, and the API handlers end to end through a capture buffer. */
+ * sessions, and the API handlers end to end through a capture buffer.
+ * Requirements proved here: CIP-01.2, 01.4, 19.1, 19.4, 19.5, 20.1, 20.3, 20.5, 13.3. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "tst.h"
+#include "plat_state.h"
 #include "plat_sha256.h"
 #include "http_util.h"
 #include "http_api.h"
 #include "web_auth.h"
 #include "param.h"
 #include "param_store.h"
+#include "plat_diag.h"
+#include "iob_w5500.h"
+#include "w5500_sim.h"
 #include "bsp_host.h"
+#include "iobus.h"
+#include "inst.h"
+#include "iob_node_sim.h"
+#include "http_server.h"
+#include "plat_net.h"
+#include <time.h>
 
 
 /* ---------------- primitives ---------------- */
@@ -125,9 +137,37 @@ static void t_auth(void) {
     CHECK(auth_check(PLAT_LVL_ADMIN, "2222")); CHECK(!auth_check(4, "2222")); CHECK(!auth_check(0, "x"));
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "has space"), AUTH_INVALID);
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "abc"), AUTH_INVALID);
+    CHECK_EQ(auth_set_password(PLAT_LVL_OPERATOR, "4321"), AUTH_OK);            /* every level: 4 or more */
+    CHECK(auth_check(PLAT_LVL_OPERATOR, "4321"));
+    CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "2345"), AUTH_OK);
+    CHECK(auth_check(PLAT_LVL_ADMIN, "2345"));
+    CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 1);
+    {   /* PBKDF2-HMAC-SHA256 against Python's hashlib.pbkdf2_hmac (CIP-20.3) */
+        uint8_t salt[16], out[32];
+        for (int k = 0; k < 16; ++k) salt[k] = (uint8_t)k;
+        static const char *const want[3] = { "a5e556d185d2e6fa2389864492499123ec3fadd0d5a49d42e1e6be1b6092b450",
+                                             "c901a76139a32bc474b1a03ffcfe8e22d8fefc94383fe941f5806e3962e9ab40",
+                                             "00ac497b56b5da7d97ace8b1cee6cadf7184e18d69dfedd27d289255a76ddef8" };
+        char longpw[71]; memset(longpw, 'x', 70); longpw[70] = 0;
+        const char *pw[3] = { "Cems-2026", "Cems-2026", longpw };
+        const uint32_t it[3] = { 1, 4096, 3 };
+        for (int t = 0; t < 3; ++t) {
+            auth_pbkdf2_for_test(pw[t], salt, 2, it[t], out);
+            char hx[65];
+            for (int k = 0; k < 32; ++k) snprintf(hx + 2 * k, 3, "%02x", out[k]);
+            CHECK(!strcmp(hx, want[t]));
+        }
+    }
+    /* a password stored by older firmware still works, and is re-stored the slow way */
+    auth_set_legacy_for_test(PLAT_LVL_OPERATOR, "5555");
+    CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 0);
+    CHECK(!auth_check(PLAT_LVL_OPERATOR, "4321"));
+    CHECK(auth_check(PLAT_LVL_OPERATOR, "5555"));
+    CHECK_EQ(auth_kdf_for_test(PLAT_LVL_OPERATOR), 1);
+    CHECK(auth_check(PLAT_LVL_OPERATOR, "5555"));
     CHECK_EQ(auth_set_password(PLAT_LVL_ADMIN, "Str0ng!pw"), AUTH_OK);
     CHECK(!auth_check(PLAT_LVL_ADMIN, "2222")); CHECK(auth_check(PLAT_LVL_ADMIN, "Str0ng!pw"));
-    CHECK(!auth_is_default(PLAT_LVL_ADMIN)); CHECK(auth_is_default(PLAT_LVL_OPERATOR));
+    CHECK(!auth_is_default(PLAT_LVL_ADMIN)); CHECK(!auth_is_default(PLAT_LVL_OPERATOR)); CHECK(auth_is_default(PLAT_LVL_FACTORY));
     /* survives a reboot (salt and hash are in FRAM) */
     for (int k = 0; k < 3; ++k) store_tick();
     tnow += 2000; store_tick(); store_tick();
@@ -148,12 +188,12 @@ static void t_auth(void) {
     CHECK_EQ(auth_session(NULL, now, NULL), 0);
     /* lockout after five wrong passwords, open again after 30 s */
     for (int k = 0; k < 5; ++k) CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "0000", now, t2), AUTH_BAD);
-    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "1111", now + 1000, t2), AUTH_LOCKED);
+    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "5555", now + 1000, t2), AUTH_LOCKED);
     CHECK(auth_locked_ms(now + 1000) > 28000);
-    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "1111", now + 31000, t2), AUTH_OK);
+    CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "5555", now + 31000, t2), AUTH_OK);
     /* sessions are capped: the least recently used one is replaced */
     char t[AUTH_SESSIONS + 1][AUTH_TOKEN_LEN + 1];
-    for (int k = 0; k <= AUTH_SESSIONS; ++k) CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "1111", now + 40000 + (uint32_t)k, t[k]), AUTH_OK);
+    for (int k = 0; k <= AUTH_SESSIONS; ++k) CHECK_EQ(auth_login(PLAT_LVL_OPERATOR, "5555", now + 40000 + (uint32_t)k, t[k]), AUTH_OK);
     CHECK_EQ(auth_session(t[0], now + 40010, NULL), 0);
     CHECK_EQ(auth_session(t[AUTH_SESSIONS], now + 40010, NULL), PLAT_LVL_OPERATOR);
     auth_logout(t[AUTH_SESSIONS]);
@@ -200,9 +240,19 @@ static void t_api(void) {
     param_publish();
 
     CHECK_EQ(call("GET", "/", NULL, false), 200); CHECK(has("Content-Encoding: gzip"));
+    CHECK(has("Content-Security-Policy: default-src 'self'") && has("frame-ancestors 'none'") && has("Referrer-Policy: no-referrer"));
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+    CHECK(has("Cache-Control: no-store") && has("X-Content-Type-Options: nosniff") && !has("Content-Security-Policy"));
     CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     CHECK(has("\"product\":\"CEMS Supervisor\"")); CHECK(has("\"mode\":\"local\"")); CHECK(has("\"default_passwords\":true"));
     CHECK(has("\"cal_valid\":false")); CHECK(has("\"level\":\"view\""));
+    CHECK(has("\"max_clients\":4") && has("\"allow_ip\":null") && has("\"protocol_errors\":"));   /* the Modbus panel */
+    plat_diag_cpu_fault(0x0801A2C4u, 0x08004001u, 0x00008200u, 0x40000000u, 0, 0x20000010u, NULL, 5);   /* D4 record on /api/info */
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+    CHECK(has("\"name\":\"bus @0801A2C4\"")); CHECK(has("\"arg\":134324932")); CHECK(has("\"lr\":134234113"));
+    CHECK(has("\"cfsr\":33280")); CHECK(has("\"addr\":536870928"));
+    memset(&plat_diag, 0, sizeof plat_diag);
+    CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
     {   /* a kept connection: chunked body that decodes to the same JSON; fixed-length bodies stay as they are */
         static char plain[16 * 1024];
         size_t pn = capn; memcpy(plain, cap, capn + 1);
@@ -239,7 +289,29 @@ static void t_api(void) {
     CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25"));
     CHECK(has("\"elem\":\"i16\""));
     CHECK_EQ(call("GET", "/api/values?ids=1001,1003,9999", NULL, false), 200);
-    CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25}}"));
+    CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25},\"q\":{}}"));
+    {   /* quality (CIP-10) and state (CIP-09): a measurement not yet updated is "unavailable" */
+        static const plat_meas_def_t m[] = { { .id = 1003, .index = PLAT_MEAS_NO_INDEX, .lo = 0.0f, .hi = 10.0f },
+                                             { .id = 1004, .index = 1, .lo = 0.0f, .hi = 0.0f } };
+        CHECK_EQ(plat_state_init(m, 2), 0);
+        CHECK_EQ(call("GET", "/api/values?ids=1001,1003", NULL, false), 200);
+        CHECK(has("\"v\":{\"1001\":10,\"1003\":1.25},\"q\":{\"1003\":\"unavailable\"}}"));
+        CHECK_EQ(call("GET", "/api/values?ids=1001", NULL, false), 200);
+        CHECK(has("\"q\":{}}"));                                  /* only the IDs asked for */
+        CHECK_EQ(call("GET", "/api/params", NULL, false), 200);
+        CHECK(has("\"name\":\"gain\",\"type\":\"float\",\"min\":0,\"max\":10,\"def\":1.25,\"q\":true,\"meas\":0,"));
+        CHECK(has("\"name\":\"arr\"") && has("\"meas\":[null,1,null]"));  /* an array: one entry per element */
+        CHECK(!has("\"name\":\"setpoint\",\"type\":\"int\",\"unit\":\"%\",\"min\":0,\"max\":100,\"def\":10,\"meas\""));
+        CHECK(!has("\"name\":\"setpoint\",\"type\":\"int\",\"unit\":\"%\",\"min\":0,\"max\":100,\"def\":10,\"q\""));
+        CHECK_EQ(call("GET", "/api/info", NULL, false), 200);
+        CHECK(has("\"api\":2,\"state\":\"INITIALISING\",\"state_since\":0"));
+        plat_state_reset_for_test();
+    }
+    CHECK_EQ(call("GET", "/api/cal", NULL, false), 200);          /* calibration records (CIP-18): none declared */
+    CHECK(has("{\"active\":null,\"due\":false,\"channels\":[],\"history\":[]}"));
+    CHECK_EQ(call("GET", "/api/service", NULL, false), 200);      /* service history (CIP-22, 23.4, 05.4) */
+    CHECK(has("\"run_hours\":0,\"since_service_hours\":0,\"config_crc\":\"") && has("\"log\":[],\"test\":null,"));
+    CHECK(has("\"boardtest\":{\"running\":false,\"done\":false,\"saved\":false,\"tests\":[{\"name\":\"fram\",\"result\":\"skipped\",\"detail\":\"\"}"));
     CHECK_EQ(call("GET", "/api/nothing", NULL, false), 404);
     CHECK_EQ(call("PUT", "/api/values", NULL, false), 405);
 
@@ -252,6 +324,10 @@ static void t_api(void) {
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=50", true), 409); CHECK(has("\"error\":\"mode\""));
     mode(PARAM_MODE_REMOTE);
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=500", true), 400); CHECK(has("\"error\":\"range\""));
+    CHECK_EQ(call("POST", "/api/cal", "cmd=begin&ch=0", true), 400); CHECK(has("\"error\":\"no such channel\""));
+    CHECK_EQ(call("POST", "/api/cal", "cmd=fly", true), 400);
+    CHECK_EQ(call("POST", "/api/service/log", "tech=Sam&work=Pump", true), 403);   /* factory only */
+    CHECK_EQ(call("POST", "/api/service/test", "station=A&r=1,3", true), 400);
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=abc", true), 400); CHECK(has("\"error\":\"value\""));
     CHECK_EQ(call("POST", "/api/write", "id=1003&v=2", true), 403);   /* admin entry */
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=50&id=1002&v=Stack%20A&id=1004&o=1&v=-5,5", true), 200);
@@ -273,8 +349,102 @@ static void t_api(void) {
     /* admin: password change, backup, restore */
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 403);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 403);   /* operator session */
+    CHECK_EQ(call("POST", "/api/iob/find", "addr=246", true), 403);              /* operator session */
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70", true), 403);    /* operator session */
+    CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 403);
     CHECK_EQ(call("POST", "/api/login", "level=admin&password=2222", true), 200);
     CHECK_EQ(call("POST", "/api/password", "level=admin&password=newpass1", true), 200);
+    /* I/O board commissioning: requests are queued for the bus task, results read back */
+    iob_reset();
+    CHECK_EQ(call("POST", "/api/iob/find", "addr=247", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/assign", "from=246&to=246", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/assign", "from=246&to=x", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/find", "addr=246", true), 202);
+    CHECK_EQ(call("POST", "/api/iob/assign", "from=246&to=3", true), 409); CHECK(has("busy"));
+    CHECK_EQ(call("GET", "/api/iob/commission", NULL, false), 200);
+    CHECK(has("\"busy\":true")); CHECK(has("\"op\":\"find\"")); CHECK(has("\"board\":null"));
+    iob_reset();
+    /* temperature zero: the checks (applying it needs a running board with a reading) */
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=0&ch=1&ref=20", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=7&ref=20", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1&ref=2x", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1", true), 400);
+    CHECK_EQ(call("POST", "/api/iob/temp/zero", "board=1&ch=1&ref=20.5", true), 409); CHECK(has("no reading"));
+    CHECK_EQ(call("GET", "/api/iob", NULL, false), 200); CHECK(has("\"temps\":["));
+    /* third-party instruments (inst.h): the status list, and the register explorer queued for the bus task */
+    inst_reset();
+    CHECK_EQ(call("GET", "/api/inst", NULL, false), 200);
+    CHECK(has("\"instruments\":[{\"n\":1,")); CHECK(has("\"points\":[]"));
+    CHECK_EQ(call("POST", "/api/inst/explore", "port=502", true), 400);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&fc=6", true), 400);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&count=x", true), 400);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&fc=3&count=126", true), 409);   /* more registers than a read takes */
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70&unit=1&fc=4&addr=10&count=4", true), 202);
+    CHECK_EQ(call("POST", "/api/inst/explore", "ip=192.168.1.70", true), 409);
+    CHECK_EQ(call("GET", "/api/inst/explore", NULL, false), 200);
+    CHECK(has("\"busy\":true")); CHECK(has("\"ip\":\"192.168.1.70\"")); CHECK(has("\"fc\":4")); CHECK(has("\"count\":4"));
+    inst_reset();
+    /* on Ethernet: list the boards on the network, give one a board slot's IP and address */
+    {
+        static iob_simnet_t net; static iob_node_t nd;
+        iob_simnet_init(&net, 0xC0A80132u);
+        iob_node_init(&nd, 0);                                   /* new: no IP, no address */
+        memcpy(nd.serial, "CIO-26-00007", 12);
+        iob_simnet_add(&net, &nd);
+        iob_init_eth(&net.port, &net.disc);
+        iob_link = IOB_LINK_ETH;                                 /* the main port */
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=00&board=1", true), 400);
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=4", true), 400);
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000000000000000000000000&board=1&ip=10.0.0.5", true), 400);   /* not the supervisor's subnet */
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 202);
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 409);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"busy\":true")); CHECK(has("\"link\":\"ethernet\"")); CHECK(has("\"ip\":\"192.168.1.50\""));
+        CHECK(has("{\"n\":2,\"enabled\":false,\"address\":2,\"ip\":\"192.168.1.62\"}"));
+        iob_cycle(0);                                            /* the bus task does it */
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"result\":\"OK\"") || has("\"ok\":true"));
+        CHECK(has("\"uid\":\"000500040003000200010000\"")); CHECK(has("\"serial\":\"CIO-26-00007\""));
+        CHECK(has("\"new\":true")); CHECK(has("\"slot\":0"));
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=2", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(nd.ip, 0xC0A8013Eu); CHECK_EQ(nd.address, 2u); CHECK_EQ(nd.master_ip, 0xC0A80132u);
+        CHECK_EQ(nd.mask, 0xFFFFFF00u); CHECK_EQ(nd.gw, 0xC0A80101u);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"op\":\"set\"")); CHECK(has("\"new\":false")); CHECK(has("\"slot\":2"));
+        iob_init_eth(NULL, NULL);
+        iob_reset();
+    }
+    /* the same on the I/O port (the product default): through the W5500, with the I/O port's own
+     * IP as the supervisor's, not the main port's */
+    {
+        static iob_simnet_t net; static iob_node_t nd; static w5500_sim_t chip; static iob_w5500_t io;
+        iob_simnet_init(&net, 0);
+        iob_node_init(&nd, 0);
+        memcpy(nd.serial, "CIO-26-00008", 12);
+        iob_simnet_add(&net, &nd);
+        w5500_sim_init(&chip);
+        w5500_sim_simnet(&chip, &net);
+        static const uint8_t mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
+        iob_w5500_init(&io, &chip.bus, mac);
+        iob_init_ioport(&io.port, &io.disc);
+        iob_link = IOB_LINK_IOPORT;
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"link\":\"ethernet\",\"port\":\"io\"")); CHECK(has("\"supervisor\":{\"dhcp\":false,\"ip\":\"192.168.1.60\",\"mask\":\"255.255.255.0\",\"gw\":\"0.0.0.0\"}"));
+        CHECK_EQ(call("POST", "/api/iob/net/find", "", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(call("GET", "/api/iob/net", NULL, false), 200);
+        CHECK(has("\"ok\":true")); CHECK(has("\"serial\":\"CIO-26-00008\"")); CHECK(has("\"new\":true"));
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=1&ip=192.168.1.60", true), 400);   /* the I/O port's own */
+        CHECK_EQ(call("POST", "/api/iob/net/set", "uid=000500040003000200010000&board=3", true), 202);
+        iob_cycle(0);
+        CHECK_EQ(nd.ip, 0xC0A8013Fu); CHECK_EQ(nd.address, 3u); CHECK_EQ(nd.master_ip, 0xC0A8013Cu);
+        CHECK_EQ(nd.mask, 0xFFFFFF00u); CHECK_EQ(nd.gw, 0u);
+        CHECK(chip.connects == 0u && chip.commands > 0u);         /* discovery only: no Modbus TCP yet */
+        iob_init_ioport(NULL, NULL);
+        iob_link = IOB_LINK_IOPORT;
+        iob_reset();
+    }
     CHECK(auth_check(PLAT_LVL_ADMIN, "newpass1"));
     tnow += 2000; store_tick(); store_tick();                    /* let the store save */
     CHECK_EQ(call("GET", "/api/backup", NULL, false), 200);
@@ -302,6 +472,58 @@ static void t_api(void) {
     CHECK_EQ(call("POST", "/api/write", "id=1001&v=1", true), 401);
 }
 
+/* ---------------- the socket loop: waiting connections (http_server.c) ---------------- */
+static int cli(uint16_t port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a = { .sin_family = AF_INET, .sin_port = htons(port) };
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    return connect(fd, (struct sockaddr *)&a, sizeof a) == 0 ? fd : -1;
+}
+static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (double)t.tv_sec + (double)t.tv_nsec * 1e-9; }
+/* poll until fd has an answer (at most ~1 s of polling); true if it starts like an HTTP response */
+static bool answered(http_server_t *s, int fd) {
+    for (int i = 0; i < 50; i++) {
+        http_poll(s, 20);
+        char b[16] = { 0 };
+        if (recv(fd, b, sizeof b - 1, MSG_DONTWAIT) > 0) return !strncmp(b, "HTTP/1.", 7);
+    }
+    return false;
+}
+static void t_server(void) {
+    static uint8_t buf[4096];
+    static http_server_t s;
+    const char *req = "GET /nothing HTTP/1.1\r\nHost: x\r\n\r\n";
+    uint16_t port = (uint16_t)(20000 + (unsigned)getpid() % 20000u);
+    CHECK(http_open(&s, port, buf, sizeof buf) == 0);
+    /* three spare sockets that never speak, and a fourth beyond the table (in the backlog) */
+    int a = cli(port), b = cli(port), c = cli(port), d = cli(port);
+    CHECK(a >= 0 && b >= 0 && c >= 0 && d >= 0);
+    for (int i = 0; i < 5; i++) http_poll(&s, 10);
+    double t0 = now_s();
+    CHECK(send(c, req, strlen(req), 0) > 0);
+    CHECK(answered(&s, c));                             /* not held by the silent ones */
+    CHECK(now_s() - t0 < 1.0);
+    CHECK(send(d, req, strlen(req), 0) > 0);            /* a slot is free again: d is accepted and served */
+    CHECK(answered(&s, d));
+    CHECK(s.served == 2 && s.silent == 0 && s.timeouts == 0);
+    /* a socket closed without a request goes quietly */
+    int e = cli(port);
+    for (int i = 0; i < 3; i++) http_poll(&s, 10);
+    closesocket(e);
+    for (int i = 0; i < 5; i++) http_poll(&s, 10);
+    CHECK(s.silent == 1 && s.served == 2);
+    /* the silent ones are closed after HTTP_PENDING_MS */
+    bsp_host_advance_ms(HTTP_PENDING_MS + 100u);
+    http_poll(&s, 0);
+    char x;
+    CHECK(recv(a, &x, 1, 0) == 0 && recv(b, &x, 1, 0) == 0);
+    CHECK(s.silent == 3);
+    closesocket(a); closesocket(b); closesocket(c); closesocket(d);
+    http_close(&s);
+}
+
 void test_http_all(void) {
     RUN(t_sha256);
     RUN(t_fmt_float);
@@ -309,4 +531,5 @@ void test_http_all(void) {
     RUN(t_parse_head);
     RUN(t_auth);
     RUN(t_api);
+    RUN(t_server);
 }

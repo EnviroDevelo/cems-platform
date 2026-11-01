@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "plat_diag.h"
+#include "plat_config.h"
 
 #define DIAG_MAGIC 0xCE5D1A60u
 
@@ -30,6 +31,16 @@ void plat_diag_boot(bsp_reset_cause_t cause) {
     }
     plat_diag.boots++;
     if (cause == BSP_RESET_IWDG) plat_diag.wdg_resets++;
+    bool crash = cause == BSP_RESET_IWDG || cause == BSP_RESET_WWDG || (cause == BSP_RESET_SOFTWARE && plat_diag.fault_armed);
+    if (!crash) {
+        plat_diag.loop_crashes = 0; plat_diag.loop_run_ms = 0;
+    } else if (plat_diag.loop_crashes == 0 || plat_diag.loop_run_ms + plat_diag.up_ms > PLAT_LOOP_WINDOW_MS) {
+        plat_diag.loop_crashes = 1; plat_diag.loop_run_ms = plat_diag.up_ms;   /* the first of a new series */
+    } else {
+        plat_diag.loop_crashes++; plat_diag.loop_run_ms += plat_diag.up_ms;
+    }
+    plat_diag.up_ms = 0;
+    plat_diag.fault_armed = 0;
     plat_diag.last_reset_cause = (uint32_t)cause;
     plat_diag.check = diag_sum(&plat_diag);
 }
@@ -40,7 +51,59 @@ void plat_diag_fault(plat_fault_t f, int32_t task, const char *name, uint32_t ar
     plat_diag.fault_task = task;
     plat_diag.fault_ms = now_ms;
     plat_diag.fault_arg = arg;
+    plat_diag.fault_armed = 1;
+    plat_diag.fault_lr = plat_diag.fault_cfsr = plat_diag.fault_hfsr = plat_diag.fault_addr = 0;
     memset(plat_diag.fault_name, 0, sizeof plat_diag.fault_name);
     if (name) strncpy(plat_diag.fault_name, name, sizeof plat_diag.fault_name - 1u);
     plat_diag.check = diag_sum(&plat_diag);
+}
+
+void plat_diag_tick(uint32_t now_ms) {
+    plat_diag.up_ms = now_ms;
+    if (plat_diag.loop_crashes && now_ms > PLAT_LOOP_WINDOW_MS) { plat_diag.loop_crashes = 0; plat_diag.loop_run_ms = 0; }
+    plat_diag.check = diag_sum(&plat_diag);
+}
+
+bool plat_diag_reboot_loop(void) { return plat_diag.loop_crashes >= PLAT_LOOP_RESETS; }
+
+/* CFSR bits used below (ARMv8-M) */
+#define CFSR_MMARVALID  (1u << 7)
+#define CFSR_BFARVALID  (1u << 15)
+#define CFSR_STKOF      (1u << 20)
+#define HFSR_VECTTBL    (1u << 1)
+
+void plat_diag_cpu_fault(uint32_t pc, uint32_t lr, uint32_t cfsr, uint32_t hfsr,
+                         uint32_t mmfar, uint32_t bfar, const char *task, uint32_t now_ms) {
+    /* no printf here: this runs in the fault handler */
+    const char *kind = (cfsr & CFSR_STKOF) ? "stack" : (cfsr & 0xFFFF0000u) ? "usage" : (cfsr & 0x0000FF00u) ? "bus"
+                     : (cfsr & 0x000000FFu) ? "mem" : (hfsr & HFSR_VECTTBL) ? "vect" : "hard";
+    char name[sizeof plat_diag.fault_name];
+    size_t n = 0;
+    while (kind[n]) { name[n] = kind[n]; ++n; }
+    if ((cfsr & CFSR_STKOF) && task && task[0]) {      /* the task matters more than a PC that isn't there */
+        n = 0; name[n++] = 's'; name[n++] = 't'; name[n++] = 'k'; name[n++] = ' ';
+        while (*task && n < sizeof name - 1u) name[n++] = *task++;
+    } else {
+        name[n++] = ' '; name[n++] = '@';
+        for (int sh = 28; sh >= 0; sh -= 4) name[n++] = "0123456789ABCDEF"[(pc >> sh) & 0xFu];
+    }
+    name[n] = 0;
+    plat_diag_fault(PLAT_FAULT_HARDFAULT, -1, name, pc, now_ms);
+    plat_diag.fault_lr = lr;
+    plat_diag.fault_cfsr = cfsr;
+    plat_diag.fault_hfsr = hfsr;
+    plat_diag.fault_addr = (cfsr & CFSR_BFARVALID) ? bfar : (cfsr & CFSR_MMARVALID) ? mmfar : 0u;
+    plat_diag.check = diag_sum(&plat_diag);
+}
+
+const char *plat_fault_text(uint32_t f) {
+    static const char *const t[] = {
+        [PLAT_FAULT_NONE] = "none",
+        [PLAT_FAULT_TASK_SILENT] = "a task stopped checking in (name = the task); the watchdog restarted the unit",
+        [PLAT_FAULT_STACK_OVERFLOW] = "a task overran its stack (name = the task)",
+        [PLAT_FAULT_MALLOC_FAILED] = "the FreeRTOS heap ran out",
+        [PLAT_FAULT_ASSERT] = "a software check failed (name = file or table, arg = line or bad ID)",
+        [PLAT_FAULT_HARDFAULT] = "CPU fault (name = mem/bus/usage/stack, arg = PC, lr = caller)",
+    };
+    return f < sizeof t / sizeof t[0] ? t[f] : "unknown";
 }

@@ -28,6 +28,9 @@
  * set; the application must block measurement (param_store_calibration_valid()).
  * The defaults are NOT written over the factory region until someone actually
  * changes a factory value, so a corrupted image is never silently replaced.
+ * On a new (blank) FRAM the unit's own history (RF_UNIT: service hours, log) is
+ * saved in an image marked uncalibrated, which keeps CAL_INVALID across power
+ * cuts until a factory value is set.
  *
  * Threading
  *   param_store_boot()          once, before the first scan (single-threaded)
@@ -44,6 +47,7 @@
 
 #define RF_FACTORY 0x01u
 #define RF_SECRET  0x02u   /* never in a backup file, never restored from one (password hashes) */
+#define RF_UNIT    0x04u   /* this unit's own history (hours, service log): in a backup, never restored from one */
 
 typedef struct {
     uint16_t    id;        /* shares the parameter ID space, >= PARAM_ID_APP_FIRST */
@@ -98,6 +102,8 @@ typedef struct {
 #define STORE_SAVE_PERIOD_MS 1000u       /* changes reach FRAM within about 1 s */
 #endif
 #define STORE_HDR_SIZE  32u
+#define STORE_BACKUP_HDR 20u                 /* the backup file's own header */
+#define STORE_BACKUP_MAX (STORE_BACKUP_HDR + STORE_FAC_SLOT + STORE_USR_SLOT)   /* the largest backup file */
 extern const store_layout_t store_layout_default;   /* the map above */
 
 /* Status bits (also published as parameter PARAM_ID_STORE_STATUS) */
@@ -130,6 +136,8 @@ void param_store_poll(uint32_t now_ms);       /* store task; returns quickly, ca
 
 bool          param_store_calibration_valid(void);
 uint32_t      param_store_status(void);
+uint32_t      param_store_nvm_size(unsigned *parts);   /* settings memory found: bytes (0 = none), chips */
+int           param_store_nvm_test(void);            /* store task only: address-line and chip test, bytes restored. 1 pass, 0 fail, -1 no memory */
 store_stats_t param_store_stats(void);
 
 /* Backup file: both regions as currently stored, wrapped with its own CRC.
@@ -150,6 +158,15 @@ bool param_store_import_busy(void);
  * valid until then. */
 int  param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level);
 bool param_store_job_done(int32_t *result);
+
+/* The backup/restore buffer (STORE_BACKUP_MAX bytes) is the store's own staging area,
+ * lent to the web server between saves, so the server needs no second copy (RAM).
+ * param_store_lease_start() is a job like the others (result = the size once granted);
+ * then param_store_lease_buf() is the buffer for export and import jobs, and no save
+ * starts until param_store_lease_end(). Changes made meanwhile are saved after it. */
+int      param_store_lease_start(void);
+uint8_t *param_store_lease_buf(void);       /* NULL when not leased */
+void     param_store_lease_end(void);
 
 /* Platform-owned retained blocks, IDs PARAM_ID_PLAT_BLOCK_FIRST..999 (weak; web_auth.c). */
 const retain_def_t *plat_store_blocks(size_t *n);

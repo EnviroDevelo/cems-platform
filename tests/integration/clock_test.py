@@ -3,6 +3,7 @@
 time server written here (UDP; it can answer early or late, unsynchronised, or not at all).
 
     python3 tests/integration/clock_test.py"""
+# Requirements proved here: CIP-02.2, 02.5, 17.4.
 import http.cookiejar, json, os, socket, ssl, struct, subprocess, sys, tempfile, threading, time
 import urllib.parse, urllib.request
 

@@ -67,11 +67,50 @@ typedef struct {
 typedef struct {
     const char *vendor, *product, *revision;   /* 43/14 device identification */
     uint8_t     write_level;                   /* plat_level_t Modbus writes act with (default operator) */
+    uint16_t    map_version;                   /* the application's register map: bump when an address moves
+                                                  or a value goes (CIP-14.4); shown at input register 9001 */
 } mb_ident_t;
 
-/* Build the map index. Checks that every ID exists, the format suits the entry,
- * and no two entries in a table overlap. Returns 0, or the index of the first
- * bad entry + 1 (call after param_init). */
+/* The platform's own block, the same in every product (CIP-01.6, 14.4, 15.1, 15.2): input
+ * registers 9000-9199 (PLAT_MB_BLOCK_ADDR), added to every map. 0-based addresses:
+ *   9000 block layout version (2)       9001 the application's map version (mb_ident_t)
+ *   9002 heartbeat: +1 every 100 ms      9003 instrument state (PLAT_ST_*)
+ *   9004 s since the last Modbus or web request (65535 = none, or longer)
+ *   9005 alarms active                   9006 common alarm bits (ACOM_*)
+ *   9007-9008 hardware revision (U32)    9009-9010 serial number (U32)
+ *   9011-9012 firmware version (U32, major<<16 | minor<<8 | patch)   9013 web API version
+ *   9014-9015 uptime, s (U32)            9016-9017 supply, mV (U32; 0 = not measured)
+ *   9018-9019 state entered (U32, local s since 1970)
+ *   9020-9051 quality of measurement 0..31 (PLAT_Q_*)
+ *   9052-9067 product (32 bytes text)    9068-9075 vendor (16)    9076-9083 firmware version (16)
+ *   layout 2 (added; nothing above moved):
+ *   9084-9085 clock (U32, local s since 1970; 0 = not set)   9086 clock synchronised (0/1)
+ *   9087 clock source (PLAT_CLK_SRC_*)  9088-9089 clock last set or confirmed (U32)
+ *   layout 3 (added): 9090 values forced on Modbus now (mb_force_*; 0 = none)
+ * 32-bit values high word first; text two bytes per register, first byte high, NUL padded. */
+#define MB_BLOCK_REGS 91u
+/* The standard CEMS block (VDI 4201-3, docs/MODBUS_STANDARD_BLOCK.md): input registers 7000-8999
+ * (PLAT_MB_STD_ADDR), the same in the holding registers, read-only (writes: exception 02), built
+ * from the emissions engine's parameters on each read; slots without one read NaN. Word order:
+ * param 335 mb_std_words. Its forceable values are the engine's banks (450-457). 43/14 gives
+ * its self-description (conformity 0x83). A product's map may not use 7000-8999 (input, holding) or coils 8000-8099. */
+void mb_block_scan(uint32_t now_ms);     /* scan task: heartbeat, link age, uptime */
+
+/* The standard block's registers as documented items, for /api/modbus/map and the handover file:
+ * every item of a fitted slot, then the block's globals once, in address order (input registers;
+ * the holding registers mirror them). fmt is MBF_U16, MBF_U32 or MBF_F32; slot 0xFF = global. */
+typedef struct {
+    uint16_t addr;
+    uint8_t  count, fmt, slot;
+    const char *slot_name, *item, *unit;  /* unit NULL: none */
+} mb_std_item_t;
+extern uint8_t plat_mb_std_words;        /* param 335: the block's word order */
+void mb_std_each(void (*fn)(const mb_std_item_t *it, void *ctx), void *ctx);
+
+/* Build the map index: the platform's block plus the application's map. Checks that every ID
+ * exists, the format suits the entry, and no two entries in a table overlap (an application
+ * entry in 9000-9199 of the input registers overlaps the block). Returns 0, or the index of the
+ * first bad application entry + 1 (call after param_init). */
 int  mb_init(const mb_map_t *map, size_t n, const mb_ident_t *ident);
 uint16_t mb_entry_span(const mb_map_t *e);    /* addresses (bits or registers) an entry covers; 0 if invalid */
 
@@ -81,6 +120,38 @@ uint16_t mb_pdu(const uint8_t *req, uint16_t len, uint8_t *resp, uint16_t cap);
 
 /* Statistics */
 typedef struct { uint32_t requests, exceptions, writes_queued; } mb_stats_t;
+/* The map in force (the platform's block and the application's), sorted by table and address:
+ * for the register map document and the interface snapshot (tools/modbus_map.c). */
+size_t mb_entry_count(void);
+const mb_map_t *mb_entry_at(size_t i, uint16_t *span);   /* NULL past the end */
 mb_stats_t mb_stats(void);
+
+/* Forced values (commissioning, Gary 29 Oct): at admin login, from the touchscreen or the web, a
+ * value the PLC reads can be forced for PLAT_MB_FORCE_MS, so the control system can be checked
+ * against known values; then it reverts by itself. A force changes ONLY what Modbus serves:
+ * the screens, alarms, logs and control keep the real value. Test bits are forced bools.
+ *  - Forceable (mb_forceable): a numeric or bool parameter (or array element) on Modbus that is
+ *    read-only to Modbus (input registers or discrete inputs only, or a PF_RO parameter); never a
+ *    setting, a text, the block's versions, the identity (serial, revisions) or the clock.
+ *  - Any LOCAL/REMOTE mode. Setting it again restarts the time. Not kept over a restart.
+ *  - The master can tell: input register 9090 counts the forces, common alarm bit ACOM_FORCED.
+ *  - Every set, clear and expiry is in the event log (LOG_EV_FORCE).
+ * Any task: set/clear from the web or touchscreen task, expiry in mb_block_scan (scan task). */
+#ifndef PLAT_MB_FORCE_MS
+#define PLAT_MB_FORCE_MS 30000u
+#endif
+#define MB_FORCE_MAX     16u
+#define MB_FORCE_SCALAR  0xFFFFu        /* index of a value that is not an array */
+typedef struct { uint16_t id, index; double v; uint32_t left_ms; uint8_t src, level; } mb_force_t;
+bool     mb_forceable(uint16_t id);
+/* param_err_t: OK; PERR_ACCESS below admin or from Modbus; PERR_NO_ID not forceable; PERR_RANGE bad
+ * index, or v not a value of the parameter's type (range limits do not apply: an out-of-range value
+ * can be simulated); PERR_BUSY MB_FORCE_MAX values forced already. Bools: v != 0. */
+int      mb_force_set(uint16_t id, uint16_t index, double v, uint8_t src, uint8_t level, uint32_t now_ms);
+int      mb_force_clear(uint16_t id, uint16_t index, uint8_t src, uint8_t level);   /* PERR_NO_ID: not forced */
+int      mb_force_clear_all(uint8_t src, uint8_t level);
+unsigned mb_force_count(void);
+bool     mb_force_active(uint16_t id, uint16_t index);   /* index MB_FORCE_SCALAR for a scalar */
+bool     mb_force_get(unsigned i, mb_force_t *f, uint32_t now_ms);   /* i < mb_force_count() */
 
 #endif

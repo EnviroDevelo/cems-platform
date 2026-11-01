@@ -1,7 +1,7 @@
 # Bringing the platform up on the STM32H573I-DK (STM32CubeIDE)
 
 These steps set up the CubeIDE project that the platform sources drop into. The
-platform needs four things from CubeMX: the HAL, a TIM timebase, RTC, IWDG, the GPIO
+platform needs four things from CubeMX: the HAL, RTC, IWDG, the GPIO
 labels and FreeRTOS. Everything else stays in the platform files.
 
 Check each value marked **(check)** against the DK user manual or schematic before
@@ -9,15 +9,17 @@ relying on it. Those are the ones I couldn't confirm from the files here.
 
 ## 1. Project
 
-1. STM32CubeIDE → New STM32 Project → Board Selector → **STM32H573I-DK**.
+1. **STM32CubeMX** (standalone: from STM32CubeIDE 2.0 the IDE no longer has CubeMX built in, and its New STM32 Project wizard makes an empty project) → New Project → Board Selector → **STM32H573I-DK**. In the Board Project Options dialog press **Unselect All** (no ST BSP drivers: the platform drives the LEDs and button by pin label) and leave "Generate demonstration code" off. Project Manager → Toolchain/IDE **STM32CubeIDE**; Generate Code, then in CubeIDE File → Import → Existing Projects into Workspace. (First bring-up, 28 Oct: project `CEMS_CORE`.)
 2. When asked about TrustZone, choose **without TrustZone** (the platform uses the `ARM_CM33_NTZ` FreeRTOS port).
 3. Don't initialise all peripherals to their default mode. Add only the ones below, so the project stays readable.
+4. **Memory for stacks (Gary, 25 Oct: stack overflows on earlier DK prototypes; set these large from the start).** Project Manager → Project → Linker Settings: **Minimum Stack Size 0x2000** (8 KB, the main stack: interrupts, and start-up before the scheduler, which includes the HTTPS key generation on first boot) and **Minimum Heap Size 0x1000** (4 KB, the C library's heap). ST's defaults are 0x400 and 0x200, too small. These are minimums the linker checks; the build fails rather than run short.
+   The task stacks are not set in CubeMX: the platform allocates them itself (`plat_config.h` `PLAT_STACK_*`, 85 KB in all, about twice the first sizes), as it does the FreeRTOS heap (64 KB, section 4) and the idle and timer task stacks (`FreeRTOSConfig.h`). Leave CubeMX's FreeRTOS task list empty. A task that still runs past its stack is stopped by the CPU's stack limit and the next boot names it ("stk scan" on the System screen; `PLATFORM.md` D4). Trim the sizes only after the 72-hour soak on hardware, from the margins shown under `health` on `/api/info`.
 
 ## 2. System core
 
 | Peripheral | Setting |
 |---|---|
-| SYS | Timebase source: **TIM6** (FreeRTOS needs SysTick) |
+| SYS | Timebase source: **SysTick** (the default). Not a TIM: on the DK a TIM6 timebase froze the start-up after a power-up (28 Oct). `bsp_stm32h5.c` supplies `HAL_InitTick`/`HAL_GetTick` (the DWT cycle counter before the scheduler, the FreeRTOS tick after), so CubeMX's SysTick setup is never used and FreeRTOS keeps SysTick |
 | RCC | Clocks as the board default gives (250 MHz SYSCLK). Enable LSE for the RTC **(check that the DK fits a 32.768 kHz crystal)** |
 | RTC | Activate clock source and calendar. Hour format 24, binary data format. Clock source LSE. The product board has a VBAT supply (coin cell or supercap; `docs/HARDWARE.md` H1) so the clock survives a power cut; without one every power-up starts "clock not set" until someone, the PLC or the time server sets it |
 | IWDG | Prescaler 32, reload 999: about 1 s at the nominal 32 kHz LSI. The supervisor kicks it every 100 ms |
@@ -141,8 +143,10 @@ SPI kernel clock (11 MHz or less at start-up, 30 MHz or less after):
 Add `platform/ui/`, `platform/os/plat_ui_task.c` and `port/stm32h5/eve_bus_stm32h5.c`.
 Bring-up order (spec): the chip ID (REG_ID = 0x7C) answers, then the first frame
 shows. If the touch doesn't respond, the module's touch controller may need
-`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c) **(check with Riverdi which
-controller the uxTouch variant uses)**. If the picture is shifted or flickers, the
+`touch_config` in `eve_panel_rvt70h` (platform/ui/eve.c). The uxTouch variant uses the ILITEK
+ILI2132A; Riverdi's riverdi-eve-lib (IPS_70) leaves REG_TOUCH_CONFIG at the BT817's default
+(controller auto-detect), and so does `touch_config = 0` here (checked 25 Oct, along with the
+timing, PCLK, GPIOX and REG_FREQUENCY values, which match the library). If the picture is shifted or flickers, the
 timing values came from Riverdi's library for this module and are worth checking
 against its datasheet.
 
@@ -154,6 +158,175 @@ and the preprocessor define `MBEDTLS_CONFIG_FILE="tls_config.h"` (Project →
 Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor). The RNG must be
 enabled (3b). Browse to `https://192.168.1.50/` and accept the certificate once, after
 comparing its fingerprint with the touchscreen's System screen.
+
+## 3h. The I/O port: W5500 for the I/O boards (HARDWARE.md H5, 25 Oct)
+
+The I/O boards are on their own network, on the I/O port: a WIZnet W5500 on its own SPI, which
+runs TCP/IP itself, so this traffic never enters lwIP (`iob_link` = 2, the default;
+`PLATFORM.md` 5k). Product board pins (PCB thread, `docs/CORE_PCB.md` 4):
+
+| CubeMX | Setting |
+|---|---|
+| SPI4 (PE12 SCK, PE13 MISO, PE14 MOSI) | Full-Duplex Master, 8 bits, Motorola, MSB first, CPOL low, CPHA 1 edge (mode 0), NSS **software**. Prescaler for **at most 33 MHz** from SPI4's kernel clock **(check against the clock tree)**. No DMA, no interrupt |
+| PE11 | GPIO output, label **W5500_CS**, initial level **high**, push-pull, speed high |
+| PE10 | GPIO output, label **W5500_RST**, initial level **high** (running), push-pull |
+| PE9 | GPIO input, label **W5500_INT**, pull-up (the chip's INTn; reserved for an interrupt-driven wait, not used yet) |
+| PD3 | GPIO output, label **CS_EXP**, initial level **high**, push-pull: the SPI expansion header's chip select (CORE_PCB.md 16; 10k pull-up on the board). Its module's MISO joins SPI4 only while it is low, so it must stay high: no module driver yet (planned: AD5755-1, 4 x 4-20 mA out) |
+| PD7 | GPIO input, label **EXP_INT**, **no pull** (the module's open-drain attention line, low = attention; not used yet) |
+
+In `main.h` (USER CODE section), only if the handle is not `hspi4`:
+
+```c
+#define W5500_SPI_HANDLE hspi2      /* the handle CubeMX generated for the W5500's SPI */
+```
+
+Add `port/stm32h5/w5500_stm32h5.c`, `platform/core/w5500.c` and `platform/core/iob_w5500.c`.
+Without the `W5500_CS` label there is no I/O port (`bsp_w5500()` returns NULL): with
+`iob_link` = 2, every enabled board then reports "not responding" and `iob_port_status`
+(parameter 105) reads 0.
+
+Settings: `iob_port_ip` (103, default 192.168.1.60) and `iob_port_prefix` (104, default 24) are
+the I/O port's own address. It is a separate network with its own stack, so it may use the same
+numbers as the client network without any clash; nothing routes between the two. The port's MAC
+is the main port's with bit 1 of the last byte flipped. `iob_port_status` shows the chip found
+(1) and the cable in (2).
+
+**On the DK** (no W5500 on the board): either wire a W5500 module (WIZ850io or any W5500
+breakout, 3.3 V) to a free SPI with the three GPIO labels above, or set `iob_link` = 1 to run the
+boards on the DK's own Ethernet port through lwIP (the same protocol; the boards then share the
+client network).
+
+## 3i. Supply sense: the 24 V supply on PC0 (CIP-07, CORE_PCB.md 12)
+
+The core board divides the 24 V supply (after the reverse diode) by 13.20 onto PC0. The firmware
+reads it every ms, averages 16 readings, raises alarm 20 SUPPLY outside 19-30 V and, below
+16 V, stops starting FRAM and log-flash writes so the brown-out finds nothing half-written
+(`PLATFORM.md` 5l).
+
+| CubeMX | Setting |
+|---|---|
+| ADC1 | 12-bit, right aligned, **scan conversion mode enabled**, 2 regular conversions, software trigger, continuous **off**, DMA **off**, overrun: data overwritten |
+| Rank 1 | Channel of **PC0** (ADC1_INP10), sampling time 47.5 cycles or more |
+| Rank 2 | **Vrefint** channel, sampling time 47.5 cycles or more (it needs the long sample) |
+| PC0 | label **SUPPLY_SENSE** (CubeMX sets it analog) |
+| ADC clock | any, up to the datasheet maximum; one reading is two conversions, a few µs |
+
+In `main.h` (USER CODE section), only if they differ:
+
+```c
+#define SUPPLY_ADC_HANDLE   hadc2   /* if not hadc1 */
+#define SUPPLY_DIVIDER_X100 1320    /* the divider ratio x 100 */
+```
+
+Add `port/stm32h5/supply_stm32h5.c` and `platform/core/plat_power.c`. Without the `SUPPLY_SENSE`
+label the board does not measure it: no SUPPLY alarm, no power-fail hold, parameter 305 reads 0.
+**On the DK**, PC0 is not wired to a supply divider: leave the label off, or feed PC0 from a
+potentiometer (0-2.4 V reads as 0-31.7 V) to try the alarm and the hold. Check the reading
+against a meter on the first core board (the VREFINT calibration value is taken at 3.3 V; the
+reading is about 0.4 V below the terminal voltage because of the diode).
+
+## 3j. Board revision straps: PE7 and PE8 (CIP-01.3, CORE_PCB.md 12)
+
+| CubeMX | Setting |
+|---|---|
+| PE7 | GPIO_Input, **no pull-up or pull-down** (the board has the resistors), label **HW_REV0** |
+| PE8 | GPIO_Input, no pull, label **HW_REV1** |
+
+The firmware reads them once at start (`bsp_hw_straps` in `supply_stm32h5.c`): revision =
+PE8 x 2 + PE7, shown as parameter 319 `board_rev` and `/api/info` `board_rev`. A firmware image
+whose header names other board revisions is refused (`FW_E_HARDWARE`), and alarm 22 HW_REV
+(warning) says when the straps disagree with the factory `hw_rev`. Without the labels the board
+has no straps: nothing is checked. **On the DK** leave them off (PE7/PE8 float there).
+
+**Build ID.** Add `PLAT_BUILD_ID="<git short hash>"` to the compiler's defines (Project >
+Properties > C/C++ Build > Settings > MCU GCC Compiler > Preprocessor), for example from a
+pre-build step; it shows as `/api/info` `build` and goes in the image header with
+`tools/mkfwimage.py --build-id`. Without it the build says "dev".
+
+## 3k. External PSRAM: APS6404L on OCTOSPI1 (CORE PCB only, Gary 29 Oct)
+
+The CORE PCB carries an 8 MB QSPI PSRAM (U10, AP Memory APS6404L-3SQR). The DK has none: leave
+all of this out of the DK project, and the firmware keeps every buffer on chip.
+
+| CubeMX | Setting |
+|---|---|
+| OCTOSPI1 | Mode **Quad SPI**, Port 1, chip select NCS1. Pins **PB2** CLK (AF9), **PB10** NCS (AF9), **PB1** IO0 (AF6), **PB0** IO1 (AF6), **PC2** IO2 (AF9), **PA6** IO3 (AF6), speed Very High. Parameters: any (the driver sets them) |
+| DCACHE1 | Activated (caches the PSRAM region; nothing else uses it) |
+| Clock | OCTOSPI1 kernel clock = HCLK (250 MHz); the driver divides by 4 |
+| main.h (USER CODE) | `#define PSRAM_XSPI_HANDLE hospi1` |
+| Preprocessor | `PLAT_PSRAM=1` |
+
+Linker script (`STM32H573VITX_FLASH.ld`): add to MEMORY
+`PSRAM (rw) : ORIGIN = 0x90000000, LENGTH = 8M`, and paste `port/stm32h5/extram_section.ld`
+just before `._user_heap_stack`, after the `.noinit` block (the compile check does the same).
+
+What happens: `bsp_init` maps the chip (`psram_stm32h5.c`), reads its ID, tests every address and
+data line, and zeroes the `.extram` section. The TLS pool (80 KB) and the settings store's
+staging block (45 KB) are placed there (`PLAT_EXTRAM`), so the MCU keeps about 300 KB free. If the
+check fails, the unit stops at start-up with outputs safe and fault "psram" in the fault record.
+**Before the PCB:** the same chip on a SOIC-8 breakout wired to a NUCLEO-H563ZI on the same pins
+(the DK's OCTOSPI1 belongs to its own flash) runs this code unchanged (H563 and H573 share the
+OCTOSPI). On flying leads add `PSRAM_CLK_PRESCALER=24u` (10 MHz) to the defines, and open the
+Nucleo's solder bridge to the LED on PB0. Bench checks on the first board: an HTTPS handshake time against the DK's (the TLS pool is in the
+PSRAM; `TLS_POOL_PLACE=` empty puts it back on chip), and a backup/restore.
+
+## 3l. The I/O node's field chips (CORE PCB rev 0.2 in the node role, CORE_PCB.md 14)
+
+One image serves both roles (J7). On the CORE PCB the node role drives the real field chips through
+`node/drivers` on SPI4, shared with the W5500. Leave these out for the DK and the Nucleo; without
+the `CS_A` label the node falls back to the platform's pins (the Nucleo bench).
+
+- **Sources:** add `node/drivers/*.c`, `port/stm32h5/node_io_stm32h5.c` and `port/stm32h5/spi4_bus.c`;
+  include paths `node/drivers` and `port/node_stm32g0` (for `node_port.h`).
+- **SPI4** stays as in 3h (mode 0, the W5500's clock). The firmware switches the mode and divider per
+  transaction: 4 MHz for the field chips, mode 1 for the ADS124S08 (`spi4_bus.h`).
+- **GPIO outputs, initial high:** `CS_A` PE2, `CS_B` PE3, `CS_IN` PE4, `CS_T` PE15, `CS_AI` PE0.
+- **GPIO outputs, initial low:** `GATE_EN` PB8, `WDI` PB9, `PUMP_DIR` PC6, `PUMP_EN` PC7.
+- **Open-drain outputs, initial high (relays off):** `REL1_N` PB4, `REL2_N` PB5.
+- **Inputs, pull-up:** `A_ERR` PD1, `IN_ERR` PC13, `B_FAULT` PD14, `B_PGOOD` PD15, `GATE_FB` PD8.
+- **TIM1** CH1 PWM on PA8 (AF1), prescaler set so the counter runs at **1 MHz**; leave it stopped (the
+  firmware sets ARR, CCR1 and MOE). **TIM2** CH1 input capture on PA0 (AF1), rising edge, 1 MHz, 32-bit
+  free running, no interrupt.
+- **The gate (latched):** WDI toggles on every node pass in which the node core is healthy (at
+  least every 20 ms is needed; the pass is 1 ms). The MAX6369's WDO only pulses (about 100 ms), so
+  the board latches a trip: GATE_EN low then high arms the latch, and GATE_FB reads high while the
+  outputs may switch. The firmware arms it while the core's gate is open and the core healthy; a
+  trip (GATE_FB low for 3 passes) waits 1 s before re-arming, and the node core rewrites both banks
+  every pass, so the outputs come back on their own. `bsp_node_gate_fault` is true from a trip
+  until GATE_FB is seen high again; `bsp_node_gate_trips` counts them.
+  To check on the first board: the MAX6369 start-up timeout against the time to the first command.
+- **AD4112** (map 3 analog inputs): `node/drivers/drv_ad4112.c` with `NODE_ANALOG=1`, checked against
+  its datasheet (`AD4112_CONFIRMED` 1). A wrong ID, an SPI error or a channel with no conversion for
+  1 s reports "no converter" on every input and re-configures once a second.
+
+## 3g. RS-485 to the I/O boards (D27, optional since 24 Oct)
+
+The I/O boards are on Ethernet by default, on the I/O port (3h); `iob_link` = 1 puts them on the
+main port through lwIP instead, with nothing more to set up in CubeMX (lwIP's pools are sized for
+the three board connections and the discovery socket, `port/stm32h5/lwip/lwipopts.h`). Only
+for the RS-485 setting:
+
+| CubeMX | Setting |
+|---|---|
+| USARTx (any free one; on the DK one brought out to the Arduino or STMod+ header) | Mode **Asynchronous**, Hardware Flow Control (RS485) **enabled**: the USART drives the transceiver's DE pin itself. 115200 baud, 8 bits, no parity, 1 stop bit, oversampling 16. Driver Enable polarity high; assertion and deassertion time 8 (sample times) |
+| NVIC | USARTx global interrupt **enabled**, preemption priority 5 or higher number (FreeRTOS calls from the callback) |
+| DMA | none needed |
+
+In `main.h` (USER CODE section):
+
+```c
+#define BSP_RS485_HUART huart2      /* the handle CubeMX generated for that USART */
+```
+
+Add `port/stm32h5/rs485_stm32h5.c`, `platform/core/iobus.c`, `platform/core/mb_rtu.c` and
+`platform/os/plat_iobus_task.c`. The driver defines `HAL_UART_TxCpltCallback`,
+`HAL_UARTEx_RxEventCallback` and `HAL_UART_ErrorCallback`; if `main.c` defines any of them
+too, move the body into one function that checks the handle. Without `BSP_RS485_HUART`
+the build has no port and an enabled board reports "not responding".
+
+On the DK, a 3.3 V RS-485 module (MAX3485 class: DI = TX, RO = RX, DE and /RE together on
+the DE pin) is enough to talk to an I/O board or to a PC with a USB-RS485 adapter running
+a Modbus slave simulator. To try it: Settings → `iob1_enable` = 1, then System → I/O boards.
 
 ## 3d. Firmware update
 
@@ -189,6 +362,9 @@ to sign" gives the command line; run it on the developer's PC
 (`python3 tools/serial_token.py --key ~/cems-dev/cems-dev-key.pem --uid <chip ID> --old <now> --new <serial>`)
 and paste the token back. The token only works on that chip, once.
 
+Behind the first-stage bootloader (docs/BOOTLOADER.md 4) the application is linked at
+0x08008000 with `VECT_TAB_OFFSET 0x00008000U`; nothing else changes here.
+
 The first update on the DK should be done with the debugger attached (see
 `docs/PLATFORM.md` 5b). The option byte SWAP_BANK stays as the update leaves it; to
 return to a plain setup, clear it in STM32CubeProgrammer (Option bytes → User
@@ -201,15 +377,16 @@ configuration → SWAP_BANK).
 3. Set the values the platform requires (see `port/stm32h5/FreeRTOSConfig.h`, the REQUIRED lines):
    `configTICK_RATE_HZ 1000`, `configMAX_PRIORITIES 16`, `configSUPPORT_STATIC_ALLOCATION 1`,
    `configCHECK_FOR_STACK_OVERFLOW 2`, `configUSE_MALLOC_FAILED_HOOK 1`, `INCLUDE_xTaskDelayUntil 1`,
-   `configTOTAL_HEAP_SIZE` 48 KB, `configTIMER_TASK_PRIORITY 11`. Also set `configASSERT` to call
+   `configTOTAL_HEAP_SIZE` 64 KB, `configMINIMAL_STACK_SIZE 512`, `configTIMER_TASK_STACK_DEPTH 1024`, `configTIMER_TASK_PRIORITY 11`. Also set `configASSERT` to call
    `plat_assert_failed(__FILE__, __LINE__)`.
 4. Create **no** tasks in CubeMX: the platform creates its own.
 5. NVIC → Code generation: make sure **SVC, PendSV and SysTick handlers are not generated** (the FreeRTOS port defines them). X-CUBE-FREERTOS normally unticks these itself; check after generating that `stm32h5xx_it.c` doesn't contain them.
+   Untick the same "Generate IRQ handler" box for **Hard fault, Memory management fault, Prefetch fault / memory access fault (BusFault) and Undefined instruction / illegal state (UsageFault)**: `port/stm32h5/fault_stm32h5.c` defines these four (D4). Left ticked, the link fails with multiple definitions; with ST's empty loops instead, a fault would hang until the watchdog and leave no record.
 6. If the generated code already defines `vApplicationGetIdleTaskMemory` / `vApplicationGetTimerTaskMemory`, keep them: the platform's versions are weak and give way.
 
 ## 5. Add the platform to the project
 
-1. Copy (or link) `platform/` (except `platform/bsp/bsp_host.c` and `platform/bsp/fw_flash_sim.c`), `port/stm32h5/bsp_stm32h5.c`, `port/stm32h5/nvm_fram_i2c.c` (and `nvm_fram_spi.c` if an SPI part is used), `port/stm32h5/nor_spi.c`, `port/stm32h5/fw_flash_stm32h5.c`, and for a first test `app_demo/`, into the project.
+1. Link into the project exactly the sources that `port/stm32h5/check.mk` lists in `SRCS` (platform core, os, net, ui, the stm32h5 port, lwIP, mbedTLS, lan8742, FreeRTOS with `portable/MemMang/heap_4.c`), except `port/stm32h5/check/check_main.c`, and its include paths except `port/stm32h5/check`. That list is the one the compile and link checks keep current; the HAL and CMSIS come from the CubeMX project. In the .ioc enable at least ETH (RMII; `MX_ETH_Init` is not called, `ethernetif.c` initialises it), RNG, RTC, IWDG and ICACHE. Keep the board preset's MPU region that makes the OTP/UID area non-cacheable.
 2. Include paths: `platform/include`, `platform/bsp`, `app_demo`.
 3. Don't add `platform/bsp/bsp_host.c`, `host/`, `tests/` or `port/stm32h5/check/` to the target build. (`platform/bsp/nvm_ram.c` and `nor_sim.c` *are* needed: they are the RAM stand-ins.)
 4. Linker script (`STM32H573IIKXQ_FLASH.ld` or similar): paste the contents of `port/stm32h5/noinit_section.ld` just before the `._user_heap_stack` section. Without it, the fault record is cleared at every boot.
@@ -230,11 +407,15 @@ If CubeMX also generates an `osKernelInitialize()` / `MX_FREERTOS_Init()` /
 `osKernelStart()` block, `plat_start()` must come before it (it never returns), or that
 block can be disabled.
 
+**Debug builds:** set `third_party/mbedtls` and `platform/net/tls.c` to -O2 even in the Debug configuration (Properties on the folder/file → C/C++ Build → Settings → Optimization). At -O0 each HTTPS handshake took 0.8-2.8 s on the DK, and a browser's six parallel connections then timed out ("Connection lost", logins reported as wrong password); at -O2 it is 0.24 s (28 Oct).
+
+**After flashing:** power-cycle the board (unplug the USB) before testing the network. After an ST-LINK reset or a flash the DK's peripheral interrupts stayed off until a real power-up (Ethernet answered a few frames, then went deaf), and the debugger's view of the NVIC on this part reads as zero even when the CPU has the interrupt enabled, so don't diagnose interrupts from SWD reads alone.
+
 ## 6. First run: what you should see
 
 - Hold the user button (DI_01) for 2 s and LED DO_01 comes on; release it and the LED goes off. That is the demo TON running on the 10 ms scan.
 - In the debugger: `plat_scan.stats.scans` rises by 100 per second, `plat_scan.stats.max_exec_us` stays tiny for the demo, and `plat_diag.boots` counts warm resets.
-- `param_store_status()` reads 0x001C on a bare DK (calibration invalid, user defaulted, RAM stand-in). With an FRAM fitted it reads 0x000C on the first boot and 0x0006 after a power cycle (user valid, calibration still invalid until a factory value is set).
+- `param_store_status()` reads 0x001C on a bare DK (calibration invalid, user defaulted, RAM stand-in). With an FRAM fitted it reads 0x000C on the first boot and 0x0006 after a power cycle (user valid, calibration still invalid until a factory value is set). `/api/info` "fram" shows the bytes and chips found: the I2C driver scans 0x50-0x57 and joins every MB85RC it finds, so keep chips at the same addresses once settings are stored.
 - Watchdog test: put a breakpoint-free `for(;;);` in `plat_ui_task_body` (define it in a test file) and the unit resets after about 5 s, with `plat_diag.fault_name` = "ui". The debugger can stop the IWDG; enable `DBGMCU` IWDG freeze only if you want it frozen while halted.
 
 ## 7. Networking (next module, decision D3)

@@ -3,6 +3,7 @@
 #include "scan_engine.h"
 #include "ul_system.h"
 #include "plat_config.h"
+#include "iobus.h"
 
 /* The single definitions of the UniLogic system tags (ul_system.h). */
 uint32_t   g_dt_ms;
@@ -12,7 +13,7 @@ rtc_time_t RTC_Time;
 
 const scan_hw_t scan_hw_bsp = {
     .ms = bsp_ms, .cycles = bsp_cycles, .cycles_per_us = bsp_cycles_per_us, .rtc_read = bsp_rtc_read,
-    .io_read = bsp_io_read, .io_write = bsp_io_write,
+    .io_read = plat_hw_io_read, .io_write = plat_hw_io_write,   /* main-board pins + I/O boards (iobus.h) */
 };
 
 uint8_t scan_dow_iso_to_ul(uint8_t dow_iso) {
@@ -80,6 +81,7 @@ void scan_step(scan_engine_t *s) {
     memset(&s->in, 0, sizeof s->in);
     if (s->hw->io_read) s->hw->io_read(&s->in);
     if (app->io_in) app->io_in(&s->in);
+    if (s->sys && s->sys->io_in) s->sys->io_in(&s->in);
 
     /* 4. external writes, between scans as far as the logic is concerned */
     apply_cmds(s);
@@ -87,7 +89,7 @@ void scan_step(scan_engine_t *s) {
 
     /* 5. logic */
     Ladder_Initial_Cycle = !s->started;
-    app->logic();
+    if (app->logic) app->logic();           /* none in safe mode */
     Ladder_Initial_Cycle = false;
     s->started = true;
 

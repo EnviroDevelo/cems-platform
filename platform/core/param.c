@@ -2,9 +2,16 @@
 #include <math.h>
 #include <string.h>
 #include "param.h"
+#include "modbus.h"
 #include "plat_clock.h"
 #include "plat_port.h"
 #include "plat_seqlock.h"
+#include "iobus.h"
+#include "plat_state.h"
+#include "plat_cal.h"
+#include "inst.h"
+#include "emis_bind.h"
+#include "plat_alarm.h"
 
 #ifndef PARAM_BLOB_POOL
 #define PARAM_BLOB_POOL (16u * 1024u)   /* reader copies of all blocks (old project: ~11 KB of buffers) */
@@ -14,7 +21,13 @@
 #endif
 
 /* ---------------- platform parameter storage ---------------- */
-static uint8_t  p_mode = PARAM_MODE_LOCAL;
+/* The mode at power-up is always LOCAL (spec: only the touchscreen hands control to REMOTE).
+ * PLAT_CTRL_MODE_DEFAULT=1 starts REMOTE: development boards without a touchscreen only (the
+ * STM32H573I-DK on the bench), never a product build. */
+#ifndef PLAT_CTRL_MODE_DEFAULT
+#define PLAT_CTRL_MODE_DEFAULT PARAM_MODE_LOCAL
+#endif
+static uint8_t  p_mode = PLAT_CTRL_MODE_DEFAULT;
 static bool     p_link_lost;
 static uint16_t p_comms_timeout_s = 10;
 static bool     p_modbus_write_en = true;
@@ -24,6 +37,12 @@ static bool     p_http_redirect = true;
 static uint32_t p_ip   = 0xC0A80132u;   /* 192.168.1.50  - DECISION D5 */
 static uint32_t p_mask = 0xFFFFFF00u;   /* 255.255.255.0 */
 static uint32_t p_gw   = 0xC0A80101u;   /* 192.168.1.1   */
+/* PLAT_LINK_MODE_DEFAULT: a bench build's starting net_link_mode (1 100 Mbit only, 2 10 Mbit only),
+ * for link tests without a login; product builds start on auto. */
+#ifndef PLAT_LINK_MODE_DEFAULT
+#define PLAT_LINK_MODE_DEFAULT 0
+#endif
+static uint8_t  p_link_mode = PLAT_LINK_MODE_DEFAULT;
 static bool     p_restore;              /* momentary */
 static uint32_t p_serial, p_hw_rev;
 uint32_t        param_store_status_word; /* written by param_store */
@@ -38,7 +57,9 @@ static uint32_t  p_fw_min;
 static int16_t   p_utc_off;
 static uint32_t  p_sntp_ip, p_clock_set;
 static uint16_t  p_sntp_min;
-extern uint32_t  plat_clock_unix;                                           /* plat_clock.c */
+extern uint32_t  plat_clock_unix, plat_clock_sync_time_tag;                 /* plat_clock.c */
+extern bool      plat_clock_synced_tag;
+extern uint8_t   plat_clock_source_tag;
 static bool      p_mail_en, p_mail_on_clear;
 static uint32_t  p_mail_ip;
 static uint16_t  p_mail_port, p_mail_gap;
@@ -49,11 +70,125 @@ static char      p_mail_user[48], p_mail_pass[48], p_mail_from[64], p_mail_to[16
 extern uint16_t plat_alarm_active_count, plat_alarm_unack_count;            /* plat_alarm.c */
 extern uint16_t plat_alarm_active_bits[16], plat_alarm_unack_bits[16], plat_alarm_common;
 extern uint8_t  plat_alarm_route[256], plat_alarm_relay_do[4], plat_alarm_relay_mode[4];
+extern uint8_t  plat_alarm_prio[256], plat_alarm_tier_route[AL_TIERS];
+extern uint16_t plat_alarm_tier_active[AL_TIERS], plat_alarm_tier_unacked[AL_TIERS];
+extern char     plat_alarm_tier_name[AL_TIERS][AL_TIER_NAME];
 extern bool     plat_alarm_relay_inv[4];
+extern uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS], plat_dia_status[PLAT_DIA_SLOTS];   /* plat_alarm.c */
+extern bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+extern uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+extern char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static const uint16_t dia_delay_dflt[PLAT_DIA_SLOTS] = { 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 };
+static const uint8_t  dia_sev_dflt[PLAT_DIA_SLOTS] = { 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 };
+#define DIA_LABEL(S, N) PARAM_TEXT(PARAM_ID_DIA_LABEL_FIRST + (S), "dia" N "_label", plat_dia_label[S], NULL, PLAT_LVL_ADMIN, NET)
 void (*param_on_alarm_ack)(uint16_t id, uint8_t src, uint8_t level);
+param_err_t (*param_on_cal_cmd)(uint32_t cmd, uint8_t src, uint8_t level);
+extern uint8_t  plat_state_tag, plat_meas_q[PLAT_MEAS_MAX];                 /* plat_state.c */
+extern bool     plat_maint_tag;
+extern uint32_t plat_state_since_tag, plat_supply_mv_tag;                   /* plat_state.c, plat_power.c */
+extern uint16_t plat_board_rev_tag;                                         /* fw_update.c */
+extern uint32_t plat_svc_hours_tag, plat_svc_since_tag, plat_config_crc_tag;   /* plat_service.c */
+extern uint32_t plat_selftest_tag;                                         /* plat_selftest.c */
+extern uint16_t plat_mb_forced;                                            /* modbus.c */
+extern uint8_t  plat_mb_std_words;                                         /* modbus.c */
+extern uint32_t plat_cal_cmd_tag;                                          /* plat_cal.c */
+extern uint8_t  plat_cal_level_tag;
+extern uint16_t plat_mb_heartbeat, plat_mb_link_age_s, plat_mb_block_version, plat_mb_map_version, plat_mb_api_version;   /* modbus.c */
+extern uint32_t plat_mb_fw_version, plat_mb_uptime_s;
+extern char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
+
+#define IOB_DEFS(K, N) \
+    PARAM_BIT(PARAM_ID_IOB_FIRST + 10 * K, "iob" N "_enable", iob_tags[K].enable, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 1, "iob" N "_address", iob_tags[K].address, CT_U8, 1, IOB_ADDR_MAX, K + 1, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 2, "iob" N "_first_do", iob_tags[K].first_do, CT_U8, 1, PLAT_DO_MAX - IOB_OUTS + 1, 1 + IOB_OUTS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 3, "iob" N "_first_di", iob_tags[K].first_di, CT_U8, 1, PLAT_DI_MAX - IOB_INS + 1, 1 + IOB_INS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 4, "iob" N "_open_check", iob_tags[K].ol_mask, CT_U8, 0, 255, 255, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 5, "iob" N "_wire_check", iob_tags[K].wb_mask, CT_U8, 0, 255, 0, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 6, "iob" N "_status", iob_tags[K].status, CT_U16, 0, 0xFFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 7, "iob" N "_out_faults", iob_tags[K].out_faults, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 8, "iob" N "_in_faults", iob_tags[K].in_faults, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_FIRST + 10 * K + 9, "iob" N "_errors", iob_tags[K].errors, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K, "iob" N "_inputs", iob_tags[K].inputs, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_LIVE_FIRST + 2 * K + 1, "iob" N "_outputs", iob_tags[K].outputs, CT_U32, 0, 0x3FFFF, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_IP_FIRST + K, "iob" N "_ip", iob_tags[K].ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Du + K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K, "iob" N "_first_temp", iob_tags[K].first_temp, CT_U8, 0, PLAT_RTD_MAX - IOB_TEMPS + 1, 5 + IOB_TEMPS * K, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 1, "iob" N "_pump_ao", iob_tags[K].first_ao, CT_U8, 0, PLAT_AO_MAX, 0, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 2, "iob" N "_temp_type", iob_tags[K].temp_type, CT_U8, 0, IOB_TT_NTC, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 3, "iob" N "_ntc_r25", iob_tags[K].ntc_r25, CT_U16, 0, 65535, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 4, "iob" N "_ntc_beta", iob_tags[K].ntc_beta, CT_U16, 0, 10000, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 5, "iob" N "_temp_offset", iob_tags[K].temp_offset, CT_I16, -5000, 5000, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 6, "iob" N "_temp_span", iob_tags[K].temp_gain, CT_I16, -1000, 1000, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 7, "iob" N "_pwm_freq", iob_tags[K].pwm_hz, CT_U16, 10, 25000, 1000, PLAT_LVL_ADMIN, PF_PERSIST, "Hz"), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 8, "iob" N "_tach_ppr", iob_tags[K].tach_ppr, CT_U8, 1, 12, 2, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_ARRAY_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 9, "iob" N "_temps", iob_tags[K].temps, CT_I16, -32768, 32767, PLAT_LVL_VIEW, PF_RO), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 10, "iob" N "_temp_state", iob_tags[K].temp_state, CT_U8, 0, 255, PLAT_LVL_VIEW, PF_RO), \
+    PARAM_INT(PARAM_ID_IOB_T_FIRST + 16 * K + 11, "iob" N "_cj_temp", iob_tags[K].cj_temp, CT_I16, -32768, 32767, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 12, "iob" N "_pump_rpm", iob_tags[K].pump_rpm, CT_U16, 0, 65535, 0, PLAT_LVL_VIEW, PF_RO, "rpm"), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 13, "iob" N "_pump_duty", iob_tags[K].pump_duty, CT_U16, 0, 1000, 0, PLAT_LVL_VIEW, PF_RO, NULL), \
+    PARAM_UINT(PARAM_ID_IOB_T_FIRST + 16 * K + 14, "iob" N "_first_ai", iob_tags[K].first_ai, CT_U8, 0, PLAT_AI_MAX - IOB_AIS + 1, 0, PLAT_LVL_ADMIN, PF_PERSIST, NULL), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_AI_FIRST + 2 * K, "iob" N "_ai", iob_tags[K].ai, CT_U16, 0, 65535, PLAT_LVL_VIEW, PF_RO), \
+    PARAM_ARRAY_UINT(PARAM_ID_IOB_AI_FIRST + 2 * K + 1, "iob" N "_ai_state", iob_tags[K].ai_state, CT_U8, 0, 255, PLAT_LVL_VIEW, PF_RO)
+
+/* third-party instruments (inst.h): defaults that are not zero */
+#define INST_ALL(V) { V, V, V, V, V, V, V, V }
+#define PT_ALL(V)   { V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V, V }
+static const uint16_t inst_d_port[INST_MAX] = INST_ALL(502), inst_d_ms[INST_MAX] = INST_ALL(1000);
+static const uint8_t  inst_d_unit[INST_MAX] = INST_ALL(1), inst_d_max[INST_MAX] = INST_ALL(64);
+static const uint8_t  pt_d_fc[INST_POINTS] = PT_ALL(INST_FC_HOLDING);
+static const float    pt_d_gain[INST_POINTS] = PT_ALL(1.0f);
+#define ARR_D(ID, NAME, VAR, CT, MIN, MAX, DFLT) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .vmin.u = (MIN), .vmax.u = (MAX), .size = (uint16_t)sizeof(VAR), .name = (NAME), .dflt = (DFLT) }
+#define ARR(ID, NAME, VAR, CT, MIN, MAX) ARR_D(ID, NAME, VAR, CT, MIN, MAX, NULL)
+#define ARR_RO(ID, NAME, VAR, CT) PARAM_ARRAY_UINT(ID, NAME, VAR, CT, 0, 0xFFFFFFFFu, PLAT_LVL_VIEW, PF_RO)
+#define INST_NAME(K, N) PARAM_TEXT(PARAM_ID_INST_NAME_FIRST + (K), "inst" N "_name", inst_tags.name[K], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
+#define PT_TEXT(P, N) PARAM_TEXT(PARAM_ID_PT_NAME_FIRST + (P), "pt" N "_name", inst_pt.name[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST), \
+                      PARAM_TEXT16(PARAM_ID_PT_UNIT_FIRST + (P), "pt" N "_unit", inst_pt.unit[P], NULL, PLAT_LVL_ADMIN, PF_PERSIST)
+#define INST_DEFS \
+    PARAM_ARRAY_BOOL(PARAM_ID_INST_ENABLE, "inst_enable", inst_tags.enable, PLAT_LVL_ADMIN, PF_PERSIST), \
+    ARR(PARAM_ID_INST_IP, "inst_ip", inst_tags.ip, CT_U32, 0, 0xFFFFFFFFu), \
+    ARR_D(PARAM_ID_INST_PORT, "inst_port", inst_tags.port, CT_U16, 1, 65535, inst_d_port), \
+    ARR_D(PARAM_ID_INST_UNIT, "inst_unit", inst_tags.unit, CT_U8, 0, 255, inst_d_unit), \
+    ARR_D(PARAM_ID_INST_PERIOD, "inst_period_ms", inst_tags.period_ms, CT_U16, 100, 60000, inst_d_ms), \
+    ARR_D(PARAM_ID_INST_TIMEOUT, "inst_timeout_ms", inst_tags.timeout_ms, CT_U16, 50, 10000, inst_d_ms), \
+    ARR_D(PARAM_ID_INST_MAX_REGS, "inst_max_regs", inst_tags.max_regs, CT_U8, 1, 125, inst_d_max), \
+    ARR(PARAM_ID_INST_GAP, "inst_gap", inst_tags.gap, CT_U8, 0, 32), \
+    ARR(PARAM_ID_INST_STATUS_PT, "inst_status_pt", inst_tags.status_pt, CT_U8, 0, INST_POINTS), \
+    ARR(PARAM_ID_INST_FAULT_MASK, "inst_fault_mask", inst_tags.fault_mask, CT_U16, 0, 0xFFFF), \
+    ARR(PARAM_ID_INST_MAINT_MASK, "inst_maint_mask", inst_tags.maint_mask, CT_U16, 0, 0xFFFF), \
+    ARR(PARAM_ID_INST_CAL_MASK, "inst_cal_mask", inst_tags.cal_mask, CT_U16, 0, 0xFFFF), \
+    ARR_RO(PARAM_ID_INST_STATE, "inst_state", inst_tags.state, CT_U8), \
+    ARR_RO(PARAM_ID_INST_GOOD, "inst_good", inst_tags.good, CT_U32), \
+    ARR_RO(PARAM_ID_INST_ERRORS, "inst_errors", inst_tags.errors, CT_U32), \
+    ARR_RO(PARAM_ID_INST_LAST_ERR, "inst_last_err", inst_tags.last_err, CT_U8), \
+    ARR_RO(PARAM_ID_INST_LAST_EXC, "inst_last_exc", inst_tags.last_exc, CT_U8), \
+    ARR_RO(PARAM_ID_INST_RESP_MS, "inst_resp_ms", inst_tags.resp_ms, CT_U16), \
+    INST_NAME(0, "1"), INST_NAME(1, "2"), INST_NAME(2, "3"), INST_NAME(3, "4"), \
+    INST_NAME(4, "5"), INST_NAME(5, "6"), INST_NAME(6, "7"), INST_NAME(7, "8"), \
+    ARR(PARAM_ID_PT_INST, "pt_inst", inst_pt.inst, CT_U8, 0, INST_MAX), \
+    ARR_D(PARAM_ID_PT_FC, "pt_fc", inst_pt.fc, CT_U8, INST_FC_COILS, INST_FC_INPUT, pt_d_fc), \
+    ARR(PARAM_ID_PT_ADDR, "pt_addr", inst_pt.addr, CT_U16, 0, 65535), \
+    ARR(PARAM_ID_PT_TYPE, "pt_type", inst_pt.type, CT_U8, 0, INST_T_COUNT - 1), \
+    ARR(PARAM_ID_PT_ORDER, "pt_order", inst_pt.order, CT_U8, 0, INST_O_COUNT - 1), \
+    ARR(PARAM_ID_PT_BIT, "pt_bit", inst_pt.bit, CT_U8, 0, 15), \
+    { .id = PARAM_ID_PT_GAIN, .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = inst_pt.gain, \
+      .vmin.f = -1e9f, .vmax.f = 1e9f, .size = (uint16_t)sizeof inst_pt.gain, .name = "pt_gain", .dflt = pt_d_gain }, \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_OFFSET, "pt_offset", inst_pt.offset, -1e9f, 1e9f, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_LO, "pt_lo", inst_pt.lo, -1e9f, 1e9f, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_HI, "pt_hi", inst_pt.hi, -1e9f, 1e9f, PLAT_LVL_ADMIN, PF_PERSIST), \
+    PARAM_ARRAY_REAL(PARAM_ID_PT_VALUE, "pt_value", inst_pt.value, -3.4e38f, 3.4e38f, PLAT_LVL_VIEW, PF_RO), \
+    ARR_RO(PARAM_ID_PT_Q, "pt_q", inst_pt.q, CT_U8), \
+    ARR_RO(PARAM_ID_PT_RAW, "pt_raw", inst_pt.raw, CT_U32), \
+    ARR(PARAM_ID_PT_QROLE, "pt_qrole", inst_pt.qrole, CT_U8, 0, INST_QR_COUNT - 1), \
+    PT_TEXT(0, "1"), PT_TEXT(1, "2"), PT_TEXT(2, "3"), PT_TEXT(3, "4"), PT_TEXT(4, "5"), PT_TEXT(5, "6"), \
+    PT_TEXT(6, "7"), PT_TEXT(7, "8"), PT_TEXT(8, "9"), PT_TEXT(9, "10"), PT_TEXT(10, "11"), PT_TEXT(11, "12"), \
+    PT_TEXT(12, "13"), PT_TEXT(13, "14"), PT_TEXT(14, "15"), PT_TEXT(15, "16"), PT_TEXT(16, "17"), PT_TEXT(17, "18"), \
+    PT_TEXT(18, "19"), PT_TEXT(19, "20"), PT_TEXT(20, "21"), PT_TEXT(21, "22"), PT_TEXT(22, "23"), PT_TEXT(23, "24"), \
+    PT_TEXT(24, "25"), PT_TEXT(25, "26"), PT_TEXT(26, "27"), PT_TEXT(27, "28"), PT_TEXT(28, "29"), PT_TEXT(29, "30"), \
+    PT_TEXT(30, "31"), PT_TEXT(31, "32")
 
 static const param_def_t plat_defs[] = {
-    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PARAM_MODE_LOCAL,
+    PARAM_UINT(PARAM_ID_CTRL_MODE, "ctrl_mode", p_mode, CT_U8, 0, 1, PLAT_CTRL_MODE_DEFAULT,
                PLAT_LVL_OPERATOR, PF_LOCAL_ONLY | PF_ANY_MODE, NULL),
     PARAM_BIT (PARAM_ID_REMOTE_LINK_LOST, "remote_link_lost", p_link_lost, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_COMMS_TIMEOUT_S, "comms_timeout", p_comms_timeout_s, CT_U16, 0, 3600, 10,
@@ -66,6 +201,7 @@ static const param_def_t plat_defs[] = {
     PARAM_UINT(PARAM_ID_NET_IP,   "net_ip",   p_ip,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80132u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_MASK, "net_mask", p_mask, CT_U32, 0, 0xFFFFFFFFu, 0xFFFFFF00u, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_GW,   "net_gw",   p_gw,   CT_U32, 0, 0xFFFFFFFFu, 0xC0A80101u, PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_UINT(PARAM_ID_NET_LINK_MODE, "net_link_mode", p_link_mode, CT_U8, 0, 2, PLAT_LINK_MODE_DEFAULT, PLAT_LVL_ADMIN, NET, NULL),
     PARAM_UINT(PARAM_ID_NET_STATUS, "net_status", plat_net_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_BIT (PARAM_ID_RESTORE_DEFAULTS, "restore_defaults", p_restore, PLAT_LVL_ADMIN, PF_ANY_MODE | PF_NO_MODBUS),
@@ -80,7 +216,29 @@ static const param_def_t plat_defs[] = {
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_UNACK_BITS, "alarm_unack_bits", plat_alarm_unack_bits, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
     PARAM_UINT(PARAM_ID_ALARM_COMMON, "alarm_common", plat_alarm_common, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_ROUTE, "alarm_route", plat_alarm_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
-    PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, 32, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_PRIO, "alarm_prio", plat_alarm_prio, CT_U8, 0, AL_PRIO_OFF, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_TIER_ROUTE, "alarm_tier_route", plat_alarm_tier_route, CT_U8, 0, 0xBFu, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_TIER_ACTIVE, "alarm_tier_active", plat_alarm_tier_active, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_TIER_UNACKED, "alarm_tier_unacked", plat_alarm_tier_unacked, CT_U16, 0, 0xFFFFu, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 0, "alarm_tier1_name", plat_alarm_tier_name[0], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 1, "alarm_tier2_name", plat_alarm_tier_name[1], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 2, "alarm_tier3_name", plat_alarm_tier_name[2], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 3, "alarm_tier4_name", plat_alarm_tier_name[3], NULL, PLAT_LVL_ADMIN, NET),
+    PARAM_TEXT(PARAM_ID_ALARM_TIER_NAME_FIRST + 4, "alarm_tier5_name", plat_alarm_tier_name[4], NULL, PLAT_LVL_ADMIN, NET),
+    /* digital input alarms (plat_alarm.h) */
+    PARAM_ARRAY_UINT(PARAM_ID_DIA_INPUT, "dia_input", plat_dia_input, CT_U8, 0, PLAT_DI_MAX, PLAT_LVL_ADMIN, NET),
+    PARAM_ARRAY_BOOL(PARAM_ID_DIA_WHEN, "dia_when", plat_dia_when, PLAT_LVL_ADMIN, NET),
+    { .id = PARAM_ID_DIA_DELAY, .ctype = CT_U16, .ptype = PT_ARRAY, .flags = NET, .level = PLAT_LVL_ADMIN, .ptr = plat_dia_delay,
+      .vmin.u = 0, .vmax.u = 3600, .size = (uint16_t)sizeof plat_dia_delay, .dflt = dia_delay_dflt, .name = "dia_delay", .unit = "s" },
+    PARAM_ARRAY_BOOL(PARAM_ID_DIA_LATCH, "dia_latch", plat_dia_latch, PLAT_LVL_ADMIN, NET),
+    { .id = PARAM_ID_DIA_SEV, .ctype = CT_U8, .ptype = PT_ARRAY, .flags = NET, .level = PLAT_LVL_ADMIN, .ptr = plat_dia_sev,
+      .vmin.u = AL_SEV_WARNING, .vmax.u = AL_SEV_FAULT, .size = (uint16_t)sizeof plat_dia_sev, .dflt = dia_sev_dflt, .name = "dia_sev" },
+    PARAM_ARRAY_UINT(PARAM_ID_DIA_STATUS, "dia_status", plat_dia_status, CT_U8, 0, DIA_ST_UNRELIABLE, PLAT_LVL_VIEW, PF_RO),
+    DIA_LABEL(0, "1"), DIA_LABEL(1, "2"), DIA_LABEL(2, "3"), DIA_LABEL(3, "4"), DIA_LABEL(4, "5"), DIA_LABEL(5, "6"),
+    DIA_LABEL(6, "7"), DIA_LABEL(7, "8"), DIA_LABEL(8, "9"), DIA_LABEL(9, "10"), DIA_LABEL(10, "11"), DIA_LABEL(11, "12"),
+    DIA_LABEL(12, "13"), DIA_LABEL(13, "14"), DIA_LABEL(14, "15"), DIA_LABEL(15, "16"), DIA_LABEL(16, "17"), DIA_LABEL(17, "18"),
+    DIA_LABEL(18, "19"), DIA_LABEL(19, "20"), DIA_LABEL(20, "21"), DIA_LABEL(21, "22"), DIA_LABEL(22, "23"), DIA_LABEL(23, "24"),
+    PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_DO, "alarm_relay_do", plat_alarm_relay_do, CT_U8, 0, PLAT_DO_MAX, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_UINT(PARAM_ID_ALARM_RELAY_MODE, "alarm_relay_mode", plat_alarm_relay_mode, CT_U8, 0, 2, PLAT_LVL_ADMIN, NET),
     PARAM_ARRAY_BOOL(PARAM_ID_ALARM_RELAY_INV, "alarm_relay_inv", plat_alarm_relay_inv, PLAT_LVL_ADMIN, NET),
     PARAM_BIT (PARAM_ID_MAIL_ENABLE, "mail_enable", p_mail_en, PLAT_LVL_ADMIN, MAILF),
@@ -108,6 +266,141 @@ static const param_def_t plat_defs[] = {
                PLAT_LVL_VIEW, PF_RO, NULL),
     PARAM_UINT(PARAM_ID_STORE_STATUS, "store_status", param_store_status_word, CT_U32, 0, 0xFFFFFFFFu, 0,
                PLAT_LVL_VIEW, PF_RO, NULL),
+    /* I/O boards on RS-485 (iobus.h, D27): settings at admin (technician) level, LOCAL only */
+    PARAM_UINT(PARAM_ID_IOB_HOLD, "iob_hold", iob_hold_s, CT_U16, 1, 600, 300, PLAT_LVL_ADMIN, PF_PERSIST, "s"),
+    PARAM_UINT(PARAM_ID_IOB_FILTER, "iob_filter", iob_filter_ms, CT_U8, 0, 100, 8, PLAT_LVL_ADMIN, PF_PERSIST, "ms"),
+    { .id = PARAM_ID_IOB_LINK, .ctype = CT_U8, .ptype = PT_UINT, .flags = PF_PERSIST, .level = PLAT_LVL_ADMIN, .ptr = &iob_link,
+      .vmin.u = 0, .vmax.u = 2, .vdef.u = IOB_LINK_IOPORT, .name = "iob_link", .interlock = iob_link_interlock },   /* a link with no port is refused */
+    PARAM_UINT(PARAM_ID_IOB_PORT_IP, "iob_port_ip", iob_port_ip, CT_U32, 0, 0xFFFFFFFFu, 0xC0A8013Cu, PLAT_LVL_ADMIN, PF_PERSIST, NULL),
+    PARAM_UINT(PARAM_ID_IOB_PORT_PREFIX, "iob_port_prefix", iob_port_prefix, CT_U8, 8, 30, 24, PLAT_LVL_ADMIN, PF_PERSIST, "bits"),
+    PARAM_UINT(PARAM_ID_IOB_PORT_STATUS, "iob_port_status", iob_port_status, CT_U8, 0, 3, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_STATE, "state", plat_state_tag, CT_U8, 0, PLAT_ST_COUNT - 1, PLAT_ST_STARTING, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_BIT (PARAM_ID_MAINTENANCE, "maintenance", plat_maint_tag, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
+    PARAM_UINT(PARAM_ID_STATE_SINCE, "state_since", plat_state_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_ARRAY_UINT(PARAM_ID_MEAS_Q, "meas_q", plat_meas_q, CT_U8, 0, PLAT_Q_COUNT - 1, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_SUPPLY_MV, "supply_mv", plat_supply_mv_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "mV"),
+    PARAM_UINT(PARAM_ID_HEARTBEAT, "heartbeat", plat_mb_heartbeat, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_LINK_AGE_S, "link_age_s", plat_mb_link_age_s, CT_U16, 0, 0xFFFFu, 0xFFFFu, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_UINT(PARAM_ID_MB_BLOCK_VERSION, "mb_block_version", plat_mb_block_version, CT_U16, 0, 0xFFFFu, PLAT_MB_BLOCK_VERSION, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_MAP_VERSION, "mb_map_version", plat_mb_map_version, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_FW_VERSION_NUM, "fw_version_num", plat_mb_fw_version, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_API_VERSION, "api_version", plat_mb_api_version, CT_U16, 0, 0xFFFFu, PLAT_API_VERSION, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_UPTIME_S, "uptime_s", plat_mb_uptime_s, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_TEXT(PARAM_ID_PRODUCT, "product", plat_mb_product, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_VENDOR, "vendor", plat_mb_vendor, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_TEXT(PARAM_ID_FW_TEXT, "fw_text", plat_mb_fw_text, NULL, PLAT_LVL_VIEW, PF_RO),
+    PARAM_BIT (PARAM_ID_CLOCK_SYNCED, "clock_synced", plat_clock_synced_tag, PLAT_LVL_VIEW, PF_RO),
+    PARAM_UINT(PARAM_ID_CLOCK_SYNC_TIME, "clock_sync_time", plat_clock_sync_time_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "s"),
+    PARAM_UINT(PARAM_ID_CLOCK_SOURCE, "clock_source", plat_clock_source_tag, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_RUN_HOURS, "run_hours", plat_svc_hours_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "0.1 h"),
+    PARAM_UINT(PARAM_ID_SERVICE_HOURS, "service_hours", plat_svc_since_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, "0.1 h"),
+    PARAM_UINT(PARAM_ID_CONFIG_CRC, "config_crc", plat_config_crc_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_SELFTEST, "selftest_fail", plat_selftest_tag, CT_U32, 0, 0xFFFFFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_FORCED, "mb_forced", plat_mb_forced, CT_U16, 0, MB_FORCE_MAX, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_MB_STD_WORDS, "mb_std_words", plat_mb_std_words, CT_U8, 0, 1, 0, PLAT_LVL_ADMIN, NET, NULL),
+    PARAM_UINT(PARAM_ID_BOARD_REV, "board_rev", plat_board_rev_tag, CT_U16, 0, 65535, 65535, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_CAL_CMD, "cal_cmd", plat_cal_cmd_tag, CT_U32, 0, 0xFFFFu, 0, PLAT_LVL_OPERATOR, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_CAL_LEVEL, "cal_level", plat_cal_level_tag, CT_U8, PLAT_LVL_OPERATOR, PLAT_LVL_FACTORY, PLAT_LVL_ADMIN,
+               PLAT_LVL_FACTORY, PF_PERSIST | PF_FACTORY | PF_ANY_MODE | PF_NO_MODBUS, NULL),
+    /* emissions calculation (emis_bind.c, 400-480): admin, persisted, never from Modbus (a PLC must not
+     * re-tune a compliance calculation); the plant-operating flag is the exception */
+#define EMF (PF_PERSIST | PF_NO_MODBUS)
+#define EM_ARR(ID, NAME, VAR, CT, LO, HI, DFLT) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = EMF, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME), .vmin.u = (LO), .vmax.u = (HI) }
+#define EM_ARRF(ID, NAME, VAR, LO, HI, DFLT) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = EMF, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = (DFLT), .name = (NAME), .vmin.f = (LO), .vmax.f = (HI) }
+#define EM_ARRF_IN(ID, NAME, VAR) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_NO_MODBUS, .level = PLAT_LVL_ADMIN, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.f = -1e7f, .vmax.f = 1e7f }
+#define EM_RO(ID, NAME, VAR, CT, HI) \
+    { .id = (ID), .ctype = (CT), .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.u = 0u, .vmax.u = (HI) }
+#define EM_ROQ(ID, NAME, VAR) \
+    { .id = (ID), .ctype = CT_U8, .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .dflt = emis_dflt_unavail, .name = (NAME), .vmin.u = 0u, .vmax.u = PLAT_Q_COUNT - 1 }
+#define EM_ROF(ID, NAME, VAR) \
+    { .id = (ID), .ctype = CT_F32, .ptype = PT_ARRAY, .flags = PF_RO, .level = PLAT_LVL_VIEW, .ptr = (VAR), \
+      .size = (uint16_t)sizeof(VAR), .name = (NAME), .vmin.f = -3.4e38f, .vmax.f = 3.4e38f }
+    PARAM_BIT (PARAM_ID_EMIS_ENABLE, "emis_enable", emis_set.enable, PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_T_REF, "emis_t_ref", emis_set.t_ref, 200.0f, 400.0f, 273.15f, "K", PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_P_REF, "emis_p_ref", emis_set.p_ref, 50.0f, 200.0f, 101.325f, "kPa", PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_DILUENT, "emis_diluent", emis_set.diluent, CT_U8, 0, 2, EMIS_DIL_O2, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_REAL(PARAM_ID_EMIS_REF_PCT, "emis_ref_pct", emis_set.ref_pct, 0.0f, 100.0f, 11.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_O2_MAX, "emis_o2_max", emis_set.o2_max, 1.0f, 20.9f, 20.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_BIT (PARAM_ID_EMIS_ONLY_ABOVE, "emis_only_above", emis_set.only_above, PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_CH_O2, "emis_ch_o2", emis_set.ch_o2, CT_U8, 0, 255, 0, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_H2O_MODE, "emis_h2o_mode", emis_set.h2o_mode, CT_U8, 0, 2, EMIS_H2O_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_CH_H2O, "emis_ch_h2o", emis_set.ch_h2o, CT_U8, 0, 255, 11, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_REAL(PARAM_ID_EMIS_H2O_FIXED, "emis_h2o_fixed", emis_set.h2o_fixed, 0.0f, 80.0f, 0.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_CH_T, "emis_ch_t", emis_set.ch_t, CT_U8, 0, 255, EMIS_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_CH_P, "emis_ch_p", emis_set.ch_p, CT_U8, 0, 255, EMIS_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_REAL(PARAM_ID_EMIS_T_FIXED, "emis_t_fixed", emis_set.t_fixed, -50.0f, 1500.0f, 0.0f, "degC", PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_P_FIXED, "emis_p_fixed", emis_set.p_fixed, 50.0f, 200.0f, 101.325f, "kPa", PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_CH_FLOW, "emis_ch_flow", emis_set.ch_flow, CT_U8, 0, 255, EMIS_NONE, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_PERIOD_S, "emis_period_s", emis_set.period_s, CT_U16, 60, 3600, 1800, PLAT_LVL_ADMIN, EMF, "s"),
+    PARAM_UINT(PARAM_ID_EMIS_MIN_AVAIL, "emis_min_avail", emis_set.min_avail, CT_U8, 0, 100, 67, PLAT_LVL_ADMIN, EMF, "%"),
+    PARAM_UINT(PARAM_ID_EMIS_MAX_DISCARD, "emis_max_discard", emis_set.max_discard, CT_U8, 0, 144, 5, PLAT_LVL_ADMIN, EMF, NULL),
+    PARAM_BIT_D(PARAM_ID_EMIS_CI_SUBTRACT, "emis_ci_subtract", emis_set.ci_subtract, true, PLAT_LVL_ADMIN, EMF),
+    PARAM_BIT_D(PARAM_ID_EMIS_CLAMP_ZERO, "emis_clamp_zero", emis_set.clamp_zero, true, PLAT_LVL_ADMIN, EMF),
+    PARAM_REAL(PARAM_ID_EMIS_CAL_EXT, "emis_cal_ext", emis_set.cal_ext, 0.0f, 100.0f, 10.0f, "%", PLAT_LVL_ADMIN, EMF),
+    PARAM_BIT_D(PARAM_ID_EMIS_OPERATING, "emis_operating", emis_p_operating, true, PLAT_LVL_OPERATOR, PF_ANY_MODE),
+    PARAM_UINT(PARAM_ID_EMIS_CFG_ERROR, "emis_cfg_error", emis_p_cfg_error, CT_U16, 0, 0xFFFFu, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_PERIOD2_S, "emis_period2_s", emis_set.period2_s, CT_U16, 0, 3600, 0, PLAT_LVL_ADMIN, EMF, "s"),
+    PARAM_REAL(PARAM_ID_EMIS_Q3_K, "emis_q3_k", emis_q3set.k, 1.0f, 5.0f, 2.0f, NULL, PLAT_LVL_ADMIN, EMF),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_INTERVAL, "emis_q3_interval", emis_q3set.interval_d, CT_U16, 1, 366, 14, PLAT_LVL_ADMIN, EMF, "d"),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_RECORD, "emis_q3_record", emis_p_q3_record, CT_U8, 0, EMIS_CH_MAX, 0, PLAT_LVL_ADMIN, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_RESET, "emis_q3_reset", emis_p_q3_reset, CT_U8, 0, EMIS_CH_MAX, 0, PLAT_LVL_ADMIN, PF_NO_MODBUS, NULL),
+    PARAM_UINT(PARAM_ID_EMIS_Q3_RESULT, "emis_q3_result", emis_p_q3_result, CT_U8, 0, 255, 0, PLAT_LVL_VIEW, PF_RO, NULL),
+    EM_ARR(PARAM_ID_EMIS_SRC, "emis_src", emis_set.src, CT_U8, 0, 255, emis_dflt_none),
+    EM_ARR(PARAM_ID_EMIS_UNIT, "emis_unit", emis_set.ch.unit, CT_U8, 0, EMIS_U_COUNT - 1, NULL),
+    EM_ARR(PARAM_ID_EMIS_WET, "emis_wet", emis_set.ch.wet, CT_BOOL, 0, 1, NULL),
+    EM_ARR(PARAM_ID_EMIS_REF, "emis_ref", emis_set.ch.ref, CT_BOOL, 0, 1, NULL),
+    EM_ARR(PARAM_ID_EMIS_ADD, "emis_add", emis_set.ch.add, CT_U8, 0, 255, emis_dflt_none),
+    EM_ARRF(PARAM_ID_EMIS_MOLAR_MASS, "emis_molar_mass", emis_set.ch.molar_mass, 0.0f, 1000.0f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_QAL2_A, "emis_qal2_a", emis_set.ch.qal2_a, -1e6f, 1e6f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_QAL2_B, "emis_qal2_b", emis_set.ch.qal2_b, -1e3f, 1e3f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_YS_MAX, "emis_ys_max", emis_set.ch.ys_max, 0.0f, 1e7f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_ELV, "emis_elv", emis_set.ch.elv, 0.0f, 1e7f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_CI_PCT, "emis_ci_pct", emis_set.ch.ci_pct, 0.0f, 100.0f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_ELV2, "emis_elv2", emis_set.ch.elv2, 0.0f, 1e7f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_Q3_SAMS, "emis_q3_sams", emis_q3set.s_ams, 0.0f, 1e6f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_Q3_ZERO_REF, "emis_q3_zero_ref", emis_q3set.zero_ref, -1e6f, 1e6f, NULL),
+    EM_ARRF(PARAM_ID_EMIS_Q3_SPAN_REF, "emis_q3_span_ref", emis_q3set.span_ref, -1e6f, 1e7f, NULL),
+    EM_ARRF_IN(PARAM_ID_EMIS_Q3_ZERO_RD, "emis_q3_zero_rd", emis_p_q3_zero),
+    EM_ARRF_IN(PARAM_ID_EMIS_Q3_SPAN_RD, "emis_q3_span_rd", emis_p_q3_span),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 0, "emis_raw", emis_res.v[0]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 1, "emis_std", emis_res.v[1]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 2, "emis_ref_o2", emis_res.v[2]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 3, "emis_mass", emis_res.v[3]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 4, "emis_run", emis_res.v[4]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 5, "emis_avg", emis_res.v[5]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 6, "emis_val", emis_res.v[6]),
+    EM_ROF(PARAM_ID_EMIS_BANK_FIRST + 7, "emis_day", emis_res.v[7]),
+    EM_ROQ(PARAM_ID_EMIS_Q_IN, "emis_q_in", emis_res.q[0]),
+    EM_ROQ(PARAM_ID_EMIS_Q_CALC, "emis_q_calc", emis_res.q[1]),
+    EM_ROQ(PARAM_ID_EMIS_Q_MASS, "emis_q_mass", emis_res.q[2]),
+    EM_ROQ(PARAM_ID_EMIS_Q_AVG, "emis_q_avg", emis_res.q[3]),
+    EM_ROQ(PARAM_ID_EMIS_Q_DAY, "emis_q_day", emis_res.q[4]),
+    EM_ROQ(PARAM_ID_EMIS_Q_RUN, "emis_q_run", emis_res.q[5]),
+    EM_RO(PARAM_ID_EMIS_STATUS, "emis_status", emis_res.status, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_DISCARDED, "emis_discarded", emis_res.discarded, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_DAYS_INVALID, "emis_days_invalid", emis_res.days_invalid, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_WEEKS_ABOVE, "emis_weeks_above", emis_res.weeks_above, CT_U16, 0xFFFFu),
+    EM_ROF(PARAM_ID_EMIS_AVG2, "emis_avg2", emis_res.v2),
+    EM_ROQ(PARAM_ID_EMIS_Q_AVG2, "emis_q_avg2", emis_res.q2),
+    EM_RO(PARAM_ID_EMIS_N2, "emis_n2", emis_res.n2, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_N2_ABOVE, "emis_n2_above", emis_res.n2_above, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_N2_DAY, "emis_n2_day", emis_res.n2_day, CT_U16, 0xFFFFu),
+    EM_RO(PARAM_ID_EMIS_N2_ABOVE_DAY, "emis_n2_above_day", emis_res.n2_above_day, CT_U16, 0xFFFFu),
+    EM_ROF(PARAM_ID_EMIS_Q3_ZERO_DEV, "emis_q3_zero_dev", emis_q3.zero_dev),
+    EM_ROF(PARAM_ID_EMIS_Q3_SPAN_DEV, "emis_q3_span_dev", emis_q3.span_dev),
+    EM_RO(PARAM_ID_EMIS_Q3_LAST, "emis_q3_last", emis_q3.last, CT_U32, 0xFFFFFFFFu),
+    EM_RO(PARAM_ID_EMIS_Q3_STATUS, "emis_q3_status", emis_q3.status, CT_U8, 0xFFu),
+    EM_RO(PARAM_ID_EMIS_Q3_N, "emis_q3_n", emis_q3.n, CT_U8, 0xFFu),
+    IOB_DEFS(0, "1"), IOB_DEFS(1, "2"), IOB_DEFS(2, "3"),
+    INST_DEFS,
 };
 #define N_PLAT (sizeof plat_defs / sizeof plat_defs[0])
 
@@ -121,6 +414,8 @@ static uint8_t            blob_shadow[PARAM_BLOB_POOL];
 static plat_cmdq_t       *bound_q;
 static plat_seqlock_t    *bound_lock;
 static volatile uint32_t  last_remote_ms;
+static volatile uint32_t  link_ms;           /* any supervisory request, in any mode (CIP-15.2) */
+static volatile bool      link_seen;
 static volatile bool      remote_entered;     /* mode just switched to REMOTE */
 void (*param_on_restore_defaults)(void);
 void (*param_on_change)(const param_def_t *d, plat_val_t old_v, plat_val_t new_v, uint8_t src, uint8_t level);
@@ -204,6 +499,7 @@ param_err_t param_init(const param_def_t *app_defs, size_t n_app) {
     record_reset();
     n_tab = 0;
     tab_err_id = 0;
+    link_seen = false;
     if (N_PLAT + n_app > PARAM_MAX) { tab_err_id = 0xFFFF; return PERR_TABLE; }
     for (size_t k = 0; k < N_PLAT; ++k) tab[n_tab++] = &plat_defs[k];
     for (size_t k = 0; k < n_app; ++k) {
@@ -373,6 +669,7 @@ param_err_t param_apply(const plat_cmd_t *c) {
     if (d->interlock && d->interlock(d->id, n) != 0) return PERR_INTERLOCK;
 
     if (d->id == PARAM_ID_RESTORE_DEFAULTS) {          /* momentary command */
+        if (n.b && !plat_state_allows(PLAT_ACT_RESTORE_DEFAULTS)) { p_restore = false; return PERR_INTERLOCK; }
         if (n.b) {
             if (param_on_change) param_on_change(d, (plat_val_t){ .u = 0 }, n, c->src, c->level);
             if (param_on_restore_defaults) param_on_restore_defaults();
@@ -386,6 +683,11 @@ param_err_t param_apply(const plat_cmd_t *c) {
         if (n.u && plat_clock_request(n.u, c->src, c->level, how[c->src & 3u]) != 0) { p_clock_set = 0; return PERR_RANGE; }
         p_clock_set = 0;
         return PERR_OK;
+    }
+    if (d->id == PARAM_ID_CAL_CMD) {                   /* momentary: hand it to the calibration records (logged there) */
+        plat_cal_cmd_tag = 0;
+        if (!n.u) return PERR_OK;
+        return param_on_cal_cmd ? param_on_cal_cmd(n.u, c->src, c->level) : PERR_INTERLOCK;
     }
     if (d->id == PARAM_ID_ALARM_ACK) {                 /* momentary command, logged by the alarm manager */
         if (param_on_alarm_ack && n.u) param_on_alarm_ack((uint16_t)n.u, c->src, c->level);
@@ -422,7 +724,13 @@ uint8_t param_ctrl_mode(void) { return p_mode; }
 bool param_remote_link_lost(void) { return p_link_lost; }
 
 void param_comms_activity(uint8_t src, uint32_t now_ms) {
-    if (src == PLAT_SRC_WEB || src == PLAT_SRC_MODBUS) last_remote_ms = now_ms;
+    if (src == PLAT_SRC_WEB || src == PLAT_SRC_MODBUS) { last_remote_ms = now_ms; link_ms = now_ms; link_seen = true; }
+}
+
+uint32_t plat_link_age_ms(uint32_t now_ms) {
+    if (!link_seen) return UINT32_MAX;
+    uint32_t a = now_ms - link_ms;
+    return a == UINT32_MAX ? a - 1u : a;
 }
 
 void param_scan_service(uint32_t now_ms) {

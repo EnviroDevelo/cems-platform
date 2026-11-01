@@ -32,7 +32,8 @@ static int send_fd(void *ctx, const void *p, size_t n) {
 int http_open(http_server_t *s, uint16_t port, uint8_t *buf, uint32_t cap) {
     memset(s, 0, sizeof *s);
     s->buf = buf; s->cap = cap;
-    s->kfd = -1;
+    for (unsigned k = 0; k < HTTP_KEPT; k++) s->kfd[k] = -1;
+    for (unsigned i = 0; i < HTTP_PENDING; i++) s->pfd[i] = -1;
     s->lfd = socket(AF_INET, SOCK_STREAM, 0);
     if (s->lfd < 0) return -1;
     int one = 1;
@@ -46,16 +47,20 @@ int http_open(http_server_t *s, uint16_t port, uint8_t *buf, uint32_t cap) {
     return 0;
 }
 
-void http_close(http_server_t *s) { http_drop_kept(s); if (s->lfd >= 0) closesocket(s->lfd); s->lfd = -1; }
+void http_close(http_server_t *s) {
+    http_drop_kept(s);
+    for (unsigned i = 0; i < HTTP_PENDING; i++) if (s->pfd[i] >= 0) { closesocket(s->pfd[i]); s->pfd[i] = -1; }
+    if (s->lfd >= 0) closesocket(s->lfd);
+    s->lfd = -1;
+}
+
+_Static_assert(TLS_CONNS >= 2u, "a kept connection and the spare one each need their own TLS connection");
 
 #define KEEP_IDLE_MS 5000u
 #define KEEP_MAX     200u
 
 /* one request on fd (TLS already up if HTTPS); true = the connection may stay open */
-static bool serve(http_server_t *s, int fd) {
-    struct timeval rt = { .tv_sec = 2, .tv_usec = 0 }, wt = { .tv_sec = 5, .tv_usec = 0 };
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rt, sizeof rt);
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wt, sizeof wt);
+static bool serve(http_server_t *s, int fd, bool may_keep) {
     http_out_t o;
     conn_t c = { fd, s };
     out_init(&o, send_fd, &c);
@@ -65,7 +70,7 @@ static bool serve(http_server_t *s, int fd) {
     while (hl == 0) {                                   /* headers */
         if (n >= s->cap) { s->too_large++; http_simple(&o, 413, "too large"); return false; }
         int got = recv_fd(&c, s->buf + n, s->cap - n);
-        if (got <= 0) { if (n) s->timeouts++; return false; }
+        if (got <= 0) { s->timeouts++; return false; }
         n += (uint32_t)got;
         hl = http_parse_head((const char *)s->buf, n, &r);
     }
@@ -87,7 +92,7 @@ static bool serve(http_server_t *s, int fd) {
     }
     r.body = s->buf + hl;
     r.body_len = r.content_length;
-    o.keep = s->tls && r.keep_alive && !strcmp(r.method, "GET") && n == (uint32_t)hl + r.content_length;
+    o.keep = may_keep && s->tls && r.keep_alive && !strcmp(r.method, "GET") && n == (uint32_t)hl + r.content_length;
     http_handle(&r, &o, bsp_ms());
     s->served++;
     return o.keep && !o.err;
@@ -99,38 +104,93 @@ static void finish(http_server_t *s, int fd) {
     closesocket(fd);
 }
 
+static void drop_one(http_server_t *s, unsigned k) {
+    if (s->kfd[k] < 0) return;
+    if (s->tls) tls_use(k);
+    finish(s, s->kfd[k]);
+    s->kfd[k] = -1;
+}
+
 void http_drop_kept(http_server_t *s) {
-    if (s->kfd < 0) return;
-    finish(s, s->kfd);
-    s->kfd = -1;
+    for (unsigned k = 0; k < HTTP_KEPT; k++) drop_one(s, k);
+}
+
+/* Each socket wait stays well under the task monitor's PLAT_SILENCE_HTTP_MS (5 s): the task checks
+ * in between waits (alive, tls_alive_hook), never during one. */
+static void set_timeouts(int fd) {
+    struct timeval rt = { .tv_sec = 2, .tv_usec = 0 }, wt = { .tv_sec = 2, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rt, sizeof rt);
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wt, sizeof wt);
+}
+
+/* a waiting connection that has spoken: handshake, one request, then keep it or close it */
+static void start(http_server_t *s, int fd) {
+    uint8_t b;
+    if (recv(fd, &b, 1, MSG_PEEK | MSG_DONTWAIT) == 0) { s->silent++; closesocket(fd); return; }   /* closed unused */
+    unsigned k = 0;                                     /* a free place, else the longest idle one */
+    for (unsigned i = 0; i < HTTP_KEPT; i++) {
+        if (s->kfd[i] < 0) { k = i; break; }
+        if ((int32_t)(s->kept_ms[i] - s->kept_ms[k]) < 0) k = i;
+    }
+    bool keep = true;
+    if (s->kfd[k] >= 0) {
+        if (bsp_ms() - s->kept_ms[k] >= HTTP_EVICT_IDLE_MS) { s->evicted++; drop_one(s, k); }
+        else { k = HTTP_KEPT; keep = false; s->once++; }   /* all in use: served once on the spare connection */
+    }
+    set_timeouts(fd);
+    if (s->tls) tls_use(k);
+    if (s->tls && tls_accept(fd) != 0) { s->tls_failed++; finish(s, fd); return; }
+    if (serve(s, fd, keep) && keep) { s->kfd[k] = fd; s->kept_ms[k] = bsp_ms(); s->kept_n[k] = 1; }
+    else finish(s, fd);
 }
 
 void http_poll(http_server_t *s, uint32_t timeout_ms) {
     if (s->lfd < 0) return;
-    if (s->kfd >= 0 && (bsp_ms() - s->kept_ms > KEEP_IDLE_MS || s->kept_n >= KEEP_MAX)) http_drop_kept(s);
+    uint32_t now = bsp_ms();
+    for (unsigned k = 0; k < HTTP_KEPT; k++)
+        if (s->kfd[k] >= 0 && (now - s->kept_ms[k] > KEEP_IDLE_MS || s->kept_n[k] >= KEEP_MAX)) drop_one(s, k);
     fd_set rd;
     FD_ZERO(&rd);
-    FD_SET(s->lfd, &rd);
-    int mx = s->lfd;
-    if (s->kfd >= 0) { FD_SET(s->kfd, &rd); if (s->kfd > mx) mx = s->kfd; }
+    int mx = -1, freeslot = -1;
+    for (unsigned i = 0; i < HTTP_PENDING; i++) {
+        if (s->pfd[i] >= 0 && now - s->pms[i] > HTTP_PENDING_MS) { s->silent++; closesocket(s->pfd[i]); s->pfd[i] = -1; }
+        if (s->pfd[i] < 0) { if (freeslot < 0) freeslot = (int)i; continue; }
+        FD_SET(s->pfd[i], &rd); if (s->pfd[i] > mx) mx = s->pfd[i];
+    }
+    if (freeslot >= 0) { FD_SET(s->lfd, &rd); if (s->lfd > mx) mx = s->lfd; }   /* table full: new ones wait in the backlog */
+    bool pending[HTTP_KEPT] = { false }, any_pending = false;
+    for (unsigned k = 0; k < HTTP_KEPT; k++) {
+        if (s->kfd[k] < 0) continue;
+        FD_SET(s->kfd[k], &rd); if (s->kfd[k] > mx) mx = s->kfd[k];
+        if (s->tls) { tls_use(k); pending[k] = tls_pending(); any_pending |= pending[k]; }
+    }
     struct timeval tv = { .tv_sec = (long)(timeout_ms / 1000u), .tv_usec = (long)((timeout_ms % 1000u) * 1000u) };
-    bool pending = s->kfd >= 0 && s->tls && tls_pending();
-    if (pending) tv.tv_sec = tv.tv_usec = 0;
+    if (any_pending) tv.tv_sec = tv.tv_usec = 0;
     int nr = select(mx + 1, &rd, NULL, NULL, &tv);
     if (nr < 0) return;
-    if (FD_ISSET(s->lfd, &rd)) {                       /* someone else is waiting: they come first */
-        http_drop_kept(s);
+    if (freeslot >= 0 && FD_ISSET(s->lfd, &rd)) {
         int fd = accept(s->lfd, NULL, NULL);
-        if (fd < 0) return;
-        if (s->tls && tls_accept(fd) != 0) { s->tls_failed++; finish(s, fd); return; }
-        if (serve(s, fd)) { s->kfd = fd; s->kept_ms = bsp_ms(); s->kept_n = 1; }
-        else finish(s, fd);
+        if (fd >= 0) { s->pfd[freeslot] = fd; s->pms[freeslot] = bsp_ms(); }   /* served once it speaks */
+    }
+    unsigned first = 0;                                 /* the longest waiting that has spoken */
+    int pick = -1;
+    for (unsigned i = 0; i < HTTP_PENDING; i++)
+        if (s->pfd[i] >= 0 && FD_ISSET(s->pfd[i], &rd) && (pick < 0 || (int32_t)(s->pms[i] - s->pms[first]) < 0)) { pick = (int)i; first = i; }
+    if (pick >= 0) {
+        int fd = s->pfd[pick];
+        s->pfd[pick] = -1;
+        start(s, fd);
         return;
     }
-    if (s->kfd >= 0 && (pending || FD_ISSET(s->kfd, &rd))) {
-        int fd = s->kfd;
+    for (unsigned i = 0; i < HTTP_KEPT; i++) {           /* one request, the kept connections taking turns */
+        unsigned k = (s->kturn + i) % HTTP_KEPT;
+        int fd = s->kfd[k];
+        if (fd < 0 || !(pending[k] || (nr > 0 && FD_ISSET(fd, &rd)))) continue;
+        s->kturn = (k + 1u) % HTTP_KEPT;
         s->reused++;
-        if (serve(s, fd)) { s->kept_ms = bsp_ms(); s->kept_n++; }
-        else { s->kfd = -1; finish(s, fd); }
+        if (s->tls) tls_use(k);
+        if (serve(s, fd, true)) { s->kept_ms[k] = bsp_ms(); s->kept_n[k]++; }
+        else { s->kfd[k] = -1; finish(s, fd); }
+        return;
     }
 }

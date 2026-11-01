@@ -2,3 +2,5 @@ build/
 __pycache__/
 *.pem
 app_vmmux/tools/out/
+netsim_fram.bin
+netsim_nor.bin

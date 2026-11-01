@@ -1,7 +1,14 @@
 /* modbus.c - see modbus.h */
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 #include "modbus.h"
+#include "plat_config.h"
+#include "plat_state.h"
+#include "fw_update.h"
+#include "plat_log.h"
+#include "plat_port.h"
+#include "plat_alarm.h"
 
 #ifndef MB_MAX_ENTRIES
 #define MB_MAX_ENTRIES 512
@@ -18,8 +25,486 @@ typedef struct { const mb_map_t *m; const param_def_t *d; uint16_t span; } ent_t
 
 static ent_t      idx[MB_MAX_ENTRIES];
 static size_t     n_idx;
-static mb_ident_t ident = { "CEMS", "CEMS Supervisor", "0.0", PLAT_LVL_OPERATOR };
+static mb_ident_t ident = { "CEMS", "CEMS Supervisor", "0.0", PLAT_LVL_OPERATOR, 0 };
 static mb_stats_t st;
+
+/* ---------------- the platform's own block (modbus.h) ---------------- */
+uint16_t plat_mb_heartbeat, plat_mb_link_age_s = 0xFFFFu, plat_mb_block_version = PLAT_MB_BLOCK_VERSION;
+uint16_t plat_mb_map_version, plat_mb_api_version = PLAT_API_VERSION;
+uint32_t plat_mb_fw_version, plat_mb_uptime_s;
+char     plat_mb_product[32], plat_mb_vendor[16], plat_mb_fw_text[16];
+uint16_t plat_mb_forced;
+
+#define B(OFF) (PLAT_MB_BLOCK_ADDR + (OFF))
+static const mb_map_t block[] = {
+    MB_ENTRY(MB_INPUT, B(0),  PARAM_ID_MB_BLOCK_VERSION, MBF_U16),
+    MB_ENTRY(MB_INPUT, B(1),  PARAM_ID_MB_MAP_VERSION,   MBF_U16),
+    MB_ENTRY(MB_INPUT, B(2),  PARAM_ID_HEARTBEAT,        MBF_U16),
+    MB_ENTRY(MB_INPUT, B(3),  PARAM_ID_STATE,            MBF_U16),
+    MB_ENTRY(MB_INPUT, B(4),  PARAM_ID_LINK_AGE_S,       MBF_U16),
+    MB_ENTRY(MB_INPUT, B(5),  PARAM_ID_ALARM_ACTIVE,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(6),  PARAM_ID_ALARM_COMMON,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(7),  PARAM_ID_HW_REV,           MBF_U32),
+    MB_ENTRY(MB_INPUT, B(9),  PARAM_ID_SERIAL,           MBF_U32),
+    MB_ENTRY(MB_INPUT, B(11), PARAM_ID_FW_VERSION_NUM,   MBF_U32),
+    MB_ENTRY(MB_INPUT, B(13), PARAM_ID_API_VERSION,      MBF_U16),
+    MB_ENTRY(MB_INPUT, B(14), PARAM_ID_UPTIME_S,         MBF_U32),
+    MB_ENTRY(MB_INPUT, B(16), PARAM_ID_SUPPLY_MV,        MBF_U32),
+    MB_ENTRY(MB_INPUT, B(18), PARAM_ID_STATE_SINCE,      MBF_U32),
+    MB_ENTRY(MB_INPUT, B(20), PARAM_ID_MEAS_Q,           MBF_ARRAY),
+    MB_ENTRY(MB_INPUT, B(52), PARAM_ID_PRODUCT,          MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(68), PARAM_ID_VENDOR,           MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(76), PARAM_ID_FW_TEXT,          MBF_BYTES),
+    MB_ENTRY(MB_INPUT, B(84), PARAM_ID_CLOCK_UNIX,       MBF_U32),     /* layout 2 (CIP-02.6) */
+    MB_ENTRY(MB_INPUT, B(86), PARAM_ID_CLOCK_SYNCED,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(87), PARAM_ID_CLOCK_SOURCE,     MBF_U16),
+    MB_ENTRY(MB_INPUT, B(88), PARAM_ID_CLOCK_SYNC_TIME,  MBF_U32),
+    MB_ENTRY(MB_INPUT, B(90), PARAM_ID_MB_FORCED,        MBF_U16),     /* layout 3 */
+};
+#define N_BLOCK (sizeof block / sizeof block[0])
+
+static void copy_text(char *dst, size_t cap, const char *src) {
+    memset(dst, 0, cap);
+    for (size_t k = 0; src && src[k] && k < cap; ++k) dst[k] = src[k];   /* NUL padded, not terminated when full */
+}
+
+static void block_ident(void) {
+    copy_text(plat_mb_product, sizeof plat_mb_product, ident.product);
+    copy_text(plat_mb_vendor, sizeof plat_mb_vendor, ident.vendor);
+    copy_text(plat_mb_fw_text, sizeof plat_mb_fw_text, ident.revision);
+    plat_mb_fw_version = ident.revision ? fw_parse_version(ident.revision) : 0u;
+    plat_mb_map_version = ident.map_version;
+    plat_mb_block_version = PLAT_MB_BLOCK_VERSION;
+    plat_mb_api_version = PLAT_API_VERSION;
+}
+
+/* the standard CEMS block's sources (below) */
+enum {                                       /* the emissions engine's parameter IDs (param.h with emis.h) */
+    STD_ENABLE = 400, STD_T_REF = 401, STD_P_REF = 402, STD_DILUENT = 403, STD_REF_PCT = 404,
+    STD_PERIOD = 416, STD_OPERATING = 422, STD_CFG_ERROR = 423, STD_UNIT = 431,
+    STD_BANK0 = 450, STD_Q_IN = 460, STD_Q_CALC = 461, STD_Q_MASS = 462, STD_Q_AVG = 463,
+    STD_Q_DAY = 464, STD_Q_RUN = 465, STD_STATUS = 466, STD_DISCARDED = 467, STD_DAYS_INVALID = 468,
+    STD_P2_AVG = 470, STD_P2_Q = 471, STD_P2_TODAY = 472, STD_P2_TODAY_OVER = 473, STD_P2_DAY = 474,
+    STD_P2_DAY_OVER = 475, STD_Q3_ZERO = 476, STD_Q3_SPAN = 477, STD_Q3_LAST = 478, STD_Q3_STATUS = 479
+};
+#define STD_SLOTS       32u
+#define STD_COMPONENTS  30u                  /* 43/14 component objects: 0x85 + 4n stays below 0x100 */
+#define STD_VERSION     1u
+#define STD_EMIS_ST_ABOVE_CAL   0x0040u      /* emis.h EMIS_ST_* bits the status word uses */
+#define STD_EMIS_ST_OVER_RANGE  0x0080u
+#define STD_EMIS_ST_QAL2_REVIEW 0x8000u
+#define STD_Q3_WARN  0x06u                   /* emis_qal3.h EMIS_Q3_*: zero/span warning */
+#define STD_Q3_OUT   0x18u                   /*   zero/span out of control */
+#define STD_Q3_DUE   0x20u                   /*   check due */
+
+/* ---------------- forced values (modbus.h) ---------------- */
+typedef struct { uint16_t id, index; double x; plat_val_t v; uint32_t until; uint8_t src, level; } force_t;
+static force_t  forces[MB_FORCE_MAX];
+static unsigned n_forces;                       /* PLAT_CRIT around every use: several tasks */
+
+static bool ct_signed(uint8_t ct) { return ct == CT_I8 || ct == CT_I16 || ct == CT_I32; }
+
+/* x as a value of type ct (CT_BOOL .. CT_F32): false when it is not one */
+static bool force_val(uint8_t ct, double x, plat_val_t *v) {
+    if (!isfinite(x)) return false;
+    if (ct == CT_BOOL) { v->u = 0; v->b = x != 0.0; return true; }
+    if (ct == CT_F32) { if (fabs(x) > 3.4e38) return false; v->f = (float)x; return true; }
+    if (x != floor(x)) return false;
+    double bits = 8.0 * (double)param_ctype_size(ct);
+    if (ct_signed(ct)) {
+        double lim = ldexp(1.0, (int)bits - 1);
+        if (x < -lim || x >= lim) return false;
+        v->i = (int32_t)x;
+    } else {
+        if (x < 0.0 || x >= ldexp(1.0, (int)bits)) return false;
+        v->u = (uint32_t)x;
+    }
+    return true;
+}
+
+/* a forced value of (id, index), if any: one copy taken under the lock */
+static bool forced(uint16_t id, uint16_t index, plat_val_t *v) {
+    bool hit = false;
+    PLAT_CRIT_ENTER();
+    for (unsigned k = 0; k < n_forces; ++k)
+        if (forces[k].id == id && forces[k].index == index) { *v = forces[k].v; hit = true; break; }
+    PLAT_CRIT_EXIT();
+    return hit;
+}
+
+/* array elements [first, first+n) as stored (es bytes each): forced ones replaced */
+static void force_patch(const param_def_t *d, uint16_t first, uint16_t n, uint8_t *b) {
+    if (!n_forces) return;
+    uint8_t es = (uint8_t)param_ctype_size(d->ctype);
+    for (uint16_t k = 0; k < n; ++k) {
+        plat_val_t v;
+        if (!forced(d->id, (uint16_t)(first + k), &v)) continue;
+        uint8_t *p = b + (size_t)k * es;
+        switch (d->ctype) {
+        case CT_BOOL: p[0] = v.b ? 1u : 0u; break;
+        case CT_U8:  p[0] = (uint8_t)v.u; break;
+        case CT_I8:  { int8_t t = (int8_t)v.i; memcpy(p, &t, 1); break; }
+        case CT_U16: { uint16_t t = (uint16_t)v.u; memcpy(p, &t, 2); break; }
+        case CT_I16: { int16_t t = (int16_t)v.i; memcpy(p, &t, 2); break; }
+        case CT_I32: memcpy(p, &v.i, 4); break;
+        case CT_F32: memcpy(p, &v.f, 4); break;
+        default:     memcpy(p, &v.u, 4); break;
+        }
+    }
+}
+
+
+static double real_value(const param_def_t *d, uint16_t index) {
+    plat_val_t v;
+    uint8_t ct = d->ctype;
+    if (index == MB_FORCE_SCALAR) { if (!param_read(d->id, &v)) return NAN; }
+    else {
+        uint8_t b[4] = { 0 };
+        if (param_read_blob(d->id, (uint16_t)(index * param_ctype_size(ct)), b, (uint16_t)param_ctype_size(ct)) != PERR_OK) return NAN;
+        switch (ct) {
+        case CT_BOOL: case CT_U8: return b[0];
+        case CT_I8:  { int8_t t; memcpy(&t, b, 1); return t; }
+        case CT_U16: { uint16_t t; memcpy(&t, b, 2); return t; }
+        case CT_I16: { int16_t t; memcpy(&t, b, 2); return t; }
+        case CT_I32: { int32_t t; memcpy(&t, b, 4); return t; }
+        case CT_F32: { float t; memcpy(&t, b, 4); return t; }
+        default:     { uint32_t t; memcpy(&t, b, 4); return t; }
+        }
+    }
+    return ct == CT_F32 ? (double)v.f : ct == CT_BOOL ? (v.b ? 1.0 : 0.0) : ct_signed(ct) ? (double)v.i : (double)v.u;
+}
+
+static void force_log(const param_def_t *d, uint16_t index, uint8_t src, uint8_t level, double real, double to) {
+    char t[24];
+    if (index == MB_FORCE_SCALAR) snprintf(t, sizeof t, "%s", d->name);
+    else snprintf(t, sizeof t, "%s[%u]", d->name, (unsigned)index);
+    plat_log_event(LOG_EV_FORCE, src, level, (uint32_t)d->id | (uint32_t)index << 16, real, to, t);
+}
+
+bool mb_forceable(uint16_t id) {
+    static const uint16_t never[] = { PARAM_ID_MB_BLOCK_VERSION, PARAM_ID_MB_MAP_VERSION, PARAM_ID_MB_FORCED,   /* identity and time */
+                                      PARAM_ID_SERIAL, PARAM_ID_HW_REV, PARAM_ID_FW_VERSION_NUM, PARAM_ID_API_VERSION,
+                                      PARAM_ID_CLOCK_UNIX, PARAM_ID_CLOCK_SYNC_TIME };
+    for (size_t k = 0; k < sizeof never / sizeof never[0]; ++k) if (id == never[k]) return false;
+    const param_def_t *d = param_find(id);
+    if (!d || d->ctype > CT_F32 || (PARAM_IS_BLOB(d) && d->ptype != PT_ARRAY)) return false;
+    bool on = id >= STD_BANK0 && id < STD_BANK0 + 8u && d->ctype == CT_F32 && (d->flags & PF_RO);   /* the standard block */
+    for (size_t i = 0; i < n_idx; ++i) {
+        if (idx[i].d != d) continue;
+        if (idx[i].m->fmt == MBF_BYTES) return false;
+        if (!(d->flags & PF_RO) && idx[i].m->table != MB_INPUT && idx[i].m->table != MB_DISCRETE) return false;   /* the PLC writes it */
+        on = true;
+    }
+    return on;
+}
+
+int mb_force_set(uint16_t id, uint16_t index, double x, uint8_t src, uint8_t level, uint32_t now_ms) {
+    if (level < PLAT_LVL_ADMIN || src == PLAT_SRC_MODBUS) return PERR_ACCESS;
+    if (!mb_forceable(id)) return PERR_NO_ID;
+    const param_def_t *d = param_find(id);
+    if (d->ptype == PT_ARRAY ? index >= d->size / param_ctype_size(d->ctype) : index != MB_FORCE_SCALAR) return PERR_RANGE;
+    plat_val_t v = { 0 };
+    if (!force_val(d->ctype, x, &v)) return PERR_RANGE;
+    if (d->ctype == CT_BOOL) x = v.b ? 1.0 : 0.0;
+    int rc = PERR_OK;
+    PLAT_CRIT_ENTER();
+    unsigned k = 0;
+    while (k < n_forces && !(forces[k].id == id && forces[k].index == index)) ++k;
+    if (k == n_forces && n_forces >= MB_FORCE_MAX) rc = PERR_BUSY;
+    else {
+        if (k == n_forces) n_forces++;
+        forces[k] = (force_t){ id, index, x, v, now_ms + PLAT_MB_FORCE_MS, src, level };
+        plat_mb_forced = (uint16_t)n_forces;
+    }
+    PLAT_CRIT_EXIT();
+    if (rc == PERR_OK) force_log(d, index, src, level, real_value(d, index), x);
+    return rc;
+}
+
+static void force_drop(unsigned k) {               /* under the lock */
+    forces[k] = forces[--n_forces];
+    plat_mb_forced = (uint16_t)n_forces;
+}
+
+int mb_force_clear(uint16_t id, uint16_t index, uint8_t src, uint8_t level) {
+    if (level < PLAT_LVL_ADMIN || src == PLAT_SRC_MODBUS) return PERR_ACCESS;
+    bool hit = false;
+    PLAT_CRIT_ENTER();
+    for (unsigned k = 0; k < n_forces; ++k)
+        if (forces[k].id == id && forces[k].index == index) { force_drop(k); hit = true; break; }
+    PLAT_CRIT_EXIT();
+    if (!hit) return PERR_NO_ID;
+    force_log(param_find(id), index, src, level, 0.0, NAN);
+    return PERR_OK;
+}
+
+int mb_force_clear_all(uint8_t src, uint8_t level) {
+    if (level < PLAT_LVL_ADMIN || src == PLAT_SRC_MODBUS) return PERR_ACCESS;
+    for (;;) {
+        force_t f;
+        PLAT_CRIT_ENTER();
+        bool any = n_forces > 0;
+        if (any) { f = forces[n_forces - 1]; force_drop(n_forces - 1); }
+        PLAT_CRIT_EXIT();
+        if (!any) return PERR_OK;
+        force_log(param_find(f.id), f.index, src, level, 0.0, NAN);
+    }
+}
+
+static void force_expire(uint32_t now_ms) {
+    for (;;) {
+        force_t f;
+        bool hit = false;
+        PLAT_CRIT_ENTER();
+        for (unsigned k = 0; k < n_forces; ++k)
+            if ((int32_t)(now_ms - forces[k].until) >= 0) { f = forces[k]; force_drop(k); hit = true; break; }
+        PLAT_CRIT_EXIT();
+        if (!hit) return;
+        force_log(param_find(f.id), f.index, f.src, f.level, 1.0, NAN);
+    }
+}
+
+unsigned mb_force_count(void) { return n_forces; }
+
+bool mb_force_active(uint16_t id, uint16_t index) { plat_val_t v; return forced(id, index, &v); }
+
+bool mb_force_get(unsigned i, mb_force_t *out, uint32_t now_ms) {
+    bool ok = false;
+    PLAT_CRIT_ENTER();
+    if (i < n_forces) {
+        const force_t *f = &forces[i];
+        int32_t left = (int32_t)(f->until - now_ms);
+        *out = (mb_force_t){ f->id, f->index, f->x, left > 0 ? (uint32_t)left : 0u, f->src, f->level };
+        ok = true;
+    }
+    PLAT_CRIT_EXIT();
+    return ok;
+}
+
+/* ---------------- the standard CEMS block (VDI 4201-3) ----------------
+ * Input registers 7000-8999 and the same in the holding registers, read-only: built here on each
+ * read, not from map entries. Layout: docs/MODBUS_STANDARD_BLOCK.md. The values come from the
+ * emissions engine's parameters (emis.h); a build without them reads every slot as not fitted. */
+uint8_t plat_mb_std_words;                   /* param 335 */
+
+static const char *const std_name[STD_SLOTS] = {
+    "O2 dry", "O2 wet", "CO2", "CO", "NO", "NO2", "NOx as NO2", "SO2", "HCl", "HF", "NH3", "H2O",
+    "TOC as C", "CH4", "N2O", "H2S", "Hg", "Dust", "Flue gas flow", "Flue gas velocity",
+    "Stack temperature", "Stack pressure abs", "Sample flow", "Probe/line temperature",
+    "Cooler temperature", "Analyser cell temperature", "Cabinet temperature", "Air/cal gas pressure",
+    "Opacity", "TRS", "spare", "spare" };
+static const char *const std_unit[STD_SLOTS] = {
+    "% vol", "% vol", "% vol", "mg/m3", "mg/m3", "mg/m3", "mg/m3", "mg/m3", "mg/m3", "mg/m3", "mg/m3",
+    "% vol", "mg/m3", "mg/m3", "mg/m3", "mg/m3", "ug/m3", "mg/m3", "m3/h", "m/s", "degC", "hPa",
+    "l/min", "degC", "degC", "degC", "degC", "kPa", "%", "mg/m3", "", "" };
+
+/* The measuring range of slot n for 43/14 (the product's measurement lo/hi); none: NaN. */
+__attribute__((weak)) bool mb_std_range(unsigned n, float *lo, float *hi) { (void)n; (void)lo; (void)hi; return false; }
+/* The stream on line (7945): 0 for a single-stream product. */
+__attribute__((weak)) uint16_t mb_std_stream(void) { return 0; }
+
+/* element index of a parameter as Modbus serves it (a force replaces it); NaN if there is none */
+static double std_elem(uint16_t id, uint16_t index) {
+    const param_def_t *d = param_find(id);
+    if (!d) return NAN;
+    plat_val_t v;
+    if (forced(id, index, &v))
+        return d->ctype == CT_F32 ? (double)v.f : d->ctype == CT_BOOL ? (v.b ? 1.0 : 0.0) : ct_signed(d->ctype) ? (double)v.i : (double)v.u;
+    return real_value(d, index);
+}
+
+static bool std_fitted(unsigned n) { double u = std_elem(STD_UNIT, (uint16_t)n); return isfinite(u) && u != 0.0; }
+
+static uint8_t std_q(uint16_t id, unsigned n) {
+    double q = std_elem(id, (uint16_t)n);
+    return isfinite(q) && q >= 0.0 && q < PLAT_Q_COUNT ? (uint8_t)q : PLAT_Q_UNAVAILABLE;
+}
+static uint8_t std_q_worst(uint8_t a, uint8_t b) {         /* the emissions engine's ranking */
+    static const uint8_t rank[PLAT_Q_COUNT] = {
+        [PLAT_Q_VALID] = 0, [PLAT_Q_RANGE] = 1, [PLAT_Q_WARMUP] = 2, [PLAT_Q_MAINT] = 3,
+        [PLAT_Q_CAL] = 4, [PLAT_Q_STALE] = 5, [PLAT_Q_UNAVAILABLE] = 6, [PLAT_Q_FAULT] = 7 };
+    return rank[a] >= rank[b] ? a : b;
+}
+
+/* the slot is forced: any of its bank values, bank 0 first; *x = that forced value */
+static bool std_forced(unsigned n, float *x) {
+    for (uint16_t b = 0; b < 8u; ++b) {
+        const param_def_t *d = param_find((uint16_t)(STD_BANK0 + b));
+        plat_val_t v;
+        if (d && d->ctype == CT_F32 && forced(d->id, (uint16_t)n, &v)) { *x = v.f; return true; }
+    }
+    return false;
+}
+
+static uint32_t std_status(unsigned n) {
+    float fx;
+    bool frc = std_forced(n, &fx);
+    uint8_t q = std_q(STD_Q_IN, n);
+    double sd = std_elem(STD_STATUS, (uint16_t)n);
+    uint32_t es = isfinite(sd) ? (uint32_t)sd : 0u, w = 0;
+    if (q == PLAT_Q_FAULT || q == PLAT_Q_UNAVAILABLE) w |= 1u << 0;
+    if (q == PLAT_Q_MAINT || q == PLAT_Q_CAL || q == PLAT_Q_WARMUP) w |= 1u << 1;
+    double q3d = std_elem(STD_Q3_STATUS, (uint16_t)n);
+    uint32_t q3 = isfinite(q3d) ? (uint32_t)q3d : 0u;
+    if (alarm_active(ALARM_ID_CAL_DUE) || alarm_active(ALARM_ID_QAL3) || (es & STD_EMIS_ST_QAL2_REVIEW) ||
+        (q3 & (STD_Q3_WARN | STD_Q3_DUE))) w |= 1u << 2;            /* section 3: also bits 27, 28, 30 */
+    if (q == PLAT_Q_RANGE || q == PLAT_Q_STALE || (es & (STD_EMIS_ST_ABOVE_CAL | STD_EMIS_ST_OVER_RANGE)) || (q3 & STD_Q3_OUT))
+        w |= 1u << 3;
+    if (frc) w |= 1u << 4 | 1u << 16;
+    w |= ((es >> 5) & 0x7FFu) << 17;                     /* engine bits 5-15 -> 17-27 */
+    if (q3 & STD_Q3_WARN) w |= 1u << 28;                 /* this slot's QAL3 chart (Rev C) */
+    if (q3 & STD_Q3_OUT)  w |= 1u << 29;
+    if (q3 & STD_Q3_DUE)  w |= 1u << 30;
+    return w;
+}
+
+static uint16_t std_u16(double x) { return isfinite(x) && x > 0.0 ? (x >= 65535.0 ? 0xFFFFu : (uint16_t)x) : 0u; }
+static uint32_t std_f32(double x) { float f = isfinite(x) ? (float)x : NAN; uint32_t u; memcpy(&u, &f, 4); if (!isfinite(x)) u = 0x7FC00000u; return u; }
+
+/* a 32-bit value starting at base: the register a - base (0 or 1) of it, in the block's word order */
+static uint16_t std_half(uint32_t v, uint16_t a, uint16_t base) {
+    bool hi = (a == base) != (plat_mb_std_words == 1u);
+    return (uint16_t)(hi ? v >> 16 : v);
+}
+
+/* Rev C extension 8000-8999 (section 8): second-period averages and QAL3, from 470-479 */
+static uint16_t std_reg_c(uint16_t a) {
+    if (a < 8064u) {                                     /* second-period average, float */
+        unsigned n = (a - 8000u) / 2u;
+        return std_half(std_f32(std_fitted(n) ? std_elem(STD_P2_AVG, (uint16_t)n) : NAN), a, (uint16_t)(8000u + 2u * n));
+    }
+    if (a < 8096u) { unsigned n = a - 8064u; return std_fitted(n) ? std_q(STD_P2_Q, n) : PLAT_Q_UNAVAILABLE; }
+    if (a < 8224u) {                                     /* counts today / last day, valid and above */
+        static const uint16_t id[4] = { STD_P2_TODAY, STD_P2_TODAY_OVER, STD_P2_DAY, STD_P2_DAY_OVER };
+        unsigned g = (a - 8096u) / 32u, n = (a - 8096u) % 32u;
+        return std_fitted(n) ? std_u16(std_elem(id[g], (uint16_t)n)) : 0u;
+    }
+    if (a < 8352u) {                                     /* QAL3 zero, span deviation, float */
+        unsigned g = (a - 8224u) / 64u, n = ((a - 8224u) % 64u) / 2u;
+        double x = std_fitted(n) ? std_elem(g ? STD_Q3_SPAN : STD_Q3_ZERO, (uint16_t)n) : NAN;
+        return std_half(std_f32(x), a, (uint16_t)(8224u + 64u * g + 2u * n));
+    }
+    if (a < 8416u) {                                     /* QAL3 last check time, u32 */
+        unsigned n = (a - 8352u) / 2u;
+        double t = std_fitted(n) ? std_elem(STD_Q3_LAST, (uint16_t)n) : 0.0;
+        uint32_t u = isfinite(t) && t > 0.0 ? (t >= 4294967295.0 ? 0xFFFFFFFFu : (uint32_t)t) : 0u;
+        return std_half(u, a, (uint16_t)(8352u + 2u * n));
+    }
+    if (a < 8448u) { unsigned n = a - 8416u; return std_fitted(n) ? std_u16(std_elem(STD_Q3_STATUS, (uint16_t)n)) : 0u; }
+    return 0;                                            /* reserved */
+}
+
+static uint16_t std_reg(uint16_t a) {
+    if (a >= 8000u) return std_reg_c(a);
+    if (a < 7128u) {                                     /* BasisM: value, status */
+        unsigned n = (a - 7000u) / 4u, k = (a - 7000u) % 4u;
+        bool fit = std_fitted(n);
+        if (k < 2) return std_half(std_f32(fit ? std_elem(STD_BANK0, (uint16_t)n) : NAN), a, (uint16_t)(7000u + 4u * n));
+        return std_half(fit ? std_status(n) : 0u, a, (uint16_t)(7002u + 4u * n));
+    }
+    if (a < 7256u) {                                     /* BasisS: the force in effect */
+        unsigned n = (a - 7128u) / 4u, k = (a - 7128u) % 4u;
+        float x = 0.0f;
+        bool frc = std_fitted(n) && std_forced(n, &x);
+        if (k < 2) return std_half(std_f32(frc ? x : 0.0), a, (uint16_t)(7128u + 4u * n));
+        return std_half(frc ? 1u << 4 : 0u, a, (uint16_t)(7130u + 4u * n));
+    }
+    if (a < 7300u) return 0;                             /* BasisR (none defined yet), reserved */
+    if (a < 7748u) {                                     /* calculated banks 1-7 */
+        unsigned k = (a - 7300u) / 64u + 1u, n = ((a - 7300u) % 64u) / 2u;
+        double x = std_fitted(n) ? std_elem((uint16_t)(STD_BANK0 + k), (uint16_t)n) : NAN;
+        return std_half(std_f32(x), a, (uint16_t)(7300u + 64u * (k - 1u) + 2u * n));
+    }
+    if (a < 7876u) {                                     /* qualities */
+        unsigned g = (a - 7748u) / 32u, n = (a - 7748u) % 32u;
+        if (!std_fitted(n)) return PLAT_Q_UNAVAILABLE;
+        switch (g) {
+        case 0:  return std_q(STD_Q_IN, n);
+        case 1:  return std_q_worst(std_q(STD_Q_CALC, n), std_q(STD_Q_MASS, n));
+        case 2:  return std_q_worst(std_q(STD_Q_AVG, n), std_q(STD_Q_RUN, n));
+        default: return std_q(STD_Q_DAY, n);
+        }
+    }
+    if (a < 7940u) {                                     /* counters */
+        unsigned n = (a - 7876u) % 32u;
+        if (!std_fitted(n)) return 0;
+        return std_u16(std_elem(a < 7908u ? STD_DISCARDED : STD_DAYS_INVALID, (uint16_t)n));
+    }
+    switch (a) {                                         /* globals */
+    case 7940: return STD_VERSION;
+    case 7941: case 7942: {
+        uint32_t m = 0;
+        for (unsigned n = 0; n < STD_SLOTS; ++n) if (std_fitted(n)) m |= 1u << n;
+        return std_half(m, a, 7941u);
+    }
+    case 7943: return (uint16_t)mb_force_count();
+    case 7944: return plat_mb_std_words;
+    case 7945: return mb_std_stream();
+    case 7946: return std_u16(std_elem(STD_OPERATING, MB_FORCE_SCALAR));
+    case 7947: return std_u16(std_elem(STD_DILUENT, MB_FORCE_SCALAR));
+    case 7948: case 7949: return std_half(std_f32(std_elem(STD_REF_PCT, MB_FORCE_SCALAR)), a, 7948u);
+    case 7950: case 7951: return std_half(std_f32(std_elem(STD_T_REF, MB_FORCE_SCALAR)), a, 7950u);
+    case 7952: case 7953: return std_half(std_f32(std_elem(STD_P_REF, MB_FORCE_SCALAR)), a, 7952u);
+    case 7954: return std_u16(std_elem(STD_PERIOD, MB_FORCE_SCALAR));
+    case 7955: return std_u16(std_elem(STD_ENABLE, MB_FORCE_SCALAR));
+    case 7956: return std_u16(std_elem(STD_CFG_ERROR, MB_FORCE_SCALAR));
+    default:   return 0;                                 /* reserved */
+    }
+}
+
+void mb_std_each(void (*fn)(const mb_std_item_t *it, void *ctx), void *ctx) {
+    static const char *const bank[8] = { "value as measured (BasisM)", "QAL2-calibrated, dry, normalised (bank 1)",
+        "corrected to the reference diluent (bank 2)", "mass emission (bank 3)", "running short-term average (bank 4)",
+        "last short-term average (bank 5)", "last validated short-term average (bank 6)", "last validated daily average (bank 7)" };
+    static const char *const qual[4] = { "quality, measured value", "quality, instantaneous calculated",
+        "quality, short-term averages", "quality, daily average" };
+    static const char *const cnt2[4] = { "valid second-period averages today", "second-period averages above the limit today",
+        "valid second-period averages, last day", "second-period averages above the limit, last day" };
+    mb_std_item_t it;
+#define STD_ITEM(A, C, F, N, I, U) do { it = (mb_std_item_t){ (uint16_t)(A), (C), (F), (uint8_t)(N), \
+        (N) < STD_SLOTS ? std_name[N] : NULL, (I), (U) }; fn(&it, ctx); } while (0)
+#define FIT_EACH(body) for (unsigned n = 0; n < STD_SLOTS; ++n) if (std_fitted(n)) { body; }
+    const char *u0 = NULL;
+    FIT_EACH(STD_ITEM(7000u + 4u * n, 2, MBF_F32, n, bank[0], std_unit[n]);
+             STD_ITEM(7002u + 4u * n, 2, MBF_U32, n, "status (NE 107, section 3)", u0))
+    FIT_EACH(STD_ITEM(7128u + 4u * n, 2, MBF_F32, n, "simulation value (BasisS)", std_unit[n]);
+             STD_ITEM(7130u + 4u * n, 2, MBF_U32, n, "simulation request (BasisS)", u0))
+    STD_ITEM(7256u, 2, MBF_U32, 0xFFu, "reference material status (BasisR, 0 until defined)", u0);
+    STD_ITEM(7258u, 2, MBF_U32, 0xFFu, "reference material initiate (BasisR, 0 until defined)", u0);
+    for (unsigned k = 1; k < 8u; ++k)
+        FIT_EACH(STD_ITEM(7300u + 64u * (k - 1u) + 2u * n, 2, MBF_F32, n, bank[k], k == 3u ? "kg/h" : std_unit[n]))
+    for (unsigned g = 0; g < 4u; ++g) FIT_EACH(STD_ITEM(7748u + 32u * g + n, 1, MBF_U16, n, qual[g], u0))
+    FIT_EACH(STD_ITEM(7876u + n, 1, MBF_U16, n, "short-term averages discarded today", u0))
+    FIT_EACH(STD_ITEM(7908u + n, 1, MBF_U16, n, "days invalid this year", u0))
+    static const struct { uint16_t a; uint8_t c, f; const char *i, *u; } glob[] = {
+        { 7940, 1, MBF_U16, "block version", NULL }, { 7941, 2, MBF_U32, "slots fitted, bit n = slot n", NULL },
+        { 7943, 1, MBF_U16, "values forced now", NULL }, { 7944, 1, MBF_U16, "word order: 0 high word first, 1 low word first", NULL },
+        { 7945, 1, MBF_U16, "stream on line (0 = single stream)", NULL }, { 7946, 1, MBF_U16, "plant operating", NULL },
+        { 7947, 1, MBF_U16, "reference diluent: 0 none, 1 O2, 2 CO2", NULL }, { 7948, 2, MBF_F32, "reference diluent", "%" },
+        { 7950, 2, MBF_F32, "normalisation temperature", "K" }, { 7952, 2, MBF_F32, "normalisation pressure", "kPa" },
+        { 7954, 1, MBF_U16, "short-term averaging period", "s" }, { 7955, 1, MBF_U16, "emissions engine enabled", NULL },
+        { 7956, 1, MBF_U16, "emissions engine configuration error", NULL } };
+    for (size_t k = 0; k < sizeof glob / sizeof glob[0]; ++k) STD_ITEM(glob[k].a, glob[k].c, glob[k].f, 0xFFu, glob[k].i, glob[k].u);
+    FIT_EACH(STD_ITEM(8000u + 2u * n, 2, MBF_F32, n, "last validated second-period average", std_unit[n]))
+    FIT_EACH(STD_ITEM(8064u + n, 1, MBF_U16, n, "quality, second-period average", u0))
+    for (unsigned g = 0; g < 4u; ++g) FIT_EACH(STD_ITEM(8096u + 32u * g + n, 1, MBF_U16, n, cnt2[g], u0))
+    FIT_EACH(STD_ITEM(8224u + 2u * n, 2, MBF_F32, n, "QAL3 last zero check deviation", std_unit[n]))
+    FIT_EACH(STD_ITEM(8288u + 2u * n, 2, MBF_F32, n, "QAL3 last span check deviation", std_unit[n]))
+    FIT_EACH(STD_ITEM(8352u + 2u * n, 2, MBF_U32, n, "QAL3 time of the last check (local s since 1970)", "s"))
+    FIT_EACH(STD_ITEM(8416u + n, 1, MBF_U16, n, "QAL3 status bits", u0))
+#undef FIT_EACH
+#undef STD_ITEM
+}
+
+void mb_block_scan(uint32_t now_ms) {
+    static uint32_t beat_ms;
+    if (!beat_ms || (uint32_t)(now_ms - beat_ms) >= 100u) { beat_ms = now_ms ? now_ms : 1u; plat_mb_heartbeat++; }
+    uint32_t age = plat_link_age_ms(now_ms);
+    plat_mb_link_age_s = (uint16_t)(age / 1000u > 0xFFFFu ? 0xFFFFu : age / 1000u);
+    plat_mb_uptime_s = now_ms / 1000u;
+    force_expire(now_ms);
+    if (!plat_mb_product[0]) block_ident();              /* after a restore of defaults cleared the texts */
+}
 
 /* ---------------- map ---------------- */
 static uint8_t elem_size(const param_def_t *d) { return (uint8_t)param_ctype_size(d->ctype); }
@@ -50,12 +535,27 @@ uint16_t mb_entry_span(const mb_map_t *e) { return span_of(e, param_find(e->id))
 int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
     n_idx = 0;
     memset(&st, 0, sizeof st);
+    PLAT_CRIT_ENTER(); n_forces = 0; plat_mb_forced = 0; PLAT_CRIT_EXIT();
     if (id) ident = *id;
-    if (n > MB_MAX_ENTRIES) return (int)MB_MAX_ENTRIES + 1;
+    block_ident();
+    if (n + N_BLOCK > MB_MAX_ENTRIES) return (int)MB_MAX_ENTRIES + 1;
+    for (size_t k = 0; k < N_BLOCK; ++k) {
+        const param_def_t *d = param_find(block[k].id);
+        if (d) idx[n_idx++] = (ent_t){ &block[k], d, span_of(&block[k], d) };
+    }
     for (size_t k = 0; k < n; ++k) {
         const param_def_t *d = param_find(map[k].id);
         uint16_t sp = span_of(&map[k], d);
         if (map[k].table > MB_INPUT || sp == 0 || (uint32_t)map[k].addr + sp > 65536u) return (int)k + 1;
+        if (map[k].table == MB_INPUT && map[k].addr <= PLAT_MB_BLOCK_END && (uint32_t)map[k].addr + sp > PLAT_MB_BLOCK_ADDR)
+            return (int)k + 1;                         /* the platform's block (R5: reserved in every product) */
+        if ((map[k].table == MB_INPUT || map[k].table == MB_HOLDING) && map[k].addr <= PLAT_MB_STD_END &&
+            (uint32_t)map[k].addr + sp > PLAT_MB_STD_ADDR)
+            return (int)k + 1;                         /* the standard CEMS block */
+        if (map[k].table == MB_COILS && map[k].addr <= PLAT_MB_STD_COIL_END && (uint32_t)map[k].addr + sp > PLAT_MB_STD_COIL_ADDR)
+            return (int)k + 1;                         /* its reserved coils */
+        if (map[k].table == MB_DISCRETE && map[k].addr <= PLAT_DIA_MB_END && (uint32_t)map[k].addr + sp > PLAT_DIA_MB_ADDR)
+            return (int)k + 1;                         /* the digital input alarms (plat_alarm.h) */
         idx[n_idx++] = (ent_t){ &map[k], d, sp };
     }
     for (size_t i = 1; i < n_idx; ++i) {          /* sort by (table, addr) */
@@ -66,11 +566,18 @@ int mb_init(const mb_map_t *map, size_t n, const mb_ident_t *id) {
     }
     for (size_t i = 1; i < n_idx; ++i)
         if (idx[i].m->table == idx[i - 1].m->table && (uint32_t)idx[i - 1].m->addr + idx[i - 1].span > idx[i].m->addr)
-            return (int)(idx[i].m - map) + 1;
+            return (int)((idx[i].m >= map && idx[i].m < map + n ? idx[i].m : idx[i - 1].m) - map) + 1;
     return 0;
 }
 
 mb_stats_t mb_stats(void) { return st; }
+
+size_t mb_entry_count(void) { return n_idx; }
+const mb_map_t *mb_entry_at(size_t i, uint16_t *span) {
+    if (i >= n_idx) return NULL;
+    if (span) *span = idx[i].span;
+    return idx[i].m;
+}
 
 static const ent_t *find(uint8_t table, uint16_t a) {
     size_t lo = 0, hi = n_idx;                     /* last entry with (table, addr) <= (table, a) */
@@ -114,6 +621,7 @@ static float    bitsf(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static param_err_t scalar_regs(const ent_t *e, uint16_t *r) {
     plat_val_t v;
     if (!param_read(e->d->id, &v)) return PERR_NO_ID;
+    (void)forced(e->d->id, MB_FORCE_SCALAR, &v);
     const mb_map_t *m = e->m;
     bool isf = e->d->ptype == PT_FLOAT;
     double x = isf ? (double)v.f : e->d->ptype == PT_INT ? (double)v.i : e->d->ptype == PT_UINT ? (double)v.u : (v.b ? 1.0 : 0.0);
@@ -164,6 +672,7 @@ static param_err_t entry_regs(const ent_t *e, uint16_t r0, uint16_t n, uint16_t 
         uint8_t b[4 * MB_MAX_READ_REGS];
         param_err_t err = param_read_blob(e->d->id, (uint16_t)(first * es), b, (uint16_t)((last - first + 1u) * es));
         if (err != PERR_OK) return err;
+        force_patch(e->d, first, (uint16_t)(last - first + 1u), b);
         for (uint16_t k = 0; k < n; ++k) {
             uint16_t reg = (uint16_t)(r0 + k), el = (uint16_t)(reg / rpe), two[2];
             elem_regs(e, b + (el - first) * es, two);
@@ -183,10 +692,13 @@ static param_err_t entry_bits(const ent_t *e, uint16_t b0, uint16_t n, uint8_t *
     if (e->m->fmt == MBF_BIT) {
         plat_val_t v;
         if (!param_read(e->d->id, &v)) return PERR_NO_ID;
+        (void)forced(e->d->id, MB_FORCE_SCALAR, &v);
         bits[0] = e->d->ptype == PT_FLOAT ? (v.f != 0.0f) : e->d->ptype == PT_BOOL ? v.b : (v.u != 0);
         return PERR_OK;
     }
-    return param_read_blob(e->d->id, b0, bits, n);          /* bool array: one byte per element */
+    param_err_t err = param_read_blob(e->d->id, b0, bits, n);   /* bool array: one byte per element */
+    if (err == PERR_OK) force_patch(e->d, b0, n, bits);
+    return err;
 }
 
 /* ---------------- reads ---------------- */
@@ -202,7 +714,9 @@ static uint16_t rd_regs(uint8_t fc, uint8_t table, uint16_t a, uint16_t q, uint8
     if (cap < 2u + 2u * q) return exc(fc, EX_FAIL, resp);
     uint16_t regs[MB_MAX_READ_REGS];
     for (uint16_t k = 0; k < q;) {
-        const ent_t *e = find(table, (uint16_t)(a + k));
+        uint16_t ak = (uint16_t)(a + k);
+        if (ak >= PLAT_MB_STD_ADDR && ak <= PLAT_MB_STD_END) { regs[k++] = std_reg(ak); continue; }   /* input or holding */
+        const ent_t *e = find(table, ak);
         if (!e) return exc(fc, EX_ADDR, resp);
         uint16_t r0 = (uint16_t)(a + k - e->m->addr), n = (uint16_t)(e->span - r0);
         if (n > q - k) n = (uint16_t)(q - k);
@@ -222,7 +736,9 @@ static uint16_t rd_bits(uint8_t fc, uint8_t table, uint16_t a, uint16_t q, uint8
     if (cap < 2u + nb) return exc(fc, EX_FAIL, resp);
     uint8_t bits[MB_MAX_READ_BITS];
     for (uint16_t k = 0; k < q;) {
-        const ent_t *e = find(table, (uint16_t)(a + k));
+        uint16_t ak = (uint16_t)(a + k);
+        if (table == MB_DISCRETE && ak >= PLAT_DIA_MB_ADDR && ak <= PLAT_DIA_MB_END) { bits[k++] = plat_dia_mb_bit(ak); continue; }
+        const ent_t *e = find(table, ak);
         if (!e) return exc(fc, EX_ADDR, resp);
         uint16_t b0 = (uint16_t)(a + k - e->m->addr), n = (uint16_t)(e->span - b0);
         if (n > q - k) n = (uint16_t)(q - k);
@@ -403,20 +919,60 @@ static uint16_t wr_bits(uint8_t fc, uint16_t a, uint16_t q, const uint8_t *bits,
     return x ? exc(fc, x, resp) : 0;
 }
 
-/* ---------------- device identification (43/14) ---------------- */
+/* ---------------- device identification (43/14) ----------------
+ * Conformity 0x83: basic (0x00-0x02), regular (0x04 product name) and extended objects, read as a
+ * stream (codes 1-3: from an object to the end of its category, "more follows" when the PDU is
+ * full) or one at a time (code 4). The extended objects are VDI 4201-3's self-description of the
+ * standard block (docs/MODBUS_STANDARD_BLOCK.md section 5). */
+static void put_be32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
+
+/* object id's value into out (at least 64 bytes): its length, or -1 when there is no such object */
+static int dev_obj(uint8_t id, uint8_t *out) {
+    const char *t = NULL;
+    char b[24];
+    switch (id) {
+    case 0x00: t = ident.vendor; break;
+    case 0x01: t = ident.product; break;
+    case 0x02: t = ident.revision; break;
+    case 0x04: t = ident.product; break;
+    case 0x80: { plat_val_t v; snprintf(b, sizeof b, "%lu", param_read(PARAM_ID_SERIAL, &v) ? (unsigned long)v.u : 0ul); t = b; break; }
+    case 0x81: out[0] = 0; out[1] = STD_COMPONENTS; return 2;
+    case 0x82: out[0] = 7000u >> 8; out[1] = 7000u & 0xFFu; return 2;
+    case 0x83: out[0] = 7128u >> 8; out[1] = 7128u & 0xFFu; return 2;
+    case 0x84: out[0] = 7256u >> 8; out[1] = 7256u & 0xFFu; return 2;
+    default: {
+        if (id < 0x85u || id >= 0x85u + 4u * STD_COMPONENTS) return -1;
+        unsigned n = (id - 0x85u) / 4u, k = (id - 0x85u) % 4u;
+        bool fit = std_fitted(n);
+        float lo = NAN, hi = NAN;
+        if (k == 1 || k == 2) {
+            if (!fit || !mb_std_range(n, &lo, &hi)) lo = hi = NAN;
+            put_be32(out, std_f32(k == 1 ? lo : hi));
+            return 4;
+        }
+        t = k == 0 ? (fit ? std_name[n] : "not fitted") : std_unit[n];
+    }
+    }
+    size_t sl = strlen(t ? t : "");
+    if (sl > 64) sl = 64;
+    memcpy(out, t ? t : "", sl);
+    return (int)sl;
+}
+
 static uint16_t dev_id(const uint8_t *req, uint16_t len, uint8_t *resp, uint16_t cap) {
     if (len < 4 || req[1] != 0x0E) return exc(0x2B, EX_FUNC, resp);
-    uint8_t code = req[2], obj = req[3];
-    const char *objs[3] = { ident.vendor, ident.product, ident.revision };
-    if (code != 1 && code != 4) return exc(0x2B, EX_VALUE, resp);
-    if (obj > 2) { if (code == 4) return exc(0x2B, EX_ADDR, resp); obj = 0; }
+    uint8_t code = req[2], obj = req[3], val[64];
+    if (code < 1 || code > 4) return exc(0x2B, EX_VALUE, resp);
+    if (dev_obj(obj, val) < 0) { if (code == 4) return exc(0x2B, EX_ADDR, resp); obj = 0; }
+    unsigned last = code == 1 ? 0x02u : code == 2 ? 0x7Fu : 0xFFu;
+    if (code != 4 && obj > last) obj = 0;
     uint16_t n = 7;
-    resp[0] = 0x2B; resp[1] = 0x0E; resp[2] = code; resp[3] = 0x81; resp[4] = 0; resp[5] = 0; resp[6] = 0;
-    for (uint8_t o = obj; o <= (code == 4 ? obj : 2); ++o) {
-        size_t sl = strlen(objs[o] ? objs[o] : "");
-        if (sl > 64) sl = 64;
-        if (n + 2u + sl > cap) break;
-        resp[n++] = o; resp[n++] = (uint8_t)sl; memcpy(resp + n, objs[o], sl); n = (uint16_t)(n + sl);
+    resp[0] = 0x2B; resp[1] = 0x0E; resp[2] = code; resp[3] = 0x83; resp[4] = 0; resp[5] = 0; resp[6] = 0;
+    for (unsigned o = obj; o <= (code == 4 ? obj : last); ++o) {
+        int vl = dev_obj((uint8_t)o, val);
+        if (vl < 0) continue;
+        if (n + 2u + (unsigned)vl > cap) { resp[4] = 0xFF; resp[5] = (uint8_t)o; break; }   /* more follows from o */
+        resp[n++] = (uint8_t)o; resp[n++] = (uint8_t)vl; memcpy(resp + n, val, (size_t)vl); n = (uint16_t)(n + vl);
         resp[6]++;
     }
     return n;

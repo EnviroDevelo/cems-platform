@@ -1,0 +1,76 @@
+/* drivers.h - the I/O board's chip drivers, assembled into the node_hw_t the core uses.
+ *
+ *   drv_iso2h823.c  bank A, Infineon ISO2H823V2.5, SPI (24-bit frames with CRC-5)   - checked against its datasheet
+ *   drv_iso1i813t.c inputs, Infineon ISO1I813T, SPI (24-bit frames with CRC-5)        - checked against its datasheet
+ *   drv_iso808.c    bank B, ST ISO808A-1, SPI (8-bit frames), FAULT and PGOOD pins - checked against its datasheet
+ *   drv_ads124s08.c temperature inputs, TI ADS124S08 behind an isolator, SPI mode 1   - NOT yet checked (see the file)
+ *   pump.c          pump PWM and tacho (map 2), through node_port.h
+ *   drv_ad4112.c    analog inputs (map 3, CORE PCB), ADI AD4112 behind an isolator, SPI mode 3
+ * The three I/O chips share the node's SPI bus, each with its own chip select, SPI mode 0, at most 5 MHz
+ * (the ISO1I813T's limit; the ISO2H823 allows 6, the ISO808A-1 20); the ADS124S08 runs at mode 1, 4 MHz.
+ *
+ * DATASHEET STATUS. A driver whose register-level details have not been checked against the
+ * chip's datasheet is built in its fail-safe form: it reports "no answer" and drives nothing, so
+ * the node reports OUT_A_CHIP / IN_CHIP and its gate never opens. Each driver is switched to its
+ * real form by defining its *_CONFIRMED macro to 1 once its constants have been checked
+ * (README.md, "Open items"). A product build (NODE_PRODUCT_BUILD) refuses to compile while any
+ * driver is unconfirmed. */
+#ifndef DRIVERS_H
+#define DRIVERS_H
+#include "node_hw.h"
+
+#ifndef ISO2H823_CONFIRMED
+#define ISO2H823_CONFIRMED 1      /* datasheet Rev 2.1, 2024-11-01 */
+#endif
+#ifndef ISO1I813T_CONFIRMED
+#define ISO1I813T_CONFIRMED 1     /* datasheet V2.2, 2017-01-03 */
+#endif
+#ifndef ISO808_CONFIRMED
+#define ISO808_CONFIRMED 1        /* ISO808A-1 datasheet DS14170 Rev 6, July 2025 */
+#endif
+
+#ifndef ADS124S08_CONFIRMED
+#define ADS124S08_CONFIRMED 1     /* SBAS660 + Zephyr + variegated-ads124s08, 31 Oct 2026; CRC seed and DEV_ID to see on the bench */
+#endif
+#ifndef AD4112_CONFIRMED
+#define AD4112_CONFIRMED 1        /* datasheet + Linux ad7173 driver, 31 Oct 2026 (IO_CHIPS_DATASHEET_CHECK.md) */
+#endif
+#ifndef NODE_ANALOG
+#define NODE_ANALOG 0             /* the CORE PCB in the node role has the AD4112 (port/stm32h5 sets 1) */
+#endif
+#ifndef NODE_TEMP_PWM
+#define NODE_TEMP_PWM 1           /* the H563 board rev A has the temperature inputs and the pump PWM */
+#endif
+
+#if defined(NODE_PRODUCT_BUILD) && !(ISO2H823_CONFIRMED && ISO1I813T_CONFIRMED && ISO808_CONFIRMED && \
+                                     (ADS124S08_CONFIRMED || !NODE_TEMP_PWM) && (AD4112_CONFIRMED || !NODE_ANALOG))
+#error "A chip driver is not yet checked against its datasheet (drivers/drivers.h): not a product build"
+#endif
+
+const node_hw_t *drivers_hw(void);
+
+/* CRC-5 of the ISOFACE chips' SPI mode 3 over the first nbits, MSB first (isoface_crc5.c) */
+uint8_t isoface_crc5(const uint8_t *data, unsigned nbits);
+
+/* the individual drivers (node_hw_t signatures, ctx unused) */
+int  iso2h823_config(void *ctx, uint8_t ol_enable);
+int  iso2h823_write(void *ctx, uint8_t outputs);
+int  iso2h823_diag(void *ctx, node_a_diag_t *d);
+int  iso1i813t_config(void *ctx, uint8_t filter_ms, uint8_t wb_enable);
+int  iso1i813t_read(void *ctx, node_in_t *d);
+void iso808_write(void *ctx, uint8_t outputs);
+bool iso808_fault(void *ctx);
+bool iso808_wdg_tripped(void *ctx);
+void iso808_wdg_service(void *ctx);
+bool iso808_supply_ok(void *ctx);
+void board_relays(void *ctx, uint8_t relays);
+void ads124s08_config(void *ctx, const node_temp_cfg_t *c);
+void ads124s08_poll(void *ctx, uint32_t now_ms, node_temp_t *t);
+void ads124s08_reset_state(void);                      /* host tests: forget everything (power-up) */
+uint8_t ads124s08_crc8(const uint8_t *d, unsigned n);  /* the data CRC: x^8 + x^2 + x + 1, seed 0xFF */
+void ad4112_poll(void *ctx, uint32_t now_ms, node_ai_t *a);
+void ad4112_reset_state(void);                         /* host tests: forget everything (power-up) */
+void pump_pwm(void *ctx, uint16_t duty, uint16_t freq_hz, bool dir);
+uint32_t pump_tach_period_us(void *ctx);
+
+#endif

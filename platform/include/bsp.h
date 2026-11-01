@@ -31,6 +31,8 @@ typedef enum {
 } bsp_reset_cause_t;
 
 void     bsp_init(void);                 /* after the CubeMX MX_*_Init calls */
+void     bsp_psram_init(void);           /* bsp_init calls it: external PSRAM (PLAT_PSRAM builds) */
+bool     bsp_psram_ok(void);             /* false = the PSRAM failed its check: PLAT_EXTRAM buffers unusable */
 uint32_t bsp_ms(void);                   /* free-running ms, wraps at 2^32   */
 uint32_t bsp_cycles(void);               /* free-running CPU cycle count, wraps; differences only */
 uint32_t bsp_cycles_per_us(void);        /* e.g. 250 at 250 MHz */
@@ -61,6 +63,19 @@ struct eve_bus;
 struct eve_bus *bsp_eve_bus(void);
 
 /* Random bytes for password salts and web session tokens (hardware RNG on the H5). */
+/* The RS-485 port for the I/O boards (iobus.h); NULL if this hardware has none. */
+struct iob_port;
+struct iob_port *bsp_rs485(void);
+/* The I/O port (a W5500 on its own SPI, w5500.h; HARDWARE.md H5); NULL if this hardware has none. */
+struct w5500_bus;
+struct w5500_bus *bsp_w5500(void);
+
+/* One reading of the 24 V supply in mV (supply-sense divider on PC0, CORE_PCB.md 12); false if
+ * this board does not measure it. Called every ms by the ctrl task: keep it to one conversion. */
+bool bsp_supply_mv(uint32_t *mv);
+/* The board revision straps (CORE_PCB.md 12: rev = PE8 << 1 | PE7), read once at boot. false = this board has none. */
+bool bsp_hw_straps(uint8_t *rev);
+
 void bsp_random(void *buf, uint32_t len);
 void bsp_chip_uid(uint8_t uid[12]);       /* the MCU's 96-bit unique ID (serial-number tokens, D25) */
 

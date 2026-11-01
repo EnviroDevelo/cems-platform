@@ -98,7 +98,9 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
         [LOG_EV_ALARM_ACK] = "Alarm acknowledged", [LOG_EV_FW_UPDATE] = "Firmware", [LOG_EV_FW_ROLLBACK] = "Firmware rolled back",
         [LOG_EV_LOG_FAULT] = "Log fault", [LOG_EV_STORE_FAULT] = "Storage fault", [LOG_EV_LOST] = "Events lost",
         [LOG_EV_IP_CONFLICT] = "Address conflict", [LOG_EV_TLS_KEY] = "New HTTPS key",
-        [LOG_EV_MAIL] = "Alarm email", [LOG_EV_SERIAL] = "Serial number" };
+        [LOG_EV_MAIL] = "Alarm email", [LOG_EV_SERIAL] = "Serial number", [LOG_EV_IOB] = "I/O board",
+        [LOG_EV_STATE] = "State", [LOG_EV_POWER_FAIL] = "Power failing", [LOG_EV_POWER_RESTORED] = "Power restored",
+        [LOG_EV_SERVICE] = "Service", [LOG_EV_CAL] = "Calibration", [LOG_EV_SELFTEST] = "Self-test", [LOG_EV_FORCE] = "Modbus force", [LOG_EV_ETH_SPEED] = "Ethernet speed", [LOG_EV_QAL3] = "QAL3 check" };
     static const char *const reset[] = { "", "power-on", "reset pin", "software reset", "watchdog", "window watchdog", "brown-out" };
     const char *w = e->code < sizeof nm / sizeof nm[0] && nm[e->code] ? nm[e->code] : (e->code >= LOG_EV_APP ? "Application" : "Event");
     snprintf(what, wcap, "%s", w);
@@ -123,6 +125,19 @@ void log_event_text(const log_event_t *e, char *what, size_t wcap, char *detail,
     case LOG_EV_SERIAL:
         if (isfinite(e->new_v)) snprintf(detail, dcap, "%s -> %s: %s", a, b, e->text);
         else snprintf(detail, dcap, "%s: %s", a, e->text);
+        break;
+    case LOG_EV_IOB: snprintf(detail, dcap, "board %lu: %s", (unsigned long)e->arg, e->text); break;
+    case LOG_EV_SELFTEST: snprintf(detail, dcap, e->arg ? "failed: %s" : "%s", e->text); break;
+    case LOG_EV_FORCE:
+        if (isfinite(e->new_v)) snprintf(detail, dcap, "%s forced on Modbus to %s (real value %s)", e->text, b, a);
+        else snprintf(detail, dcap, "%s: Modbus force %s", e->text, e->old_v != 0.0 ? "ended" : "cleared");
+        break;
+    case LOG_EV_ETH_SPEED:
+        snprintf(detail, dcap, "100 Mbit lost data (%lu %% sent again): now 10 Mbit until a restart", (unsigned long)e->arg);
+        break;
+    case LOG_EV_QAL3:
+        if (isfinite(e->new_v)) snprintf(detail, dcap, "channel %lu: zero %s, span %s: %s", (unsigned long)e->arg, a, b, e->text);
+        else snprintf(detail, dcap, "channel %lu: %s", (unsigned long)e->arg, e->text);
         break;
     case LOG_EV_MAIL:
         snprintf(detail, dcap, "%s, %lu alarm event%s", e->text, (unsigned long)e->arg, e->arg == 1 ? "" : "s");
@@ -243,9 +258,20 @@ static void do_data(log_csv_t *c, http_out_t *o) {
         }
         out_str(o, "\r\n");
         c->header_out = true;
+        c->have_last = false;
     }
     char tb[32];
-    log_fmt_time(tb, sizeof tb, t, !(s0[1] & LOG_F_NOCLOCK));
+    bool clock = !(s0[1] & LOG_F_NOCLOCK);
+    if (clock && c->have_last && c->iv && t > c->last_t && t - c->last_t > 2u * (uint32_t)c->iv) {
+        log_fmt_time(tb, sizeof tb, c->last_t + c->iv, true);    /* power-off gap (CIP-16.6) */
+        out_str(o, tb);
+        for (unsigned ch = 0; ch < c->nch; ++ch) out_str(o, ",,GAP");
+        out_str(o, "\r\n");
+        c->rows++;
+    }
+    c->have_last = clock;
+    c->last_t = t;
+    log_fmt_time(tb, sizeof tb, t, clock);
     out_str(o, tb);
     for (unsigned ch = 0; ch < c->nch; ++ch) {
         float v = NAN;

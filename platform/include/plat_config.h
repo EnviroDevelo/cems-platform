@@ -48,6 +48,7 @@
 #define PLAT_PRIO_CTRL            14     /* Highest tier: fast control loops   */
 #define PLAT_PRIO_SCAN            13     /* Highest tier: VM/MUX sequence scan */
 #define PLAT_PRIO_SUPERVISOR      12     /* watchdog supervisor (short, periodic) */
+#define PLAT_PRIO_IOBUS           11     /* I/O bus master (iobus.h): a fixed 20 ms cycle */
 #define PLAT_PRIO_STORE           10     /* High tier: parameter store + logger owner */
 #define PLAT_PRIO_ETH_RX          9      /* Ethernet receive (ST runs it highest; here below control) */
 #define PLAT_PRIO_TCPIP           8      /* Medium tier: lwIP tcpip_thread (TCPIP_THREAD_PRIO) */
@@ -56,16 +57,42 @@
 #define PLAT_PRIO_NET             4      /* network bring-up, link and address changes */
 #define PLAT_PRIO_UI              3      /* Lowest tier: touch UI */
 
-/* ---- stacks, in 32-bit words (FreeRTOS units) ---- */
-#define PLAT_STACK_CTRL           512
-#define PLAT_STACK_SCAN           2048   /* Stage 4 code uses large locals in places */
-#define PLAT_STACK_SUPERVISOR     384
-#define PLAT_STACK_STORE          1024
-#define PLAT_STACK_MODBUS         1024
-#define PLAT_STACK_HTTP           1536
-#define PLAT_STACK_UI             2048
-#define PLAT_STACK_ETH_RX         512
-#define PLAT_STACK_NET            768
+/* ---- stacks, in 32-bit words (FreeRTOS units) ----
+ * Generous on purpose (Gary, 25 Oct: stack overflows on earlier DK prototypes): about
+ * twice what each task was first given, 85 KB in all. Trim only after the 72-hour soak
+ * on hardware shows the margins (`health` on /api/info, System screen); RESOURCE_LOW
+ * (alarm 11) warns when any margin falls under PLAT_STACK_LOW. A task that overflows
+ * anyway is stopped by the CPU's stack limit (PSPLIM) and named in the fault record. */
+#ifndef PLAT_STACK_CTRL
+#define PLAT_STACK_CTRL           1024
+#endif
+#ifndef PLAT_STACK_SCAN
+#define PLAT_STACK_SCAN           4096   /* Stage 4 code uses large locals in places */
+#endif
+#ifndef PLAT_STACK_SUPERVISOR
+#define PLAT_STACK_SUPERVISOR     768
+#endif
+#ifndef PLAT_STACK_STORE
+#define PLAT_STACK_STORE          2048
+#endif
+#ifndef PLAT_STACK_MODBUS
+#define PLAT_STACK_MODBUS         2048
+#endif
+#ifndef PLAT_STACK_HTTP
+#define PLAT_STACK_HTTP           3072
+#endif
+#ifndef PLAT_STACK_UI
+#define PLAT_STACK_UI             4096
+#endif
+#ifndef PLAT_STACK_ETH_RX
+#define PLAT_STACK_ETH_RX         1024
+#endif
+#ifndef PLAT_STACK_NET
+#define PLAT_STACK_NET            1536
+#endif
+#ifndef PLAT_STACK_IOBUS
+#define PLAT_STACK_IOBUS          2048   /* Modbus TCP and discovery buffers (iob_tcp.c) */
+#endif
 
 /* ---- network services ---- */
 #ifndef PLAT_MODBUS_PORT
@@ -77,6 +104,80 @@
 #ifndef PLAT_HTTP_PORT
 #define PLAT_HTTP_PORT            80     /* only redirects to https:// (parameter 6 turns it off) */
 #endif
+/* External PSRAM (CORE PCB: APS6404L, 8 MB on OCTOSPI1, memory-mapped; port/stm32h5/psram_stm32h5.c).
+ * PLAT_PSRAM=1 in the project's defines for boards that have it; the DK has none. Large buffers
+ * marked PLAT_EXTRAM (the TLS pool, the settings staging block) then live there instead of the
+ * MCU's 640 KB. Never stacks, interrupt or DMA buffers. */
+#ifndef PLAT_PSRAM
+#define PLAT_PSRAM                0
+#endif
+#if PLAT_PSRAM && !defined(PLAT_HOST)
+#define PLAT_EXTRAM               __attribute__((section(".extram")))
+#else
+#define PLAT_EXTRAM
+#endif
+#ifndef PLAT_HTTP_BUF
+#define PLAT_HTTP_BUF             8192u  /* web request buffer: headers and form bodies, log reads in 128-record
+                                            chunks. Backup files use the store's staging buffer and firmware
+                                            uploads stream, so neither needs it to be large (was 49 KB) */
+#endif
 #define PLAT_SILENCE_NET_MS       5000u
+#define PLAT_SILENCE_IOBUS_MS     1000u
+
+/* ---- I/O bus, RS-485 or Ethernet (iobus.h, D27) ---- */
+#ifndef PLAT_LOOP_RESETS
+#define PLAT_LOOP_RESETS          3u     /* crashes ... (CIP-08.5) */
+#endif
+#ifndef PLAT_LOOP_WINDOW_MS
+#define PLAT_LOOP_WINDOW_MS       600000u /* ... within this much running time: start in SAFE_MODE */
+#endif
+
+/* the 24 V supply (plat_power.h; CORE_PCB.md 12 suggests these) */
+#ifndef PLAT_SUPPLY_LOW_MV
+#define PLAT_SUPPLY_LOW_MV        19000u /* alarm SUPPLY below this ... */
+#endif
+#ifndef PLAT_SUPPLY_HIGH_MV
+#define PLAT_SUPPLY_HIGH_MV       30000u /* ... or above this */
+#endif
+#ifndef PLAT_SUPPLY_FAIL_MV
+#define PLAT_SUPPLY_FAIL_MV       16000u /* failing: no new FRAM or log-flash writes */
+#endif
+#ifndef PLAT_SUPPLY_RESTORE_MV
+#define PLAT_SUPPLY_RESTORE_MV    18000u /* back above this for 1 s: writes resume */
+#endif
+
+/* interface versions (CIP-14.4): bump on any change a client could break on */
+#define PLAT_API_VERSION          2u     /* the web API (1 = before 26 Oct 2026) */
+#define PLAT_MB_BLOCK_VERSION     3u     /* the layout of the platform's Modbus block (2: clock quality, 26 Oct; 3: forced count, 29 Oct) */
+#define PLAT_MB_BLOCK_ADDR        9000u  /* input registers 9000-9199 belong to the platform in every product */
+#define PLAT_MB_BLOCK_END         9199u
+#define PLAT_MB_STD_ADDR          7000u  /* input and holding 7000-8999: the standard CEMS block (VDI 4201-3); */
+#define PLAT_MB_STD_END           8999u  /* 8000-8999 its Rev C extension (second period, QAL3) */
+#define PLAT_MB_STD_COIL_ADDR     8000u  /* coils 8000-8099: reserved for the standard block */
+#define PLAT_MB_STD_COIL_END      8099u
+
+#ifndef PLAT_MEAS_MAX
+#define PLAT_MEAS_MAX             32u    /* measurements an application may declare (plat_state.h) */
+#endif
+
+#ifndef PLAT_IOB_PERIOD_MS
+#define PLAT_IOB_PERIOD_MS        20u    /* one request per running board per cycle */
+#endif
+#define PLAT_IOB_REPLY_MS         15u    /* wait this long for a node's reply (about 3 frames' time) */
+#define PLAT_IOB_RETRY_MS         1000u  /* a board that is not answering is tried this often */
+#define PLAT_IOB_LOST_MS          1000u  /* no valid reply this long: the board is "not responding" */
+#define PLAT_IOB_START_MS        20000u  /* the same before its first reply since power-up */
+#define PLAT_IOB_STALE_MS         250u   /* outputs not refreshed by the scan this long: send all-off */
+#define PLAT_IOB_BAUD             115200u
+#define PLAT_IOB_TEMP_MS          500u   /* map 2: a board's temperatures are read this often (one board per cycle) */
+/* Ethernet link (iob_net.h) */
+#define PLAT_IOB_TCP_REPLY_MS     15u    /* a board's Modbus TCP reply (same budget as RS-485: 3 boards per cycle) */
+#define PLAT_IOB_TCP_CONNECT_MS   50u    /* a TCP connection to a board, tried once per retry */
+#define PLAT_IOB_DISC_WAIT_MS     300u   /* answers to a discovery broadcast are collected this long */
+/* the cable-swap guard (iobus.h iob_net_swapped): with the boards on the I/O port, one FIND on the
+ * client port this long after start, then every SLOW (every FAST while swapped) */
+#define PLAT_IOB_SWAP_FIRST_MS    20000u
+#define PLAT_IOB_SWAP_SLOW_MS     300000u
+#define PLAT_IOB_SWAP_FAST_MS     10000u
 
 #endif

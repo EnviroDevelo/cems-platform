@@ -9,7 +9,7 @@
 include Makefile
 
 VM       = app_vmmux
-VM_INC   = -I$(VM)/include -I$(VM)/faithful
+VM_INC   = -I$(VM)/include -I$(VM)/faithful -DPARAM_MAX=1024 -DPARAM_BLOB_POOL=24576u
 VM_SRC   = $(wildcard $(VM)/faithful/*_faithful.c) $(wildcard $(VM)/src/*.c)
 VM_HDRS  = $(wildcard $(VM)/include/*.h $(VM)/faithful/*.h)
 

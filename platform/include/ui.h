@@ -35,7 +35,19 @@ typedef struct {
 
 enum { UI_HOME = 0, UI_PARAMS, UI_EDIT, UI_LOGIN, UI_EVENTS, UI_SYSTEM, UI_ALARMS, UI_ALARM_CFG, UI_CLOCK,
        UI_APP,      /* the application's screens (ui_app.h), as tabs */
-       UI_REC };    /* a record editor (sequence, schedule) */
+       UI_REC,      /* a record editor (sequence, schedule) */
+       UI_IOB,      /* I/O boards on RS-485: state, channels, faults (iobus.h) */
+       UI_CAL,      /* calibration: channels, record in force, history, start/accept/abort/revert (plat_cal.h) */
+       UI_DISPLAY,  /* display test for bench bring-up: controller status, colour patterns, touch test */
+       UI_FORCE,    /* Modbus force for commissioning: forceable values, force for 30 s, clear (modbus.h) */
+       UI_DIA,      /* input alarms: the 24 digital-input alarm slots (plat_alarm.h) */
+       UI_DIA_SLOT,     /* one input alarm slot: input, when, delay, latch, severity, label */
+       UI_TIERS,        /* alarm priority tiers: names, actions, counts (plat_alarm.h) */
+       UI_TRENDS,       /* live trends: up to 4 values over the last 10 minutes */
+       UI_TR_PICK,      /* choose a value to trend */
+       UI_SERVICE,      /* service: self-test, board test, test record, service log, display test */
+       UI_INST,         /* third-party instruments on the I/O network: state, counters, values (inst.h), read only */
+       UI_EMIS };       /* emissions: corrected values, averages, validated and daily values, QAL3, second-period (CO) averages */
 
 void    ui_init(const ui_cfg_t *cfg, uint32_t now_ms);
 void    ui_input(uint8_t tag, uint32_t now_ms);     /* the tag under the finger now (0 = none); every 10..20 ms */

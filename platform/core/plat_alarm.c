@@ -1,5 +1,10 @@
 /* plat_alarm.c - the alarm manager (plat_alarm.h). */
 #include "plat_alarm.h"
+#include "plat_state.h"
+#include "plat_power.h"
+#include "plat_cal.h"
+#include "plat_selftest.h"
+#include "modbus.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -12,6 +17,7 @@
 #include "bsp.h"
 #include "ul_system.h"
 #include "plat_health.h"
+#include "emis_qal3.h"
 
 plat_health_t plat_health;
 
@@ -26,32 +32,113 @@ bool plat_health_low(const plat_health_t *h, char *why, unsigned cap) {
     return false;
 }
 
+/* No QAL3 chart out of control or due: emis_qal3.c provides the real one. */
+__attribute__((weak)) bool emis_qal3_alarm(void) { return false; }
+
 /* Display working, or none fitted. The UI task provides the real one. */
 __attribute__((weak)) bool plat_ui_healthy(void) { return true; }
 
 static const alarm_def_t core_defs[] = {
-    { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_INVALID",
-      .text = "No valid calibration data: measurement blocked" },
-    { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "PARAM_WRITE_FAIL",
-      .text = "Settings memory fault: changes may not be kept", .on_delay_ms = 2000 },
+    { .id = ALARM_ID_CAL_INVALID, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY | AL_NO_OFF, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_INVALID",
+      .text = "No valid calibration data: measurement blocked",
+      .help = "Neither copy of the factory data in the settings memory is valid (new unit, or memory fault). Calibrate at factory login, or restore a backup taken from this unit." },
+    { .id = ALARM_ID_PARAM_WRITE_FAIL, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY | AL_NO_OFF, .route = AR_EMAIL | AR_MODBUS, .name = "PARAM_WRITE_FAIL",
+      .text = "Settings memory fault: changes may not be kept", .on_delay_ms = 2000,
+      .help = "The settings memory (FRAM) did not verify a write, or is not fitted (RAM fallback). Check the FRAM; changes made now may be lost at power-off." },
     { .id = ALARM_ID_LOG_STORAGE_FAULT, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "LOG_STORAGE_FAULT",
-      .text = "Log memory fault: records are not being kept" },
+      .text = "Log memory fault: records are not being kept",
+      .help = "The log flash failed an erase, write or read-back. Records are not being kept. Replace the core board if it persists." },
     { .id = ALARM_ID_IP_CONFLICT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IP_CONFLICT",
-      .text = "IP address in use by another device: network off" },
+      .text = "IP address in use by another device: network off",
+      .help = "Another device answers at this unit's static IP address; the plant port is off until it is free. Change one of the addresses." },
     { .id = ALARM_ID_REMOTE_LINK_LOST, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "REMOTE_LINK_LOST",
-      .text = "Remote control: no messages from the control system" },
+      .text = "Remote control: no messages from the control system",
+      .help = "In REMOTE mode and no Modbus or web traffic from the control system for the timeout (parameter). Check the network and the PLC." },
     { .id = ALARM_ID_UNEXPECTED_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "UNEXPECTED_RESET",
-      .text = "The unit restarted itself (watchdog or supply dip)" },
+      .text = "The unit restarted itself (watchdog or supply dip)",
+      .help = "The watchdog or a supply dip restarted the unit. The last fault on the System screen says which task or check stopped. Acknowledge to clear." },
+    { .id = ALARM_ID_SAFE_MODE, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY | AL_NO_OFF, .route = AR_EMAIL | AR_MODBUS, .name = "SAFE_MODE",
+      .text = "Restarted repeatedly: safe mode, application stopped",
+      .help = "The unit restarted repeatedly within a short time, so it started without the application (outputs off). Read the last fault, then power-cycle." },
+    { .id = ALARM_ID_SUPPLY, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SUPPLY",
+      .text = "Supply voltage outside 19-30 V", .on_delay_ms = 2000, .off_delay_ms = 2000,
+      .help = "The 24 V supply measured outside 19-30 V. Check the power supply and wiring." },
+    { .id = ALARM_ID_CAL_DUE, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "CAL_DUE",
+      .text = "Calibration due",
+      .help = "A calibrated channel is past its calibration interval. Calibrate it (Calibration page or screen)." },
+    { .id = ALARM_ID_QAL3, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "QAL3",
+      .text = "QAL3: analyser drift out of control or check due",
+      .help = "An analyser's zero or span check (EN 14181 QAL3) is out of control, or a check is overdue. Maintain or adjust it, record a new check, then reset its chart." },
+    { .id = ALARM_ID_HW_REV, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "HW_REV",
+      .text = "Board revision differs from the factory record",
+      .help = "The board's revision straps differ from the hardware revision in the factory record. Check that the core board was not swapped; update the record at factory login." },
+    { .id = ALARM_ID_SELFTEST, .severity = AL_SEV_WARNING, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "SELFTEST",
+      .text = "Start-up self-test failed: see System information",
+      .help = "A start-up self-test failed (System information lists which). See docs/FAULT_CODES.md, self-test checks." },
     { .id = ALARM_ID_FW_ROLLED_BACK, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "FW_ROLLED_BACK",
-      .text = "Firmware update failed its trial and was undone" },
+      .text = "Firmware update failed its trial and was undone",
+      .help = "A new firmware image restarted during its trial, so the previous image was put back. Acknowledge; report the version to the manufacturer." },
     { .id = ALARM_ID_NOTIFY_FAIL, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "NOTIFY_FAIL",
-      .text = "Alarm email could not be sent" },
+      .text = "Alarm email could not be sent",
+      .help = "An alarm email could not be sent after retries. Check the mail server settings and the network." },
     { .id = ALARM_ID_RESOURCE_LOW, .severity = AL_SEV_WARNING, .flags = AL_LATCH | AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS,
-      .name = "RESOURCE_LOW", .text = "Memory running low: tell the manufacturer", .on_delay_ms = 10000 },
+      .name = "RESOURCE_LOW", .text = "Memory running low: tell the manufacturer", .on_delay_ms = 10000,
+      .help = "Free memory (heap or a task's stack) fell below its margin. Note the System screen figures and tell the manufacturer." },
     { .id = ALARM_ID_DISPLAY_FAULT, .severity = AL_SEV_WARNING, .route = AR_MODBUS, .name = "DISPLAY_FAULT",
-      .text = "Touchscreen not responding", .on_delay_ms = 5000 },
+      .text = "Touchscreen not responding", .on_delay_ms = 5000,
+      .help = "The touchscreen stopped answering. Check its ribbon cable; the unit keeps measuring and the web page still works." },
+    { .id = ALARM_ID_IOB_LOST, .severity = AL_SEV_FAULT, .flags = AL_LATCH | AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_LOST",
+      .text = "I/O board not responding",
+      .help = "An enabled I/O board does not answer. Check its power, its address switch and the I/O network cable." },
+    { .id = ALARM_ID_IOB_CONFIG, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_CONFIG",
+      .text = "I/O board wrong type or channel settings conflict",
+      .help = "An I/O board is not the type expected, or two channel settings conflict. Check the board type and the I/O settings." },
+    { .id = ALARM_ID_IOB_OUT_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_OUT_FAULT",
+      .text = "Output fault: open circuit, short or overheating", .on_delay_ms = 1000,
+      .help = "An I/O board output reports an open circuit, a short or overheating. Check the load and its wiring." },
+    { .id = ALARM_ID_IOB_IN_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_IN_FAULT",
+      .text = "Input fault: wire break", .on_delay_ms = 1000,
+      .help = "An I/O board input reports a wire break or an input chip fault. Check the sensor wiring." },
+    { .id = ALARM_ID_IOB_SUPPLY, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_SUPPLY",
+      .text = "I/O board field 24 V supply missing", .on_delay_ms = 500,
+      .help = "An I/O board's field 24 V supply is missing. Check its field supply terminals." },
+    { .id = ALARM_ID_IOB_NODE_RESET, .severity = AL_SEV_WARNING, .flags = AL_LATCH, .route = AR_MODBUS, .name = "IOB_NODE_RESET",
+      .text = "I/O board restarted by its watchdog",
+      .help = "An I/O board was restarted by its own watchdog. Acknowledge; report it if it repeats." },
+    { .id = ALARM_ID_NET_SWAPPED, .severity = AL_SEV_FAULT, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "NET_SWAPPED",
+      .text = "Network cables swapped: plant port off",
+      .help = "I/O boards answer on the plant (client) Ethernet port: the two RJ45 cables are swapped, or the plant and I/O networks are joined. Modbus TCP and the web page are off until it is fixed. Swap the cables back." },
+    { .id = ALARM_ID_IOB_TEMP_FAULT, .severity = AL_SEV_ALARM, .flags = AL_NOTIFY, .route = AR_EMAIL | AR_MODBUS, .name = "IOB_TEMP_FAULT",
+      .text = "Temperature input fault: open, short or out of range", .on_delay_ms = 3000,
+      .help = "A temperature input is open, shorted, out of range, or its converter failed. Check the sensor and wiring." },
 };
 #define N_CORE (sizeof core_defs / sizeof core_defs[0])
+
+/* ---- digital input alarms: their settings (param.c binds them) and definitions ----
+ * The definitions are not const: the scan task copies the slot's severity, latch and delay into
+ * its definition each scan (byte and word stores; readers take a copy). */
+uint8_t  plat_dia_input[PLAT_DIA_SLOTS], plat_dia_sev[PLAT_DIA_SLOTS], plat_dia_status[PLAT_DIA_SLOTS];
+bool     plat_dia_when[PLAT_DIA_SLOTS], plat_dia_latch[PLAT_DIA_SLOTS];
+uint16_t plat_dia_delay[PLAT_DIA_SLOTS];
+char     plat_dia_label[PLAT_DIA_SLOTS][PLAT_DIA_LABEL];
+static alarm_def_t dia_defs[PLAT_DIA_SLOTS];
+static char dia_names[PLAT_DIA_SLOTS][16], dia_texts[PLAT_DIA_SLOTS][32];
+static uint8_t dia_text_for[PLAT_DIA_SLOTS];         /* the input the default text names (0xFF: not built) */
+static uint32_t dia_di_lo, dia_di_hi, dia_fault_lo, dia_fault_hi;   /* last inputs, for Modbus */
+static uint32_t dia_unreliable;                      /* bit s: slot s's input unreliable */
+static void dia_status_update(void);
+
+static void dia_defs_build(void) {
+    for (unsigned s = 0; s < PLAT_DIA_SLOTS; ++s) {
+        snprintf(dia_names[s], sizeof dia_names[s], "DI_ALARM_%u", s + 1u);
+        snprintf(dia_texts[s], sizeof dia_texts[s], "Input alarm %u: not used", s + 1u);
+        dia_text_for[s] = 0xFFu;
+        dia_defs[s] = (alarm_def_t){ .id = (uint16_t)(ALARM_ID_DIA_FIRST + s), .severity = AL_SEV_ALARM, .flags = AL_NOTIFY,
+            .route = AR_MODBUS, .name = dia_names[s], .text = dia_texts[s], .on_delay_ms = 2000,
+            .text_param = (uint16_t)(PARAM_ID_DIA_LABEL_FIRST + s),
+            .help = "A digital input bound to an input alarm slot is in its alarm state (the label says which). Check the device wired to that input." };
+    }
+}
 
 typedef struct {
     bool     active, unacked, enabled;
@@ -72,6 +159,10 @@ uint16_t plat_alarm_active_count, plat_alarm_unack_count;
 uint16_t plat_alarm_active_bits[ALARM_BIT_WORDS], plat_alarm_unack_bits[ALARM_BIT_WORDS];
 uint16_t plat_alarm_common;                         /* ACOM_* */
 uint8_t  plat_alarm_route[ALARM_ID_MAX + 1];        /* AR_SET | actions, per ID (persisted) */
+uint8_t  plat_alarm_prio[ALARM_ID_MAX + 1];         /* AL_PRIO_*, per ID (persisted) */
+uint8_t  plat_alarm_tier_route[AL_TIERS];           /* AR_SET | actions, per tier (persisted) */
+uint16_t plat_alarm_tier_active[AL_TIERS], plat_alarm_tier_unacked[AL_TIERS];
+char     plat_alarm_tier_name[AL_TIERS][AL_TIER_NAME];
 uint8_t  plat_alarm_relay_do[ALARM_RELAYS];         /* digital output 1..32 for relay k (0 = not used) */
 uint8_t  plat_alarm_relay_mode[ALARM_RELAYS];       /* AR_MODE_* */
 bool     plat_alarm_relay_inv[ALARM_RELAYS];        /* fail-safe: energised when healthy */
@@ -106,6 +197,8 @@ int alarm_init(const alarm_def_t *app_defs, size_t n_app, uint8_t reset_cause) {
     memset(idx_of, 0xFF, sizeof idx_of);
     n_defs = 0;
     for (size_t k = 0; k < N_CORE; ++k) { int e = add(&core_defs[k], false); if (e) return e; }
+    dia_defs_build();
+    for (size_t k = 0; k < PLAT_DIA_SLOTS; ++k) { int e = add(&dia_defs[k], false); if (e) return e; }
     for (size_t k = 0; k < n_app; ++k) { int e = add(&app_defs[k], true); if (e) return e; }
     alarm_reset_for_test();
     if (reset_cause == BSP_RESET_IWDG || reset_cause == BSP_RESET_WWDG || reset_cause == BSP_RESET_BROWNOUT)
@@ -175,9 +268,44 @@ __attribute__((weak)) void plat_alarm_email(const alarm_def_t *d, uint8_t what, 
     (void)d; (void)what; (void)t_unix; (void)up_s;
 }
 
+uint8_t alarm_prio_default(const alarm_def_t *d) {
+    switch (d->severity) {
+    case AL_SEV_FAULT:   return d->flags & AL_STOPS ? AL_PRIO_CRITICAL : AL_PRIO_HIGH;
+    case AL_SEV_ALARM:   return AL_PRIO_MEDIUM;
+    case AL_SEV_WARNING: return AL_PRIO_LOW;
+    default:             return AL_PRIO_INFO;
+    }
+}
+
+bool alarm_can_switch_off(const alarm_def_t *d) { return !(d->flags & (AL_STOPS | AL_NO_OFF)); }
+
+static uint8_t prio_of(size_t i) {
+    const alarm_def_t *d = defs[i];
+    uint8_t p = plat_alarm_prio[d->id];
+    if (p == AL_PRIO_OFF && !alarm_can_switch_off(d)) p = AL_PRIO_DEFAULT;
+    return p >= AL_PRIO_CRITICAL && p <= AL_PRIO_OFF ? p : alarm_prio_default(d);
+}
+uint8_t alarm_prio(uint16_t id) { int i = idx(id); return i < 0 ? 0 : prio_of((size_t)i); }
+
+static uint8_t sev_of_prio(uint8_t p) {
+    return p <= AL_PRIO_HIGH ? AL_SEV_FAULT : p == AL_PRIO_MEDIUM ? AL_SEV_ALARM : p == AL_PRIO_LOW ? AL_SEV_WARNING : AL_SEV_STATUS;
+}
+
+const char *alarm_prio_name(uint8_t p) {
+    static const char *const dflt[AL_TIERS] = { "Critical", "High", "Medium", "Low", "Info" };
+    if (p == AL_PRIO_OFF) return "Off";
+    if (p < AL_PRIO_CRITICAL || p > AL_PRIO_INFO) return "?";
+    return plat_alarm_tier_name[p - 1u][0] ? plat_alarm_tier_name[p - 1u] : dflt[p - 1u];
+}
+
+/* the alarm's own actions, else its tier's, else the definition's */
 static uint8_t route_of(size_t i) {
     uint8_t r = plat_alarm_route[defs[i]->id];
-    return r & AR_SET ? (uint8_t)(r & ~AR_SET) : defs[i]->route;
+    if (r & AR_SET) return (uint8_t)(r & ~AR_SET);
+    uint8_t p = prio_of(i);
+    if (p >= AL_PRIO_CRITICAL && p <= AL_PRIO_INFO && (plat_alarm_tier_route[p - 1u] & AR_SET))
+        return (uint8_t)(plat_alarm_tier_route[p - 1u] & ~AR_SET);
+    return defs[i]->route;
 }
 uint8_t alarm_route(uint16_t id) { int i = idx(id); return i < 0 ? 0 : route_of((size_t)i); }
 
@@ -192,6 +320,15 @@ static void tell(size_t i, uint8_t what, uint8_t src, uint8_t level) {
 static void poll_platform(void) {
     uint32_t ps = param_store_status(), ls = plat_log_status();
     alarm_set(ALARM_ID_CAL_INVALID, !param_store_calibration_valid());
+    alarm_set(ALARM_ID_SAFE_MODE, plat_state() == PLAT_ST_SAFE_MODE);
+    alarm_set(ALARM_ID_CAL_DUE, plat_cal_any_due());
+    alarm_set(ALARM_ID_QAL3, emis_qal3_alarm());
+    alarm_set(ALARM_ID_SELFTEST, (plat_selftest_failed() & ~PLAT_STEST_OWN_ALARM) != 0);
+    { plat_val_t hw;                      /* only once there is a factory record to compare with */
+      alarm_set(ALARM_ID_HW_REV, fw_board_rev() >= 0 && param_store_calibration_valid() &&
+                                 param_read(PARAM_ID_HW_REV, &hw) && hw.u != (uint32_t)fw_board_rev()); }
+    { uint32_t mv = plat_supply_mv();
+      alarm_set(ALARM_ID_SUPPLY, mv != 0 && (mv < PLAT_SUPPLY_LOW_MV || mv > PLAT_SUPPLY_HIGH_MV)); }
     alarm_set(ALARM_ID_PARAM_WRITE_FAIL, (ps & (PSTAT_WRITE_ERROR | PSTAT_NVM_VOLATILE)) != 0);
     alarm_set(ALARM_ID_LOG_STORAGE_FAULT, (ls & LSTAT_NOR_FAULT) != 0);
     alarm_set(ALARM_ID_IP_CONFLICT, (plat_net_status_word & NETST_CONFLICT) != 0);
@@ -205,6 +342,7 @@ static void poll_platform(void) {
 
 static void publish(void) {
     uint16_t na = 0, nu = 0, ab[ALARM_BIT_WORDS] = { 0 }, ub[ALARM_BIT_WORDS] = { 0 }, com = 0;
+    uint16_t ta[AL_TIERS] = { 0 }, tu[AL_TIERS] = { 0 };
     uint8_t rel = 0;
     for (size_t i = 0; i < n_defs; ++i) {
         uint16_t id = defs[i]->id;
@@ -212,6 +350,9 @@ static void publish(void) {
         if (a) { na++; ab[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
         if (u) { nu++; ub[id / 16u] |= (uint16_t)(1u << (id % 16u)); }
         if (!a && !u) continue;
+        uint8_t p = prio_of(i);
+        if (p >= AL_PRIO_CRITICAL && p <= AL_PRIO_INFO) { ta[p - 1u] += a; tu[p - 1u] += u; }
+        if (p == AL_PRIO_CRITICAL) com |= (uint16_t)((a ? ACOM_CRIT_ACTIVE : 0u) | (u ? ACOM_CRIT_UNACKED : 0u));
         uint8_t r = route_of(i);
         com |= (uint16_t)((a ? ACOM_ANY_ACTIVE : 0u) | (u ? ACOM_ANY_UNACKED : 0u));
         if (r & AR_MODBUS) com |= (uint16_t)((a ? ACOM_MB_ACTIVE : 0u) | (u ? ACOM_MB_UNACKED : 0u));
@@ -223,10 +364,14 @@ static void publish(void) {
     }
     for (unsigned k = 0; k < ALARM_RELAYS; ++k) if (rel & (1u << k)) com |= ACOM_RELAY(k);
     relay_on = rel;
+    if (mb_force_count()) com |= ACOM_FORCED;
     plat_alarm_common = com;
+    dia_status_update();
     plat_alarm_active_count = na; plat_alarm_unack_count = nu;
     memcpy(plat_alarm_active_bits, ab, sizeof ab);
     memcpy(plat_alarm_unack_bits, ub, sizeof ub);
+    memcpy(plat_alarm_tier_active, ta, sizeof ta);
+    memcpy(plat_alarm_tier_unacked, tu, sizeof tu);
 }
 
 void alarm_scan(uint32_t now) {
@@ -236,7 +381,7 @@ void alarm_scan(uint32_t now) {
     for (size_t i = 0; i < n_defs; ++i) {
         const alarm_def_t *d = defs[i];
         al_state_t *s = &st[i];
-        bool en = param_bool(d->enable_param, true);
+        bool en = param_bool(d->enable_param, true) && prio_of(i) != AL_PRIO_OFF;
         if (!en) {                                         /* suppressed: out of the list at once */
             if (s->active || s->unacked) {
                 bool was = s->active;
@@ -308,6 +453,77 @@ void alarm_io_out(plat_io_out_t *out) {
 }
 uint8_t alarm_relays(void) { return relay_on; }
 
+/* ---------------- digital input alarms ---------------- */
+void alarm_io_in(const plat_io_in_t *in) {
+    uint32_t unrel = 0;
+    for (unsigned s = 0; s < PLAT_DIA_SLOTS; ++s) {
+        alarm_def_t *d = &dia_defs[s];
+        unsigned n = plat_dia_input[s];
+        uint8_t sev = plat_dia_sev[s];
+        d->severity = sev >= AL_SEV_WARNING && sev <= AL_SEV_FAULT ? sev : AL_SEV_ALARM;
+        d->flags = (uint8_t)(AL_NOTIFY | (plat_dia_latch[s] ? AL_LATCH : 0u));
+        d->on_delay_ms = (uint32_t)(plat_dia_delay[s] > 3600u ? 3600u : plat_dia_delay[s]) * 1000u;
+        if (dia_text_for[s] != n) {                    /* the description when there is no label */
+            if (n >= 1 && n <= PLAT_DI_MAX) snprintf(dia_texts[s], sizeof dia_texts[s], "Digital input %u", n);
+            else snprintf(dia_texts[s], sizeof dia_texts[s], "Input alarm %u: not used", s + 1u);
+            dia_text_for[s] = (uint8_t)n;
+        }
+        bool c = false;
+        if (n >= 1 && n <= PLAT_DI_MAX) {
+            if (plat_di_fault(in, n - 1u)) unrel |= 1u << s;        /* no alarm from an input we can't trust */
+            else c = plat_di(in, n - 1u) != plat_dia_when[s];
+        }
+        alarm_set((uint16_t)(ALARM_ID_DIA_FIRST + s), c);
+    }
+    PLAT_CRIT_ENTER();
+    dia_di_lo = (uint32_t)in->di; dia_di_hi = (uint32_t)(in->di >> 32);
+    dia_fault_lo = (uint32_t)in->di_fault; dia_fault_hi = (uint32_t)(in->di_fault >> 32);
+    dia_unreliable = unrel;
+    PLAT_CRIT_EXIT();
+}
+
+/* slot statuses (parameter 345), after the states moved (alarm_scan) */
+static void dia_status_update(void) {
+    for (unsigned s = 0; s < PLAT_DIA_SLOTS; ++s) {
+        int i = idx((uint16_t)(ALARM_ID_DIA_FIRST + s));
+        uint8_t v = DIA_ST_UNUSED;
+        if (i >= 0 && plat_dia_input[s] >= 1 && plat_dia_input[s] <= PLAT_DI_MAX) {
+            const al_state_t *a = &st[i];
+            v = a->active ? (a->unacked ? DIA_ST_ACTIVE_UNACKED : DIA_ST_ACTIVE_ACKED)
+              : a->unacked ? DIA_ST_CLEARED_UNACKED : (dia_unreliable >> s) & 1u ? DIA_ST_UNRELIABLE : DIA_ST_NORMAL;
+        }
+        plat_dia_status[s] = v;
+    }
+}
+
+bool plat_dia_mb_bit(uint16_t a) {
+    if (a >= PLAT_DIA_MB_ADDR + 100u && a < PLAT_DIA_MB_ADDR + 100u + PLAT_DI_MAX) {
+        unsigned i = a - (PLAT_DIA_MB_ADDR + 100u);
+        PLAT_CRIT_ENTER(); uint32_t w = i < 32u ? dia_di_lo : dia_di_hi; PLAT_CRIT_EXIT();
+        return (w >> (i % 32u)) & 1u;
+    }
+    if (a < PLAT_DIA_MB_ADDR || a >= PLAT_DIA_MB_ADDR + 96u) return false;   /* reserved */
+    unsigned g = (a - PLAT_DIA_MB_ADDR) / 32u, s = (a - PLAT_DIA_MB_ADDR) % 32u;
+    if (s >= PLAT_DIA_SLOTS) return false;
+    int i = idx((uint16_t)(ALARM_ID_DIA_FIRST + s));
+    if (i < 0) return false;
+    switch (g) {
+    case 0:  return st[i].active;
+    case 1:  return st[i].unacked;
+    default: { PLAT_CRIT_ENTER(); uint32_t u = dia_unreliable; PLAT_CRIT_EXIT(); return (u >> s) & 1u; }
+    }
+}
+
+void plat_dia_input_name(unsigned n, char *buf, size_t cap) {
+    for (unsigned k = 0; k < 3u; ++k) {               /* IOB_BOARDS: an enabled I/O board's inputs */
+        plat_val_t en, f;
+        if (!param_read((uint16_t)(PARAM_ID_IOB_FIRST + 10u * k), &en) || !en.b) continue;
+        if (!param_read((uint16_t)(PARAM_ID_IOB_FIRST + 10u * k + 3u), &f)) continue;
+        if (n >= f.u && n < f.u + 8u) { snprintf(buf, cap, "I/O board %u input %u", k + 1u, (unsigned)(n - f.u + 1u)); return; }
+    }
+    snprintf(buf, cap, "Input %u", n);
+}
+
 /* ---------------- readers ---------------- */
 static void text_of(const alarm_def_t *d, char *out, size_t cap) {
     out[0] = 0;
@@ -344,17 +560,18 @@ static void view(size_t i, alarm_view_t *v) {
     PLAT_CRIT_ENTER();
     al_state_t s = st[i];
     PLAT_CRIT_EXIT();
-    v->id = d->id; v->severity = d->severity; v->flags = d->flags; v->name = d->name;
+    v->priority = prio_of(i);
+    v->id = d->id; v->severity = sev_of_prio(v->priority); v->flags = d->flags; v->name = d->name; v->help = d->help;
     v->active = s.active; v->unacked = s.unacked; v->enabled = s.enabled; v->cond = cond[i] != 0;
     v->t_raise = s.t_raise; v->up_raise = s.up_raise;
     text_of(d, v->text, sizeof v->text);
 }
 
 /* Order key: lower = more urgent. Unacked active, acked active, cleared unacked;
- * then higher severity; then newest; the index makes every key unique. */
+ * then the more urgent tier; then newest; the index makes every key unique. */
 static uint64_t key_of(size_t i, const al_state_t *a) {
     uint64_t g = a->active && a->unacked ? 0u : a->active ? 1u : 2u;
-    uint64_t sev = (uint64_t)(AL_SEV_FAULT - defs[i]->severity);
+    uint64_t sev = prio_of(i);
     return g << 48 | sev << 40 | (uint64_t)(0xFFFFFFFFu - a->up_raise) << 8 | i;
 }
 
@@ -404,7 +621,9 @@ void alarm_summary(alarm_summary_t *s) {
         if (a.unacked) s->unacked++;
         if (!a.active && !a.unacked) continue;
         s->shown++;
-        int8_t sev = (int8_t)defs[i]->severity;
+        uint8_t p = prio_of(i);
+        if (!s->worst_prio || p < s->worst_prio) s->worst_prio = p;
+        int8_t sev = (int8_t)sev_of_prio(p);
         if (sev > s->worst) { s->worst = sev; s->worst_unacked = a.unacked; }
         else if (sev == s->worst && a.unacked) s->worst_unacked = true;
     }

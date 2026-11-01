@@ -7,11 +7,11 @@ with no inlet and then saves a good one. Screenshots go to build/vmweb_*.png.
     make build/netsim-app_vmmux APP=app_vmmux && python3 app_vmmux/tests/integration/vm_web_ui_test.py
 
 Needs Python Playwright and a Chromium (CHROME=...)."""
-import asyncio, json, os, signal, subprocess, sys, tempfile, time, ssl, urllib.request
+import asyncio, glob, json, os, signal, subprocess, sys, tempfile, time, ssl, urllib.request
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-CHROME = os.environ.get("CHROME", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome")
+CHROME = os.environ.get("CHROME") or (sorted(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")) or [None])[-1]
 MB, WEB = 15121, 18181
 URL = f"https://127.0.0.1:{WEB}/"
 CTX = ssl._create_unverified_context()
@@ -33,7 +33,8 @@ def shot(name):
 async def run(unit):
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME)
-        pg = await b.new_page(viewport={"width": 1280, "height": 1000}, ignore_https_errors=True)
+        pg = await b.new_page(viewport={"width": 1280, "height": 1000}, ignore_https_errors=True,
+                                bypass_csp=True)   # wait_for_function evaluates strings (platform web_ui_test.py does the same)
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("dialog", lambda d: asyncio.ensure_future(d.accept()))      # "are you sure?" (PF_CONFIRM)

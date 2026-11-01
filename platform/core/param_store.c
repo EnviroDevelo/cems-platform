@@ -26,6 +26,11 @@ extern uint32_t param_store_status_word;    /* storage of PARAM_ID_STORE_STATUS 
 /* Platform-owned retained blocks (e.g. password hashes): kept in FRAM, never
  * visible through the parameter table. Provided by web_auth.c; none otherwise. */
 __attribute__((weak)) const retain_def_t *plat_store_blocks(size_t *n) { *n = 0; return NULL; }
+/* The calibration records (plat_cal.c) and the service records (plat_service.c), in the factory region. */
+__attribute__((weak)) const retain_def_t *plat_cal_blocks(size_t *n) { *n = 0; return NULL; }
+__attribute__((weak)) const retain_def_t *plat_service_blocks(size_t *n) { *n = 0; return NULL; }
+__attribute__((weak)) const retain_def_t *plat_emis_blocks(size_t *n) { *n = 0; return NULL; }
+#define PLAT_BLOCKS_MAX 16u
 
 /* one persisted item: a PF_PERSIST parameter or a retained block */
 typedef struct {
@@ -41,12 +46,20 @@ typedef struct {
     int      active;            /* copy holding the newest valid image, -1 = none */
     uint32_t seq;
     uint32_t saved_crc;         /* payload CRC of what is in NVM (or the baseline) */
+    uint32_t base_cfg_crc;      /* FAC while uncalibrated: cfg_crc() of the defaults baseline */
     bool     have_saved;
+    bool     uncal;             /* FAC: the image in NVM holds only defaults (HF_UNCAL) */
+    bool     hold;              /* FAC was damaged at boot: write only once a factory value is set */
+    bool     blank;             /* no copy has an image header at all (a new FRAM) */
     bool     valid_at_boot;
     uint32_t payload_len;       /* of the last snapshot */
 } region_t;
 
-static uint8_t img_fac[STORE_FAC_SLOT], img_usr[STORE_USR_SLOT];
+/* One block holds both staging images, after room for the backup file's own header, so
+ * between saves it is also the web server's backup/restore buffer (param_store_lease). */
+static uint8_t img_all[STORE_BACKUP_MAX] PLAT_EXTRAM;   /* external PSRAM when the board has it */
+#define img_fac (img_all + STORE_BACKUP_HDR)
+#define img_usr (img_all + STORE_BACKUP_HDR + STORE_FAC_SLOT)
 
 static struct {
     nvm_dev_t *dev;
@@ -68,6 +81,7 @@ static struct {
     const uint8_t *imp_buf[2];   /* import: payloads to apply */
     uint32_t imp_len[2];
     uint16_t imp_ver[2];
+    volatile bool leased;        /* the web server holds img_all: no snapshot starts */
 } S;
 
 enum { REQ_NONE = 0, REQ_SNAPSHOT, REQ_IMPORT };
@@ -83,20 +97,22 @@ static uint32_t get32(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1
 
 /* header layout (32 bytes):
  *  0 magic | 4 hdr_size u16 | 6 layout_version u16 | 8 region u8, 3 rsvd | 12 seq
- * 16 payload_len | 20 payload_crc | 24 rsvd | 28 header_crc (over bytes 0..27) */
-typedef struct { uint16_t version; uint8_t region; uint32_t seq, len, crc; } hdr_t;
+ * 16 payload_len | 20 payload_crc | 24 flags | 28 header_crc (over bytes 0..27)
+ * flags were reserved (0) before HF_UNCAL, so older images read as calibrated. */
+#define HF_UNCAL 0x1u           /* FAC image written with no factory value ever set */
+typedef struct { uint16_t version; uint8_t region; uint32_t seq, len, crc, flags; } hdr_t;
 
 static void hdr_write(uint8_t *h, const hdr_t *x) {
     memset(h, 0, STORE_HDR_SIZE);
     put32(h + 0, MAGIC); put16(h + 4, STORE_HDR_SIZE); put16(h + 6, x->version); h[8] = x->region;
-    put32(h + 12, x->seq); put32(h + 16, x->len); put32(h + 20, x->crc);
+    put32(h + 12, x->seq); put32(h + 16, x->len); put32(h + 20, x->crc); put32(h + 24, x->flags);
     put32(h + 28, plat_crc32(0, h, 28));
 }
 
 static bool hdr_read(const uint8_t *h, uint8_t region, uint32_t slot, hdr_t *x) {
     if (get32(h) != MAGIC || get16(h + 4) != STORE_HDR_SIZE) return false;
     if (get32(h + 28) != plat_crc32(0, h, 28)) return false;
-    x->version = get16(h + 6); x->region = h[8]; x->seq = get32(h + 12); x->len = get32(h + 16); x->crc = get32(h + 20);
+    x->version = get16(h + 6); x->region = h[8]; x->seq = get32(h + 12); x->len = get32(h + 16); x->crc = get32(h + 20); x->flags = get32(h + 24);
     return x->region == region && x->len <= slot - STORE_HDR_SIZE;
 }
 
@@ -135,11 +151,20 @@ bool param_store_init(nvm_dev_t *dev, const store_layout_t *lay, const retain_de
                                          .size = PARAM_IS_BLOB(d) ? d->size : (uint16_t)param_ctype_size(d->ctype),
                                          .region = (uint8_t)((d->flags & PF_FACTORY) ? 0u : 1u), .pdef = d };
     }
+    const retain_def_t *plat[PLAT_BLOCKS_MAX];       /* the platform's own blocks, from each module */
     size_t n_plat = 0;
-    const retain_def_t *plat = plat_store_blocks(&n_plat);
+    const retain_def_t *(*const providers[])(size_t *) = { plat_store_blocks, plat_cal_blocks, plat_service_blocks, plat_emis_blocks };
+    for (size_t p = 0; p < sizeof providers / sizeof providers[0]; ++p) {
+        size_t n = 0;
+        const retain_def_t *b = providers[p](&n);
+        for (size_t k = 0; k < n; ++k) {
+            if (n_plat < PLAT_BLOCKS_MAX) plat[n_plat++] = &b[k];
+            else ok = false;
+        }
+    }
     for (size_t k = 0; k < n_plat + n_blocks; ++k) {
         bool is_plat = k < n_plat;
-        const retain_def_t *b = is_plat ? &plat[k] : &blocks[k - n_plat];
+        const retain_def_t *b = is_plat ? plat[k] : &blocks[k - n_plat];
         bool id_ok = is_plat ? (b->id >= PARAM_ID_PLAT_BLOCK_FIRST && b->id < PARAM_ID_APP_FIRST) : b->id >= PARAM_ID_APP_FIRST;
         if (S.n_items >= MAX_ITEMS || !id_ok || b->size == 0 || !b->ptr ||
             find_item(b->id) || param_find(b->id)) { ok = false; continue; }
@@ -169,6 +194,21 @@ static uint32_t build_payload(uint8_t region, uint8_t *out, uint32_t cap) {
     return n;
 }
 
+/* CRC of a payload without the unit's own history (RF_UNIT: service hours, logs).
+ * Those change by themselves, so they must not count as "a factory value was set". */
+static uint32_t cfg_crc(const uint8_t *p, uint32_t len) {
+    uint32_t c = 0;
+    for (uint32_t n = 0; n + 4u <= len;) {
+        uint16_t id = get16(p + n), sz = get16(p + n + 2);
+        uint32_t rec = 4u + (((uint32_t)sz + 3u) & ~3u);
+        if (rec > len - n) break;
+        const item_t *it = find_item(id);
+        if (!(it && it->rdef && (it->rdef->flags & RF_UNIT))) c = plat_crc32(c, p + n, rec);
+        n += rec;
+    }
+    return c;
+}
+
 /* Is a stored parameter value acceptable? (decoded exactly as the tag holds it) */
 static bool param_bytes_ok(const param_def_t *d, const uint8_t *data) {
     if (PARAM_IS_BLOB(d)) return param_blob_image_ok(d, data);
@@ -193,7 +233,9 @@ static bool importing;          /* apply_payload is restoring a backup file: sec
 
 /* kept in the backup for reference but never restored from one: the serial (a backup
  * loaded into another unit must not give it this unit's identity) */
-static bool item_dev(const item_t *it) { return it && it->pdef && (it->pdef->flags & PF_DEV); }
+static bool item_dev(const item_t *it) {
+    return it && ((it->pdef && (it->pdef->flags & PF_DEV)) || (it->rdef && (it->rdef->flags & RF_UNIT)));
+}
 
 static bool apply_payload(uint8_t region, const uint8_t *p, uint32_t len, uint16_t version, bool dry_run) {
     /* pass 1: structure */
@@ -266,13 +308,19 @@ static void load_region(uint8_t region) {
     if (ok[0] && ok[1]) pick = ((int32_t)(h[1].seq - h[0].seq) > 0) ? 1 : 0;
     else if (ok[0]) pick = 0;
     else if (ok[1]) pick = 1;
-    if (pick < 0) { r->active = -1; r->seq = 0; r->valid_at_boot = false; return; }
+    if (pick < 0) {
+        uint8_t m[2][4] = { { 0 } };
+        r->blank = S.dev && S.dev->read(S.dev, r->addr[0], m[0], 4) == 0 && S.dev->read(S.dev, r->addr[1], m[1], 4) == 0 &&
+                   get32(m[0]) != MAGIC && get32(m[1]) != MAGIC;
+        r->active = -1; r->seq = 0; r->valid_at_boot = false; return;
+    }
     /* The staging buffer holds whatever copy 1 contained (valid or not): if copy 0
      * was chosen, read it again, and treat a failure now as no valid image. */
     if (pick == 0 && !read_copy(r, region, 0, &h[0])) pick = ok[1] ? 1 : -1;
     if (pick == 1 && !ok[1]) pick = -1;
     if (pick < 0) { r->active = -1; r->seq = 0; r->valid_at_boot = false; return; }
     r->active = pick; r->seq = h[pick].seq; r->valid_at_boot = true;
+    r->uncal = (h[pick].flags & HF_UNCAL) != 0u;
     r->saved_crc = h[pick].crc; r->have_saved = true;
     if (h[pick].version < S.layout_version) { set_status(PSTAT_MIGRATED); r->have_saved = false; /* rewrite */ }
     if (h[pick].version > S.layout_version) set_status(PSTAT_NEWER_LAYOUT);
@@ -289,14 +337,23 @@ void param_store_boot(void) {
     load_region(REGION_USR);
     /* Fail safe for the factory region: with no valid image, the defaults now in
      * RAM become the baseline, so they are written only once a factory value is
-     * actually changed. The user region is simply saved (have_saved = false). */
+     * actually changed. The user region is simply saved (have_saved = false).
+     * The unit's own history (service hours, log, reset count) is in the factory
+     * region too: it is saved as it changes, in an image marked HF_UNCAL, which
+     * keeps CAL_INVALID until a factory value is really set. */
     region_t *f = &S.rg[REGION_FAC];
     if (!f->valid_at_boot) {
         f->payload_len = build_payload(REGION_FAC, f->img + STORE_HDR_SIZE, f->slot - STORE_HDR_SIZE);
         f->saved_crc = plat_crc32(0, f->img + STORE_HDR_SIZE, f->payload_len);
         f->have_saved = true;
+        f->uncal = f->blank;                   /* a new FRAM: the unit's history may be saved */
+        f->hold = !f->blank;                   /* a damaged one: left as it is */
+    } else if (f->uncal) {
+        f->payload_len = build_payload(REGION_FAC, f->img + STORE_HDR_SIZE, f->slot - STORE_HDR_SIZE);
     }
-    if (S.rg[REGION_FAC].valid_at_boot) set_status(PSTAT_FAC_VALID); else set_status(PSTAT_CAL_INVALID);
+    if (f->uncal || f->hold) f->base_cfg_crc = cfg_crc(f->img + STORE_HDR_SIZE, f->payload_len);
+    if (f->valid_at_boot) set_status(PSTAT_FAC_VALID);
+    if (!f->valid_at_boot || f->uncal) set_status(PSTAT_CAL_INVALID);
     if (S.rg[REGION_USR].valid_at_boot) set_status(PSTAT_USR_VALID); else set_status(PSTAT_USR_DEFAULTED);
     S.st.seq_fac = S.rg[REGION_FAC].seq; S.st.seq_usr = S.rg[REGION_USR].seq;
     param_publish();          /* readers see the loaded values from the start */
@@ -305,7 +362,10 @@ void param_store_boot(void) {
 static bool write_region(uint8_t region, uint32_t payload_len, uint32_t crc) {
     region_t *r = &S.rg[region];
     int target = (r->active == 0) ? 1 : 0;
-    hdr_t h = { .version = S.layout_version, .region = region, .seq = r->seq + 1u, .len = payload_len, .crc = crc };
+    bool uncal = region == REGION_FAC && (r->uncal || r->hold) &&
+                 cfg_crc(r->img + STORE_HDR_SIZE, payload_len) == r->base_cfg_crc;
+    hdr_t h = { .version = S.layout_version, .region = region, .seq = r->seq + 1u, .len = payload_len, .crc = crc,
+                .flags = uncal ? HF_UNCAL : 0u };
     hdr_write(r->img, &h);
     uint32_t a = r->addr[target];
     /* payload first, header last: a cut at any point leaves this copy invalid
@@ -326,7 +386,11 @@ static bool write_region(uint8_t region, uint32_t payload_len, uint32_t crc) {
     }
     if (!ok) { S.st.write_errors++; set_status(PSTAT_WRITE_ERROR); return false; }
     r->active = target; r->seq = h.seq; r->saved_crc = crc; r->have_saved = true;
-    if (region == REGION_FAC) { S.st.saves_fac++; S.st.seq_fac = r->seq; clr_status(PSTAT_CAL_INVALID); set_status(PSTAT_FAC_VALID); }
+    if (region == REGION_FAC) {
+        S.st.saves_fac++; S.st.seq_fac = r->seq; set_status(PSTAT_FAC_VALID);
+        r->uncal = uncal; r->hold = false;
+        if (!uncal) clr_status(PSTAT_CAL_INVALID);
+    }
     else                      { S.st.saves_usr++; S.st.seq_usr = r->seq; }
     clr_status(PSTAT_WRITE_ERROR);
     return true;
@@ -354,13 +418,17 @@ void param_store_scan_service(void) {
 /* ---------------- store task side ---------------- */
 /* Jobs from other tasks (the web server), run here so only the store task
  * touches the NVM device. */
-enum { JOB_NONE = 0, JOB_EXPORT, JOB_IMPORT };
+enum { JOB_NONE = 0, JOB_EXPORT, JOB_IMPORT, JOB_LEASE };
 enum { JS_IDLE = 0, JS_PENDING, JS_RUNNING, JS_DONE };
 
 static void run_job(void) {
     if (S.job_state == JS_PENDING) {
         PLAT_DMB();
-        if (S.job == JOB_EXPORT) {
+        if (S.job == JOB_LEASE) {                          /* staging buffers are not in use here */
+            S.leased = true;
+            S.job_result = (int32_t)sizeof img_all;
+            S.job_state = JS_DONE;
+        } else if (S.job == JOB_EXPORT) {
             S.job_result = (int32_t)param_store_export(S.job_buf, S.job_len);
             S.job_state = JS_DONE;
         } else {
@@ -375,14 +443,28 @@ static void run_job(void) {
     }
 }
 
-int param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level) {
+static int job_start(uint8_t job, uint8_t *buf, uint32_t len, uint8_t level) {
+    /* Only the web server uses jobs, one at a time, so a finished job nobody collected was
+     * abandoned (its caller timed out): reclaim it, and with it a lease granted too late. */
+    if (S.job_state == JS_DONE) {
+        if (S.job == JOB_LEASE) S.leased = false;
+        S.job_state = JS_IDLE;
+    }
     if (S.job_state != JS_IDLE) return -1;
-    S.job = is_export ? JOB_EXPORT : JOB_IMPORT;
+    S.job = job;
     S.job_buf = buf; S.job_len = len; S.job_level = level;
     PLAT_DMB();
     S.job_state = JS_PENDING;
     return 0;
 }
+
+int param_store_job_start(bool is_export, uint8_t *buf, uint32_t len, uint8_t level) {
+    return job_start(is_export ? JOB_EXPORT : JOB_IMPORT, buf, len, level);
+}
+
+int      param_store_lease_start(void) { return job_start(JOB_LEASE, NULL, 0, 0); }
+uint8_t *param_store_lease_buf(void)   { return S.leased ? img_all : NULL; }
+void     param_store_lease_end(void)   { PLAT_DMB(); S.leased = false; }
 
 bool param_store_job_done(int32_t *result) {
     if (S.job_state != JS_DONE) return false;
@@ -402,6 +484,7 @@ void param_store_poll(uint32_t now_ms) {
     }
     if (!S.started) run_job();                          /* between saves: staging buffers are not in use */
     if (S.req != REQ_NONE) return;                      /* the scan has not serviced the request yet */
+    if (S.leased) return;                               /* the web server is using the staging buffers */
 
     if (S.started) {                                    /* snapshot complete: staging buffers are ours */
         S.started = false;
@@ -410,6 +493,7 @@ void param_store_poll(uint32_t now_ms) {
             uint32_t crc = plat_crc32(0, r->img + STORE_HDR_SIZE, r->payload_len);
             if (g == REGION_FAC) S.st.payload_fac = r->payload_len; else S.st.payload_usr = r->payload_len;
             if (r->have_saved && crc == r->saved_crc) continue;
+            if (g == REGION_FAC && r->hold && cfg_crc(r->img + STORE_HDR_SIZE, r->payload_len) == r->base_cfg_crc) continue;
             (void)write_region(g, r->payload_len, crc);
         }
         S.last_save_ms = now_ms;
@@ -420,6 +504,36 @@ void param_store_poll(uint32_t now_ms) {
     S.started = true;
     PLAT_DMB();
     S.req = REQ_SNAPSHOT;
+}
+
+uint32_t param_store_nvm_size(unsigned *parts) {
+    if (parts) *parts = S.dev ? S.dev->parts : 0u;
+    return S.dev && S.dev->persistent ? S.dev->size : 0u;
+}
+/* board test (plat_boardtest.h): every address line and the last byte get their own value,
+ * twice (the value and its complement), each read back after all are written, so a stuck bit,
+ * a missing chip or two addresses that land on the same cell fail. The bytes are put back. */
+int param_store_nvm_test(void) {
+    if (!S.dev || S.dev->size < 2u) return -1;
+    uint32_t addr[34];
+    uint8_t keep[34], v;
+    unsigned n = 0;
+    addr[n++] = 0;
+    for (uint32_t b = 1; b < S.dev->size && n < 33u; b <<= 1) addr[n++] = b;
+    if (addr[n - 1] != S.dev->size - 1u) addr[n++] = S.dev->size - 1u;
+    for (unsigned k = 0; k < n; ++k) if (S.dev->read(S.dev, addr[k], &keep[k], 1) != 0) return 0;
+    bool ok = true;
+    for (unsigned pass = 0; pass < 2u && ok; ++pass) {
+        for (unsigned k = 0; k < n; ++k) {
+            v = (uint8_t)((0x5Au + k * 0x25u) ^ (pass ? 0xFFu : 0u));
+            if (S.dev->write(S.dev, addr[k], &v, 1) != 0) ok = false;
+        }
+        for (unsigned k = 0; k < n && ok; ++k)
+            ok = S.dev->read(S.dev, addr[k], &v, 1) == 0 && v == (uint8_t)((0x5Au + k * 0x25u) ^ (pass ? 0xFFu : 0u));
+    }
+    for (unsigned k = 0; k < n; ++k) if (S.dev->write(S.dev, addr[k], &keep[k], 1) != 0) ok = false;
+    for (unsigned k = 0; k < n; ++k) if (S.dev->read(S.dev, addr[k], &v, 1) != 0 || v != keep[k]) ok = false;
+    return ok ? 1 : 0;
 }
 
 bool          param_store_calibration_valid(void) { return !(S.status & PSTAT_CAL_INVALID); }

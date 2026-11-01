@@ -12,7 +12,10 @@
 #include "bsp.h"
 #include "plat_io.h"
 #include "nvm.h"
+#include "param_store.h"
 #include "plat_config.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #ifndef DI_01_ACTIVE_LOW
 #define DI_01_ACTIVE_LOW 0
@@ -290,15 +293,86 @@ extern IWDG_HandleTypeDef hiwdg;
 static bsp_reset_cause_t reset_cause = BSP_RESET_UNKNOWN;
 static bool reset_cause_read;
 
+#ifdef HAL_IWDG_MODULE_ENABLED
+/* Start-up runs before the supervisor task and can take longer than the 1 s IWDG: the
+ * first-boot HTTPS key, and on the DK (no FRAM) a new key at every boot, measured 1.1 s
+ * from reset to the first scan in a -O0 build (28 Oct, bench). So bsp_init stretches the
+ * IWDG to about 8 s and the first kick from a task (thread mode on the process stack,
+ * i.e. the scheduler is running) puts back the 1 s from CubeMX. */
+static uint32_t wdg_run_prescaler;
+static bool wdg_stretched;
+static void wdg_set_prescaler(uint32_t pr) {
+    if (!wdg_stretched) wdg_run_prescaler = hiwdg.Init.Prescaler;
+    hiwdg.Init.Prescaler = pr;
+    (void)HAL_IWDG_Init(&hiwdg);               /* already running: reloads PR and kicks */
+    wdg_stretched = (pr != wdg_run_prescaler);
+}
+#endif
+
 /* ---------------- time ---------------- */
+extern const uint32_t g_pfnVectors[];          /* the startup file's vector table */
+
 void bsp_init(void) {
+    /* Behind the bootloader (boot.h) this image's vectors are at 0x08000000 + PLAT_BOOT_SIZE.
+     * SystemInit sets VTOR from VECT_TAB_OFFSET (docs/BOOTLOADER.md); if that was left at 0
+     * the interrupts would land in the bootloader, so set it from the link address too. */
+    SCB->VTOR = (uint32_t)(uintptr_t)g_pfnVectors;
+    __DSB();
     /* DWT cycle counter for scan execution-time statistics */
-    DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
-    DWT->CYCCNT = 0;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    (void)HAL_InitTick(0);                     /* starts it if the HAL has not (keeps the count) */
+#ifdef HAL_IWDG_MODULE_ENABLED
+    wdg_set_prescaler(IWDG_PRESCALER_256);    /* about 8 s until the tasks run: see bsp_wdg_kick */
+#endif
+    bsp_psram_init();                          /* before anything uses a PLAT_EXTRAM buffer */
+#ifdef CS_EXP_Pin
+    CS_EXP_GPIO_Port->BSRR = CS_EXP_Pin;       /* the expansion header's CS (CORE_PCB.md 16) stays high: no module driver
+                                                * yet, and its MISO buffer would otherwise fight the W5500's on SPI4 */
+#endif
 }
 
-uint32_t bsp_ms(void) { return HAL_GetTick(); }         /* HAL timebase: 1 kHz (TIM6 when FreeRTOS owns SysTick) */
+/* ---------------- HAL timebase ----------------
+ * No timer of its own: on the DK a CubeMX TIM6 timebase froze the start-up after a power-up
+ * (28 Oct, bench; it ran only once a debugger had attached), while ST's examples and Gary's
+ * Smart Filter project, which keep the HAL on SysTick, boot every time. SysTick belongs to
+ * FreeRTOS, so the HAL's millisecond count is taken from the DWT cycle counter until the
+ * scheduler runs and from the FreeRTOS tick (1 kHz, configTICK_RATE_HZ) after that. These
+ * replace the HAL's weak HAL_InitTick and HAL_GetTick; in the .ioc, SYS Timebase = SysTick
+ * and no SysTick handler generated (the FreeRTOS port has it). */
+static uint32_t boot_ms;                       /* counted before the scheduler started */
+static uint32_t boot_rem, boot_last;           /* cycles not yet a whole ms; CYCCNT last seen */
+static uint32_t boot_ms_at_start;              /* the count when the scheduler took over */
+static bool     sched_seen;
+
+HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority) {
+    (void)TickPriority;                        /* called again after each clock change: keeps the count */
+    if (!(DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk)) {
+        DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk;
+        DWT->CYCCNT = 0;
+        DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+        boot_last = 0;
+    }
+    return HAL_OK;
+}
+
+uint32_t HAL_GetTick(void) {
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        TickType_t t = __get_IPSR() ? xTaskGetTickCountFromISR() : xTaskGetTickCount();
+        if (!sched_seen) {                     /* first call after the start: carry the count on */
+            sched_seen = true;
+            boot_ms_at_start = boot_ms - (uint32_t)t;
+        }
+        return boot_ms_at_start + (uint32_t)t;
+    }
+    /* whole ms at the current clock, so a clock change only affects time from then on;
+     * CYCCNT wraps every 17 s at 250 MHz, and start-up calls this far more often */
+    uint32_t now = DWT->CYCCNT, per_ms = SystemCoreClock / 1000u;
+    boot_rem += now - boot_last;
+    boot_last = now;
+    if (per_ms) { boot_ms += boot_rem / per_ms; boot_rem %= per_ms; }
+    return boot_ms;
+}
+
+uint32_t bsp_ms(void) { return HAL_GetTick(); }         /* the HAL timebase above: 1 kHz */
 uint32_t bsp_cycles(void) { return DWT->CYCCNT; }
 uint32_t bsp_cycles_per_us(void) {
     uint32_t c = SystemCoreClock / 1000000u;
@@ -377,6 +451,10 @@ void bsp_io_safe_state(void) {
 /* ---------------- watchdog and reset ---------------- */
 void bsp_wdg_kick(void) {
 #ifdef HAL_IWDG_MODULE_ENABLED
+    if (wdg_stretched && __get_IPSR() == 0u && (__get_CONTROL() & CONTROL_SPSEL_Msk)) {
+        wdg_set_prescaler(wdg_run_prescaler);
+        return;
+    }
     (void)HAL_IWDG_Refresh(&hiwdg);
 #endif
 }
@@ -411,8 +489,11 @@ nvm_dev_t *bsp_param_nvm(void) {
     if (nvm_fram_spi_open(&dev)) return &dev;
 #if !defined(FRAM_CS_Pin) && !defined(FRAM_I2C_HANDLE)
     /* No FRAM in this hardware configuration: RAM stand-in with the same map, so the
-     * store logic runs; nothing survives power-off (PSTAT_NVM_VOLATILE). */
-    static uint8_t   mem[PLAT_FRAM_SIZE];
+     * store logic runs; nothing survives power-off (PSTAT_NVM_VOLATILE). Only as long
+     * as the map's last area (META, 1 KB): the part above it is reserved, unused. Build a
+     * bare DK with PLAT_FRAM_SIZE=32768u like the DK with its breakout: the stand-in is then
+     * 23 KB instead of 91 KB (the 128 KB map), which the RAM budget needs. */
+    static uint8_t   mem[STORE_META_ADDR + 1024u];
     static nvm_ram_t ram;
     nvm_ram_init(&dev, &ram, mem, sizeof mem, false);
     return &dev;
@@ -478,7 +559,32 @@ void bsp_random(void *buf, uint32_t len) {
     }
 }
 
-/* the 96-bit unique device ID (RM0481 "Unique device ID register") */
+/* the 96-bit unique device ID (RM0481 "Unique device ID register"). Word reads only: a
+ * byte read of this area is a bus fault on the H5 (seen on the DK, 28 Oct). */
 void bsp_chip_uid(uint8_t uid[12]) {
-    for (unsigned k = 0; k < 12u; ++k) uid[k] = *((const volatile uint8_t *)UID_BASE + k);
+    for (unsigned w = 0; w < 3u; ++w) {
+        uint32_t v = ((const volatile uint32_t *)UID_BASE)[w];
+        for (unsigned k = 0; k < 4u; ++k) uid[4u * w + k] = (uint8_t)(v >> (8u * k));
+    }
+}
+
+/* The NODE role's backup words (plat_node.h): TAMP BKP0R..BKP15R, kept over a reset, lost at
+ * power-off (no battery on VBAT). BKP30R/BKP31R are the bootloader's (boot.h). */
+static void backup_open(void) {
+    RCC->APB3ENR |= RCC_APB3ENR_RTCAPBEN;      /* TAMP sits behind the RTC's bus clock */
+    (void)RCC->APB3ENR;
+    PWR->DBPCR |= PWR_DBPCR_DBP;               /* the backup domain is write protected */
+}
+
+uint32_t bsp_backup_read(unsigned idx) {
+    if (idx >= 16u) return 0;
+    backup_open();
+    return (&TAMP->BKP0R)[idx];
+}
+
+bool bsp_backup_write(unsigned idx, uint32_t v) {
+    if (idx >= 16u) return false;
+    backup_open();
+    (&TAMP->BKP0R)[idx] = v;
+    return (&TAMP->BKP0R)[idx] == v;
 }

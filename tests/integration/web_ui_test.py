@@ -9,21 +9,86 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CHROME = os.environ.get("CHROME", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome")
 URL = "https://127.0.0.1:18095/"
 
+async def tab(pg, t):                       # the page shows one group of sections at a time
+    await pg.click(f'#tabbar button[data-tab="{t}"]')
+
 async def run(unit):
     ok = True
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME)
-        pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True)
+        pg = await b.new_page(viewport={"width": 1200, "height": 900}, ignore_https_errors=True,
+                                bypass_csp=True)   # wait_for_function evaluates strings; the phone page below runs under the policy
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "401" not in m.text and "400" not in m.text else None)
         await pg.goto(URL)
-        await pg.wait_for_selector("#v1001")
+        await pg.wait_for_selector("#v1001", state="attached")
         await pg.wait_for_timeout(1200)
         await pg.screenshot(path=os.path.join(ROOT, "build", "web_view.png"), full_page=True)
+        tabs = await pg.eval_on_selector_all("#tabbar button", "bs => bs.filter(b => b.style.display !== 'none').map(b => b.dataset.tab)")
+        print("tabs for a viewer:", tabs); ok &= tabs == ["overview", "trends", "settings", "cal", "service", "events"]
+        await pg.click("#defpw a")                          # "Change them under Administration" before logging in
+        await pg.wait_for_timeout(300)
+        stay = await pg.evaluate("[tab, document.getElementById('alarms').offsetParent !== null]")
+        print("Administration link before login:", stay); ok &= stay == ["overview", True]
+        # trends: pick a value, let it record, check the chart, the legend, the CSV and that the pick is remembered
+        await tab(pg, "trends")
+        await pg.select_option("#tradd", label="1002 run_seconds")
+        await pg.wait_for_timeout(3500)
+        pens = await pg.inner_text("#trpens")
+        inked = await pg.evaluate("""() => { const c = document.getElementById('trc'), d = c.getContext('2d')
+            .getImageData(0, 0, c.width, c.height).data; let n = 0;
+            for (let i = 0; i < d.length; i += 4) if (d[i] === 31 && d[i + 1] === 95 && d[i + 2] === 174) n++; return n; }""")
+        async with pg.expect_download() as dl:
+            await pg.click("#trcsv")
+        csv = open(await (await dl.value).path()).read().splitlines()
+        await pg.locator("#trendsec").screenshot(path=os.path.join(ROOT, "build", "web_trend.png"))
+        await pg.reload()
+        await pg.wait_for_selector("#trv1002")              # the reload stays on the Trends tab (#trends)
+        print("trend legend:", repr(pens), "| line pixels:", inked, "| csv:", csv[0], len(csv) - 1, "rows")
+        ok &= "run_seconds" in pens and inked > 20 and csv[0] == '"time","run_seconds (s)"' and len(csv) >= 5 \
+              and all(len(r.split(",")) == 2 and r.split(",")[1].isdigit() for r in csv[1:])
+        # phone width: no sideways scrolling of the page (wide tables scroll inside their own section)
+        ph = await b.new_page(viewport={"width": 390, "height": 844}, ignore_https_errors=True, has_touch=True)
+        csp = []
+        ph.on("console", lambda m: csp.append(m.text) if "Content Security Policy" in m.text else None)
+        await ph.goto(URL)
+        await ph.wait_for_selector("#v1001", state="attached")
+        await ph.wait_for_timeout(1500)
+        sw = await ph.evaluate("[document.documentElement.scrollWidth, innerWidth]")
+        await ph.screenshot(path=os.path.join(ROOT, "build", "web_phone.png"))
+        await ph.close()
+        print("phone width: page", sw[0], "px in a", sw[1], "px window"); ok &= sw[0] <= sw[1]
+        print("page under its Content-Security-Policy, violations:", csp); ok &= not csp
+        # instrument state and value quality (CIP-09/10), as the firmware will report them: injected into the replies
+        async def add_q(route):
+            r = await route.fetch(); j = await r.json(); j["q"] = {"1002": "cal"}
+            await route.fulfill(response=r, json=j)
+        async def add_state(route):
+            r = await route.fetch(); j = await r.json(); j["state"] = "CALIBRATION"
+            await route.fulfill(response=r, json=j)
+        await pg.route("**/api/values", add_q)
+        await pg.route("**/api/info", add_state)
+        await pg.wait_for_timeout(2500)
+        qcls = await pg.evaluate("[document.getElementById('v1002').className, document.getElementById('v1002').dataset.q, document.getElementById('v1001').className]")
+        stt = await pg.inner_text("#state")
+        await pg.unroute("**/api/values"); await pg.unroute("**/api/info")
+        print("quality on run_seconds:", qcls, "| state badge:", repr(stt))
+        ok &= "q" in qcls[0].split() and qcls[1] == "calibration" and "q" not in qcls[2].split() and stt == "CALIBRATION"
+        # diagnostic package (CIP-22.1): one JSON file, no secrets
+        await tab(pg, "events")
+        async with pg.expect_download(timeout=30000) as dl:
+            await pg.click("#diagbtn")
+        import json as _json
+        pkg = _json.load(open(await (await dl.value).path()))
+        names = {x["name"] for x in pkg["settings"]}
+        print("diagnostic package:", sorted(k for k in pkg if not k.startswith("_"))[:14], "| settings", len(pkg["settings"]))
+        ok &= pkg["kind"] == "cems-diagnostic-package" and pkg["events_csv"].startswith("seq,time,event") and "serial" in pkg["info"] \
+              and "mail_password" not in names and "start_delay" in names and "boards" in pkg["iob"] and "error" not in pkg["firmware"]
         await pg.fill("#pw", "1111")
         await pg.click("#loginbtn")
         await pg.wait_for_selector("#userrow", state="visible")
+        await tab(pg, "settings")
         await pg.fill("#filter", "start_delay")
         btn = pg.locator('#rows button:has-text("Change")')
         await btn.first.click()
@@ -36,6 +101,7 @@ async def run(unit):
         await pg.wait_for_timeout(1000)
         shown = await pg.inner_text("#v1001")
         await pg.fill("#filter", "")
+        await tab(pg, "events")
         await pg.wait_for_timeout(5500)                    # the event list refreshes every 5 s
         events = await pg.inner_text("#events")
         print("event list:", events.replace("\n", " | ")[:300])
@@ -45,11 +111,13 @@ async def run(unit):
         print("refused value message:", repr(refused)); ok &= refused == "Outside the allowed range"
         print("value shown after change:", repr(shown)); ok &= shown == "1500 ms"
         # alarms: badge, list, acknowledge one row
+        await tab(pg, "settings")
         await pg.fill("#filter", "demo_fault")
         await pg.click('#rows button:has-text("Change")')
         await pg.fill("#rows td input", "1")
         await pg.click('#rows button:has-text("Set")')
         await pg.fill("#filter", "")
+        await tab(pg, "overview")
         await pg.wait_for_function("document.getElementById('alarmrows').innerText.includes('Demo fault')", timeout=5000)
         badge = await pg.inner_text("#alarmbadge")
         rows = await pg.inner_text("#alarmrows")
@@ -83,6 +151,7 @@ async def run(unit):
         await cells2.nth(1).fill("30")
         await pg.click('#recbox button:has-text("Save")')
         await pg.wait_for_function("document.getElementById('recerr').textContent === 'Saved'", timeout=4000)
+        await tab(pg, "settings")
         await pg.fill("#filter", "demo_steps")
         await pg.wait_for_timeout(1500)
         steps = await pg.inner_text("#v1012")
@@ -99,6 +168,7 @@ async def run(unit):
         await pg.select_option("#lvl", "factory")
         await pg.fill("#pw", "9999")
         await pg.click("#loginbtn")
+        await tab(pg, "admin")
         await pg.wait_for_selector("#admin", state="visible")
         await pg.set_input_files("#fwfile", cfw)
         await pg.click("#fwup")
@@ -111,6 +181,7 @@ async def run(unit):
         print("firmware:", repr(fwmsg), "|", repr(fwinfo), "| activate button:", act)
         ok &= fwmsg == "Uploaded 0.4.0" and "Ready in the spare bank: 0.4.0" in fwinfo and act
         # alarm actions and email set-up (factory login sees the admin sections)
+        await tab(pg, "alarmcfg")
         await pg.wait_for_function("document.getElementById('actrows').innerText.includes('Demo fault')", timeout=5000)
         row = pg.locator('#actrows tr:has-text("DEMO_FAULT")')
         await row.locator("input[type=checkbox]").nth(2).check()            # relay 1
@@ -129,11 +200,14 @@ async def run(unit):
         await pg.locator("#actions").screenshot(path=os.path.join(ROOT, "build", "web_alarm_actions.png"))
         await pg.locator("#mailsec").screenshot(path=os.path.join(ROOT, "build", "web_mail.png"))
         print("alarm actions:", relay_ok, "| mail form:", mail_ok); ok &= relay_ok and mail_ok
+        await tab(pg, "admin")
         await pg.wait_for_function("document.getElementById('clocknow').textContent.startsWith('Instrument clock: 2')", timeout=6000)
         await pg.click("#clockpc")
         await pg.wait_for_function("document.getElementById('clockerr').textContent === 'Set'", timeout=5000)
+        await pg.wait_for_function("document.getElementById('clockq').textContent.includes('from the web page')", timeout=8000)
         await pg.locator("#clocksec").screenshot(path=os.path.join(ROOT, "build", "web_clock.png"))
-        clk = await pg.inner_text("#clocknow"); print("clock:", clk)
+        clk = await pg.inner_text("#clocknow"); clq = await pg.inner_text("#clockq"); print("clock:", clk, "|", clq)
+        ok &= clq.startswith("SYNCHRONISED")
         # connection loss: stop the unit, the page must say so and grey out
         unit.send_signal(signal.SIGTERM); unit.wait(timeout=10)
         await pg.wait_for_timeout(2500)

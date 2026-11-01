@@ -16,6 +16,12 @@
 #include <math.h>
 #include "web_auth.h"
 #include "modbus.h"
+#include "iobus.h"
+#include "iob_tcp.h"
+#include "iob_w5500.h"
+#include "inst_w5500.h"
+#include "plat_power.h"
+#include "plat_role.h"
 
 scan_engine_t  plat_scan;
 plat_cmdq_t    plat_cmdq;
@@ -24,6 +30,9 @@ task_monitor_t plat_monitor;
 
 static int tm_ids[PLAT_TASK_COUNT];
 static const plat_app_t *the_app;
+static iob_tcp_t iob_eth;                        /* the I/O boards on Ethernet (iobus task only) */
+static iob_w5500_t iob_io;                       /* the I/O boards on the I/O port (iobus task only) */
+static inst_w5500_t inst_io;                     /* the third-party instruments on the same port (inst.h) */
 const plat_app_t *plat_app(void) { return the_app; }
 
 void plat_checkin(plat_task_id_t id) {
@@ -41,6 +50,15 @@ __attribute__((weak)) void plat_modbus_task_body(void) { idle_body(PLAT_TASK_MOD
 __attribute__((weak)) void plat_http_task_body(void)   { idle_body(PLAT_TASK_HTTP); }
 __attribute__((weak)) void plat_ui_task_body(void)     { idle_body(PLAT_TASK_UI); }
 __attribute__((weak)) void plat_net_task_body(void)    { idle_body(PLAT_TASK_NET); }
+__attribute__((weak)) void plat_iobus_task_body(void)  { idle_body(PLAT_TASK_IOBUS); }
+
+/* the NODE role's scan: time and clock as usual, no pins */
+static void no_io_read(plat_io_in_t *in) { (void)in; }
+static void no_io_write(const plat_io_out_t *out) { (void)out; }
+static const scan_hw_t scan_hw_none = {
+    .ms = bsp_ms, .cycles = bsp_cycles, .cycles_per_us = bsp_cycles_per_us, .rtc_read = bsp_rtc_read,
+    .io_read = no_io_read, .io_write = no_io_write,
+};
 
 /* ---------------- fixed platform tasks ---------------- */
 static void ctrl_task(void *arg) {
@@ -48,6 +66,7 @@ static void ctrl_task(void *arg) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_CTRL_PERIOD_MS));
+        plat_power_sample();                     /* the 24 V supply, for the power-fail shutdown */
         plat_ctrl_tick();
         plat_checkin(PLAT_TASK_CTRL);
     }
@@ -67,7 +86,7 @@ static void scan_task(void *arg) {
 
 static void fatal(plat_fault_t f, int32_t task, const char *name, uint32_t arg) {
     plat_diag_fault(f, task, name, arg, bsp_ms());
-    bsp_io_safe_state();
+    plat_io_safe_state();               /* the main board's pins, and all-off to the I/O boards */
     bsp_system_reset();
     for (;;) { }   /* IWDG catches it if the reset request fails */
 }
@@ -94,6 +113,7 @@ static void supervisor_task(void *arg) {
     for (;;) {
         (void)xTaskDelayUntil(&last, pdMS_TO_TICKS(PLAT_SUPERVISOR_PERIOD_MS));
         if (n++ % (5000u / PLAT_SUPERVISOR_PERIOD_MS) == 0) health_sample();
+        plat_diag_tick(bsp_ms());                /* how long this boot ran, for the reboot-loop check */
         int bad = tm_check(&plat_monitor, bsp_ms());
         if (bad == TM_ALL_OK) { bsp_wdg_kick(); continue; }
         fatal(PLAT_FAULT_TASK_SILENT, bad, tm_name(&plat_monitor, bad), 0);
@@ -102,11 +122,11 @@ static void supervisor_task(void *arg) {
      * the IWDG and the hardware resets the unit. */
 }
 
-enum { BODY_STORE, BODY_MODBUS, BODY_HTTP, BODY_UI, BODY_NET };
+enum { BODY_STORE, BODY_MODBUS, BODY_HTTP, BODY_UI, BODY_NET, BODY_IOBUS };
 static void (*const service_bodies[])(void) = {
     [BODY_STORE] = plat_store_task_body, [BODY_MODBUS] = plat_modbus_task_body,
     [BODY_HTTP] = plat_http_task_body,   [BODY_UI] = plat_ui_task_body,
-    [BODY_NET] = plat_net_task_body,
+    [BODY_NET] = plat_net_task_body,     [BODY_IOBUS] = plat_iobus_task_body,
 };
 
 static void service_task(void *arg) {
@@ -124,6 +144,7 @@ DEF_TASK(modbus, PLAT_STACK_MODBUS);
 DEF_TASK(http,   PLAT_STACK_HTTP);
 DEF_TASK(ui,     PLAT_STACK_UI);
 DEF_TASK(net,    PLAT_STACK_NET);
+DEF_TASK(iobus,  PLAT_STACK_IOBUS);
 
 #define MAKE(fn, name, stk, prio, arg, nm) \
     do { if (xTaskCreateStatic((fn), (name), (stk), (arg), (prio), nm##_stack, &nm##_tcb) == NULL) \
@@ -159,6 +180,11 @@ void plat_start(const plat_app_t *app) {
     plat_diag_boot(bsp_reset_cause());
     bsp_init();
     bsp_io_safe_state();
+    if (!bsp_psram_ok()) {                     /* the TLS pool and the settings buffer live there */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "psram", 0, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
+    plat_role_t role = plat_role_init();          /* CORE, NODE or NONE (plat_role.h), once */
 
     uint32_t now = bsp_ms();
     tm_init(&plat_monitor, now, PLAT_STARTUP_GRACE_MS);
@@ -169,13 +195,25 @@ void plat_start(const plat_app_t *app) {
     tm_ids[PLAT_TASK_HTTP]   = tm_register(&plat_monitor, "http",   PLAT_SILENCE_HTTP_MS);
     tm_ids[PLAT_TASK_UI]     = tm_register(&plat_monitor, "ui",     PLAT_SILENCE_UI_MS);
     tm_ids[PLAT_TASK_NET]    = tm_register(&plat_monitor, "net",    PLAT_SILENCE_NET_MS);
+    tm_ids[PLAT_TASK_IOBUS]  = tm_register(&plat_monitor, "iobus",  PLAT_SILENCE_IOBUS_MS);
 
     plat_cmdq_init(&plat_cmdq);
     plat_snap_lock.seq = 0;
-    scan_init(&plat_scan, app->scan, &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
+    /* CIP-08.5: after a reboot loop, no application code at all (not even its init); outputs stay
+     * off, and the network, the touchscreen and firmware update run so it can be serviced */
+    static const scan_app_t safe_scan = { 0 };
+    bool safe = plat_diag_reboot_loop() || role == PLAT_ROLE_NONE;   /* NONE: no jumper, so nothing switches */
+    /* NODE: no application and no pins for the scan; the node core owns the outputs (plat_node.h) */
+    scan_init(&plat_scan, safe || role == PLAT_ROLE_NODE ? &safe_scan : app->scan,
+              role == PLAT_ROLE_NODE ? &scan_hw_none : &scan_hw_bsp, &plat_cmdq, &plat_snap_lock, PLAT_SCAN_PERIOD_MS);
 
     /* A table error is a programming error: stop here with outputs safe, the
      * watchdog fed, and the offending ID in the fault record (debugger or next boot). */
+    { char why[64]; int ce = plat_app_check(app, why, sizeof why);   /* the contract (spec 9.3) */
+      if (ce != 0) {
+          plat_diag_fault(PLAT_FAULT_ASSERT, -1, "app contract", (uint32_t)ce, bsp_ms());
+          for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+      } }
     if (param_init(app->params, app->n_params) != PERR_OK) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "param table", param_table_error(), bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
@@ -185,6 +223,10 @@ void plat_start(const plat_app_t *app) {
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
     ui_app_set(app->ui);
+    if (plat_cal_init(app->cal, app->n_cal) != 0) {             /* a calibrated channel names a missing or wrong coefficient */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "cal table", (uint32_t)plat_cal_init(app->cal, app->n_cal), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     nvm_dev_t *fram = bsp_param_nvm();
     if (!param_store_init(fram, NULL, app->retain, app->n_retain, app->layout_version, app->migrate)) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "store table", param_store_status(), bsp_ms());
@@ -192,6 +234,10 @@ void plat_start(const plat_app_t *app) {
     }
     param_store_boot();
     log_start(app, fram);
+    if (plat_selftest_init(app->selftests, app->n_selftests, bsp_ms()) != 0) {   /* more than PLAT_STEST_APP_MAX */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "selftest table", (uint32_t)app->n_selftests, bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
     fw_init(bsp_fw_flash(), fram, STORE_META_ADDR + 128u, app->ident.revision);
     fw_boot((uint8_t)plat_diag.last_reset_cause, bsp_ms());   /* a failed trial image rolls back here */
     fw_safe_check = app->fw_safe;
@@ -200,13 +246,47 @@ void plat_start(const plat_app_t *app) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "alarm table", 0, bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
+    if (plat_state_init(app->meas, app->n_meas) != 0) {        /* a measurement names a missing or non-numeric ID */
+        plat_diag_fault(PLAT_FAULT_ASSERT, -1, "meas table", (uint32_t)plat_state_init(app->meas, app->n_meas), bsp_ms());
+        for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
+    }
+    plat_state_safe_mode(safe);
     param_bind(&plat_cmdq, &plat_snap_lock);
+#ifdef PLAT_BENCH_SETTINGS
+    {   /* Development bench only, never a product build: whole-number settings written at every
+         * start over the stored ones, e.g. -DPLAT_BENCH_SETTINGS="{15,2},{102,1},{110,1}", so the
+         * bench needs no login to set them. Each one is checked like any other write; internal
+         * writes are not logged as changes, so one event per setting says it was forced. */
+        static const struct { uint16_t id; int32_t v; } bench[] = { PLAT_BENCH_SETTINGS };
+        for (size_t i = 0; i < sizeof bench / sizeof bench[0]; ++i) {
+            const param_def_t *d = param_find(bench[i].id);
+            if (d == NULL || d->ptype == PT_FLOAT) continue;
+            plat_val_t v = { .i = bench[i].v };
+            uint8_t kind = d->ptype == PT_BOOL ? PLAT_VAL_BOOL : d->ptype == PT_INT ? PLAT_VAL_I32 : PLAT_VAL_U32;
+            if (kind == PLAT_VAL_BOOL) v = (plat_val_t){ .b = bench[i].v != 0 };
+            if (param_post(bench[i].id, kind, v, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY) == PERR_OK)
+                plat_log_event(LOG_EV_PARAM, PLAT_SRC_INTERNAL, PLAT_LVL_FACTORY, d->id, NAN, (double)bench[i].v, d->name);
+        }
+    }
+#endif
     auth_init();
     if (mb_init(app->modbus_map, app->n_modbus_map, &app->ident) != 0) {
         plat_diag_fault(PLAT_FAULT_ASSERT, -1, "modbus map", 0, bsp_ms());
         for (;;) { bsp_io_safe_state(); bsp_wdg_kick(); }
     }
     scan_set_sys(&plat_scan, &plat_sys);
+    iob_init(bsp_rs485());
+    iob_tcp_init(&iob_eth);                      /* the sockets open on first use, once the network is up */
+    iob_init_eth(&iob_eth.port, &iob_eth.disc);
+    if (bsp_w5500()) {                           /* the I/O port: the chip is set up on first use */
+        uint8_t uid[12], mac[6];
+        bsp_chip_uid(uid);
+        iob_w5500_mac(uid, mac);
+        iob_w5500_init(&iob_io, bsp_w5500(), mac);
+        iob_init_ioport(&iob_io.port, &iob_io.disc);
+        inst_w5500_init(&inst_io, &iob_io);      /* the instruments share the chip: sockets 4-7 */
+        inst_init(&inst_io.net);
+    }
 
     MAKE(ctrl_task,       "ctrl",   PLAT_STACK_CTRL,       PLAT_PRIO_CTRL,       NULL, ctrl);
     MAKE(scan_task,       "scan",   PLAT_STACK_SCAN,       PLAT_PRIO_SCAN,       NULL, scan);
@@ -216,6 +296,7 @@ void plat_start(const plat_app_t *app) {
     MAKE(service_task,    "http",   PLAT_STACK_HTTP,       PLAT_PRIO_HTTP,       (void *)(uintptr_t)BODY_HTTP,   http);
     MAKE(service_task,    "ui",     PLAT_STACK_UI,         PLAT_PRIO_UI,         (void *)(uintptr_t)BODY_UI,     ui);
     MAKE(service_task,    "net",    PLAT_STACK_NET,        PLAT_PRIO_NET,        (void *)(uintptr_t)BODY_NET,    net);
+    MAKE(service_task,    "iobus",  PLAT_STACK_IOBUS,      PLAT_PRIO_IOBUS,      (void *)(uintptr_t)BODY_IOBUS,  iobus);
 
     vTaskStartScheduler();
     fatal(PLAT_FAULT_MALLOC_FAILED, -1, "scheduler", 0);   /* only if idle/timer task creation failed */

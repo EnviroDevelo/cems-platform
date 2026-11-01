@@ -8,6 +8,7 @@
  * ctrl           14        PLAT_CTRL_PERIOD_MS      PLAT_SILENCE_CTRL_MS
  * scan           13        PLAT_SCAN_PERIOD_MS      PLAT_SILENCE_SCAN_MS
  * supervisor     12        PLAT_SUPERVISOR_PERIOD_MS (kicks the IWDG)
+ * iobus          11        PLAT_IOB_PERIOD_MS (RS-485 I/O boards) PLAT_SILENCE_IOBUS_MS
  * store          10        every 20 ms (param store + logger) PLAT_SILENCE_STORE_MS
  * (lwIP tcpip)   8         created by tcpip_init    (not monitored directly)
  * modbus         7         socket events            PLAT_SILENCE_MODBUS_MS
@@ -26,6 +27,9 @@
 #include "plat_log.h"
 #include "plat_alarm.h"
 #include "ui_app.h"
+#include "plat_state.h"
+#include "plat_cal.h"
+#include "plat_selftest.h"
 
 /* Everything an application hands to the platform. */
 typedef struct plat_app_s {
@@ -47,6 +51,12 @@ typedef struct plat_app_s {
     bool (*fw_safe)(char *why, size_t cap);   /* safe to restart for a firmware update? false + reason refuses it (NULL = always) */
     size_t              n_alarms;
     const ui_app_t     *ui;              /* its own screens and record editors (ui_app.h; may be NULL) */
+    const plat_meas_def_t *meas;         /* its measured values: each carries a quality (plat_state.h; may be NULL) */
+    size_t              n_meas;
+    const plat_cal_channel_t *cal;       /* its calibrated channels (plat_cal.h; may be NULL) */
+    size_t              n_cal;
+    const plat_selftest_def_t *selftests; /* its own start-up checks (plat_selftest.h; may be NULL) */
+    size_t              n_selftests;
 } plat_app_t;
 
 typedef enum {
@@ -57,6 +67,7 @@ typedef enum {
     PLAT_TASK_HTTP,
     PLAT_TASK_UI,
     PLAT_TASK_NET,
+    PLAT_TASK_IOBUS,
     PLAT_TASK_COUNT
 } plat_task_id_t;
 
@@ -67,6 +78,16 @@ void plat_start(const plat_app_t *app);   /* never returns */
  * app_vmmux ...), so main(), the networked simulation and the target check take
  * whichever application is linked in (request R1). */
 const plat_app_t *app_select(void);
+
+/* The start-up contract check (spec section 9.3): the rules an application's description must
+ * keep that its tables' own checks (param_init, alarm_init, mb_init, plat_state_init,
+ * plat_cal_init, ui_app_check) do not cover, or cover without saying why: a scan program,
+ * vendor/product/revision (MAJOR.MINOR.PATCH), layout_version >= 1, each list and its count
+ * agreeing, parameter and alarm IDs outside the core's ranges (R5), log channel names, at most
+ * 6 home tiles and 8 self-tests. 0 = keeps the contract; otherwise a code and the reason in why.
+ * plat_start refuses to start (outputs safe) on a failure; the host tests and make conformance
+ * run it too. */
+int plat_app_check(const plat_app_t *app, char *why, size_t cap);
 const plat_app_t *plat_app(void);          /* the application passed to plat_start */
 
 /* Shared platform objects, for the service modules. */
@@ -85,6 +106,7 @@ void plat_checkin(plat_task_id_t id);
  *   plat_modbus_task_body() - Modbus TCP server
  *   plat_http_task_body()   - HTTP server
  *   plat_ui_task_body()     - EVE touch UI
+ *   plat_iobus_task_body()  - RS-485 I/O bus master (plat_iobus_task.c)
  * A body must call plat_checkin() at least once per its silence limit and never return. */
 void plat_ctrl_tick(void);
 void plat_store_task_body(void);
@@ -92,6 +114,8 @@ void plat_modbus_task_body(void);
 void plat_http_task_body(void);
 void plat_ui_task_body(void);
 void plat_net_task_body(void);           /* network bring-up and upkeep (port) */
+void plat_iobus_task_body(void);         /* RS-485 I/O boards (iobus.h) */
+bool plat_ui_fitted(void);               /* this hardware has a display (plat_ui_task.c; weak default false) */
 bool plat_ui_healthy(void);              /* display working or not fitted (plat_ui_task.c; weak default true) */
 
 #endif

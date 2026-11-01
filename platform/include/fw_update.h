@@ -56,7 +56,7 @@ extern uint32_t fw_trial_ms;          /* = FW_TRIAL_MS; the PC simulation shorte
 typedef struct {
     uint32_t magic;            /* FW_MAGIC */
     uint16_t hdr_size;         /* 256 */
-    uint16_t hdr_version;      /* 1 */
+    uint16_t hdr_version;      /* 1, or 2 (adds the fields after sig, and signs them) */
     uint32_t product;          /* must equal PLAT_FW_PRODUCT (hardware compatibility) */
     uint32_t version;          /* major << 16 | minor << 8 | patch */
     char     version_str[24];  /* e.g. "0.4.0", NUL-padded */
@@ -65,11 +65,17 @@ typedef struct {
     uint32_t build_time;       /* s since 1970 */
     uint8_t  sha256[32];       /* of the payload */
     uint8_t  sig[64];          /* ECDSA P-256 r||s over SHA-256(header bytes 0..83), if signed */
-    uint8_t  rsvd[100];
+    uint8_t  hw_min, hw_max;   /* v2: board revisions it runs on (straps, CORE_PCB.md 12), inclusive */
+    uint16_t layout_version;   /* v2: settings layout it was built with (plat_app_t; 0 = not stated) */
+    char     build_id[12];     /* v2: source revision (git short hash), NUL-padded */
+    uint8_t  rsvd[84];
     uint32_t rsvd2;
     uint32_t hdr_crc;          /* CRC-32 of bytes 0..251 */
 } fw_header_t;
 #define FW_SIGNED_LEN 84u      /* header bytes covered by the signature (up to and including sha256) */
+/* v2 also signs bytes FW_SIGNED2_OFF..251 (everything after the signature but the CRC):
+ * the message is header[0..83] followed by header[148..251]. */
+#define FW_SIGNED2_OFF 148u
 _Static_assert(sizeof(fw_header_t) == FW_HDR_SIZE, "fw_header_t must be 256 bytes");
 #define FW_F_SIGNED 0x0001u
 
@@ -83,6 +89,9 @@ typedef struct fw_flash {
     int  (*read)(struct fw_flash *f, bool active, uint32_t off, void *p, uint32_t n);
     void (*swap_and_reset)(struct fw_flash *f);   /* toggles the bank swap; on the target does not return */
     void *ctx;
+    uint32_t image_off;        /* where the image starts in a bank: PLAT_BOOT_SIZE (the bootloader before it, boot.h) */
+    void (*trial_mark)(struct fw_flash *f, bool on);   /* the bootloader's trial counter (boot.h); may be NULL */
+    uint32_t boot_report;      /* what the bootloader left at this start (boot_report_word; 0 = none ran) */
 } fw_flash_t;
 
 typedef enum {
@@ -98,7 +107,8 @@ typedef enum {
     FW_E_NO_IMAGE,      /* activate: nothing staged */
     FW_E_NOT_SAFE,      /* activate: the application is not in a safe state to restart (fw_safe_check) */
     FW_E_OLD,           /* older than the minimum version allowed (parameter 88, anti-rollback) */
-    FW_E_WAIT_LOCAL     /* activate from the web/PLC: now waiting for confirmation on the touchscreen */
+    FW_E_WAIT_LOCAL,    /* activate from the web/PLC: now waiting for confirmation on the touchscreen */
+    FW_E_HARDWARE       /* built for other board revisions (v2 header, the board's straps; CIP-03.2) */
 } fw_err_t;
 
 typedef enum {          /* boot record state (FRAM) */
@@ -123,7 +133,17 @@ typedef struct {
     uint8_t    wait_src, wait_level;         /* ... who asked */
     uint32_t   wait_left_ms;
     char       not_safe[48];                 /* why the last activation was refused as not safe ("" = it wasn't) */
+    char       staged_build[12];             /* build ID of the staged image ("" = none stated) */
+    uint8_t    staged_hw_min, staged_hw_max; /* board revisions it runs on (0..255 for a v1 image) */
+    uint32_t   boot_report;                  /* fw_flash_t.boot_report: decode with boot_report_decode */
 } fw_status_t;
+
+/* The board revision from its straps (bsp_hw_straps, read in fw_init): 0.., or -1 if this board
+ * has none (then the hardware range of an image is not checked). Parameter 319. */
+int fw_board_rev(void);
+
+/* Build ID of the running firmware: PLAT_BUILD_ID, set by the build (git short hash); "dev" if not. */
+const char *fw_build_id(void);
 
 /* Update history (FRAM, survives power cuts and "restore defaults"): the last
  * FW_HIST_MAX firmware changes, newest first. Times are the instrument's clock (local
@@ -190,6 +210,12 @@ extern void (*fw_before_swap)(void);
 /* Helpers, also used by the tests and the image tool's self-check. */
 bool     fw_header_ok(const fw_header_t *h);
 uint32_t fw_parse_version(const char *s);     /* "1.2.3-dev" -> 0x010203 */
+
+/* Start-up self-test (CIP-11.1): the running image against the SHA-256 in the header an update
+ * left in its bank, max_bytes per call (store task). 1 = matches, 0 = not finished (call again),
+ * -1 = differs or unreadable, -2 = nothing to check against (no header: programmed with the
+ * debugger, or a header for another version; or no flash interface). */
+int fw_running_check(uint32_t max_bytes);
 
 void fw_reset_for_test(void);
 

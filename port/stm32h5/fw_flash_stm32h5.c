@@ -11,10 +11,16 @@
  * Program unit: 16 bytes (quad-word, with ECC: once per erase). Erase unit: 8 KB.
  * Writing the free bank does not stall execution from the running bank (read-while-
  * write across banks). The instruction cache also caches data reads from flash, so
- * it is invalidated after every erase and write. */
+ * it is invalidated after every erase and write.
+ *
+ * Behind the bootloader (boot.h) the image starts at image_off, taken from where this
+ * build's vector table was linked (0 = no bootloader, the image at FLASH_BASE), and the
+ * trial mark goes into the backup register the bootloader reads (BOOT_TRIAL_REG). The
+ * RTC set-up has already enabled writes to the backup domain. */
 #include <string.h>
 #include "main.h"
 #include "fw_update.h"
+#include "boot.h"
 
 #if defined(HAL_FLASH_MODULE_ENABLED)
 
@@ -79,10 +85,23 @@ static void fl_swap(fw_flash_t *f) {
     NVIC_SystemReset();                                   /* the new mapping applies from reset */
 }
 
+static void fl_trial(fw_flash_t *f, bool on) {
+    (void)f;
+    BOOT_TRIAL_REG = on ? BOOT_TRIAL_MAGIC : 0u;
+}
+
+extern const uint32_t g_pfnVectors[];     /* the startup file's vector table */
+
 fw_flash_t *fw_flash_stm32h5(void) {
     static fw_flash_t f = { .sector = FLASH_SECTOR_SIZE, .prog_unit = 16u,
-                            .erase = fl_erase, .write = fl_write, .read = fl_read, .swap_and_reset = fl_swap };
+                            .erase = fl_erase, .write = fl_write, .read = fl_read, .swap_and_reset = fl_swap,
+                            .trial_mark = fl_trial };
     f.bank_size = FLASH_BANK_SIZE;        /* from the flash-size register: 1 MB on the H573 */
+    f.image_off = (uint32_t)(uintptr_t)g_pfnVectors - FLASH_BASE;   /* PLAT_BOOT_SIZE, or 0 */
+    if (f.image_off) {                    /* behind the bootloader: what it found at this start */
+        f.boot_report = BOOT_REPORT_REG;
+        BOOT_REPORT_REG = 0u;             /* (a stale one must not be shown after a debugger load) */
+    }
     return &f;
 }
 
