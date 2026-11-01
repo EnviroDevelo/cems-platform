@@ -1,0 +1,1224 @@
+GET /api/alarms .active number
+GET /api/alarms .alarms[].active bool
+GET /api/alarms .alarms[].help string
+GET /api/alarms .alarms[].id number
+GET /api/alarms .alarms[].latch bool
+GET /api/alarms .alarms[].name string
+GET /api/alarms .alarms[].priority number
+GET /api/alarms .alarms[].severity string
+GET /api/alarms .alarms[].since string
+GET /api/alarms .alarms[].text string
+GET /api/alarms .alarms[].tier string
+GET /api/alarms .alarms[].time number
+GET /api/alarms .alarms[].unacked bool
+GET /api/alarms .alarms[].uptime number
+GET /api/alarms .unacked number
+GET /api/alarms .worst string
+GET /api/alarms/config .alarms[].can_switch_off bool
+GET /api/alarms/config .alarms[].configured bool
+GET /api/alarms/config .alarms[].default number
+GET /api/alarms/config .alarms[].default_priority number
+GET /api/alarms/config .alarms[].id number
+GET /api/alarms/config .alarms[].name string
+GET /api/alarms/config .alarms[].priority number
+GET /api/alarms/config .alarms[].route number
+GET /api/alarms/config .alarms[].severity string
+GET /api/alarms/config .alarms[].text string
+GET /api/alarms/config .relays[].do number
+GET /api/alarms/config .relays[].failsafe bool
+GET /api/alarms/config .relays[].in_alarm bool
+GET /api/alarms/config .relays[].mode number
+GET /api/alarms/config .tiers[].active number
+GET /api/alarms/config .tiers[].configured bool
+GET /api/alarms/config .tiers[].name string
+GET /api/alarms/config .tiers[].priority number
+GET /api/alarms/config .tiers[].route number
+GET /api/alarms/config .tiers[].unacked number
+GET /api/auth/reset .key bool
+GET /api/auth/reset .message string
+GET /api/auth/reset .uid string
+GET /api/backup
+GET /api/cal .active null
+GET /api/cal .channels[] empty
+GET /api/cal .due bool
+GET /api/cal .history[] empty
+GET /api/fw .bootloader null
+GET /api/fw .build string
+GET /api/fw .history[] empty
+GET /api/fw .last_error string
+GET /api/fw .min_version number
+GET /api/fw .not_safe string
+GET /api/fw .received number
+GET /api/fw .rolled_back bool
+GET /api/fw .running string
+GET /api/fw .signing_required bool
+GET /api/fw .staged null
+GET /api/fw .state string
+GET /api/fw .total number
+GET /api/fw .trial_left_s number
+GET /api/fw .uploading bool
+GET /api/fw .waiting_left_s number
+GET /api/fw .waiting_local bool
+GET /api/info .alarms.active number
+GET /api/info .alarms.unacked number
+GET /api/info .alarms.worst string
+GET /api/info .alarms.worst_priority number
+GET /api/info .api number
+GET /api/info .board_rev number
+GET /api/info .build string
+GET /api/info .cal_valid bool
+GET /api/info .config_crc string
+GET /api/info .core string
+GET /api/info .default_passwords bool
+GET /api/info .fram.bytes number
+GET /api/info .fram.chips number
+GET /api/info .fw string
+GET /api/info .health.heap_free number
+GET /api/info .health.heap_min number
+GET /api/info .health.heap_size number
+GET /api/info .health.known bool
+GET /api/info .health.low bool
+GET /api/info .health.stacks object
+GET /api/info .health.why string
+GET /api/info .hw_rev number
+GET /api/info .ip_conflict bool
+GET /api/info .last_fault.addr number
+GET /api/info .last_fault.arg number
+GET /api/info .last_fault.boots number
+GET /api/info .last_fault.cfsr number
+GET /api/info .last_fault.code number
+GET /api/info .last_fault.hfsr number
+GET /api/info .last_fault.lr number
+GET /api/info .last_fault.name string
+GET /api/info .link_lost bool
+GET /api/info .log_status number
+GET /api/info .login_locked_s number
+GET /api/info .modbus.accepted number
+GET /api/info .modbus.allow_ip null
+GET /api/info .modbus.clients number
+GET /api/info .modbus.evicted number
+GET /api/info .modbus.exceptions number
+GET /api/info .modbus.forced number
+GET /api/info .modbus.last_request_s null
+GET /api/info .modbus.listening bool
+GET /api/info .modbus.max_clients number
+GET /api/info .modbus.port number
+GET /api/info .modbus.protocol_errors number
+GET /api/info .modbus.read_only bool
+GET /api/info .modbus.refused_ip number
+GET /api/info .modbus.requests number
+GET /api/info .modbus.writes_queued number
+GET /api/info .mode string
+GET /api/info .net_swapped bool
+GET /api/info .product string
+GET /api/info .run_hours number
+GET /api/info .scan.late_starts number
+GET /api/info .scan.max_exec_us number
+GET /api/info .scan.overruns number
+GET /api/info .scan.scans number
+GET /api/info .selftest.done bool
+GET /api/info .selftest.failed number
+GET /api/info .selftest.tests[].name string
+GET /api/info .selftest.tests[].result string
+GET /api/info .serial number
+GET /api/info .session.level string
+GET /api/info .session.write_s_left number
+GET /api/info .state string
+GET /api/info .state_since number
+GET /api/info .store_status number
+GET /api/info .tls.failed number
+GET /api/info .tls.handshakes number
+GET /api/info .tls.pool_peak number
+GET /api/info .tls.resumed number
+GET /api/info .tls_fingerprint string
+GET /api/info .uptime_s number
+GET /api/inst .instruments[].enabled bool
+GET /api/inst .instruments[].errors number
+GET /api/inst .instruments[].good number
+GET /api/inst .instruments[].ip string
+GET /api/inst .instruments[].last_error string
+GET /api/inst .instruments[].last_exception number
+GET /api/inst .instruments[].n number
+GET /api/inst .instruments[].name string
+GET /api/inst .instruments[].port number
+GET /api/inst .instruments[].resp_ms number
+GET /api/inst .instruments[].state string
+GET /api/inst .instruments[].unit number
+GET /api/inst .points[] empty
+GET /api/inst/explore .addr number
+GET /api/inst/explore .busy bool
+GET /api/inst/explore .count number
+GET /api/inst/explore .exception number
+GET /api/inst/explore .fc number
+GET /api/inst/explore .hex string
+GET /api/inst/explore .ip string
+GET /api/inst/explore .ms number
+GET /api/inst/explore .ok bool
+GET /api/inst/explore .port number
+GET /api/inst/explore .result string
+GET /api/inst/explore .seq number
+GET /api/inst/explore .unit number
+GET /api/inst/explore .words[] empty
+GET /api/iob .boards[].address number
+GET /api/iob .boards[].ai null
+GET /api/iob .boards[].cj null
+GET /api/iob .boards[].enabled bool
+GET /api/iob .boards[].errors number
+GET /api/iob .boards[].faults[] empty
+GET /api/iob .boards[].first_di number
+GET /api/iob .boards[].first_do number
+GET /api/iob .boards[].fw null
+GET /api/iob .boards[].gate_open bool
+GET /api/iob .boards[].hw number
+GET /api/iob .boards[].in_faults number
+GET /api/iob .boards[].inputs number
+GET /api/iob .boards[].last_error string
+GET /api/iob .boards[].map number
+GET /api/iob .boards[].n number
+GET /api/iob .boards[].node_rx_errors number
+GET /api/iob .boards[].out_faults number
+GET /api/iob .boards[].outputs number
+GET /api/iob .boards[].pump null
+GET /api/iob .boards[].requests number
+GET /api/iob .boards[].state string
+GET /api/iob .boards[].temps[] empty
+GET /api/iob/commission .addr_max number
+GET /api/iob/commission .board null
+GET /api/iob/commission .busy bool
+GET /api/iob/commission .commission_addr number
+GET /api/iob/commission .configured[].address number
+GET /api/iob/commission .configured[].enabled bool
+GET /api/iob/commission .configured[].n number
+GET /api/iob/commission .exception number
+GET /api/iob/commission .from number
+GET /api/iob/commission .ok bool
+GET /api/iob/commission .op string
+GET /api/iob/commission .result string
+GET /api/iob/commission .seq number
+GET /api/iob/commission .to number
+GET /api/iob/net .boards[] empty
+GET /api/iob/net .busy bool
+GET /api/iob/net .configured[].address number
+GET /api/iob/net .configured[].enabled bool
+GET /api/iob/net .configured[].ip string
+GET /api/iob/net .configured[].n number
+GET /api/iob/net .link string
+GET /api/iob/net .ok bool
+GET /api/iob/net .op string
+GET /api/iob/net .port string
+GET /api/iob/net .result string
+GET /api/iob/net .seq number
+GET /api/iob/net .supervisor.dhcp bool
+GET /api/iob/net .supervisor.gw string
+GET /api/iob/net .supervisor.ip string
+GET /api/iob/net .supervisor.mask string
+GET /api/log/data.csv
+GET /api/log/events .events[].arg number
+GET /api/log/events .events[].code number
+GET /api/log/events .events[].detail string
+GET /api/log/events .events[].event string
+GET /api/log/events .events[].level string
+GET /api/log/events .events[].new null
+GET /api/log/events .events[].new number
+GET /api/log/events .events[].old null
+GET /api/log/events .events[].old number
+GET /api/log/events .events[].seq number
+GET /api/log/events .events[].source string
+GET /api/log/events .events[].t number
+GET /api/log/events .events[].time string
+GET /api/log/events.csv
+GET /api/log/info .data.next_seq number
+GET /api/log/info .data.slots number
+GET /api/log/info .data.used number
+GET /api/log/info .events.next_seq number
+GET /api/log/info .events.slots number
+GET /api/log/info .events.used number
+GET /api/log/info .interval_s number
+GET /api/log/info .status number
+GET /api/mail .busy bool
+GET /api/mail .dropped number
+GET /api/mail .failed number
+GET /api/mail .last string
+GET /api/mail .last_ok bool
+GET /api/mail .last_s_ago null
+GET /api/mail .pinned null
+GET /api/mail .queued number
+GET /api/mail .sent number
+GET /api/mail .server_fp null
+GET /api/mail .tries number
+GET /api/modbus/force .forceable[].count null
+GET /api/modbus/force .forceable[].count number
+GET /api/modbus/force .forceable[].id number
+GET /api/modbus/force .forceable[].name string
+GET /api/modbus/force .forceable[].type string
+GET /api/modbus/force .forceable[].unit null
+GET /api/modbus/force .forceable[].unit string
+GET /api/modbus/force .forces[] empty
+GET /api/modbus/force .max number
+GET /api/modbus/force .max_s number
+GET /api/modbus/map .addressing string
+GET /api/modbus/map .block_layout number
+GET /api/modbus/map .codes.clock_source[].code number
+GET /api/modbus/map .codes.clock_source[].name string
+GET /api/modbus/map .codes.common_bits[].bit number
+GET /api/modbus/map .codes.common_bits[].name string
+GET /api/modbus/map .codes.exceptions[].code number
+GET /api/modbus/map .codes.exceptions[].name string
+GET /api/modbus/map .codes.input_alarm_status[].code number
+GET /api/modbus/map .codes.input_alarm_status[].name string
+GET /api/modbus/map .codes.quality[].code number
+GET /api/modbus/map .codes.quality[].key string
+GET /api/modbus/map .codes.quality[].name string
+GET /api/modbus/map .codes.state[].code number
+GET /api/modbus/map .codes.state[].key string
+GET /api/modbus/map .codes.state[].name string
+GET /api/modbus/map .codes.std_status_bits[].bit number
+GET /api/modbus/map .codes.std_status_bits[].name string
+GET /api/modbus/map .entries[].access string
+GET /api/modbus/map .entries[].addr number
+GET /api/modbus/map .entries[].block bool
+GET /api/modbus/map .entries[].byte_order string
+GET /api/modbus/map .entries[].core string
+GET /api/modbus/map .entries[].count number
+GET /api/modbus/map .entries[].description string
+GET /api/modbus/map .entries[].elem string
+GET /api/modbus/map .entries[].fc_read number
+GET /api/modbus/map .entries[].fc_write null
+GET /api/modbus/map .entries[].fc_write[] number
+GET /api/modbus/map .entries[].forceable bool
+GET /api/modbus/map .entries[].format string
+GET /api/modbus/map .entries[].id null
+GET /api/modbus/map .entries[].id number
+GET /api/modbus/map .entries[].max number
+GET /api/modbus/map .entries[].min number
+GET /api/modbus/map .entries[].mirror string
+GET /api/modbus/map .entries[].name string
+GET /api/modbus/map .entries[].scale_dec number
+GET /api/modbus/map .entries[].slot null
+GET /api/modbus/map .entries[].table string
+GET /api/modbus/map .entries[].unit null
+GET /api/modbus/map .entries[].unit string
+GET /api/modbus/map .entries[].word_order string
+GET /api/modbus/map .entries[].write_any_mode bool
+GET /api/modbus/map .entries[].write_level string
+GET /api/modbus/map .fw string
+GET /api/modbus/map .map_version number
+GET /api/modbus/map .product string
+GET /api/params [].def bool
+GET /api/params [].def number
+GET /api/params [].elem string
+GET /api/params [].flags[] empty
+GET /api/params [].flags[] string
+GET /api/params [].id number
+GET /api/params [].level number
+GET /api/params [].max number
+GET /api/params [].meas[] null
+GET /api/params [].meas[] number
+GET /api/params [].min number
+GET /api/params [].name string
+GET /api/params [].q bool
+GET /api/params [].size number
+GET /api/params [].type string
+GET /api/params [].unit string
+GET /api/record
+GET /api/serial .key bool
+GET /api/serial .serial number
+GET /api/serial .uid string
+GET /api/service .boardtest.done bool
+GET /api/service .boardtest.running bool
+GET /api/service .boardtest.saved bool
+GET /api/service .boardtest.tests[].detail string
+GET /api/service .boardtest.tests[].name string
+GET /api/service .boardtest.tests[].result string
+GET /api/service .config_crc string
+GET /api/service .log[] empty
+GET /api/service .run_hours number
+GET /api/service .since_service_hours number
+GET /api/service .test null
+GET /api/time .set bool
+GET /api/time .sntp.diff_s number
+GET /api/time .sntp.error string
+GET /api/time .sntp.last_ok_s_ago null
+GET /api/time .sntp.on bool
+GET /api/time .sntp.steps number
+GET /api/time .sntp.stratum number
+GET /api/time .sntp.tries number
+GET /api/time .source string
+GET /api/time .sync_time number
+GET /api/time .synced bool
+GET /api/time .text string
+GET /api/time .unix number
+GET /api/time .utc_offset_min number
+GET /api/tls/cert
+GET /api/ui .records[].fields[].count number
+GET /api/ui .records[].fields[].elem_stride number
+GET /api/ui .records[].fields[].esize number
+GET /api/ui .records[].fields[].items[] string
+GET /api/ui .records[].fields[].kind string
+GET /api/ui .records[].fields[].label string
+GET /api/ui .records[].fields[].max number
+GET /api/ui .records[].fields[].min number
+GET /api/ui .records[].fields[].off number
+GET /api/ui .records[].fields[].row_stride number
+GET /api/ui .records[].fields[].signed bool
+GET /api/ui .records[].fields[].unit string
+GET /api/ui .records[].id number
+GET /api/ui .records[].level number
+GET /api/ui .records[].rows number
+GET /api/ui .records[].rows_off number
+GET /api/ui .records[].rows_size number
+GET /api/ui .records[].size number
+GET /api/ui .records[].title string
+GET /api/ui .screens[].title string
+GET /api/ui .screens[].widgets[].cmd number
+GET /api/ui .screens[].widgets[].cmd2 number
+GET /api/ui .screens[].widgets[].cmd_value number
+GET /api/ui .screens[].widgets[].enable number
+GET /api/ui .screens[].widgets[].index number
+GET /api/ui .screens[].widgets[].kind string
+GET /api/ui .screens[].widgets[].label string
+GET /api/ui .screens[].widgets[].names number
+GET /api/ui .screens[].widgets[].record number
+GET /api/ui .screens[].widgets[].show number
+GET /api/ui .screens[].widgets[].show_min number
+GET /api/ui .screens[].widgets[].state number
+GET /api/ui .screens[].widgets[].value number
+GET /api/values .q object
+GET /api/values .t number
+GET /api/values .v.<id> number
+POST /api/alarms/ack
+POST /api/auth/reset
+POST /api/cal
+POST /api/fw/activate
+POST /api/inst/explore
+POST /api/iob/assign
+POST /api/iob/find
+POST /api/iob/net/find
+POST /api/iob/net/set
+POST /api/iob/temp/zero
+POST /api/login
+POST /api/logout
+POST /api/mail/test
+POST /api/mail/trust
+POST /api/modbus/force
+POST /api/modbus/force/clear
+POST /api/password
+POST /api/record
+POST /api/restore
+POST /api/serial
+POST /api/service/boardtest
+POST /api/service/log
+POST /api/service/test
+POST /api/time
+POST /api/write
+param 1 ctrl_mode uint - level=1 flags=any_mode,local_only
+param 2 remote_link_lost bool - level=0 flags=ro
+param 3 comms_timeout uint s level=2 flags=persist,any_mode,no_modbus
+param 4 modbus_write_en bool - level=2 flags=persist,any_mode,no_modbus
+param 5 modbus_allow_ip uint - level=2 flags=persist,any_mode,no_modbus
+param 6 http_redirect bool - level=2 flags=persist,any_mode,no_modbus
+param 10 net_dhcp bool - level=2 flags=persist,any_mode,no_modbus
+param 11 net_ip uint - level=2 flags=persist,any_mode,no_modbus
+param 12 net_mask uint - level=2 flags=persist,any_mode,no_modbus
+param 13 net_gw uint - level=2 flags=persist,any_mode,no_modbus
+param 14 net_status uint - level=0 flags=ro
+param 15 net_link_mode uint - level=2 flags=persist,any_mode,no_modbus
+param 20 restore_defaults bool - level=2 flags=any_mode,no_modbus
+param 30 log_interval uint s level=2 flags=persist,any_mode
+param 40 alarm_ack uint - level=0 flags=any_mode
+param 41 alarm_active uint - level=0 flags=ro
+param 42 alarm_unacked uint - level=0 flags=ro
+param 43 alarm_active_bits array - level=0 flags=ro
+param 44 alarm_unack_bits array - level=0 flags=ro
+param 45 alarm_common uint - level=0 flags=ro
+param 46 alarm_route array - level=2 flags=persist,any_mode,no_modbus
+param 47 alarm_relay_do array - level=2 flags=persist,any_mode,no_modbus
+param 48 alarm_relay_mode array - level=2 flags=persist,any_mode,no_modbus
+param 49 alarm_relay_inv array - level=2 flags=persist,any_mode,no_modbus
+param 50 serial uint - level=3 flags=persist,factory,any_mode,no_modbus,ro,dev
+param 51 hw_rev uint - level=3 flags=persist,factory,any_mode,no_modbus
+param 52 alarm_prio array - level=2 flags=persist,any_mode,no_modbus
+param 53 alarm_tier_route array - level=2 flags=persist,any_mode,no_modbus
+param 54 alarm_tier_active array - level=0 flags=ro
+param 55 alarm_tier_unacked array - level=0 flags=ro
+param 60 store_status uint - level=0 flags=ro
+param 61 log_status uint - level=0 flags=ro
+param 70 mail_enable bool - level=2 flags=persist,any_mode,no_modbus
+param 71 mail_server_ip uint - level=2 flags=persist,any_mode,no_modbus
+param 72 mail_port uint - level=2 flags=persist,any_mode,no_modbus
+param 73 mail_security uint - level=2 flags=persist,any_mode,no_modbus
+param 74 mail_cert_pin bytes - level=2 flags=persist,any_mode,no_modbus
+param 75 mail_user text - level=2 flags=persist,any_mode,no_modbus
+param 76 mail_password text - level=2 flags=persist,any_mode,no_modbus,secret
+param 77 mail_from text - level=2 flags=persist,any_mode,no_modbus
+param 78 mail_to text - level=2 flags=persist,any_mode,no_modbus
+param 79 mail_on_clear bool - level=2 flags=persist,any_mode,no_modbus
+param 80 mail_gap uint s level=2 flags=persist,any_mode,no_modbus
+param 81 site_name text - level=2 flags=persist,any_mode
+param 82 time_utc_offset int min level=2 flags=persist,any_mode,no_modbus
+param 83 sntp_server_ip uint - level=2 flags=persist,any_mode,no_modbus
+param 84 sntp_interval uint min level=2 flags=persist,any_mode,no_modbus
+param 85 clock_set uint s level=1 flags=-
+param 86 clock_unix uint s level=0 flags=ro
+param 87 fw_local_confirm bool - level=2 flags=persist,any_mode,no_modbus
+param 88 fw_min_version uint - level=3 flags=persist,any_mode,no_modbus
+param 90 alarm_tier1_name text - level=2 flags=persist,any_mode,no_modbus
+param 91 alarm_tier2_name text - level=2 flags=persist,any_mode,no_modbus
+param 92 alarm_tier3_name text - level=2 flags=persist,any_mode,no_modbus
+param 93 alarm_tier4_name text - level=2 flags=persist,any_mode,no_modbus
+param 94 alarm_tier5_name text - level=2 flags=persist,any_mode,no_modbus
+param 100 iob_hold uint s level=2 flags=persist
+param 101 iob_filter uint ms level=2 flags=persist
+param 102 iob_link uint - level=2 flags=persist
+param 103 iob_port_ip uint - level=2 flags=persist
+param 104 iob_port_prefix uint bits level=2 flags=persist
+param 105 iob_port_status uint - level=0 flags=ro
+param 110 iob1_enable bool - level=2 flags=persist
+param 111 iob1_address uint - level=2 flags=persist
+param 112 iob1_first_do uint - level=2 flags=persist
+param 113 iob1_first_di uint - level=2 flags=persist
+param 114 iob1_open_check uint - level=2 flags=persist
+param 115 iob1_wire_check uint - level=2 flags=persist
+param 116 iob1_status uint - level=0 flags=ro
+param 117 iob1_out_faults uint - level=0 flags=ro
+param 118 iob1_in_faults uint - level=0 flags=ro
+param 119 iob1_errors uint - level=0 flags=ro
+param 120 iob2_enable bool - level=2 flags=persist
+param 121 iob2_address uint - level=2 flags=persist
+param 122 iob2_first_do uint - level=2 flags=persist
+param 123 iob2_first_di uint - level=2 flags=persist
+param 124 iob2_open_check uint - level=2 flags=persist
+param 125 iob2_wire_check uint - level=2 flags=persist
+param 126 iob2_status uint - level=0 flags=ro
+param 127 iob2_out_faults uint - level=0 flags=ro
+param 128 iob2_in_faults uint - level=0 flags=ro
+param 129 iob2_errors uint - level=0 flags=ro
+param 130 iob3_enable bool - level=2 flags=persist
+param 131 iob3_address uint - level=2 flags=persist
+param 132 iob3_first_do uint - level=2 flags=persist
+param 133 iob3_first_di uint - level=2 flags=persist
+param 134 iob3_open_check uint - level=2 flags=persist
+param 135 iob3_wire_check uint - level=2 flags=persist
+param 136 iob3_status uint - level=0 flags=ro
+param 137 iob3_out_faults uint - level=0 flags=ro
+param 138 iob3_in_faults uint - level=0 flags=ro
+param 139 iob3_errors uint - level=0 flags=ro
+param 140 iob1_inputs uint - level=0 flags=ro
+param 141 iob1_outputs uint - level=0 flags=ro
+param 142 iob2_inputs uint - level=0 flags=ro
+param 143 iob2_outputs uint - level=0 flags=ro
+param 144 iob3_inputs uint - level=0 flags=ro
+param 145 iob3_outputs uint - level=0 flags=ro
+param 146 iob1_ip uint - level=2 flags=persist
+param 147 iob2_ip uint - level=2 flags=persist
+param 148 iob3_ip uint - level=2 flags=persist
+param 160 iob1_first_temp uint - level=2 flags=persist
+param 161 iob1_pump_ao uint - level=2 flags=persist
+param 162 iob1_temp_type array - level=2 flags=persist
+param 163 iob1_ntc_r25 array - level=2 flags=persist
+param 164 iob1_ntc_beta array - level=2 flags=persist
+param 165 iob1_temp_offset array - level=2 flags=persist
+param 166 iob1_temp_span array - level=2 flags=persist
+param 167 iob1_pwm_freq uint Hz level=2 flags=persist
+param 168 iob1_tach_ppr uint - level=2 flags=persist
+param 169 iob1_temps array - level=0 flags=ro
+param 170 iob1_temp_state array - level=0 flags=ro
+param 171 iob1_cj_temp int - level=0 flags=ro
+param 172 iob1_pump_rpm uint rpm level=0 flags=ro
+param 173 iob1_pump_duty uint - level=0 flags=ro
+param 174 iob1_first_ai uint - level=2 flags=persist
+param 176 iob2_first_temp uint - level=2 flags=persist
+param 177 iob2_pump_ao uint - level=2 flags=persist
+param 178 iob2_temp_type array - level=2 flags=persist
+param 179 iob2_ntc_r25 array - level=2 flags=persist
+param 180 iob2_ntc_beta array - level=2 flags=persist
+param 181 iob2_temp_offset array - level=2 flags=persist
+param 182 iob2_temp_span array - level=2 flags=persist
+param 183 iob2_pwm_freq uint Hz level=2 flags=persist
+param 184 iob2_tach_ppr uint - level=2 flags=persist
+param 185 iob2_temps array - level=0 flags=ro
+param 186 iob2_temp_state array - level=0 flags=ro
+param 187 iob2_cj_temp int - level=0 flags=ro
+param 188 iob2_pump_rpm uint rpm level=0 flags=ro
+param 189 iob2_pump_duty uint - level=0 flags=ro
+param 190 iob2_first_ai uint - level=2 flags=persist
+param 192 iob3_first_temp uint - level=2 flags=persist
+param 193 iob3_pump_ao uint - level=2 flags=persist
+param 194 iob3_temp_type array - level=2 flags=persist
+param 195 iob3_ntc_r25 array - level=2 flags=persist
+param 196 iob3_ntc_beta array - level=2 flags=persist
+param 197 iob3_temp_offset array - level=2 flags=persist
+param 198 iob3_temp_span array - level=2 flags=persist
+param 199 iob3_pwm_freq uint Hz level=2 flags=persist
+param 200 iob3_tach_ppr uint - level=2 flags=persist
+param 201 iob3_temps array - level=0 flags=ro
+param 202 iob3_temp_state array - level=0 flags=ro
+param 203 iob3_cj_temp int - level=0 flags=ro
+param 204 iob3_pump_rpm uint rpm level=0 flags=ro
+param 205 iob3_pump_duty uint - level=0 flags=ro
+param 206 iob3_first_ai uint - level=2 flags=persist
+param 300 state uint - level=0 flags=ro
+param 301 maintenance bool - level=1 flags=persist,any_mode
+param 302 state_since uint - level=0 flags=ro
+param 303 meas_q array - level=0 flags=ro
+param 305 supply_mv uint mV level=0 flags=ro
+param 306 heartbeat uint - level=0 flags=ro
+param 307 link_age_s uint s level=0 flags=ro
+param 308 mb_block_version uint - level=0 flags=ro
+param 309 mb_map_version uint - level=0 flags=ro
+param 310 fw_version_num uint - level=0 flags=ro
+param 311 api_version uint - level=0 flags=ro
+param 312 uptime_s uint s level=0 flags=ro
+param 313 product text - level=0 flags=ro
+param 314 vendor text - level=0 flags=ro
+param 315 fw_text text - level=0 flags=ro
+param 316 clock_synced bool - level=0 flags=ro
+param 317 clock_sync_time uint s level=0 flags=ro
+param 318 clock_source uint - level=0 flags=ro
+param 319 board_rev uint - level=0 flags=ro
+param 320 cal_cmd uint - level=1 flags=no_modbus
+param 321 cal_level uint - level=3 flags=persist,factory,any_mode,no_modbus
+param 330 run_hours uint 0.1 h level=0 flags=ro
+param 331 service_hours uint 0.1 h level=0 flags=ro
+param 332 config_crc uint - level=0 flags=ro
+param 333 selftest_fail uint - level=0 flags=ro
+param 334 mb_forced uint - level=0 flags=ro
+param 335 mb_std_words uint - level=2 flags=persist,any_mode,no_modbus
+param 340 dia_input array - level=2 flags=persist,any_mode,no_modbus
+param 341 dia_when array - level=2 flags=persist,any_mode,no_modbus
+param 342 dia_delay array s level=2 flags=persist,any_mode,no_modbus
+param 343 dia_latch array - level=2 flags=persist,any_mode,no_modbus
+param 344 dia_sev array - level=2 flags=persist,any_mode,no_modbus
+param 345 dia_status array - level=0 flags=ro
+param 350 dia1_label text - level=2 flags=persist,any_mode,no_modbus
+param 351 dia2_label text - level=2 flags=persist,any_mode,no_modbus
+param 352 dia3_label text - level=2 flags=persist,any_mode,no_modbus
+param 353 dia4_label text - level=2 flags=persist,any_mode,no_modbus
+param 354 dia5_label text - level=2 flags=persist,any_mode,no_modbus
+param 355 dia6_label text - level=2 flags=persist,any_mode,no_modbus
+param 356 dia7_label text - level=2 flags=persist,any_mode,no_modbus
+param 357 dia8_label text - level=2 flags=persist,any_mode,no_modbus
+param 358 dia9_label text - level=2 flags=persist,any_mode,no_modbus
+param 359 dia10_label text - level=2 flags=persist,any_mode,no_modbus
+param 360 dia11_label text - level=2 flags=persist,any_mode,no_modbus
+param 361 dia12_label text - level=2 flags=persist,any_mode,no_modbus
+param 362 dia13_label text - level=2 flags=persist,any_mode,no_modbus
+param 363 dia14_label text - level=2 flags=persist,any_mode,no_modbus
+param 364 dia15_label text - level=2 flags=persist,any_mode,no_modbus
+param 365 dia16_label text - level=2 flags=persist,any_mode,no_modbus
+param 366 dia17_label text - level=2 flags=persist,any_mode,no_modbus
+param 367 dia18_label text - level=2 flags=persist,any_mode,no_modbus
+param 368 dia19_label text - level=2 flags=persist,any_mode,no_modbus
+param 369 dia20_label text - level=2 flags=persist,any_mode,no_modbus
+param 370 dia21_label text - level=2 flags=persist,any_mode,no_modbus
+param 371 dia22_label text - level=2 flags=persist,any_mode,no_modbus
+param 372 dia23_label text - level=2 flags=persist,any_mode,no_modbus
+param 373 dia24_label text - level=2 flags=persist,any_mode,no_modbus
+param 374 iob1_ai array - level=0 flags=ro
+param 375 iob1_ai_state array - level=0 flags=ro
+param 376 iob2_ai array - level=0 flags=ro
+param 377 iob2_ai_state array - level=0 flags=ro
+param 378 iob3_ai array - level=0 flags=ro
+param 379 iob3_ai_state array - level=0 flags=ro
+param 400 emis_enable bool - level=2 flags=persist,no_modbus
+param 401 emis_t_ref float K level=2 flags=persist,no_modbus
+param 402 emis_p_ref float kPa level=2 flags=persist,no_modbus
+param 403 emis_diluent uint - level=2 flags=persist,no_modbus
+param 404 emis_ref_pct float % level=2 flags=persist,no_modbus
+param 405 emis_o2_max float % level=2 flags=persist,no_modbus
+param 406 emis_only_above bool - level=2 flags=persist,no_modbus
+param 407 emis_ch_o2 uint - level=2 flags=persist,no_modbus
+param 408 emis_h2o_mode uint - level=2 flags=persist,no_modbus
+param 409 emis_ch_h2o uint - level=2 flags=persist,no_modbus
+param 410 emis_h2o_fixed float % level=2 flags=persist,no_modbus
+param 411 emis_ch_t uint - level=2 flags=persist,no_modbus
+param 412 emis_ch_p uint - level=2 flags=persist,no_modbus
+param 413 emis_t_fixed float degC level=2 flags=persist,no_modbus
+param 414 emis_p_fixed float kPa level=2 flags=persist,no_modbus
+param 415 emis_ch_flow uint - level=2 flags=persist,no_modbus
+param 416 emis_period_s uint s level=2 flags=persist,no_modbus
+param 417 emis_min_avail uint % level=2 flags=persist,no_modbus
+param 418 emis_max_discard uint - level=2 flags=persist,no_modbus
+param 419 emis_ci_subtract bool - level=2 flags=persist,no_modbus
+param 420 emis_clamp_zero bool - level=2 flags=persist,no_modbus
+param 421 emis_cal_ext float % level=2 flags=persist,no_modbus
+param 422 emis_operating bool - level=1 flags=any_mode
+param 423 emis_cfg_error uint - level=0 flags=ro
+param 424 emis_period2_s uint s level=2 flags=persist,no_modbus
+param 425 emis_q3_k float - level=2 flags=persist,no_modbus
+param 426 emis_q3_interval uint d level=2 flags=persist,no_modbus
+param 427 emis_q3_record uint - level=2 flags=no_modbus
+param 428 emis_q3_reset uint - level=2 flags=no_modbus
+param 429 emis_q3_result uint - level=0 flags=ro
+param 430 emis_src array - level=2 flags=persist,no_modbus
+param 431 emis_unit array - level=2 flags=persist,no_modbus
+param 432 emis_wet array - level=2 flags=persist,no_modbus
+param 433 emis_ref array - level=2 flags=persist,no_modbus
+param 434 emis_add array - level=2 flags=persist,no_modbus
+param 435 emis_molar_mass array - level=2 flags=persist,no_modbus
+param 437 emis_qal2_a array - level=2 flags=persist,no_modbus
+param 438 emis_qal2_b array - level=2 flags=persist,no_modbus
+param 439 emis_ys_max array - level=2 flags=persist,no_modbus
+param 440 emis_elv array - level=2 flags=persist,no_modbus
+param 441 emis_ci_pct array - level=2 flags=persist,no_modbus
+param 442 emis_elv2 array - level=2 flags=persist,no_modbus
+param 444 emis_q3_sams array - level=2 flags=persist,no_modbus
+param 445 emis_q3_zero_ref array - level=2 flags=persist,no_modbus
+param 446 emis_q3_span_ref array - level=2 flags=persist,no_modbus
+param 447 emis_q3_zero_rd array - level=2 flags=no_modbus
+param 448 emis_q3_span_rd array - level=2 flags=no_modbus
+param 450 emis_raw array - level=0 flags=ro
+param 451 emis_std array - level=0 flags=ro
+param 452 emis_ref_o2 array - level=0 flags=ro
+param 453 emis_mass array - level=0 flags=ro
+param 454 emis_run array - level=0 flags=ro
+param 455 emis_avg array - level=0 flags=ro
+param 456 emis_val array - level=0 flags=ro
+param 457 emis_day array - level=0 flags=ro
+param 460 emis_q_in array - level=0 flags=ro
+param 461 emis_q_calc array - level=0 flags=ro
+param 462 emis_q_mass array - level=0 flags=ro
+param 463 emis_q_avg array - level=0 flags=ro
+param 464 emis_q_day array - level=0 flags=ro
+param 465 emis_q_run array - level=0 flags=ro
+param 466 emis_status array - level=0 flags=ro
+param 467 emis_discarded array - level=0 flags=ro
+param 468 emis_days_invalid array - level=0 flags=ro
+param 469 emis_weeks_above array - level=0 flags=ro
+param 470 emis_avg2 array - level=0 flags=ro
+param 471 emis_q_avg2 array - level=0 flags=ro
+param 472 emis_n2 array - level=0 flags=ro
+param 473 emis_n2_above array - level=0 flags=ro
+param 474 emis_n2_day array - level=0 flags=ro
+param 475 emis_n2_above_day array - level=0 flags=ro
+param 476 emis_q3_zero_dev array - level=0 flags=ro
+param 477 emis_q3_span_dev array - level=0 flags=ro
+param 478 emis_q3_last array - level=0 flags=ro
+param 479 emis_q3_status array - level=0 flags=ro
+param 480 emis_q3_n array - level=0 flags=ro
+param 500 inst_enable array - level=2 flags=persist
+param 501 inst_ip array - level=2 flags=persist
+param 502 inst_port array - level=2 flags=persist
+param 503 inst_unit array - level=2 flags=persist
+param 504 inst_period_ms array - level=2 flags=persist
+param 505 inst_timeout_ms array - level=2 flags=persist
+param 506 inst_max_regs array - level=2 flags=persist
+param 507 inst_gap array - level=2 flags=persist
+param 508 inst_status_pt array - level=2 flags=persist
+param 509 inst_fault_mask array - level=2 flags=persist
+param 510 inst_maint_mask array - level=2 flags=persist
+param 511 inst_cal_mask array - level=2 flags=persist
+param 515 inst_state array - level=0 flags=ro
+param 516 inst_good array - level=0 flags=ro
+param 517 inst_errors array - level=0 flags=ro
+param 518 inst_last_err array - level=0 flags=ro
+param 519 inst_last_exc array - level=0 flags=ro
+param 520 inst_resp_ms array - level=0 flags=ro
+param 521 inst1_name text - level=2 flags=persist
+param 522 inst2_name text - level=2 flags=persist
+param 523 inst3_name text - level=2 flags=persist
+param 524 inst4_name text - level=2 flags=persist
+param 525 inst5_name text - level=2 flags=persist
+param 526 inst6_name text - level=2 flags=persist
+param 527 inst7_name text - level=2 flags=persist
+param 528 inst8_name text - level=2 flags=persist
+param 530 pt_inst array - level=2 flags=persist
+param 531 pt_fc array - level=2 flags=persist
+param 532 pt_addr array - level=2 flags=persist
+param 533 pt_type array - level=2 flags=persist
+param 534 pt_order array - level=2 flags=persist
+param 535 pt_bit array - level=2 flags=persist
+param 536 pt_gain array - level=2 flags=persist
+param 537 pt_offset array - level=2 flags=persist
+param 538 pt_lo array - level=2 flags=persist
+param 539 pt_hi array - level=2 flags=persist
+param 540 pt_value array - level=0 flags=ro
+param 541 pt_q array - level=0 flags=ro
+param 542 pt_raw array - level=0 flags=ro
+param 543 pt_qrole array - level=2 flags=persist
+param 550 pt1_name text - level=2 flags=persist
+param 551 pt2_name text - level=2 flags=persist
+param 552 pt3_name text - level=2 flags=persist
+param 553 pt4_name text - level=2 flags=persist
+param 554 pt5_name text - level=2 flags=persist
+param 555 pt6_name text - level=2 flags=persist
+param 556 pt7_name text - level=2 flags=persist
+param 557 pt8_name text - level=2 flags=persist
+param 558 pt9_name text - level=2 flags=persist
+param 559 pt10_name text - level=2 flags=persist
+param 560 pt11_name text - level=2 flags=persist
+param 561 pt12_name text - level=2 flags=persist
+param 562 pt13_name text - level=2 flags=persist
+param 563 pt14_name text - level=2 flags=persist
+param 564 pt15_name text - level=2 flags=persist
+param 565 pt16_name text - level=2 flags=persist
+param 566 pt17_name text - level=2 flags=persist
+param 567 pt18_name text - level=2 flags=persist
+param 568 pt19_name text - level=2 flags=persist
+param 569 pt20_name text - level=2 flags=persist
+param 570 pt21_name text - level=2 flags=persist
+param 571 pt22_name text - level=2 flags=persist
+param 572 pt23_name text - level=2 flags=persist
+param 573 pt24_name text - level=2 flags=persist
+param 574 pt25_name text - level=2 flags=persist
+param 575 pt26_name text - level=2 flags=persist
+param 576 pt27_name text - level=2 flags=persist
+param 577 pt28_name text - level=2 flags=persist
+param 578 pt29_name text - level=2 flags=persist
+param 579 pt30_name text - level=2 flags=persist
+param 580 pt31_name text - level=2 flags=persist
+param 581 pt32_name text - level=2 flags=persist
+param 590 pt1_unit text16 - level=2 flags=persist
+param 591 pt2_unit text16 - level=2 flags=persist
+param 592 pt3_unit text16 - level=2 flags=persist
+param 593 pt4_unit text16 - level=2 flags=persist
+param 594 pt5_unit text16 - level=2 flags=persist
+param 595 pt6_unit text16 - level=2 flags=persist
+param 596 pt7_unit text16 - level=2 flags=persist
+param 597 pt8_unit text16 - level=2 flags=persist
+param 598 pt9_unit text16 - level=2 flags=persist
+param 599 pt10_unit text16 - level=2 flags=persist
+param 600 pt11_unit text16 - level=2 flags=persist
+param 601 pt12_unit text16 - level=2 flags=persist
+param 602 pt13_unit text16 - level=2 flags=persist
+param 603 pt14_unit text16 - level=2 flags=persist
+param 604 pt15_unit text16 - level=2 flags=persist
+param 605 pt16_unit text16 - level=2 flags=persist
+param 606 pt17_unit text16 - level=2 flags=persist
+param 607 pt18_unit text16 - level=2 flags=persist
+param 608 pt19_unit text16 - level=2 flags=persist
+param 609 pt20_unit text16 - level=2 flags=persist
+param 610 pt21_unit text16 - level=2 flags=persist
+param 611 pt22_unit text16 - level=2 flags=persist
+param 612 pt23_unit text16 - level=2 flags=persist
+param 613 pt24_unit text16 - level=2 flags=persist
+param 614 pt25_unit text16 - level=2 flags=persist
+param 615 pt26_unit text16 - level=2 flags=persist
+param 616 pt27_unit text16 - level=2 flags=persist
+param 617 pt28_unit text16 - level=2 flags=persist
+param 618 pt29_unit text16 - level=2 flags=persist
+param 619 pt30_unit text16 - level=2 flags=persist
+param 620 pt31_unit text16 - level=2 flags=persist
+param 621 pt32_unit text16 - level=2 flags=persist
+param 1000 AI0ColNumberName text - level=2 flags=persist
+param 1001 AI1ColNumberName text - level=2 flags=persist
+param 1002 Alarm0_Description text16 - level=2 flags=persist
+param 1003 Alarm0_DescriptionMUX text16 - level=2 flags=persist
+param 1004 Alarm1_Description text16 - level=2 flags=persist
+param 1005 Alarm1_DescriptionMUX text16 - level=2 flags=persist
+param 1006 Alarm10_Description text16 - level=2 flags=persist
+param 1007 Alarm10_DescriptionMUX text16 - level=2 flags=persist
+param 1008 Alarm11_Description text16 - level=2 flags=persist
+param 1009 Alarm11_DescriptionMUX text16 - level=2 flags=persist
+param 1010 Alarm12_Description text16 - level=2 flags=persist
+param 1011 Alarm12_DescriptionMUX text16 - level=2 flags=persist
+param 1012 Alarm13_Description text16 - level=2 flags=persist
+param 1013 Alarm13_DescriptionMUX text16 - level=2 flags=persist
+param 1014 Alarm14_Description text16 - level=2 flags=persist
+param 1015 Alarm14_DescriptionMUX text16 - level=2 flags=persist
+param 1016 Alarm15_Description text16 - level=2 flags=persist
+param 1017 Alarm15_DescriptionMUX text16 - level=2 flags=persist
+param 1018 Alarm16_Description text16 - level=2 flags=persist
+param 1019 Alarm16_DescriptionMUX text16 - level=2 flags=persist
+param 1020 Alarm17_Description text16 - level=2 flags=persist
+param 1021 Alarm17_DescriptionMUX text16 - level=2 flags=persist
+param 1022 Alarm18_Description text16 - level=2 flags=persist
+param 1023 Alarm18_DescriptionMUX text16 - level=2 flags=persist
+param 1024 Alarm19_Description text16 - level=2 flags=persist
+param 1025 Alarm19_DescriptionMUX text16 - level=2 flags=persist
+param 1026 Alarm2_Description text16 - level=2 flags=persist
+param 1027 Alarm2_DescriptionMUX text16 - level=2 flags=persist
+param 1028 Alarm20_Description text16 - level=2 flags=persist
+param 1029 Alarm20_DescriptionMUX text16 - level=2 flags=persist
+param 1030 Alarm21_Description text16 - level=2 flags=persist
+param 1031 Alarm21_DescriptionMUX text16 - level=2 flags=persist
+param 1032 Alarm3_Description text16 - level=2 flags=persist
+param 1033 Alarm3_DescriptionMUX text16 - level=2 flags=persist
+param 1034 Alarm4_Description text16 - level=2 flags=persist
+param 1035 Alarm4_DescriptionMUX text16 - level=2 flags=persist
+param 1036 Alarm5_Description text16 - level=2 flags=persist
+param 1037 Alarm5_DescriptionMUX text16 - level=2 flags=persist
+param 1038 Alarm6_Description text16 - level=2 flags=persist
+param 1039 Alarm6_DescriptionMUX text16 - level=2 flags=persist
+param 1040 Alarm7_Description text16 - level=2 flags=persist
+param 1041 Alarm7_DescriptionMUX text16 - level=2 flags=persist
+param 1042 Alarm8_Description text16 - level=2 flags=persist
+param 1043 Alarm8_DescriptionMUX text16 - level=2 flags=persist
+param 1044 Alarm9_Description text16 - level=2 flags=persist
+param 1045 Alarm9_DescriptionMUX text16 - level=2 flags=persist
+param 1046 AlarmConditionMUX array - level=2 flags=persist
+param 1047 AlarmConditionVM array - level=2 flags=persist
+param 1048 AlarmEnableMUX array - level=2 flags=persist
+param 1049 AlarmEnableVM array - level=2 flags=persist
+param 1050 BackFlushDONumber int - level=1 flags=persist
+param 1051 BackFlushExists bool - level=2 flags=persist
+param 1052 DI_FunctionMUX array - level=2 flags=persist
+param 1053 DOInlet array - level=1 flags=persist
+param 1054 DOOutlet array - level=1 flags=persist
+param 1055 DOPurgeInlet int - level=2 flags=persist
+param 1056 DOSingularInlet array - level=2 flags=persist
+param 1057 DefaultModeOnPowerup uint - level=2 flags=persist
+param 1058 Di_FunctionVM array - level=2 flags=persist
+param 1059 EmailEnableMUX array - level=2 flags=persist
+param 1060 EmailEnableVM array - level=2 flags=persist
+param 1061 EnableLockValvesIfAnalyzerNotOk bool - level=2 flags=persist
+param 1062 FeedbackConditionMUX array - level=2 flags=persist
+param 1063 FirstCalibPoint array - level=2 flags=persist,factory
+param 1064 FirstInlets int - level=2 flags=persist
+param 1065 FirstOutlets int - level=2 flags=persist
+param 1066 FlowAnalogInput uint - level=2 flags=persist
+param 1067 FlowValidation bool - level=2 flags=persist
+param 1068 FlowValidationTimer uint ms level=2 flags=persist
+param 1088 Manual_Timer uint ms level=2 flags=persist
+param 1089 Manual_Timer2 uint ms level=2 flags=persist
+param 1090 Manual_TimerMUX uint ms level=2 flags=persist
+param 1091 MaxNumberOfValves int - level=2 flags=persist
+param 1092 ModemIncudeOrNot bool - level=2 flags=persist
+param 1093 NumInterconnections int - level=2 flags=persist
+param 1094 NumberOfMUXValves int - level=2 flags=persist
+param 1114 ParameterColNumberArray array - level=2 flags=persist
+param 1115 ParameterColNumberLoggingArray array - level=2 flags=persist
+param 1116 RTD0ColNumberName text - level=2 flags=persist
+param 1117 RTD1ColNumberName text - level=2 flags=persist
+param 1118 ScreenSaverActive bool - level=2 flags=persist
+param 1119 SecondCalibPoint array - level=2 flags=persist,factory
+param 1120 SecondInlets int - level=2 flags=persist
+param 1121 SecondOutlets int - level=2 flags=persist
+param 1141 AnalogAlarmEnabled array - level=2 flags=persist
+param 1142 AnalogEnable array - level=2 flags=persist
+param 1143 MaxTemperatureRange array - level=2 flags=persist
+param 1144 MinTemperatureRange array - level=2 flags=persist
+param 1145 RangeMax array - level=2 flags=persist
+param 1146 RangeMin array - level=2 flags=persist
+param 1147 TemperatureAlarmEnabled array - level=2 flags=persist
+param 1148 TemperatureEnable array - level=2 flags=persist
+param 1149 AnalogName1 text16 - level=1 flags=persist
+param 1150 AnalogName2 text16 - level=1 flags=persist
+param 1151 AnalogSensorUnits array - level=2 flags=persist
+param 1152 TempName1 text16 - level=1 flags=persist
+param 1153 TempName2 text16 - level=1 flags=persist
+param 1154 TemperatureSensorUnits array - level=2 flags=persist
+param 1155 TemperatureShift array - level=2 flags=persist,factory
+param 1200 InletName0 text - level=1 flags=persist
+param 1201 InletName1 text - level=1 flags=persist
+param 1202 InletName2 text - level=1 flags=persist
+param 1203 InletName3 text - level=1 flags=persist
+param 1204 InletName4 text - level=1 flags=persist
+param 1205 InletName5 text - level=1 flags=persist
+param 1206 InletName6 text - level=1 flags=persist
+param 1207 InletName7 text - level=1 flags=persist
+param 1208 InletName8 text - level=1 flags=persist
+param 1209 InletName9 text - level=1 flags=persist
+param 1210 InletName10 text - level=1 flags=persist
+param 1211 InletName11 text - level=1 flags=persist
+param 1212 InletName12 text - level=1 flags=persist
+param 1213 InletName13 text - level=1 flags=persist
+param 1214 InletName14 text - level=1 flags=persist
+param 1215 InletName15 text - level=1 flags=persist
+param 1216 InletName16 text - level=1 flags=persist
+param 1217 InletName17 text - level=1 flags=persist
+param 1218 InletName18 text - level=1 flags=persist
+param 1220 OutletName0 text - level=1 flags=persist
+param 1221 OutletName1 text - level=1 flags=persist
+param 1222 OutletName2 text - level=1 flags=persist
+param 1223 OutletName3 text - level=1 flags=persist
+param 1224 OutletName4 text - level=1 flags=persist
+param 1225 OutletName5 text - level=1 flags=persist
+param 1226 OutletName6 text - level=1 flags=persist
+param 1227 OutletName7 text - level=1 flags=persist
+param 1228 OutletName8 text - level=1 flags=persist
+param 1229 OutletName9 text - level=1 flags=persist
+param 1230 OutletName10 text - level=1 flags=persist
+param 1231 OutletName11 text - level=1 flags=persist
+param 1232 OutletName12 text - level=1 flags=persist
+param 1233 OutletName13 text - level=1 flags=persist
+param 1234 OutletName14 text - level=1 flags=persist
+param 1235 OutletName15 text - level=1 flags=persist
+param 1236 OutletName16 text - level=1 flags=persist
+param 1237 OutletName17 text - level=1 flags=persist
+param 1238 OutletName18 text - level=1 flags=persist
+param 1240 SingularInlet0 text - level=1 flags=persist
+param 1241 SingularInlet1 text - level=1 flags=persist
+param 1242 SingularInlet2 text - level=1 flags=persist
+param 1243 SingularInlet3 text - level=1 flags=persist
+param 1244 SingularInlet4 text - level=1 flags=persist
+param 1245 SingularInlet5 text - level=1 flags=persist
+param 1246 SingularInlet6 text - level=1 flags=persist
+param 1247 SingularInlet7 text - level=1 flags=persist
+param 1248 SingularInlet8 text - level=1 flags=persist
+param 1249 SingularInlet9 text - level=1 flags=persist
+param 1250 SingularInlet10 text - level=1 flags=persist
+param 1251 SingularInlet11 text - level=1 flags=persist
+param 1252 SingularInlet12 text - level=1 flags=persist
+param 1253 SingularInlet13 text - level=1 flags=persist
+param 1254 SingularInlet14 text - level=1 flags=persist
+param 1255 SingularInlet15 text - level=1 flags=persist
+param 1256 SingularInlet16 text - level=1 flags=persist
+param 1257 SingularInlet17 text - level=1 flags=persist
+param 1258 SingularInlet18 text - level=1 flags=persist
+param 2900 valve_fb_settle_s uint s level=2 flags=persist
+param 2901 vm_link_close_min uint min level=2 flags=persist
+param 2902 rtd1_alarm_delay_s uint s level=2 flags=persist
+param 2903 rtd2_alarm_delay_s uint s level=2 flags=persist
+param 2904 rtd1_alarm_hyst float - level=2 flags=persist
+param 2905 rtd2_alarm_hyst float - level=2 flags=persist
+param 2906 mux_enable bool - level=2 flags=persist
+param 3123 Schedule1 bytes - level=1 flags=persist,no_modbus,record
+param 3124 Schedule2 bytes - level=1 flags=persist,no_modbus,record
+param 3125 ScheduleMUX bytes - level=1 flags=persist,no_modbus,record
+param 3164 Sequence1 bytes - level=1 flags=persist,no_modbus,record
+param 3165 Sequence2 bytes - level=1 flags=persist,no_modbus,record
+param 3166 SequenceMUX bytes - level=1 flags=persist,no_modbus,record
+param 4000 mb_CurrentMode int - level=0 flags=ro
+param 4001 mb_ValveSelectionErrorModbus bool - level=0 flags=ro
+param 4002 mb_StartModbusCoil bool - level=1 flags=-
+param 4003 mb_SelectedFirstInletMb int - level=1 flags=-
+param 4004 mb_SelectedFirstOutletMb int - level=1 flags=-
+param 4005 mb_SelectedSecondInletMb int - level=1 flags=-
+param 4006 mb_SelectedSecondOutletMb int - level=1 flags=-
+param 4007 mb_ResetMbError bool - level=1 flags=-
+param 4008 mb_StartModbus bool - level=0 flags=ro
+param 4009 mb_BackFlushValveAvailable bool - level=0 flags=ro
+param 4010 mb_FlushValveBitModbus bool - level=1 flags=-
+param 4011 mb_ModbusModeNotActive bool - level=0 flags=ro
+param 4012 mb_StartModbusCoilMUX bool - level=1 flags=-
+param 4013 mb_StartModbusMUX bool - level=0 flags=ro
+param 4014 mb_ValveSelectionErrorModbusMUX bool - level=0 flags=ro
+param 4015 mb_ResetMbErrorMUX bool - level=1 flags=-
+param 4016 mb_PurgeInletActivateModbus bool - level=1 flags=-
+param 4017 mb_ModbusNotActiveMUX bool - level=0 flags=ro
+param 4018 mb_AlarmsVM array - level=0 flags=ro
+param 4019 mb_AlarmsMUX array - level=0 flags=ro
+param 4020 mb_FBAlarmsMUX array - level=0 flags=ro
+param 4021 mb_AnalogTimer0_Out bool - level=0 flags=ro
+param 4022 mb_AnalogTimer1_Out bool - level=0 flags=ro
+param 4023 mb_AnalogTimer2_Out bool - level=0 flags=ro
+param 4024 mb_AnalogTimer3_Out bool - level=0 flags=ro
+param 4025 mb_TempTimer0_Out bool - level=0 flags=ro
+param 4026 mb_TempTimer1_Out bool - level=0 flags=ro
+param 4027 mb_TempTimer2_Out bool - level=0 flags=ro
+param 4028 mb_TempTimer3_Out bool - level=0 flags=ro
+param 4029 mb_EmailCantbeSent bool - level=0 flags=ro
+param 4030 mb_ContactManufacturer1 bool - level=0 flags=ro
+param 4031 mb_StopSeqBit bool - level=0 flags=ro
+param 4032 mb_AnalyzerOkBitAlarm bool - level=0 flags=ro
+param 4033 mb_FlowValidationAlarm bool - level=0 flags=ro
+param 4034 mb_AcknEmailSentError bool - level=1 flags=any_mode
+param 4035 mb_Acknowledge_Bit bool - level=1 flags=any_mode
+param 4036 mb_Ackbit1 bool - level=1 flags=any_mode
+param 4037 mb_ContactManufacturer2 bool - level=0 flags=ro
+param 4038 mb_Ackbit2 bool - level=1 flags=any_mode
+param 4039 mb_SaveDataFailedReserv bool - level=0 flags=ro
+param 4040 mb_AcknowledgeCSVReserv bool - level=1 flags=any_mode
+param 4041 mb_AlarmLoadingTable bool - level=0 flags=ro
+param 4042 mb_AckowledgeLoadError bool - level=1 flags=any_mode
+param 4043 mb_ModbusTimer_Preset uint ms level=1 flags=-
+param 4044 mb_ModbusTimer2_Preset uint ms level=1 flags=-
+param 4045 mb_ProcessTimer_Preset uint ms level=0 flags=ro
+param 4046 mb_ProcessTimer2_Preset uint ms level=0 flags=ro
+param 4047 mb_FirstInterconInletName1 bytes - level=0 flags=ro
+param 4048 mb_FirstInterconInletName2 bytes - level=0 flags=ro
+param 4049 mb_FirstInterconInletName3 bytes - level=0 flags=ro
+param 4050 mb_FirstInterconInletName4 bytes - level=0 flags=ro
+param 4051 mb_FirstInterconInletName5 bytes - level=0 flags=ro
+param 4052 mb_FirstInterconInletName6 bytes - level=0 flags=ro
+param 4053 mb_FirstInterconInletName7 bytes - level=0 flags=ro
+param 4054 mb_FirstInterconInletName8 bytes - level=0 flags=ro
+param 4055 mb_FirstInterconInletName9 bytes - level=0 flags=ro
+param 4056 mb_FirstInterconInletName10 bytes - level=0 flags=ro
+param 4057 mb_FirstInterconInletName11 bytes - level=0 flags=ro
+param 4058 mb_FirstInterconInletName12 bytes - level=0 flags=ro
+param 4059 mb_FirstInterconInletName13 bytes - level=0 flags=ro
+param 4060 mb_FirstInterconInletName14 bytes - level=0 flags=ro
+param 4061 mb_FirstInterconInletName15 bytes - level=0 flags=ro
+param 4062 mb_FirstInterconInletName16 bytes - level=0 flags=ro
+param 4063 mb_FirstInterconInletName17 bytes - level=0 flags=ro
+param 4064 mb_FirstInterconInletName18 bytes - level=0 flags=ro
+param 4065 mb_FirstInterconInletName19 bytes - level=0 flags=ro
+param 4066 mb_FirstInterconOutletName1 bytes - level=0 flags=ro
+param 4067 mb_FirstInterconOutletName2 bytes - level=0 flags=ro
+param 4068 mb_FirstInterconOutletName3 bytes - level=0 flags=ro
+param 4069 mb_FirstInterconOutletName4 bytes - level=0 flags=ro
+param 4070 mb_FirstInterconOutletName5 bytes - level=0 flags=ro
+param 4071 mb_FirstInterconOutletName6 bytes - level=0 flags=ro
+param 4072 mb_FirstInterconOutletName7 bytes - level=0 flags=ro
+param 4073 mb_FirstInterconOutletName8 bytes - level=0 flags=ro
+param 4074 mb_FirstInterconOutletName9 bytes - level=0 flags=ro
+param 4075 mb_FirstInterconOutletName10 bytes - level=0 flags=ro
+param 4076 mb_FirstInterconOutletName11 bytes - level=0 flags=ro
+param 4077 mb_FirstInterconOutletName12 bytes - level=0 flags=ro
+param 4078 mb_FirstInterconOutletName13 bytes - level=0 flags=ro
+param 4079 mb_FirstInterconOutletName14 bytes - level=0 flags=ro
+param 4080 mb_FirstInterconOutletName15 bytes - level=0 flags=ro
+param 4081 mb_FirstInterconOutletName16 bytes - level=0 flags=ro
+param 4082 mb_FirstInterconOutletName17 bytes - level=0 flags=ro
+param 4083 mb_FirstInterconOutletName18 bytes - level=0 flags=ro
+param 4084 mb_FirstInterconOutletName19 bytes - level=0 flags=ro
+param 4085 mb_SecondInterconInletName1 bytes - level=0 flags=ro
+param 4086 mb_SecondInterconInletName2 bytes - level=0 flags=ro
+param 4087 mb_SecondInterconInletName3 bytes - level=0 flags=ro
+param 4088 mb_SecondInterconInletName4 bytes - level=0 flags=ro
+param 4089 mb_SecondInterconInletName5 bytes - level=0 flags=ro
+param 4090 mb_SecondInterconInletName6 bytes - level=0 flags=ro
+param 4091 mb_SecondInterconInletName7 bytes - level=0 flags=ro
+param 4092 mb_SecondInterconInletName8 bytes - level=0 flags=ro
+param 4093 mb_SecondInterconInletName9 bytes - level=0 flags=ro
+param 4094 mb_SecondInterconInletName10 bytes - level=0 flags=ro
+param 4095 mb_SecondInterconInletName11 bytes - level=0 flags=ro
+param 4096 mb_SecondInterconInletName12 bytes - level=0 flags=ro
+param 4097 mb_SecondInterconInletName13 bytes - level=0 flags=ro
+param 4098 mb_SecondInterconInletName14 bytes - level=0 flags=ro
+param 4099 mb_SecondInterconInletName15 bytes - level=0 flags=ro
+param 4100 mb_SecondInterconInletName16 bytes - level=0 flags=ro
+param 4101 mb_SecondInterconInletName17 bytes - level=0 flags=ro
+param 4102 mb_SecondInterconInletName18 bytes - level=0 flags=ro
+param 4103 mb_SecondInterconOutletName1 bytes - level=0 flags=ro
+param 4104 mb_SecondInterconOutletName2 bytes - level=0 flags=ro
+param 4105 mb_SecondInterconOutletName3 bytes - level=0 flags=ro
+param 4106 mb_SecondInterconOutletName4 bytes - level=0 flags=ro
+param 4107 mb_SecondInterconOutletName5 bytes - level=0 flags=ro
+param 4108 mb_SecondInterconOutletName6 bytes - level=0 flags=ro
+param 4109 mb_SecondInterconOutletName7 bytes - level=0 flags=ro
+param 4110 mb_SecondInterconOutletName8 bytes - level=0 flags=ro
+param 4111 mb_SecondInterconOutletName9 bytes - level=0 flags=ro
+param 4112 mb_SecondInterconOutletName10 bytes - level=0 flags=ro
+param 4113 mb_SecondInterconOutletName11 bytes - level=0 flags=ro
+param 4114 mb_SecondInterconOutletName12 bytes - level=0 flags=ro
+param 4115 mb_SecondInterconOutletName13 bytes - level=0 flags=ro
+param 4116 mb_SecondInterconOutletName14 bytes - level=0 flags=ro
+param 4117 mb_SecondInterconOutletName15 bytes - level=0 flags=ro
+param 4118 mb_SecondInterconOutletName16 bytes - level=0 flags=ro
+param 4119 mb_SecondInterconOutletName17 bytes - level=0 flags=ro
+param 4120 mb_SecondInterconOutletName18 bytes - level=0 flags=ro
+param 4121 mb_CurrentModeMUX int - level=0 flags=ro
+param 4122 mb_SelectedValveMbMUX int - level=1 flags=-
+param 4123 mb_ModbusTimerMUX_Preset uint ms level=1 flags=-
+param 4124 mb_ProcessTimerMUX_Preset uint ms level=0 flags=ro
+param 4125 mb_ValveNameMUX1 bytes - level=0 flags=ro
+param 4126 mb_ValveNameMUX2 bytes - level=0 flags=ro
+param 4127 mb_ValveNameMUX3 bytes - level=0 flags=ro
+param 4128 mb_ValveNameMUX4 bytes - level=0 flags=ro
+param 4129 mb_ValveNameMUX5 bytes - level=0 flags=ro
+param 4130 mb_ValveNameMUX6 bytes - level=0 flags=ro
+param 4131 mb_ValveNameMUX7 bytes - level=0 flags=ro
+param 4132 mb_ValveNameMUX8 bytes - level=0 flags=ro
+param 4133 mb_ValveNameMUX9 bytes - level=0 flags=ro
+param 4134 mb_ValveNameMUX10 bytes - level=0 flags=ro
+param 4135 mb_ValveNameMUX11 bytes - level=0 flags=ro
+param 4136 mb_ValveNameMUX12 bytes - level=0 flags=ro
+param 4137 mb_ValveNameMUX13 bytes - level=0 flags=ro
+param 4138 mb_ValveNameMUX14 bytes - level=0 flags=ro
+param 4139 mb_ValveNameMUX15 bytes - level=0 flags=ro
+param 4140 mb_ValveNameMUX16 bytes - level=0 flags=ro
+param 4141 mb_ValveNameMUX17 bytes - level=0 flags=ro
+param 4142 mb_ValveNameMUX18 bytes - level=0 flags=ro
+param 4143 mb_ValveNameMUX19 bytes - level=0 flags=ro
+param 4144 mb_FlushValveMUX20 bytes - level=0 flags=ro
+param 4145 mb_AnalogSensor array - level=0 flags=ro
+param 4146 mb_TemperatureSensor array - level=0 flags=ro
+param 4147 mb_Alarm0_DescriptionBuf bytes - level=0 flags=ro
+param 4148 mb_Alarm1_DescriptionBuf bytes - level=0 flags=ro
+param 4149 mb_Alarm2_DescriptionBuf bytes - level=0 flags=ro
+param 4150 mb_Alarm3_DescriptionBuf bytes - level=0 flags=ro
+param 4151 mb_Alarm4_DescriptionBuf bytes - level=0 flags=ro
+param 4152 mb_Alarm5_DescriptionBuf bytes - level=0 flags=ro
+param 4153 mb_Alarm6_DescriptionBuf bytes - level=0 flags=ro
+param 4154 mb_Alarm7_DescriptionBuf bytes - level=0 flags=ro
+param 4155 mb_Alarm8_DescriptionBuf bytes - level=0 flags=ro
+param 4156 mb_Alarm9_DescriptionBuf bytes - level=0 flags=ro
+param 4157 mb_Alarm10_DescriptionBuf bytes - level=0 flags=ro
+param 4158 mb_Alarm11_DescriptionBuf bytes - level=0 flags=ro
+param 4159 mb_Alarm12_DescriptionBuf bytes - level=0 flags=ro
+param 4160 mb_Alarm13_DescriptionBuf bytes - level=0 flags=ro
+param 4161 mb_Alarm14_DescriptionBuf bytes - level=0 flags=ro
+param 4162 mb_Alarm15_DescriptionBuf bytes - level=0 flags=ro
+param 4163 mb_Alarm16_DescriptionBuf bytes - level=0 flags=ro
+param 4164 mb_Alarm17_DescriptionBuf bytes - level=0 flags=ro
+param 4165 mb_Alarm18_DescriptionBuf bytes - level=0 flags=ro
+param 4166 mb_Alarm19_DescriptionBuf bytes - level=0 flags=ro
+param 4167 mb_Alarm20_DescriptionBuf bytes - level=0 flags=ro
+param 4168 mb_Alarm21_DescriptionBuf bytes - level=0 flags=ro
+param 4169 mb_Alarm0_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4170 mb_Alarm1_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4171 mb_Alarm2_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4172 mb_Alarm3_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4173 mb_Alarm4_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4174 mb_Alarm5_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4175 mb_Alarm6_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4176 mb_Alarm7_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4177 mb_Alarm8_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4178 mb_Alarm9_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4179 mb_Alarm10_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4180 mb_Alarm11_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4181 mb_Alarm12_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4182 mb_Alarm13_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4183 mb_Alarm14_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4184 mb_Alarm15_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4185 mb_Alarm16_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4186 mb_Alarm17_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4187 mb_Alarm18_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4188 mb_Alarm19_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4189 mb_Alarm20_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4190 mb_Alarm21_DescriptionMUXBuf bytes - level=0 flags=ro
+param 4191 mb_Analog_Alarm0_DescriptionBuf bytes - level=0 flags=ro
+param 4192 mb_Analog_Alarm1_DescriptionBuf bytes - level=0 flags=ro
+param 4193 mb_Temperature0AlarmDescriptionBuf bytes - level=0 flags=ro
+param 4194 mb_Temperature1AlarmDescriptionBuf bytes - level=0 flags=ro
+param 5000 vm_btn_modbus uint - level=1 flags=confirm
+param 5001 vm_btn_schedule uint - level=1 flags=confirm
+param 5002 vm_btn_manual uint - level=1 flags=-
+param 5003 vm_manual_yes uint - level=1 flags=-
+param 5004 vm_manual_no uint - level=1 flags=-
+param 5005 vm_manual_start uint - level=1 flags=confirm
+param 5006 vm_inlet_touch uint - level=1 flags=confirm
+param 5007 vm_outlet_touch uint - level=1 flags=confirm
+param 5008 vm_seq_absent_ok uint - level=1 flags=-
+param 5009 vm_seq_incorrect_ok uint - level=1 flags=-
+param 5010 mux_btn_modbus uint - level=1 flags=confirm
+param 5011 mux_btn_schedule uint - level=1 flags=confirm
+param 5012 mux_btn_manual uint - level=1 flags=-
+param 5013 mux_manual_yes uint - level=1 flags=-
+param 5014 mux_manual_no uint - level=1 flags=-
+param 5015 mux_manual_start uint - level=1 flags=confirm
+param 5016 mux_inlet_toggle uint - level=1 flags=confirm
+param 5017 mux_purge_toggle uint - level=1 flags=confirm
+param 5018 mux_seq_absent_ok uint - level=1 flags=-
+param 5019 mux_seq_incorrect_ok uint - level=1 flags=-
+param 5100 vm_btn_modbus_state uint - level=0 flags=ro
+param 5101 vm_btn_schedule_state uint - level=0 flags=ro
+param 5102 vm_btn_manual_state uint - level=0 flags=ro
+param 5103 vm_btn_modbus_en bool - level=0 flags=ro
+param 5104 vm_btn_schedule_en bool - level=0 flags=ro
+param 5105 vm_btn_manual_en bool - level=0 flags=ro
+param 5106 vm_manual_popup bool - level=0 flags=ro
+param 5107 vm_start_visible bool - level=0 flags=ro
+param 5108 vm_seq_absent_popup bool - level=0 flags=ro
+param 5109 vm_seq_incorrect_popup bool - level=0 flags=ro
+param 5110 vm_inlet_touch_en array - level=0 flags=ro
+param 5111 vm_outlet_touch_en array - level=0 flags=ro
+param 5120 mux_btn_modbus_state uint - level=0 flags=ro
+param 5121 mux_btn_schedule_state uint - level=0 flags=ro
+param 5122 mux_btn_manual_state uint - level=0 flags=ro
+param 5123 mux_btn_modbus_en bool - level=0 flags=ro
+param 5124 mux_btn_schedule_en bool - level=0 flags=ro
+param 5125 mux_btn_manual_en bool - level=0 flags=ro
+param 5126 mux_manual_popup bool - level=0 flags=ro
+param 5127 mux_start_visible bool - level=0 flags=ro
+param 5128 mux_inlet_select_en bool - level=0 flags=ro
+param 5129 mux_seq_absent_popup bool - level=0 flags=ro
+param 5130 mux_seq_incorrect_popup bool - level=0 flags=ro
+param 5131 mux_inlet_visible array - level=0 flags=ro
+param 5132 mux_inlet_on array - level=0 flags=ro
+param 5133 mux_purge_on bool - level=0 flags=ro
+param 5140 vm_tube1_colour array - level=0 flags=ro
+param 5141 vm_tube2_colour array - level=0 flags=ro
+param 5150 vm_time_left_s uint s level=0 flags=ro,no_modbus
+param 5151 vm_time_left2_s uint s level=0 flags=ro,no_modbus
+param 5152 mux_time_left_s uint s level=0 flags=ro,no_modbus
+param 5153 vm_inlet_shown array - level=0 flags=ro,no_modbus
+param 5154 vm_inlet_open array - level=0 flags=ro,no_modbus
+param 5155 vm_outlet_shown array - level=0 flags=ro,no_modbus
+param 5156 vm_outlet_open array - level=0 flags=ro,no_modbus
+param 5157 vm_positions uint - level=0 flags=ro,no_modbus
+param 5158 rtd1_deg float deg level=0 flags=ro,no_modbus
+param 5159 rtd2_deg float deg level=0 flags=ro,no_modbus
