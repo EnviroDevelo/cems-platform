@@ -32,6 +32,12 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
   `net_swapped`; two clean probes 10 s apart clear it. Alarm ID 25 is now the platform's.
 - Touchscreen: an application `UW_VALUE` widget with an `index` on a writable array now edits that
   one element (integer, float or bool), with the level and mode checks (VM/MUX R6).
+- I/O boards on Ethernet: a connection to a board that missed 2 replies in a row is aborted (RST),
+  and every close of one is an abort, so a board that is unplugged no longer fills lwIP's shared
+  TCP segment pool and stalls the web server and plant Modbus (DK bench, 1 Nov). lwIP:
+  `LWIP_SO_LINGER` 1, `MEMP_NUM_TCP_SEG` doubled.
+- `/api/info` `tls`: `dropped` (client gave up mid-handshake) is counted apart from `failed` (a TLS
+  error), with `last_error` (the mbedTLS code). tools/dk_soak.py prints both.
 - `/api/params`: `meas` gives a measured parameter's position in plat_meas.
 - Interface snapshots brought up to date with the alarm tiers, emissions and instrument
   parameters merged since 0.9.0.

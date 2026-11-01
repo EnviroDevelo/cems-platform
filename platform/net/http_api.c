@@ -279,6 +279,8 @@ static void get_info(const http_req_t *r, http_out_t *o, uint32_t now) {
       out_str(o, ",\"tls\":{\"handshakes\":"); json_uint(o, t.handshakes);
       out_str(o, ",\"resumed\":"); json_uint(o, t.resumed);
       out_str(o, ",\"failed\":"); json_uint(o, t.failed);
+      out_str(o, ",\"dropped\":"); json_uint(o, t.dropped);
+      out_str(o, ",\"last_error\":"); json_int(o, t.last_error);
       out_str(o, ",\"pool_peak\":"); json_uint(o, t.pool_peak); out_str(o, "}"); }
     {   const mbtcp_server_t *m = mbtcp_main();      /* the web Service tab's Modbus panel */
         mb_stats_t st = mb_stats();

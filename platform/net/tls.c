@@ -227,7 +227,11 @@ int tls_accept(int fd) {
     mbedtls_ssl_session_reset(&ssl[cur]);
     int rc;
     while ((rc = mbedtls_ssl_handshake(&ssl[cur])) != 0) {
-        if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) { st.failed++; return rc; }
+        if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            if (rc == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || rc == MBEDTLS_ERR_SSL_TIMEOUT || rc == -0x004E /* send failed */) st.dropped++;
+            else { st.failed++; st.last_error = rc; }
+            return rc;
+        }
     }
     st.handshakes++;
     if (resumed) st.resumed++;

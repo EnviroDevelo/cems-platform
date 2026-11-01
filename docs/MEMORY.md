@@ -8,8 +8,8 @@ module, and before choosing hardware. Last run: 2026-11-01.
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash (one bank: the image limit with dual-bank updates) | 593.1 KB | 1016.0 KB | 58 % | 422.9 KB |
-| RAM (STM32H573/H563, 640 KB) | 487.9 KB | 640.0 KB | 76 % | 152.1 KB |
+| Flash (one bank: the image limit with dual-bank updates) | 593.5 KB | 1016.0 KB | 58 % | 422.5 KB |
+| RAM (STM32H573/H563, 640 KB) | 488.3 KB | 640.0 KB | 76 % | 151.7 KB |
 
 ## By module (KB)
 
@@ -27,11 +27,11 @@ module, and before choosing hardware. Last run: 2026-11-01.
 | I/O boards (Ethernet/RS-485 master) | 20.9 | 2.8 |
 | Modbus TCP | 18.1 | 18.1 |
 | Web server + page + logins | 101.3 | 33.5 |
-| HTTPS (tls.c + mbedTLS) | 96.6 | 83.4 |
+| HTTPS (tls.c + mbedTLS) | 96.7 | 83.4 |
 | Touch UI + EVE driver | 85.2 | 6.2 |
-| Task layer (FreeRTOS glue) | 3.4 | 99.7 |
+| Task layer (FreeRTOS glue) | 3.4 | 99.8 |
 | Board support (BSP) | 1.6 | 0.8 |
-| lwIP + Ethernet driver | 55.0 | 39.4 |
+| lwIP + Ethernet driver | 55.4 | 39.7 |
 | FreeRTOS kernel + heap | 9.8 | 64.8 |
 | ST HAL + startup | 19.3 | 0.0 |
 | Application | 2.5 | 0.2 |
@@ -45,8 +45,8 @@ The same build with the real application linked in (`make target APP=...`).
 
 | Resource | Used | Limit | Used % | Free |
 |---|---|---|---|---|
-| Flash | 688.3 KB | 1016.0 KB | 68 % | 327.7 KB |
-| RAM | 556.5 KB | 640.0 KB | 87 % | 83.5 KB |
+| Flash | 688.8 KB | 1016.0 KB | 68 % | 327.2 KB |
+| RAM | 556.8 KB | 640.0 KB | 87 % | 83.2 KB |
 
 The application itself: 85.0 KB of flash, 46.2 KB of RAM (its tags, timers and tables).
 

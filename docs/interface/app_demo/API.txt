@@ -130,8 +130,10 @@ GET /api/info .session.write_s_left number
 GET /api/info .state string
 GET /api/info .state_since number
 GET /api/info .store_status number
+GET /api/info .tls.dropped number
 GET /api/info .tls.failed number
 GET /api/info .tls.handshakes number
+GET /api/info .tls.last_error number
 GET /api/info .tls.pool_peak number
 GET /api/info .tls.resumed number
 GET /api/info .tls_fingerprint string
