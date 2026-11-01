@@ -101,12 +101,20 @@ static void t_tcp_link(void) {
     CHECK_EQ(ident(&t, 1), MBR_OK);
     CHECK_EQ(t.connects, 1u);                       /* one connection, kept */
     CHECK_EQ(ident(&t, 2), MBR_NO_REPLY);           /* another unit id: the board does not answer */
-    CHECK_EQ(hook(&t, 2), 0u);                      /* a lost reply keeps the connection */
+    CHECK_EQ(ident(&t, 1), MBR_OK);                 /* one lost reply keeps the connection */
+    CHECK_EQ(hook(&t, 2), 0u);
     CHECK_EQ(ident(&t, 1), MBR_OK);
     CHECK_EQ(t.connects, 1u);
-    CHECK_EQ(hook(&t, 1), 0u);                      /* not Modbus TCP: closed, opened again next time */
+    CHECK_EQ(t.aborts, 0u);
+    /* IOB_TCP_MISS_MAX in a row: aborted (its queued requests freed), a new connection next time */
+    CHECK_EQ(hook(&t, 2), 0u);
+    CHECK_EQ(hook(&t, 2), 0u);
+    CHECK_EQ(t.aborts, 1u);
     CHECK_EQ(ident(&t, 1), MBR_OK);
     CHECK_EQ(t.connects, 2u);
+    CHECK_EQ(hook(&t, 1), 0u);                      /* not Modbus TCP: closed, opened again next time */
+    CHECK_EQ(ident(&t, 1), MBR_OK);
+    CHECK_EQ(t.connects, 3u);
 
     /* discovery */
     iob_disc_t m; memset(&m, 0, sizeof m); m.op = IOB_DISC_FIND; m.seq = 5;

@@ -35,7 +35,8 @@
 #define MEMP_NUM_TCP_PCB                16            /* 4 Modbus + 5 HTTP + 3 I/O boards + mail + spare */
 #define MEMP_NUM_TCP_PCB_LISTEN         4
 #define MEMP_NUM_NETCONN                20            /* + 3 I/O board connections and the discovery socket */
-#define MEMP_NUM_TCP_SEG                TCP_SND_QUEUELEN
+#define MEMP_NUM_TCP_SEG                (2 * TCP_SND_QUEUELEN)   /* one pool for every connection: headroom so one slow
+                                                                    peer can't starve the rest (iob_tcp.h, 1 Nov) */
 #define MEMP_NUM_SYS_TIMEOUT            (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 4)
 
 /* ---- protocols ---- */
@@ -74,6 +75,7 @@
 #define LWIP_SO_SNDTIMEO                1
 #define LWIP_SOCKET_SELECT              1
 #define SO_REUSE                        1
+#define LWIP_SO_LINGER                  1             /* linger 0 = abort (RST): iob_tcp.c drops dead board connections */
 #define LWIP_NETIF_API                  1
 #define LWIP_TIMEVAL_PRIVATE            0             /* struct timeval from newlib <sys/time.h> */
 

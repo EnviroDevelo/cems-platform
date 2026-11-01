@@ -31,10 +31,18 @@ static int tcp_connect(uint32_t ip, uint16_t port) {
     return s;                                       /* stays non-blocking: every wait is a select */
 }
 
+/* abort, never a graceful close: a graceful close of a connection to a board that is gone keeps
+ * its unacknowledged requests queued (and their segments taken from the shared pool) for minutes */
 static void drop(iob_tcp_t *t, unsigned k) {
-    if (t->conn[k].fd >= 0) closesocket(t->conn[k].fd);
+    if (t->conn[k].fd >= 0) {
+        struct linger lg = { .l_onoff = 1, .l_linger = 0 };
+        (void)setsockopt(t->conn[k].fd, SOL_SOCKET, SO_LINGER, &lg, sizeof lg);
+        closesocket(t->conn[k].fd);
+        t->aborts++;
+    }
     t->conn[k].fd = -1;
     t->conn[k].ip = 0;
+    t->conn[k].miss = 0;
 }
 
 /* the connection to ip: the one open, else a free slot, else the least recently used one */
@@ -48,7 +56,7 @@ static int conn_for(iob_tcp_t *t, uint32_t ip) {
     int fd = tcp_connect(t->host ? t->host : ip, t->tcp_port);
     if (fd < 0) { t->failures++; return -1; }
     t->connects++;
-    t->conn[pick].fd = fd; t->conn[pick].ip = ip; t->conn[pick].used = ++t->use;
+    t->conn[pick].fd = fd; t->conn[pick].ip = ip; t->conn[pick].used = ++t->use; t->conn[pick].miss = 0;
     return fd;
 }
 
@@ -86,7 +94,10 @@ static uint16_t xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, 
     for (;;) {
         fd_set rd; FD_ZERO(&rd); FD_SET(fd, &rd);
         struct timeval tv; tv_ms(&tv, timeout);     /* each wait gets the whole time: replies are small */
-        if (select(fd + 1, &rd, NULL, NULL, &tv) <= 0) return 0;          /* no reply: keep the connection */
+        if (select(fd + 1, &rd, NULL, NULL, &tv) <= 0) {                  /* no reply: keep the connection, unless it keeps missing */
+            if (++t->conn[k].miss >= IOB_TCP_MISS_MAX) drop(t, k);
+            return 0;
+        }
         ssize_t r = recv(fd, buf + have, sizeof buf - have, 0);
         if (r <= 0) { drop(t, k); return 0; }
         have += (size_t)r;
@@ -98,6 +109,7 @@ static uint16_t xfer(iob_port_t *p, const uint8_t *tx, uint16_t n, uint8_t *rx, 
             memmove(buf, buf + c, have - (size_t)c);
             have -= (size_t)c;
             if (got_tid != tid) continue;           /* an old one */
+            t->conn[k].miss = 0;
             if (!ol || ol > cap) return 0;
             memcpy(rx, out, ol);
             return (uint16_t)ol;

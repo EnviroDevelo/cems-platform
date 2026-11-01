@@ -143,6 +143,7 @@ def row(i):
         "heap_free": h.get("heap_free"), "heap_min": h.get("heap_min"),
         "stack_min_words": min(st.values()) if st else "", "stack_min_task": min(st, key=st.get) if st else "",
         "tls_handshakes": i.get("tls", {}).get("handshakes"), "tls_failed": i.get("tls", {}).get("failed"),
+        "tls_dropped": i.get("tls", {}).get("dropped"), "tls_last_error": i.get("tls", {}).get("last_error"),
         "tls_pool_peak": i.get("tls", {}).get("pool_peak"),
         "scan_max_us": i.get("scan", {}).get("max_exec_us"), "scan_overruns": i.get("scan", {}).get("overruns"),
         "alarms_active": i.get("alarms", {}).get("active"),
@@ -183,7 +184,7 @@ def main():
                 continue
             rows.append(r); w.writerow(r); f.flush()
             print(f"  {r['time']}  up {r['uptime_s']} s  heap min {r['heap_min']}  stack min {r['stack_min_words']} words "
-                  f"({r['stack_min_task']})  tls {r['tls_handshakes']}/{r['tls_failed']} failed  "
+                  f"({r['stack_min_task']})  tls {r['tls_handshakes']}/{r['tls_failed']} failed/{r['tls_dropped']} dropped (last {r['tls_last_error']})  "
                   f"ok https {counts['https'] + counts['fresh']} modbus {counts['modbus']}", flush=True)
     stop.set()
     for t in th:

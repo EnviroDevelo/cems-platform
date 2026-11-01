@@ -65,7 +65,10 @@ bool tls_pending(void);                     /* decrypted bytes are waiting (a re
 int  tls_client_open(int fd, uint8_t peer_fp[32]);   /* 0 = ok */
 void tls_client_close(void);
 
-typedef struct { uint32_t handshakes, resumed, failed, pool_peak; } tls_stats_t;
+/* failed: handshakes that ended in a TLS error (bad message, no shared cipher, out of memory ...);
+ * dropped: the client closed, reset or went silent mid-handshake (a browser or tool giving up, not
+ * this unit's fault); last_error: the mbedTLS code of the latest failure (0 = none) */
+typedef struct { uint32_t handshakes, resumed, failed, pool_peak, dropped; int32_t last_error; } tls_stats_t;
 tls_stats_t tls_stats(void);
 
 #endif
