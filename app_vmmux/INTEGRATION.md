@@ -139,7 +139,7 @@ each alarm; the Modbus client test screen -> dropped (no logic used it).
 | R4 | **Closed**: 128 KB is the default map. |
 | R5 | **Closed**: `check_target.sh` links the application; re-run here on 21 Oct with the screens (figures in section 2). |
 | R6 | **New.** The touchscreen opens an editor only for a whole parameter: a `UW_VALUE` with `index` (one element of an array) is shown but cannot be changed there. The VM/MUX keeps many settings as arrays (`AnalogEnable[2]`, `RangeMin[2]`, `DOInlet[19]`, `Di_FunctionVM[22]` ...): editable on the web page's settings list today, read-only on the panel's Inputs tab. Please let a `UW_VALUE` with `index` edit that element (a one-element block write), with the usual level and mode checks. |
-| R6 | Still open on core 0.10.0 (`ui.c`: the editor opens only for `index == UW_NO_INDEX`). Passed to the firmware hub again on 1 Nov. |
+| R6 | **Done** in core 0.10.0 (1 Nov): a `UW_VALUE` with `index` on a writable array opens the element editor (uint, int, float or bool elements, range shown), writes that one element (`param_blob_post`, the usual level and mode checks), and stays untouchable when read-only or not allowed at this login. `tests/test_ui_app.c` t_array_element. |
 | R7 | **Closed**: `PARAM_MAX` is `#ifndef` in `param.h`; this application builds with 1024 (section 8). |
 
 ## 8. Rev D: core 0.10.0 (main `f165dcc`, 1 Nov 2026)

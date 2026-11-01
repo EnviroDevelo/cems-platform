@@ -326,6 +326,24 @@ static const char *why_not(const param_def_t *d) {
     return e == PERR_OK ? NULL : perr_text(e);
 }
 
+/* the same for one element of an array: written back unchanged to ask the rules */
+static const char *why_not_elem(const param_def_t *d, uint16_t idx) {
+    if (d->flags & PF_RO) return "Read only";
+    if (d->flags & PF_DEV) return "Changed only with a developer token (web page)";
+    size_t es = param_ctype_size(d->ctype);
+    uint8_t raw[4] = { 0 };
+    if (d->ptype != PT_ARRAY || es < 1u || es > 4u || (size_t)(idx + 1u) * es > d->size) return "Not available";
+    if (param_read_blob(d->id, (uint16_t)(idx * es), raw, (uint16_t)es) != PERR_OK) return "Not available";
+    param_err_t e = param_blob_check(d->id, (uint16_t)(idx * es), raw, (uint16_t)es, false, PLAT_SRC_LOCAL, U.level);
+    if (e == PERR_RANGE) e = PERR_OK;            /* an element still at an out-of-range default may be corrected */
+    if (e == PERR_ACCESS) {
+        static char m[48];
+        snprintf(m, sizeof m, "Log in as %s to change this", lvl_name(d->level));
+        return m;
+    }
+    return e == PERR_OK ? NULL : perr_text(e);
+}
+
 static void goto_scr(int s) { U.scr = s; U.dirty = true; U.confirm = false; }
 
 static void ask(act_t act, const char *msg) {
@@ -455,12 +473,30 @@ static void edit_submit(bool on, uint32_t now) {
         return;
     }
     const param_def_t *d = U.ed;
-    if (U.elem) {                                     /* one element of an array (input alarm settings) */
+    if (U.elem) {                                     /* one element of an array (input alarm settings, app widgets) */
         char *end = NULL;
-        unsigned long x = strtoul(U.entry, &end, 10);
-        if (!U.entry[0] || *end || U.entry[0] == '-') { toast(true, now, "Not a valid number"); return; }
-        if (x < d->vmin.u || x > d->vmax.u) { toast(true, now, "Allowed %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u); return; }
-        if (elem_post(d->id, U.el_idx, (uint32_t)x, now)) { U.elem = false; goto_scr(U.back); }
+        uint32_t bits;
+        if (d->ctype == CT_F32) {
+            double x = strtod(U.entry, &end);
+            if (!U.entry[0] || *end || !isfinite(x)) { toast(true, now, "Not a valid number"); return; }
+            if (x < (double)d->vmin.f || x > (double)d->vmax.f) {
+                char a[24], z[24]; fmt_float(a, sizeof a, (double)d->vmin.f); fmt_float(z, sizeof z, (double)d->vmax.f);
+                toast(true, now, "Allowed %s .. %s", a, z); return;
+            }
+            float f = (float)x; memcpy(&bits, &f, 4);
+        } else if (d->ctype == CT_I8 || d->ctype == CT_I16 || d->ctype == CT_I32) {
+            long x = strtol(U.entry, &end, 10);
+            if (!U.entry[0] || *end) { toast(true, now, "Not a valid number"); return; }
+            if (x < d->vmin.i || x > d->vmax.i) { toast(true, now, "Allowed %ld .. %ld", (long)d->vmin.i, (long)d->vmax.i); return; }
+            bits = (uint32_t)(int32_t)x;
+        } else {
+            unsigned long x = strtoul(U.entry, &end, 10);
+            uint32_t lo = d->ctype == CT_BOOL ? 0u : d->vmin.u, hi = d->ctype == CT_BOOL ? 1u : d->vmax.u;
+            if (!U.entry[0] || *end || U.entry[0] == '-') { toast(true, now, "Not a valid number"); return; }
+            if (x < lo || x > hi) { toast(true, now, "Allowed %lu .. %lu", (unsigned long)lo, (unsigned long)hi); return; }
+            bits = (uint32_t)x;
+        }
+        if (elem_post(d->id, U.el_idx, bits, now)) { U.elem = false; goto_scr(U.back); }
         return;
     }
     if (U.forcing) {                                  /* a Modbus force: the value only, then "Are you sure?" */
@@ -618,6 +654,19 @@ static void dia_number(uint16_t id, const char *what) {
     snprintf(U.el_title, sizeof U.el_title, "Input alarm %u: %s", U.dia_s + 1u, what);
     U.shift = false; U.entry[0] = 0; U.kb = KB_NUM;
     U.back = UI_DIA_SLOT;
+    goto_scr(UI_EDIT);
+}
+
+/* one element of an array setting from an application widget (UW_VALUE with an index) */
+static void elem_begin(const param_def_t *d, uint16_t idx, const char *label, uint32_t now) {
+    const char *why = why_not_elem(d, idx);
+    if (why) { toast(true, now, "%s", why); return; }
+    U.ed = d;
+    U.elem = true; U.el_idx = idx;
+    if (label) snprintf(U.el_title, sizeof U.el_title, "%s", label);
+    else snprintf(U.el_title, sizeof U.el_title, "%s [%u]", d->name, (unsigned)idx + 1u);
+    U.shift = false; U.entry[0] = 0; U.kb = KB_NUM;
+    U.back = U.scr;
     goto_scr(UI_EDIT);
 }
 
@@ -1259,7 +1308,10 @@ static void draw_edit(void) {
     if (d->unit && r[0]) { strncat(r, " ", sizeof r - strlen(r) - 1); strncat(r, d->unit, sizeof r - strlen(r) - 1); }
     if (U.forcing) snprintf(r, sizeof r, "Modbus reads this for %u s, then the real value again", (unsigned)(PLAT_MB_FORCE_MS / 1000u));
     if (U.elem) {
-        snprintf(r, sizeof r, "Range %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u);
+        if (d->ctype == CT_F32) { char a[24], z[24]; fmt_float(a, sizeof a, (double)d->vmin.f); fmt_float(z, sizeof z, (double)d->vmax.f); snprintf(r, sizeof r, "Range %s .. %s", a, z); }
+        else if (d->ctype == CT_I8 || d->ctype == CT_I16 || d->ctype == CT_I32) snprintf(r, sizeof r, "Range %ld .. %ld", (long)d->vmin.i, (long)d->vmax.i);
+        else if (d->ctype == CT_BOOL) snprintf(r, sizeof r, "0 = off, 1 = on");
+        else snprintf(r, sizeof r, "Range %lu .. %lu", (unsigned long)d->vmin.u, (unsigned long)d->vmax.u);
         if (d->id == PARAM_ID_DIA_INPUT) strncat(r, " (0 = not used)", sizeof r - strlen(r) - 1);
         else if (d->unit) { strncat(r, " ", sizeof r - strlen(r) - 1); strncat(r, d->unit, sizeof r - strlen(r) - 1); }
     }
@@ -2664,6 +2716,7 @@ static bool app_tap(uint8_t t, uint32_t now) {
     case UW_VALUE: {
         const param_def_t *d = param_find(w->value_id);
         if (d && w->index == UW_NO_INDEX) edit_begin(d, now);
+        else if (d) elem_begin(d, w->index, w->label, now);
         break;
     }
     default: break;
@@ -2741,7 +2794,7 @@ static void draw_app(void) {
         U.tmap_w[tag] = (uint8_t)(i + 1u); U.tmap_i[tag] = 0;
         if (w->kind == UW_VALUE) {
             const param_def_t *d = param_find(w->value_id);
-            bool can = d && w->index == UW_NO_INDEX && why_not(d) == NULL;
+            bool can = d && (w->index == UW_NO_INDEX ? why_not(d) : why_not_elem(d, w->index)) == NULL;
             eve_tag(E, can ? (uint8_t)tag : 0);
             box(x, y, wdt, h, U.pressed == tag ? 0xDCE6F5u : C_CARD, 8);
             color(C_MUTE); text((int16_t)(x + 12), (int16_t)(y + 8), F_SMALL, 0, w->label ? w->label : d ? d->name : "?");
