@@ -46,6 +46,9 @@ static bool     Running, StartEnable = true, InletEn[4] = { true, true, false, t
 static char     InName1[11], InName2[11], InName3[11];
 static const char nm1[11] = "Stack", nm2[11] = "Duct", nm3[11] = "Cal gas";
 static float    Temps[2] = { 21.5f, 180.25f };
+static uint16_t Purge[3] = { 10, 20, 30 };       /* writable arrays: one element per widget (R6) */
+static int16_t  Trim[2];
+static float    Gain[2] = { 1.0f, 1.0f };
 static seq_t    Seq;
 static sched_t  Sched;
 static int      checks;
@@ -81,6 +84,9 @@ static const param_def_t defs[] = {
     PARAM_TEXT(1014, "inlet_name3", InName3, nm3, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_UINT(1015, "interconnections", Interconnections, CT_U8, 1, 2, 1, PLAT_LVL_VIEW, PF_ANY_MODE, NULL),
     PARAM_ARRAY_REAL(1016, "temps", Temps, -50.0f, 500.0f, PLAT_LVL_VIEW, PF_RO),
+    PARAM_ARRAY_UINT(1017, "purge_s", Purge, CT_U16, 1, 600, PLAT_LVL_OPERATOR, PF_PERSIST),
+    PARAM_ARRAY_INT(1018, "trim", Trim, CT_I16, -100, 100, PLAT_LVL_OPERATOR, PF_PERSIST),
+    PARAM_ARRAY_REAL(1019, "gain", Gain, 0.5f, 2.0f, PLAT_LVL_OPERATOR, PF_PERSIST),
     PARAM_RECORD(1020, "Sequence1", Seq, check_seq, PLAT_LVL_OPERATOR, PF_PERSIST | PF_ANY_MODE),
     PARAM_RECORD(1021, "Schedule1", Sched, NULL, PLAT_LVL_OPERATOR, PF_PERSIST),
 };
@@ -117,8 +123,11 @@ static const ui_widget_t home_w[] = {
 };
 static const ui_widget_t sched_w[] = {
     { .kind = UW_RECORD, .label = "Edit schedule", .record_id = 1021 },
+    { .kind = UW_VALUE, .label = "Purge inlet 2", .value_id = 1017, .index = 1 },
+    { .kind = UW_VALUE, .value_id = 1018, .index = 0 },
+    { .kind = UW_VALUE, .label = "Gain 2", .value_id = 1019, .index = 1 },
 };
-static const ui_screen_t screens[] = { { "Valves", home_w, 9 }, { "Schedule", sched_w, 1 } };
+static const ui_screen_t screens[] = { { "Valves", home_w, 9 }, { "Schedule", sched_w, 4 } };
 static const ui_app_t app = { .screens = screens, .n_screens = 2, .records = records, .n_records = 2 };
 
 /* ---- harness (as test_ui.c) ---- */
@@ -531,6 +540,34 @@ static void t_web(void) {
     CHECK_EQ(call("GET", "/api/ui", NULL), 200); CHECK(has("{\"screens\":[],\"records\":[]}"));
 }
 
+/* R6: an application widget on one element of an array setting opens the element editor */
+static void t_array_element(void) {
+    ui_setup();
+    tap("Schedule");
+    CHECK(eve_sim_tag_of(&sim, "Purge inlet 2") <= 0);       /* not logged in: not touchable */
+    CHECK(eve_sim_tag_of(&sim, "Stack temp") <= 0);
+    login_operator();
+    tap("Schedule");
+    uint16_t p0 = Purge[0], p2 = Purge[2];
+    float g0 = Gain[0];
+    CHECK(tap("Purge inlet 2")); CHECK_EQ(ui_screen(), UI_EDIT);
+    CHECK(shows("Purge inlet 2")); CHECK(shows("Range 1 .. 600"));
+    type("700"); tap("OK"); CHECK_EQ(ui_screen(), UI_EDIT); CHECK(shows("Allowed 1 .. 600"));
+    tap("Clear");
+    type("45"); tap("OK"); scan(); frame();
+    CHECK_EQ(ui_screen(), UI_APP);
+    CHECK_EQ(Purge[0], p0); CHECK_EQ(Purge[1], 45); CHECK_EQ(Purge[2], p2);   /* only that element */
+    CHECK(tap("trim")); CHECK(shows("trim [1]")); CHECK(shows("Range -100 .. 100"));
+    type("-25"); tap("OK"); scan(); frame();
+    CHECK_EQ(Trim[0], -25); CHECK_EQ(Trim[1], 0);
+    CHECK(tap("Gain 2")); CHECK(shows("Range 0.5 .. 2"));
+    type("1.25"); tap("OK"); scan(); frame();
+    CHECK(fabsf(Gain[1] - 1.25f) < 1e-6f); CHECK(Gain[0] == g0);
+    /* a read-only array element stays untouchable */
+    tap("Valves");
+    CHECK(eve_sim_tag_of(&sim, "Stack temp") <= 0);
+}
+
 void test_ui_app_all(void) {
     RUN(t_record_writes);
     RUN(t_descriptions);
@@ -538,5 +575,6 @@ void test_ui_app_all(void) {
     RUN(t_editor_table);
     RUN(t_editor_form);
     RUN(t_web);
+    RUN(t_array_element);
     ui_app_set(NULL);
 }

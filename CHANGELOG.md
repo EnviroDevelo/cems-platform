@@ -30,6 +30,8 @@ Additions only; a product needs nothing unless its own Modbus map used the new r
   on the client port 20 s after start and every 5 min. I/O boards answering there raise the new
   platform alarm 25 NET_SWAPPED, Modbus TCP and the web close their ports, and `/api/info` gives
   `net_swapped`; two clean probes 10 s apart clear it. Alarm ID 25 is now the platform's.
+- Touchscreen: an application `UW_VALUE` widget with an `index` on a writable array now edits that
+  one element (integer, float or bool), with the level and mode checks (VM/MUX R6).
 - `/api/params`: `meas` gives a measured parameter's position in plat_meas.
 - Interface snapshots brought up to date with the alarm tiers, emissions and instrument
   parameters merged since 0.9.0.
